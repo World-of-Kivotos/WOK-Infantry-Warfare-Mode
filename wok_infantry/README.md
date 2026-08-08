@@ -35,4 +35,4 @@ Minecraft 1.20.1 / Forge 47.4.22 的独立步战小游戏核心。当前阶段�
 .\gradlew.bat build
 ```
 
-产物位于 `build/libs/wok_infantry-0.1.0.jar`。
+产物位于 `build/libs/wok_infantry-0.0.1.jar`。

@@ -4,11 +4,17 @@
 
 当前仓库包含以下可独立安装、可选联动的模块：
 
-- `wok_infantry`：WOK步战核心。
-- `wok_trauma`：WOK步战附属-创伤治疗。
-- `wok_body_health`：WOK步战附属-部位血量。
+| 模块 | 正式名称 | 当前版本 | 源码目录 |
+| --- | --- | --- | --- |
+| `wok_infantry` | WOK步战核心 | `0.0.1` | `wok_infantry/` |
+| `wok_trauma` | WOK步战附属-创伤治疗 | `0.0.1` | 仓库根目录 |
+| `wok_body_health` | WOK步战附属-部位血量 | `0.0.1` | `wok_body_health/` |
+| `wok_infantry_armor` | WOK步战附属-独立护甲 | `0.0.1` | `wok_infantry_armor/` |
 
 `WOK` 与 `WOK步战` 是两个不同产品线；本仓库不属于 WOK 本体项目。
+
+版本号由各模块独立维护，普通提交不会自动升级版本。发布规则见
+[`docs/VERSIONING.md`](docs/VERSIONING.md)，历史更新见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 当前效果
 
@@ -64,4 +70,4 @@ $env:Path="$env:JAVA_HOME\bin;$env:Path"
 开发运行需要一份 ForgeGradle 已映射的 TaCZ 1.1.8-hotfix JAR。默认从 ForgeGradle
 缓存中寻找，也可以通过 `-Ptacz_dev_jar_path=<path>` 指定。
 
-构建产物位于 `build/libs/wok_trauma-0.1.0.jar`。
+构建产物位于 `build/libs/wok_trauma-0.0.1.jar`。
