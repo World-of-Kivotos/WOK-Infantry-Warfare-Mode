@@ -1,0 +1,9 @@
+{
+  "key.categories.wok_infantry": "Wok Infantry",
+  "key.wok_infantry.open_loadout": "Open Loadout",
+  "screen.wok_infantry.loadout": "Combat Loadout",
+  "screen.wok_infantry.admin": "Loadout Administration",
+  "message.wok_infantry.saved": "Loadout saved",
+  "message.wok_infantry.applied": "Loadout applied",
+  "message.wok_infantry.admin_saved": "Admin configuration saved"
+}

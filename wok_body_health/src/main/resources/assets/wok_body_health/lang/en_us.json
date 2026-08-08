@@ -1,0 +1,9 @@
+{
+  "body_part.wok_body_health.head": "Head",
+  "body_part.wok_body_health.chest": "Chest",
+  "body_part.wok_body_health.abdomen": "Abdomen",
+  "body_part.wok_body_health.left_arm": "Left Arm",
+  "body_part.wok_body_health.right_arm": "Right Arm",
+  "body_part.wok_body_health.left_leg": "Left Leg",
+  "body_part.wok_body_health.right_leg": "Right Leg"
+}

@@ -1,0 +1,9 @@
+{
+  "key.categories.wok_infantry": "Wok步战核心",
+  "key.wok_infantry.open_loadout": "打开配装界面",
+  "screen.wok_infantry.loadout": "作战配装",
+  "screen.wok_infantry.admin": "配装管理",
+  "message.wok_infantry.saved": "配装已保存",
+  "message.wok_infantry.applied": "配装已发放",
+  "message.wok_infantry.admin_saved": "管理员配置已保存"
+}

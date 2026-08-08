@@ -1,0 +1,28 @@
+{
+  "concussion_tinnitus": {
+    "sounds": [
+      {
+        "name": "wok_trauma:concussion_tinnitus",
+        "stream": true
+      }
+    ]
+  },
+  "injector_puncture": {
+    "subtitle": "subtitle.wok_trauma.injector_puncture",
+    "sounds": [
+      "wok_trauma:injector_puncture"
+    ]
+  },
+  "canvas_bag_open": {
+    "subtitle": "subtitle.wok_trauma.canvas_bag_open",
+    "sounds": [
+      "wok_trauma:canvas_bag_open"
+    ]
+  },
+  "bandage_wrap": {
+    "subtitle": "subtitle.wok_trauma.bandage_wrap",
+    "sounds": [
+      "wok_trauma:bandage_wrap"
+    ]
+  }
+}
