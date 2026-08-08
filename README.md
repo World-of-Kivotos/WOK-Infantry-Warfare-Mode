@@ -1,6 +1,14 @@
-# Wok步战-创伤治疗模块
+# WOK步兵战争模式
 
-面向 Minecraft 1.20.1 / Forge 47.4.22 的创伤与治疗附属模组。
+独立于“WOK计划”的 Minecraft 1.20.1 / Forge 47.4.22 步兵战争模式项目。
+
+当前仓库包含以下可独立安装、可选联动的模块：
+
+- `wok_infantry`：WOK步战核心。
+- `wok_trauma`：WOK步战附属-创伤治疗。
+- `wok_body_health`：WOK步战附属-部位血量。
+
+`WOK` 与 `WOK步战` 是两个不同产品线；本仓库不属于 WOK 本体项目。
 
 ## 当前效果
 
