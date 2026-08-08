@@ -1,0 +1,41 @@
+modLoader = "javafml"
+loaderVersion = "[47,)"
+license = "All Rights Reserved"
+
+[[mods]]
+modId = "wok_infantry_armor"
+version = "${file.jarVersion}"
+displayName = "WOK步战附属-独立护甲"
+authors = "World of Kivotos"
+description = '''
+Standalone armor module for the WOK Infantry add-on line.
+Includes 54 plate armors and 18 tiered plasma shields; contains no production tables or profession framework.
+'''
+
+[[dependencies.wok_infantry_armor]]
+modId = "forge"
+mandatory = true
+versionRange = "[47,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.wok_infantry_armor]]
+modId = "minecraft"
+mandatory = true
+versionRange = "[1.20.1,1.20.2)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.wok_infantry_armor]]
+modId = "tacz"
+mandatory = false
+versionRange = "[1.1.8,)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.wok_infantry_armor]]
+modId = "wok_body_health"
+mandatory = false
+versionRange = "[0.0.1,)"
+ordering = "AFTER"
+side = "BOTH"

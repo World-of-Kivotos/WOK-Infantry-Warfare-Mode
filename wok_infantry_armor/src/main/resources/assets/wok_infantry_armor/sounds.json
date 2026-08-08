@@ -1,0 +1,22 @@
+{
+  "plasma_shield_hit": {
+    "subtitle": "subtitles.wok_infantry_armor.plasma_shield_hit",
+    "sounds": [
+      { "name": "wok_infantry_armor:item/plasma_shield/hit_01", "stream": false },
+      { "name": "wok_infantry_armor:item/plasma_shield/hit_02", "stream": false },
+      { "name": "wok_infantry_armor:item/plasma_shield/hit_03", "stream": false }
+    ]
+  },
+  "plasma_shield_overheat": {
+    "subtitle": "subtitles.wok_infantry_armor.plasma_shield_overheat",
+    "sounds": [
+      { "name": "wok_infantry_armor:item/plasma_shield/overheat", "stream": false }
+    ]
+  },
+  "plasma_shield_steam_vent": {
+    "subtitle": "subtitles.wok_infantry_armor.plasma_shield_steam_vent",
+    "sounds": [
+      { "name": "wok_infantry_armor:item/plasma_shield/steam_vent", "stream": false }
+    ]
+  }
+}
