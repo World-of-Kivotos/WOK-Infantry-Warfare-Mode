@@ -96,6 +96,37 @@ public final class BodyHealthService {
     }
 
     /**
+     * Restores every damaged body part by the supplied amount. Injector
+     * regeneration uses this path so one regeneration pulse affects all
+     * seven parts simultaneously instead of selecting only one treatment
+     * target or distributing a shared healing pool.
+     */
+    public static boolean healAllParts(ServerPlayer player, float vanillaAmount) {
+        if (!(vanillaAmount > 0.0F) || !Float.isFinite(vanillaAmount)) {
+            return false;
+        }
+
+        BodyHealthData data = BodyHealthData.load(player);
+        float restoredPerPart = vanillaAmount
+                * BodyHealthConfig.HEAL_SCALE.get().floatValue();
+        boolean changed = false;
+        for (BodyPart part : BodyPart.values()) {
+            float maximum = BodyHealthConfig.maxHealth(part);
+            float current = data.get(part);
+            if (current >= maximum - 0.0001F) {
+                continue;
+            }
+            data.set(part, Math.min(maximum, current + restoredPerPart));
+            changed = true;
+        }
+
+        if (changed) {
+            saveAndSync(player, data);
+        }
+        return changed;
+    }
+
+    /**
      * Heals one explicitly selected body part without spilling into another
      * part. Medical items use this to keep one continuous use bound to the
      * body part that was selected when treatment started.
@@ -222,13 +253,17 @@ public final class BodyHealthService {
         }
 
         float before = data.get(part);
+        boolean wasAlreadyDestroyed = before <= 0.0001F;
         float absorbed = Math.min(before, damage);
         data.set(part, before - absorbed);
         float overflow = damage - absorbed;
         boolean fatal = part.isCritical() && data.isDestroyed(part);
 
         if (allowOverflow && overflow > 0.0001F && !part.isCritical()) {
-            fatal |= distributeDamage(data, overflow * part.overflowMultiplier(), part);
+            float transferMultiplier = wasAlreadyDestroyed
+                    ? BodyHealthConfig.DESTROYED_PART_DAMAGE_TRANSFER_MULTIPLIER.get().floatValue()
+                    : part.overflowMultiplier();
+            fatal |= distributeDamage(data, overflow * transferMultiplier, part);
         }
         return fatal;
     }

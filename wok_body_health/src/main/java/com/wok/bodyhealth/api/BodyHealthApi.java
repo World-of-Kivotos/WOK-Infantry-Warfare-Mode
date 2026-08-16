@@ -34,6 +34,15 @@ public final class BodyHealthApi {
                 && BodyHealthService.heal(player, vanillaAmount);
     }
 
+    /**
+     * Reflection-friendly bridge for regeneration injectors. Each pulse
+     * restores the supplied amount to every damaged body part.
+     */
+    public static boolean healAllParts(LivingEntity entity, float vanillaAmount) {
+        return entity instanceof ServerPlayer player
+                && BodyHealthService.healAllParts(player, vanillaAmount);
+    }
+
     public static boolean needsHealing(LivingEntity entity) {
         return entity instanceof ServerPlayer player
                 && BodyHealthService.needsHealing(player);

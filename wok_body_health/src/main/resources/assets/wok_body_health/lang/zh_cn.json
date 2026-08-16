@@ -5,5 +5,19 @@
   "body_part.wok_body_health.left_arm": "左臂",
   "body_part.wok_body_health.right_arm": "右臂",
   "body_part.wok_body_health.left_leg": "左腿",
-  "body_part.wok_body_health.right_leg": "右腿"
+  "body_part.wok_body_health.right_leg": "右腿",
+  "death.attack.wok_body_health_pvp_kill_head": "%2$s击毁了%1$s的头部，造成了击杀",
+  "death.attack.wok_body_health_pvp_kill_head.item": "%2$s使用%3$s击毁了%1$s的头部，造成了击杀",
+  "death.attack.wok_body_health_pvp_kill_chest": "%2$s击毁了%1$s的胸部，造成了击杀",
+  "death.attack.wok_body_health_pvp_kill_chest.item": "%2$s使用%3$s击毁了%1$s的胸部，造成了击杀",
+  "death.attack.wok_body_health_pvp_kill_abdomen": "%2$s击毁了%1$s的腹部，造成了击杀",
+  "death.attack.wok_body_health_pvp_kill_abdomen.item": "%2$s使用%3$s击毁了%1$s的腹部，造成了击杀",
+  "death.attack.wok_body_health_pvp_kill_left_arm": "%2$s击毁了%1$s的左臂，造成了击杀",
+  "death.attack.wok_body_health_pvp_kill_left_arm.item": "%2$s使用%3$s击毁了%1$s的左臂，造成了击杀",
+  "death.attack.wok_body_health_pvp_kill_right_arm": "%2$s击毁了%1$s的右臂，造成了击杀",
+  "death.attack.wok_body_health_pvp_kill_right_arm.item": "%2$s使用%3$s击毁了%1$s的右臂，造成了击杀",
+  "death.attack.wok_body_health_pvp_kill_left_leg": "%2$s击毁了%1$s的左腿，造成了击杀",
+  "death.attack.wok_body_health_pvp_kill_left_leg.item": "%2$s使用%3$s击毁了%1$s的左腿，造成了击杀",
+  "death.attack.wok_body_health_pvp_kill_right_leg": "%2$s击毁了%1$s的右腿，造成了击杀",
+  "death.attack.wok_body_health_pvp_kill_right_leg.item": "%2$s使用%3$s击毁了%1$s的右腿，造成了击杀"
 }

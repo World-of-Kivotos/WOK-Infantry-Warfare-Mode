@@ -106,6 +106,9 @@ public final class InjectorItem extends Item {
                             displaySeconds(regenerationDurationTicks),
                             displaySeconds(regenerationIntervalTicks))
                     .withStyle(ChatFormatting.GREEN));
+            tooltip.add(Component.translatable(
+                            "tooltip.wok_trauma.regenerates_all_body_parts")
+                    .withStyle(ChatFormatting.DARK_GREEN));
         }
         tooltip.add(Component.translatable("tooltip.wok_trauma.removes_concussion")
                 .withStyle(ChatFormatting.GOLD));

@@ -15,6 +15,7 @@ public final class BodyHealthConfig {
     public static final ForgeConfigSpec.IntValue RIGHT_LEG_MAX;
     public static final ForgeConfigSpec.DoubleValue DAMAGE_SCALE;
     public static final ForgeConfigSpec.DoubleValue HEAL_SCALE;
+    public static final ForgeConfigSpec.DoubleValue DESTROYED_PART_DAMAGE_TRANSFER_MULTIPLIER;
     public static final ForgeConfigSpec.BooleanValue ENABLE_ARMOR_BODY_PART_RESISTANCE;
     public static final ForgeConfigSpec.BooleanValue REPLACE_VANILLA_HEARTS;
 
@@ -38,6 +39,11 @@ public final class BodyHealthConfig {
         HEAL_SCALE = builder
                 .comment("每 1 点 Minecraft 治疗量转换为多少部位治疗量。")
                 .defineInRange("bodyHealScale", 10.0D, 0.01D, 1_000.0D);
+        DESTROYED_PART_DAMAGE_TRANSFER_MULTIPLIER = builder
+                .comment(
+                        "已损毁的非致命部位再次受到伤害时，传递给其他未损毁部位的伤害倍率。",
+                        "默认 0.8 表示传递本次部位伤害的 80%；0 表示不传递，1 表示完整传递。")
+                .defineInRange("destroyedPartDamageTransferMultiplier", 0.8D, 0.0D, 10.0D);
         builder.pop();
 
         builder.push("armor_compatibility");
