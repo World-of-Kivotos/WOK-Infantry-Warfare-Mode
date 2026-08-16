@@ -31,6 +31,7 @@
   "tooltip.wok_trauma.grants_analgesia": "获得镇痛：%s 秒",
   "tooltip.wok_trauma.grants_regeneration": "获得再生：%s 秒（每 %s 秒恢复 1 点生命）",
   "tooltip.wok_trauma.grants_slow_regeneration": "持续恢复：%s 秒（每 %s 秒恢复 1 点生命）",
+  "tooltip.wok_trauma.regenerates_all_body_parts": "部位血量联动：每次恢复同时作用于全部受伤部位",
   "tooltip.wok_trauma.removes_concussion": "移除脑震荡",
   "subtitle.wok_trauma.injector_puncture": "针剂刺入皮肤",
   "subtitle.wok_trauma.canvas_bag_open": "帆布医疗包打开",

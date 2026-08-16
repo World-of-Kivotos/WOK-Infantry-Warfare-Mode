@@ -14,6 +14,7 @@ public final class BodyHealthCompat {
     private static boolean resolved;
     private static Method applyBleedingDamage;
     private static Method heal;
+    private static Method healAllParts;
     private static Method needsHealing;
     private static Method selectTreatmentPart;
     private static Method isPartDamaged;
@@ -28,6 +29,16 @@ public final class BodyHealthCompat {
 
     public static boolean heal(LivingEntity entity, float amount) {
         resolve();
+        return invokeBoolean(heal, entity, amount);
+    }
+
+    public static boolean healAllParts(LivingEntity entity, float amount) {
+        resolve();
+        if (healAllParts != null) {
+            return invokeBoolean(healAllParts, entity, amount);
+        }
+        // Compatibility fallback for an older body-health build. Current
+        // builds expose healAllParts and restore all seven parts per pulse.
         return invokeBoolean(heal, entity, amount);
     }
 
@@ -70,6 +81,14 @@ public final class BodyHealthCompat {
             applyBleedingDamage = api.getMethod(
                     "applyBleedingDamage", LivingEntity.class, DamageSource.class, float.class);
             heal = api.getMethod("heal", LivingEntity.class, float.class);
+            try {
+                healAllParts = api.getMethod(
+                        "healAllParts", LivingEntity.class, float.class);
+            } catch (NoSuchMethodException exception) {
+                WokTraumaMod.LOGGER.warn(
+                        "Installed WOK Body Health does not support all-part injector healing; "
+                                + "falling back to its legacy healing API.");
+            }
             needsHealing = api.getMethod("needsHealing", LivingEntity.class);
             selectTreatmentPart = api.getMethod(
                     "selectTreatmentPart", LivingEntity.class);

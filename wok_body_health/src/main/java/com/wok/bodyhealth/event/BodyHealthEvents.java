@@ -2,6 +2,7 @@ package com.wok.bodyhealth.event;
 
 import com.wok.bodyhealth.health.BodyHealthData;
 import com.wok.bodyhealth.health.BodyHealthService;
+import com.wok.bodyhealth.health.BodyPartKillDamage;
 import com.wok.bodyhealth.health.BodyPart;
 import com.wok.bodyhealth.health.DamageOutcome;
 import com.wok.bodyhealth.health.HitLocationResolver;
@@ -52,7 +53,14 @@ public final class BodyHealthEvents {
         }
 
         if (outcome.fatal()) {
-            event.setAmount(Math.max(event.getAmount(), player.getHealth() + 1.0F));
+            if (source.getEntity() instanceof ServerPlayer killer && killer != player) {
+                event.setCanceled(true);
+                hurtBypassingBodyHealth(player, BodyPartKillDamage.create(
+                        player, killer, source, outcome.primaryPart(),
+                        outcome.propagatedFatal()));
+            } else {
+                event.setAmount(Math.max(event.getAmount(), player.getHealth() + 1.0F));
+            }
         } else {
             event.setCanceled(true);
         }

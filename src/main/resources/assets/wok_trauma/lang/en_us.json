@@ -31,6 +31,7 @@
   "tooltip.wok_trauma.grants_analgesia": "Grants analgesia for %s seconds",
   "tooltip.wok_trauma.grants_regeneration": "Grants regeneration for %s seconds (restores 1 health every %s seconds)",
   "tooltip.wok_trauma.grants_slow_regeneration": "Continuous recovery for %s seconds (restores 1 health every %s seconds)",
+  "tooltip.wok_trauma.regenerates_all_body_parts": "Body Health: each pulse restores every damaged body part",
   "tooltip.wok_trauma.removes_concussion": "Removes concussion",
   "subtitle.wok_trauma.injector_puncture": "Injector punctures skin",
   "subtitle.wok_trauma.canvas_bag_open": "Canvas medical bag opens",
