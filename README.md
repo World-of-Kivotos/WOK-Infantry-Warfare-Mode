@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | `wok_infantry` | WOK步战核心 | `0.0.1` | `wok_infantry/` |
 | `wok_trauma` | WOK步战附属-创伤治疗 | `0.0.2` | 仓库根目录 |
-| `wok_body_health` | WOK步战附属-部位血量 | `0.0.3` | `wok_body_health/` |
+| `wok_body_health` | WOK步战附属-部位血量 | `0.0.3-beta.1` | `wok_body_health/` |
 | `wok_infantry_armor` | WOK步战附属-独立护甲 | `0.0.1` | `wok_infantry_armor/` |
 
 `WOK` 与 `WOK步战` 是两个不同产品线；本仓库不属于 WOK 本体项目。

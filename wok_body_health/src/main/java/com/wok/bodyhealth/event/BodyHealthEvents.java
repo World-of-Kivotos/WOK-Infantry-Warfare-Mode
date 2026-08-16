@@ -56,7 +56,8 @@ public final class BodyHealthEvents {
             if (source.getEntity() instanceof ServerPlayer killer && killer != player) {
                 event.setCanceled(true);
                 hurtBypassingBodyHealth(player, BodyPartKillDamage.create(
-                        player, killer, source, outcome.primaryPart()));
+                        player, killer, source, outcome.primaryPart(),
+                        outcome.propagatedFatal()));
             } else {
                 event.setAmount(Math.max(event.getAmount(), player.getHealth() + 1.0F));
             }
