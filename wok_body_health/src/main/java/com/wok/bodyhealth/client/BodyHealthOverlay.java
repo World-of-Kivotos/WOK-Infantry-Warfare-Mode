@@ -18,6 +18,9 @@ public final class BodyHealthOverlay {
     private static final int TEXTURE_SIZE = 256;
     private static final int FIGURE_SIZE = 48;
     private static final int FIGURE_X = 45;
+    // Leave a compact strip below the total for WOK步战's optional stamina HUD.
+    // The body-health MOD remains fully usable when the core is not installed.
+    private static final int BOTTOM_RESERVED = 25;
 
     private static final ResourceLocation BODY_TEXTURE = texture("body_hud.png");
     private static final Map<BodyPart, ResourceLocation> PART_TEXTURES = createPartTextures();
@@ -38,7 +41,7 @@ public final class BodyHealthOverlay {
         }
 
         int figureX = FIGURE_X;
-        int figureY = screenHeight - FIGURE_SIZE - 14;
+        int figureY = screenHeight - FIGURE_SIZE - BOTTOM_RESERVED;
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         graphics.setColor(1.0F, 1.0F, 1.0F, 0.92F);
