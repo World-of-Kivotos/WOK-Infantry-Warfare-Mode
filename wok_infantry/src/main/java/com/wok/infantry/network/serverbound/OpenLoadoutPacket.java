@@ -1,5 +1,6 @@
 package com.wok.infantry.network.serverbound;
 
+import com.wok.infantry.network.ServerRequestLimiter;
 import com.wok.infantry.server.LoadoutService;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
@@ -18,7 +19,8 @@ public record OpenLoadoutPacket(boolean administrator) {
 
     public static void handle(OpenLoadoutPacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
         ServerPlayer sender = contextSupplier.get().getSender();
-        if (sender == null) {
+        if (sender == null || !ServerRequestLimiter.allow(sender,
+                ServerRequestLimiter.Kind.OPEN_UI)) {
             return;
         }
         LoadoutService.get(sender).ifPresent(service -> {

@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "caps_awim_tactical_gear_rework:block/ammocrate" },
+    "facing=east": { "model": "caps_awim_tactical_gear_rework:block/ammocrate", "y": 90 },
+    "facing=south": { "model": "caps_awim_tactical_gear_rework:block/ammocrate", "y": 180 },
+    "facing=west": { "model": "caps_awim_tactical_gear_rework:block/ammocrate", "y": 270 }
+  }
+}

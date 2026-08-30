@@ -22,3 +22,67 @@ mandatory=true
 versionRange="${minecraft_version_range}"
 ordering="NONE"
 side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="journeymap"
+mandatory=false
+# JourneyMap 6 remains the preferred persistent terrain engine when installed. Xaero Minimap
+# 24.x can now supply local terrain instead, so neither map backend is a hard dependency.
+versionRange="[1.20.1-6.0.2,1.20.1-7.0.0)"
+ordering="AFTER"
+side="CLIENT"
+
+[[dependencies.${mod_id}]]
+modId="xaerominimapfair"
+mandatory=false
+versionRange="[24.2.0,25.0.0)"
+ordering="AFTER"
+side="CLIENT"
+
+[[dependencies.${mod_id}]]
+modId="xaerominimap"
+mandatory=false
+versionRange="[24.2.0,25.0.0)"
+ordering="AFTER"
+side="CLIENT"
+
+[[dependencies.${mod_id}]]
+modId="tacz"
+mandatory=false
+versionRange="[1.1.8,)"
+ordering="AFTER"
+side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="superbwarfare"
+mandatory=false
+# The adapter validates every configured entity id at runtime, so the core stays installable
+# without卓越前线 and does not pretend an unregistered vehicle is usable.
+versionRange="[0.8.9,)"
+ordering="AFTER"
+side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="fcp"
+mandatory=false
+# FCP provides the first production formation's Stryker, HMMWV and Little Bird entities.
+# It remains optional so installations that use only the infantry framework still start.
+versionRange="[1.2.1,)"
+ordering="AFTER"
+side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="caps_awim_tactical_gear_rework"
+mandatory=false
+# Supplies the installed 3D model used by the portable 100-point rifleman crate.
+versionRange="[3.0.1906.26,)"
+ordering="AFTER"
+side="CLIENT"
+
+[[dependencies.${mod_id}]]
+modId="dragonrise_reforge"
+mandatory=false
+# Its vehicle-transported ammo_supply_station entity becomes the 1500-point large station.
+versionRange="[1.4.1,)"
+ordering="AFTER"
+side="BOTH"

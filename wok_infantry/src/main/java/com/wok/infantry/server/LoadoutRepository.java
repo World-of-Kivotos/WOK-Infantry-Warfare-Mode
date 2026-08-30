@@ -23,6 +23,7 @@ import java.util.UUID;
 
 final class LoadoutRepository {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
+    private static final int MAX_PLAYER_RECORDS = 4_096;
 
     private final Path configPath;
     private final Path playerPath;
@@ -48,15 +49,44 @@ final class LoadoutRepository {
     }
 
     synchronized PlayerLoadoutData player(UUID playerId) {
-        return players.values.computeIfAbsent(playerId.toString(), ignored -> new PlayerLoadoutData());
+        String key = playerId.toString();
+        PlayerLoadoutData existing = players.values.get(key);
+        if (existing != null) {
+            return existing;
+        }
+        while (players.values.size() >= MAX_PLAYER_RECORDS) {
+            java.util.Iterator<String> iterator = players.values.keySet().iterator();
+            if (!iterator.hasNext()) {
+                break;
+            }
+            iterator.next();
+            iterator.remove();
+        }
+        PlayerLoadoutData created = new PlayerLoadoutData();
+        players.values.put(key, created);
+        return created;
     }
 
-    synchronized void saveConfig() {
-        write(configPath, config);
+    synchronized boolean saveConfig() {
+        return write(configPath, config);
     }
 
-    synchronized void savePlayers() {
-        write(playerPath, players);
+    /** Atomically persists and publishes a complete replacement configuration. */
+    synchronized boolean replaceConfig(LoadoutConfigData replacement) {
+        if (replacement == null) {
+            return false;
+        }
+        LoadoutConfigData candidate = replacement.copy();
+        candidate.normalize();
+        if (!write(configPath, candidate)) {
+            return false;
+        }
+        config = candidate;
+        return true;
+    }
+
+    synchronized boolean savePlayers() {
+        return write(playerPath, players);
     }
 
     private static <T> T read(Path path, Class<T> type, T fallback) {
@@ -72,7 +102,7 @@ final class LoadoutRepository {
         }
     }
 
-    private static void write(Path path, Object value) {
+    private static boolean write(Path path, Object value) {
         try {
             Files.createDirectories(path.getParent());
             Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
@@ -85,8 +115,10 @@ final class LoadoutRepository {
             } catch (AtomicMoveNotSupportedException ignored) {
                 Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING);
             }
+            return true;
         } catch (IOException exception) {
             WokInfantryMod.LOGGER.error("Failed to save loadout data to {}", path, exception);
+            return false;
         }
     }
 
@@ -98,6 +130,14 @@ final class LoadoutRepository {
                 values = new LinkedHashMap<>();
             }
             values.entrySet().removeIf(entry -> entry.getValue() == null);
+            while (values.size() > MAX_PLAYER_RECORDS) {
+                java.util.Iterator<String> iterator = values.keySet().iterator();
+                if (!iterator.hasNext()) {
+                    break;
+                }
+                iterator.next();
+                iterator.remove();
+            }
         }
     }
 }

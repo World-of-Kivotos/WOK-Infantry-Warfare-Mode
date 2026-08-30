@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.wok.infantry.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "ServerGamePacketListenerImplMixin",
+    "VehicleEntityDamageMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -3,6 +3,7 @@ package com.wok.infantry.loadout;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public final class PlayerLoadoutData {
     private String activeClassId = "assault";
@@ -24,11 +25,25 @@ public final class PlayerLoadoutData {
     }
 
     public String selectedEntry(String classId, LoadoutSlot slot) {
-        return selectionsFor(classId).getOrDefault(slot.id(), "");
+        return selectedEntry(classId, slot.id());
     }
 
     public void select(String classId, LoadoutSlot slot, String entryId) {
-        selectionsFor(classId).put(slot.id(), entryId);
+        select(classId, slot.id(), entryId);
+    }
+
+    public String selectedEntry(String classId, String slotId) {
+        return selectionsFor(classId).getOrDefault(Objects.requireNonNullElse(slotId, ""), "");
+    }
+
+    public void select(String classId, String slotId, String entryId) {
+        selectionsFor(classId).put(Objects.requireNonNullElse(slotId, ""),
+                Objects.requireNonNullElse(entryId, ""));
+    }
+
+    public void retainSlots(String classId, Set<String> slotIds) {
+        selectionsFor(classId).keySet().removeIf(slotId -> slotIds == null
+                || !slotIds.contains(slotId));
     }
 
     public PlayerLoadoutData copy() {
