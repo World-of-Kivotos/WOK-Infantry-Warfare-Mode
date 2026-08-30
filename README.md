@@ -9,12 +9,15 @@
 | `wok_infantry` | WOK步战核心 | `0.0.1` | `wok_infantry/` |
 | `wok_trauma` | WOK步战附属-创伤治疗 | `0.0.2` | 仓库根目录 |
 | `wok_body_health` | WOK步战附属-部位血量 | `0.0.3-beta.1` | `wok_body_health/` |
-| `wok_infantry_armor` | WOK步战附属-独立护甲 | `0.0.1` | `wok_infantry_armor/` |
+| `wok_infantry_armor` | WOK步战附属-独立护甲 | `1.1.0` | `wok_infantry_armor/` |
+| `wok_vehicle_health` | WOK步战附属-载具部位血量 | `0.0.1` | `wok_vehicle_health/` |
 
 `WOK` 与 `WOK步战` 是两个不同产品线；本仓库不属于 WOK 本体项目。
 
 版本号由各模块独立维护，普通提交不会自动升级版本。发布规则见
 [`docs/VERSIONING.md`](docs/VERSIONING.md)，历史更新见 [`CHANGELOG.md`](CHANGELOG.md)。
+WOK步战附属专用客户端的当前依赖、地图后端和回滚基线见
+[`docs/WOK_INFANTRY_TEST_ENVIRONMENT.md`](docs/WOK_INFANTRY_TEST_ENVIRONMENT.md)。
 
 ## 当前效果
 
@@ -40,7 +43,7 @@ TaCZ 枪弹命中默认必定造成 30 秒疼痛，并互斥判定 10% 大出血
 
 ## 回血针剂联动
 
-与 `wok_body_health` 同时安装时，黄色 Propital 与绿色 eTG-change 的每次持续恢复脉冲会同时作用于头部、胸部、腹部、左臂、右臂、左腿和右腿。每个受伤部位分别获得完整的单次恢复量，满血部位跳过；这套逻辑不占用医疗包的单部位治疗选择。未安装 `wok_body_health` 时，两种针剂继续恢复原版生命值。
+与 `wok_body_health` 同时安装时，黄色 Propital 的每次恢复使用一份共享治疗量，优先用于当前伤势最重的部位；参照《逃离塔科夫》的 2 秒注射、`+1 HP/s`、持续 300 秒设计，并按本项目默认 `bodyHealScale = 10` 换算为每秒恢复 0.1 点原版治疗量（即 1 点部位血量），全程共恢复 300 点部位血量。注射 270 秒后会产生 30 秒颤栗与视野收缩。绿色 eTG-change 继续在每次脉冲中分别治疗全部受伤部位，保持紧急全身恢复定位。这套逻辑不占用医疗包的单部位治疗选择。未安装 `wok_body_health` 时，两种针剂继续恢复原版生命值。
 
 ## 配置
 

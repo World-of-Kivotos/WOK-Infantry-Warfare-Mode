@@ -8,9 +8,10 @@
 | 模块 | 当前版本 | 稳定阶段 |
 | --- | --- | --- |
 | `wok_infantry` | `0.0.1` | 首个开发基线 |
-| `wok_infantry_armor` | `0.0.1` | 首个开发基线 |
 | `wok_trauma` | `0.0.2` | 修复针剂部位血量持续恢复 |
 | `wok_body_health` | `0.0.3-beta.1` | 七部位针剂同步恢复与随机击杀文本测试版 |
+| `wok_infantry_armor` | `1.1.0` | 头部防具更新 |
+| `wok_vehicle_health` | `0.0.1` | 首个开发基线；暂要求 Superb Warfare 0.8.9.1 |
 
 ## 何时升级版本
 

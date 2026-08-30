@@ -22,7 +22,26 @@ eclipse
 run
 tmp/
 output/
+outputs/
+.tmp_*/
 *.log
+*.log.gz
+
+# Named Gradle output directories used for isolated verification runs.
+wok_infantry/build-*/
+wok_infantry/javac.*.args
+
+# Design-review exports are local working material; production assets live under src/main/resources.
+art/helmet_icon_previews/
+wok_infantry/art/
+wok_infantry/dev/tactical_marker_previews/
+wok_infantry_armor/art/
+
+# Local migration archives can be very large and must never be committed.
+migration-packages/
+
+# Local third-party compatibility fixtures; never redistribute dependency JARs from this repo.
+wok_infantry/dev/compat/*.jar
 
 # Files from Forge MDK
 forge*changelog.txt

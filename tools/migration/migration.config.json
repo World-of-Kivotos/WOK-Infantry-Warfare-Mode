@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "workspaceName": "Wok步战附属-创伤治疗",
+  "productLine": "WOK步战",
+  "testInstancePath": "E:\\MC针剂\\versions\\1.20.1-Forge_47.4.22",
+  "forbiddenMainProductPath": "D:\\WOK测试\\versions\\1.20.1-Forge_47.4.20",
+  "externalSourcePath": "F:\\QQhuancun",
+  "legacyArmorPath": "D:\\Wok\\standalone\\wok-infantry-armor",
+  "wokMainWorkspacePath": "D:\\Wok",
+  "wokMainTestEnvironmentPath": "D:\\WOK测试",
+  "notes": [
+    "WOK 与 WOK步战不得混称或混装。",
+    "wok_infantry_armor/ 是独立护甲的 Git 权威源码。",
+    "legacyArmorPath 只是迁移前副本，默认不打包。"
+  ]
+}
