@@ -1,5 +1,6 @@
 package com.wok.trauma.item;
 
+import com.wok.trauma.event.TraumaEvents;
 import com.wok.trauma.registry.ModEffects;
 import com.wok.trauma.registry.ModSounds;
 import net.minecraft.ChatFormatting;
@@ -22,22 +23,31 @@ import java.util.List;
 import java.util.function.Supplier;
 
 public final class InjectorItem extends Item {
-    private static final int USE_DURATION_TICKS = 10;
-
+    private final int useDurationTicks;
     private final int analgesiaDurationTicks;
     private final int regenerationDurationTicks;
     private final int regenerationIntervalTicks;
+    private final float regenerationAmount;
+    private final int delayedTremorDelayTicks;
+    private final int delayedTremorDurationTicks;
     @Nullable
     private final Supplier<MobEffect> regenerationEffect;
 
-    public InjectorItem(Properties properties, int analgesiaDurationTicks,
-                        int regenerationDurationTicks, int regenerationIntervalTicks,
-                        @Nullable Supplier<MobEffect> regenerationEffect) {
+    public InjectorItem(Properties properties, int useDurationTicks,
+                         int analgesiaDurationTicks,
+                         int regenerationDurationTicks, int regenerationIntervalTicks,
+                         float regenerationAmount,
+                         @Nullable Supplier<MobEffect> regenerationEffect,
+                         int delayedTremorDelayTicks, int delayedTremorDurationTicks) {
         super(properties);
+        this.useDurationTicks = useDurationTicks;
         this.analgesiaDurationTicks = analgesiaDurationTicks;
         this.regenerationDurationTicks = regenerationDurationTicks;
         this.regenerationIntervalTicks = regenerationIntervalTicks;
+        this.regenerationAmount = regenerationAmount;
         this.regenerationEffect = regenerationEffect;
+        this.delayedTremorDelayTicks = delayedTremorDelayTicks;
+        this.delayedTremorDurationTicks = delayedTremorDurationTicks;
     }
 
     @Override
@@ -66,6 +76,10 @@ public final class InjectorItem extends Item {
                         regenerationEffect.get(), regenerationDurationTicks,
                         0, false, showRegeneration, showRegeneration));
             }
+            if (delayedTremorDelayTicks > 0 && delayedTremorDurationTicks > 0) {
+                TraumaEvents.schedulePropitalAftereffect(
+                        entity, delayedTremorDelayTicks, delayedTremorDurationTicks);
+            }
 
             if (!(entity instanceof Player player) || !player.getAbilities().instabuild) {
                 stack.shrink(1);
@@ -76,7 +90,7 @@ public final class InjectorItem extends Item {
 
     @Override
     public int getUseDuration(ItemStack stack) {
-        return USE_DURATION_TICKS;
+        return useDurationTicks;
     }
 
     @Override
@@ -89,7 +103,7 @@ public final class InjectorItem extends Item {
                                 List<Component> tooltip, TooltipFlag flag) {
         tooltip.add(Component.translatable(
                         "tooltip.wok_trauma.injector_use_time",
-                        displaySeconds(USE_DURATION_TICKS))
+                        displaySeconds(useDurationTicks))
                 .withStyle(ChatFormatting.GRAY));
         if (analgesiaDurationTicks > 0) {
             tooltip.add(Component.translatable(
@@ -104,11 +118,21 @@ public final class InjectorItem extends Item {
             tooltip.add(Component.translatable(
                             key,
                             displaySeconds(regenerationDurationTicks),
-                            displaySeconds(regenerationIntervalTicks))
+                            displaySeconds(regenerationIntervalTicks),
+                            displayAmount(regenerationAmount))
                     .withStyle(ChatFormatting.GREEN));
-            tooltip.add(Component.translatable(
-                            "tooltip.wok_trauma.regenerates_all_body_parts")
+            String bodyHealthTooltip = regenerationEffect == ModEffects.REGENERATION
+                    ? "tooltip.wok_trauma.regenerates_all_body_parts"
+                    : "tooltip.wok_trauma.uses_shared_body_part_healing";
+            tooltip.add(Component.translatable(bodyHealthTooltip)
                     .withStyle(ChatFormatting.DARK_GREEN));
+        }
+        if (delayedTremorDelayTicks > 0 && delayedTremorDurationTicks > 0) {
+            tooltip.add(Component.translatable(
+                            "tooltip.wok_trauma.delayed_tremor",
+                            displaySeconds(delayedTremorDelayTicks),
+                            displaySeconds(delayedTremorDurationTicks))
+                    .withStyle(ChatFormatting.DARK_PURPLE));
         }
         tooltip.add(Component.translatable("tooltip.wok_trauma.removes_concussion")
                 .withStyle(ChatFormatting.GOLD));
@@ -121,5 +145,13 @@ public final class InjectorItem extends Item {
             return integerSeconds;
         }
         return seconds;
+    }
+
+    private static Number displayAmount(float amount) {
+        int integerAmount = (int) amount;
+        if (amount == integerAmount) {
+            return integerAmount;
+        }
+        return amount;
     }
 }

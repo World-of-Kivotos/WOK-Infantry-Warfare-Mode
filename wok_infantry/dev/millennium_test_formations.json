@@ -1,0 +1,101 @@
+{
+  "version": 2,
+  "factions": [
+    {
+      "id": "academy",
+      "displayName": "学院军",
+      "description": "学院军战场阵营",
+      "battleSide": "blue",
+      "enabled": true,
+      "maxPlayers": 40,
+      "formations": [
+        {
+          "id": "default",
+          "displayName": "常规编制",
+          "description": "默认步兵常规编制",
+          "category": "infantry",
+          "enabled": true,
+          "capacity": 40,
+          "classes": [
+            { "classId": "assault", "squadLimit": 8, "allowedEntries": {} },
+            { "classId": "support", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "engineer", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "recon", "squadLimit": 1, "allowedEntries": {} }
+          ],
+          "squads": [
+            { "callsign": "alpha", "displayName": "Alpha", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "bravo", "displayName": "Bravo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "charlie", "displayName": "Charlie", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "delta", "displayName": "Delta", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "echo", "displayName": "Echo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } }
+          ],
+          "vehicles": []
+        },
+        {
+          "id": "millennium_seminar_mobile",
+          "displayName": "千禧年研讨会机动部队",
+          "description": "学院军所属的千禧年研讨会快速机动编制。",
+          "icon": "wok_infantry:textures/gui/formations/millennium_seminar_mobile.png",
+          "category": "mechanized",
+          "enabled": true,
+          "capacity": 40,
+          "classes": [
+            { "classId": "assault", "squadLimit": 8, "allowedEntries": {} },
+            { "classId": "support", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "engineer", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "recon", "squadLimit": 1, "allowedEntries": {} }
+          ],
+          "squads": [
+            { "callsign": "alpha", "displayName": "Alpha", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "bravo", "displayName": "Bravo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "charlie", "displayName": "Charlie", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "delta", "displayName": "Delta", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "echo", "displayName": "Echo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } }
+          ],
+          "vehicles": [
+            { "id": "m1296_dragoon_1", "displayName": "M1296 龙骑兵", "entityId": "fcp:stryker_dragoon", "offsetX": -10.0, "offsetY": 0.0, "offsetZ": 6.0, "yaw": 0.0, "replenishmentCooldownSeconds": -1 },
+            { "id": "m1296_dragoon_2", "displayName": "M1296 龙骑兵", "entityId": "fcp:stryker_dragoon", "offsetX": -5.0, "offsetY": 0.0, "offsetZ": 6.0, "yaw": 0.0, "replenishmentCooldownSeconds": -1 },
+            { "id": "m1296_dragoon_3", "displayName": "M1296 龙骑兵", "entityId": "fcp:stryker_dragoon", "offsetX": 0.0, "offsetY": 0.0, "offsetZ": 6.0, "yaw": 0.0, "replenishmentCooldownSeconds": -1 },
+            { "id": "m1128_mgs_1", "displayName": "M1128 MGS", "entityId": "fcp:stryker_mgs", "offsetX": 5.0, "offsetY": 0.0, "offsetZ": 6.0, "yaw": 0.0, "replenishmentCooldownSeconds": -1 },
+            { "id": "m1128_mgs_2", "displayName": "M1128 MGS", "entityId": "fcp:stryker_mgs", "offsetX": 10.0, "offsetY": 0.0, "offsetZ": 6.0, "yaw": 0.0, "replenishmentCooldownSeconds": -1 },
+            { "id": "hmmwv_m2_1", "displayName": "悍马 M2", "entityId": "fcp:hmmwv_armored_m2", "offsetX": -4.0, "offsetY": 0.0, "offsetZ": 13.0, "yaw": 0.0, "replenishmentCooldownSeconds": 300 },
+            { "id": "hmmwv_m2_2", "displayName": "悍马 M2", "entityId": "fcp:hmmwv_armored_m2", "offsetX": 4.0, "offsetY": 0.0, "offsetZ": 13.0, "yaw": 0.0, "replenishmentCooldownSeconds": 300 },
+            { "id": "littlebird_armed", "displayName": "小鸟 机枪版", "entityId": "fcp:littlebird_armed", "offsetX": 0.0, "offsetY": 0.0, "offsetZ": 23.0, "yaw": 0.0, "replenishmentCooldownSeconds": 600 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caesar",
+      "displayName": "凯撒",
+      "description": "凯撒战场阵营",
+      "battleSide": "red",
+      "enabled": true,
+      "maxPlayers": 40,
+      "formations": [
+        {
+          "id": "default",
+          "displayName": "常规编制",
+          "description": "默认步兵常规编制",
+          "category": "infantry",
+          "enabled": true,
+          "capacity": 40,
+          "classes": [
+            { "classId": "assault", "squadLimit": 8, "allowedEntries": {} },
+            { "classId": "support", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "engineer", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "recon", "squadLimit": 1, "allowedEntries": {} }
+          ],
+          "squads": [
+            { "callsign": "alpha", "displayName": "Alpha", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "bravo", "displayName": "Bravo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "charlie", "displayName": "Charlie", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "delta", "displayName": "Delta", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "echo", "displayName": "Echo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } }
+          ],
+          "vehicles": []
+        }
+      ]
+    }
+  ]
+}

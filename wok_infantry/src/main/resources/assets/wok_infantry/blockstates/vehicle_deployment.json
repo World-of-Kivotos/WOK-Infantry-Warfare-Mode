@@ -1,0 +1,16 @@
+{
+  "variants": {
+    "facing=north,mode=unbound": { "model": "wok_infantry:block/vehicle_deployment_unbound", "y": 0, "uvlock": true },
+    "facing=east,mode=unbound": { "model": "wok_infantry:block/vehicle_deployment_unbound", "y": 90, "uvlock": true },
+    "facing=south,mode=unbound": { "model": "wok_infantry:block/vehicle_deployment_unbound", "y": 180, "uvlock": true },
+    "facing=west,mode=unbound": { "model": "wok_infantry:block/vehicle_deployment_unbound", "y": 270, "uvlock": true },
+    "facing=north,mode=blue": { "model": "wok_infantry:block/vehicle_deployment_blue", "y": 0, "uvlock": true },
+    "facing=east,mode=blue": { "model": "wok_infantry:block/vehicle_deployment_blue", "y": 90, "uvlock": true },
+    "facing=south,mode=blue": { "model": "wok_infantry:block/vehicle_deployment_blue", "y": 180, "uvlock": true },
+    "facing=west,mode=blue": { "model": "wok_infantry:block/vehicle_deployment_blue", "y": 270, "uvlock": true },
+    "facing=north,mode=red": { "model": "wok_infantry:block/vehicle_deployment_red", "y": 0, "uvlock": true },
+    "facing=east,mode=red": { "model": "wok_infantry:block/vehicle_deployment_red", "y": 90, "uvlock": true },
+    "facing=south,mode=red": { "model": "wok_infantry:block/vehicle_deployment_red", "y": 180, "uvlock": true },
+    "facing=west,mode=red": { "model": "wok_infantry:block/vehicle_deployment_red", "y": 270, "uvlock": true }
+  }
+}

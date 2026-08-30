@@ -13,6 +13,7 @@ public final class LoadoutCommands {
         dispatcher.register(Commands.literal("loadout")
                 .executes(context -> openPlayer(context.getSource().getPlayerOrException()))
                 .then(Commands.literal("apply")
+                        .requires(source -> source.hasPermission(LoadoutService.ADMIN_PERMISSION_LEVEL))
                         .executes(context -> apply(context.getSource().getPlayerOrException()))));
 
         dispatcher.register(Commands.literal("loadoutadmin")

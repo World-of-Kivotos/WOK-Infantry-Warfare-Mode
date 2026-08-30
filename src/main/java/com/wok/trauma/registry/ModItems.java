@@ -49,15 +49,18 @@ public final class ModItems {
     public static final RegistryObject<Item> PROPITAL = ITEMS.register(
             "propital",
             () -> new InjectorItem(new Item.Properties().stacksTo(16),
-                    240 * 20, 180 * 20, 3 * 20, ModEffects.PROPITAL_REGENERATION));
+                    2 * 20, 240 * 20, 300 * 20, 20, 0.1F,
+                    ModEffects.PROPITAL_REGENERATION,
+                    270 * 20, 30 * 20));
     public static final RegistryObject<Item> ETG_CHANGE = ITEMS.register(
             "etg_change",
             () -> new InjectorItem(new Item.Properties().stacksTo(16),
-                    0, 60 * 20, 20, ModEffects.REGENERATION));
+                    10, 0, 60 * 20, 20, 1.0F,
+                    ModEffects.REGENERATION, 0, 0));
     public static final RegistryObject<Item> MORPHINE = ITEMS.register(
             "morphine",
             () -> new InjectorItem(new Item.Properties().stacksTo(16),
-                    360 * 20, 0, 0, null));
+                    10, 360 * 20, 0, 0, 0.0F, null, 0, 0));
 
     public static void register(IEventBus bus) {
         ITEMS.register(bus);

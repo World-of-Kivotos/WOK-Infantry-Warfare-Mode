@@ -1,0 +1,18 @@
+{
+  "type": "wok_infantry:holding",
+  "generator": {
+    "type": "minecraft:flat",
+    "settings": {
+      "biome": "minecraft:the_void",
+      "features": false,
+      "lakes": false,
+      "layers": [
+        {
+          "height": 1,
+          "block": "minecraft:barrier"
+        }
+      ],
+      "structure_overrides": []
+    }
+  }
+}

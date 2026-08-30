@@ -9,11 +9,30 @@ public record PlateArmorStats(double ballisticProtection,
                               double pressureCapacity,
                               double movementModifier) {
 
+    public PlateArmorStats withProtectionEfficiency(double efficiency) {
+        if (!Double.isFinite(efficiency) || efficiency < 0.0D || efficiency > 1.0D) {
+            throw new IllegalArgumentException("protection efficiency must be finite and in [0,1]: "
+                    + efficiency);
+        }
+        return new PlateArmorStats(
+                ballisticProtection * efficiency,
+                armorPiercingBuffer * efficiency,
+                generalProtection * efficiency,
+                pressureCapacity * efficiency,
+                movementModifier);
+    }
+
     public static PlateArmorStats resolve(PlateArmorVariant variant) {
+        return resolve(variant.tier(), variant.weight(), variant.material());
+    }
+
+    public static PlateArmorStats resolve(ProtectiveArmorItem armor) {
+        return resolve(armor.protectionTier(), armor.protectionWeight(), armor.constructionMaterial());
+    }
+
+    private static PlateArmorStats resolve(PlateArmorTier tier, PlateArmorWeight weight,
+                                           PlateArmorConstructionMaterial material) {
         PlateArmorConfig config = ArmorerConfig.PLATE_ARMOR;
-        PlateArmorTier tier = variant.tier();
-        PlateArmorWeight weight = variant.weight();
-        PlateArmorConstructionMaterial material = variant.material();
         return new PlateArmorStats(
                 adjustProtection(config.ballisticProtection(tier, weight),
                         config.ballisticLeakMultiplier(material)),

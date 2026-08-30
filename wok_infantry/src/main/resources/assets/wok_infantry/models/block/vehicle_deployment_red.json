@@ -1,0 +1,7 @@
+{
+  "parent": "wok_infantry:block/vehicle_deployment_base",
+  "textures": {
+    "base": "minecraft:block/deepslate_tiles",
+    "arrow": "minecraft:block/red_concrete"
+  }
+}

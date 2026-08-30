@@ -5,6 +5,7 @@ import com.wok.infantry.client.screen.PlayerLoadoutScreen;
 import com.wok.infantry.loadout.LoadoutSnapshot;
 import com.wok.infantry.network.clientbound.LoadoutSnapshotPacket;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 
 public final class ClientPacketHandler {
     private ClientPacketHandler() {
@@ -18,7 +19,12 @@ public final class ClientPacketHandler {
         ClientLoadoutState.update(snapshot);
         Minecraft minecraft = Minecraft.getInstance();
         switch (target) {
-            case PLAYER -> minecraft.setScreen(new PlayerLoadoutScreen(snapshot));
+            case PLAYER -> {
+                Screen current = minecraft.screen;
+                Screen previous = current instanceof PlayerLoadoutScreen loadoutScreen
+                        ? loadoutScreen.returnScreen() : current;
+                minecraft.setScreen(new PlayerLoadoutScreen(snapshot, previous));
+            }
             case ADMIN -> {
                 if (snapshot.administrator()) {
                     minecraft.setScreen(new AdminLoadoutScreen(snapshot));

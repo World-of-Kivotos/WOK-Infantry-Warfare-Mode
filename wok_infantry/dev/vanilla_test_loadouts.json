@@ -1,0 +1,109 @@
+{
+  "version": 2,
+  "classes": [
+    {
+      "id": "assault",
+      "displayName": "突击兵",
+      "enabled": true,
+      "squadLimit": 8,
+      "slots": {
+        "primary": [
+          { "id": "test_iron_sword", "displayName": "测试铁剑", "itemId": "minecraft:iron_sword", "count": 1, "snbt": "" }
+        ],
+        "secondary": [
+          { "id": "test_bow", "displayName": "测试弓", "itemId": "minecraft:bow", "count": 1, "snbt": "" }
+        ],
+        "melee": [
+          { "id": "test_iron_axe", "displayName": "测试铁斧", "itemId": "minecraft:iron_axe", "count": 1, "snbt": "" }
+        ],
+        "gadget_one": [
+          { "id": "test_shield", "displayName": "测试盾牌", "itemId": "minecraft:shield", "count": 1, "snbt": "" }
+        ],
+        "gadget_two": [
+          { "id": "test_arrows", "displayName": "测试箭矢", "itemId": "minecraft:arrow", "count": 64, "snbt": "" }
+        ],
+        "throwable": [
+          { "id": "test_snowballs", "displayName": "测试投掷物", "itemId": "minecraft:snowball", "count": 16, "snbt": "" }
+        ]
+      }
+    },
+    {
+      "id": "support",
+      "displayName": "支援兵",
+      "enabled": true,
+      "squadLimit": 2,
+      "slots": {
+        "primary": [
+          { "id": "test_bow", "displayName": "测试弓", "itemId": "minecraft:bow", "count": 1, "snbt": "" }
+        ],
+        "secondary": [
+          { "id": "test_stone_sword", "displayName": "测试石剑", "itemId": "minecraft:stone_sword", "count": 1, "snbt": "" }
+        ],
+        "melee": [
+          { "id": "test_iron_axe", "displayName": "测试铁斧", "itemId": "minecraft:iron_axe", "count": 1, "snbt": "" }
+        ],
+        "gadget_one": [
+          { "id": "test_shield", "displayName": "测试盾牌", "itemId": "minecraft:shield", "count": 1, "snbt": "" }
+        ],
+        "gadget_two": [
+          { "id": "test_arrows", "displayName": "测试箭矢", "itemId": "minecraft:arrow", "count": 64, "snbt": "" }
+        ],
+        "throwable": [
+          { "id": "test_snowballs", "displayName": "测试投掷物", "itemId": "minecraft:snowball", "count": 16, "snbt": "" }
+        ]
+      }
+    },
+    {
+      "id": "engineer",
+      "displayName": "工程兵",
+      "enabled": true,
+      "squadLimit": 2,
+      "slots": {
+        "primary": [
+          { "id": "test_iron_pickaxe", "displayName": "测试铁镐", "itemId": "minecraft:iron_pickaxe", "count": 1, "snbt": "" }
+        ],
+        "secondary": [
+          { "id": "test_crossbow", "displayName": "测试弩", "itemId": "minecraft:crossbow", "count": 1, "snbt": "" }
+        ],
+        "melee": [
+          { "id": "test_iron_axe", "displayName": "测试铁斧", "itemId": "minecraft:iron_axe", "count": 1, "snbt": "" }
+        ],
+        "gadget_one": [
+          { "id": "test_flint", "displayName": "测试打火石", "itemId": "minecraft:flint_and_steel", "count": 1, "snbt": "" }
+        ],
+        "gadget_two": [
+          { "id": "test_arrows", "displayName": "测试箭矢", "itemId": "minecraft:arrow", "count": 64, "snbt": "" }
+        ],
+        "throwable": [
+          { "id": "test_snowballs", "displayName": "测试投掷物", "itemId": "minecraft:snowball", "count": 16, "snbt": "" }
+        ]
+      }
+    },
+    {
+      "id": "recon",
+      "displayName": "侦察兵",
+      "enabled": true,
+      "squadLimit": 1,
+      "slots": {
+        "primary": [
+          { "id": "test_bow", "displayName": "测试弓", "itemId": "minecraft:bow", "count": 1, "snbt": "" }
+        ],
+        "secondary": [
+          { "id": "test_stone_sword", "displayName": "测试石剑", "itemId": "minecraft:stone_sword", "count": 1, "snbt": "" }
+        ],
+        "melee": [
+          { "id": "test_iron_axe", "displayName": "测试铁斧", "itemId": "minecraft:iron_axe", "count": 1, "snbt": "" }
+        ],
+        "gadget_one": [
+          { "id": "test_spyglass", "displayName": "测试望远镜", "itemId": "minecraft:spyglass", "count": 1, "snbt": "" }
+        ],
+        "gadget_two": [
+          { "id": "test_arrows", "displayName": "测试箭矢", "itemId": "minecraft:arrow", "count": 64, "snbt": "" }
+        ],
+        "throwable": [
+          { "id": "test_snowballs", "displayName": "测试投掷物", "itemId": "minecraft:snowball", "count": 16, "snbt": "" }
+        ]
+      }
+    }
+  ]
+}

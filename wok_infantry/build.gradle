@@ -14,6 +14,63 @@ base {
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
+File defaultUiJourneyMapJar = project.file(
+        'run/compat-cache/journeymap-forge-1.20.1-6.0.2.jar')
+File uiJourneyMapJar = project.hasProperty('uiJourneyMapJar')
+        ? project.file(project.property('uiJourneyMapJar'))
+        : (defaultUiJourneyMapJar.isFile() ? defaultUiJourneyMapJar : null)
+if (uiJourneyMapJar != null && !uiJourneyMapJar.isFile()) {
+    throw new GradleException("UI JourneyMap JAR is missing: ${uiJourneyMapJar}")
+}
+
+String networkTestRunId = (project.findProperty('networkTestRunId')
+        ?: 'MISSING-networkTestRunId').toString().trim()
+String networkTestPort = (project.findProperty('networkTestPort') ?: '25566').toString().trim()
+int parsedNetworkTestPort
+try {
+    parsedNetworkTestPort = Integer.parseInt(networkTestPort)
+} catch (NumberFormatException ignored) {
+    throw new GradleException("networkTestPort must be an integer: ${networkTestPort}")
+}
+if (parsedNetworkTestPort < 1024 || parsedNetworkTestPort > 65535) {
+    throw new GradleException("networkTestPort must be between 1024 and 65535: ${networkTestPort}")
+}
+File networkTestResultsDir = layout.projectDirectory
+        .dir('run/network-test/results').asFile.canonicalFile
+File networkTestRoot = layout.projectDirectory.dir('run/network-test').asFile.canonicalFile
+// Windows JDK 17.0.19 prefers AF_UNIX for Selector wake-up pipes. The managed test host can
+// create that socket but rejects its connect operation, so point each client-only acceptance
+// harness at an absent socket directory and let the JDK's PipeImpl fall back to TCP loopback.
+File networkSelectorFallbackDir = layout.projectDirectory
+        .dir('run/network-test/.selector-tcp-fallback/not-created').asFile.canonicalFile
+File uiTestResultFile = layout.projectDirectory
+        .file('run/ui-test/ui-test-results/wok_ui_acceptance.txt').asFile.canonicalFile
+File uiSelectorFallbackDir = layout.projectDirectory
+        .dir('run/ui-test/.selector-tcp-fallback/not-created').asFile.canonicalFile
+if (!networkTestRoot.toPath().startsWith(layout.projectDirectory.asFile.canonicalFile.toPath())
+        || !networkTestResultsDir.toPath().startsWith(networkTestRoot.toPath())
+        || !networkSelectorFallbackDir.toPath().startsWith(networkTestRoot.toPath())) {
+    throw new GradleException(
+            "Network-test results path escapes the project fixture root: ${networkTestResultsDir}")
+}
+
+// A client-only visual acceptance harness. It is deliberately isolated from main/test so the
+// harness is available to runUiTestClient but can never enter the production JAR.
+sourceSets {
+    uiTest {
+        java.srcDir 'src/uiTest/java'
+        resources.srcDir 'src/uiTest/resources'
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
+    networkTest {
+        java.srcDir 'src/networkTest/java'
+        resources.srcDir 'src/networkTest/resources'
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
+}
+
 minecraft {
     mappings channel: mapping_channel, version: mapping_version
     copyIdeResources = true
@@ -31,21 +88,318 @@ minecraft {
 
         client {}
 
+        uiTestClient {
+            parent runs.client
+            workingDirectory project.file('run/ui-test')
+            singleInstance true
+            jvmArgs "-Djdk.net.unixdomain.tmpdir=${uiSelectorFallbackDir.absolutePath}"
+            args '--quickPlaySingleplayer', 'wok_ui_test', '--width', '960', '--height', '720'
+            property 'wok.ui.expectedTerrainProvider',
+                    (project.findProperty('uiExpectedTerrainProvider') ?: 'journeymap').toString()
+            property 'wok.ui.expectedJourneyMapLoaded',
+                    (project.findProperty('uiExpectedJourneyMapLoaded') ?: 'true').toString()
+            if (uiJourneyMapJar != null) {
+                // Production mods ship SRG refmaps. Userdev runs official names, so Mixin needs
+                // ForgeGradle's generated SRG-to-MCP table for third-party injections.
+                property 'mixin.env.remapRefMap', 'true'
+                property 'mixin.env.refMapRemappingFile', layout.buildDirectory
+                        .file('createSrgToMcp/output.srg').get().asFile.absolutePath
+            }
+            mods {
+                "${mod_id}" {
+                    // A child run's mods block replaces the inherited source association.
+                    // Keep production classes/resources in the same logical mod as the
+                    // client-only acceptance harness instead of exposing resources/main as a
+                    // second, classless mod file.
+                    source sourceSets.main
+                    source sourceSets.uiTest
+                }
+            }
+        }
+
+        networkTestHost {
+            parent runs.client
+            workingDirectory project.file('run/network-test/host')
+            singleInstance false
+            jvmArgs '-Xms256m', '-Xmx1536m',
+                    "-Djdk.net.unixdomain.tmpdir=${networkSelectorFallbackDir.absolutePath}"
+            // Forge's userdev launch omits the normal launcher auth tokens. Supplying only the
+            // distinct username lets the launch handler derive its matching offline UUID.
+            args '--username', 'WokNetHost',
+                    '--quickPlaySingleplayer', 'wok_network_test',
+                    '--width', '960', '--height', '540'
+            property 'wok.net.role', 'host'
+            property 'wok.net.port', networkTestPort
+            property 'wok.net.runId', networkTestRunId
+            property 'wok.net.resultsDir', networkTestResultsDir.absolutePath
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', layout.buildDirectory
+                    .file('createSrgToMcp/output.srg').get().asFile.absolutePath
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.networkTest
+                }
+            }
+        }
+
+        networkTestGuestA {
+            parent runs.client
+            workingDirectory project.file('run/network-test/guest-a')
+            singleInstance false
+            jvmArgs '-Xms256m', '-Xmx1536m',
+                    "-Djdk.net.unixdomain.tmpdir=${networkSelectorFallbackDir.absolutePath}"
+            args '--username', 'WokNetGuestA',
+                    '--quickPlayMultiplayer', "127.0.0.1:${networkTestPort}",
+                    '--width', '960', '--height', '540'
+            property 'wok.net.role', 'guest-a'
+            property 'wok.net.port', networkTestPort
+            property 'wok.net.runId', networkTestRunId
+            property 'wok.net.resultsDir', networkTestResultsDir.absolutePath
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', layout.buildDirectory
+                    .file('createSrgToMcp/output.srg').get().asFile.absolutePath
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.networkTest
+                }
+            }
+        }
+
+        networkTestGuestB {
+            parent runs.client
+            workingDirectory project.file('run/network-test/guest-b')
+            singleInstance false
+            jvmArgs '-Xms256m', '-Xmx1536m',
+                    "-Djdk.net.unixdomain.tmpdir=${networkSelectorFallbackDir.absolutePath}"
+            args '--username', 'WokNetGuestB',
+                    '--quickPlayMultiplayer', "127.0.0.1:${networkTestPort}",
+                    '--width', '960', '--height', '540'
+            property 'wok.net.role', 'guest-b'
+            property 'wok.net.port', networkTestPort
+            property 'wok.net.runId', networkTestRunId
+            property 'wok.net.resultsDir', networkTestResultsDir.absolutePath
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', layout.buildDirectory
+                    .file('createSrgToMcp/output.srg').get().asFile.absolutePath
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.networkTest
+                }
+            }
+        }
+
         server {
             args '--nogui'
+        }
+
+        // Server-object integration coverage for faction, squad, class and tactical-map rules.
+        // Forge's isolated GameTest target never edits or changes run/eula.txt.
+        gameTestServer {
+            property 'forge.enabledGameTestNamespaces', mod_id
         }
     }
 }
 
 repositories {
     mavenCentral()
+    maven {
+        name = 'JourneyMap API'
+        url = 'https://maven.blamejared.com'
+    }
+    if (uiJourneyMapJar != null) {
+        flatDir {
+            name = 'Acceptance-test JourneyMap compatibility fixture'
+            dirs uiJourneyMapJar.parentFile
+        }
+    }
 }
 
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    // Required client integration, compile-only so JourneyMap's API is never shaded into our JAR.
+    compileOnly 'info.journeymap:journeymap-api-forge:1.20.1-2.0.0'
+    // UI and network acceptance load one exact local JourneyMap 6 distribution. ForgeGradle
+    // remaps it for the userdev namespace; these uiTest/networkTest configurations are
+    // acceptance-test-only and never shaded.
+    if (uiJourneyMapJar != null) {
+        String fileStem = uiJourneyMapJar.name.substring(
+                0, uiJourneyMapJar.name.length() - '.jar'.length())
+        String journeyMapModule
+        String journeyMapVersion
+        if (fileStem.startsWith('journeymap-forge-')) {
+            journeyMapModule = 'journeymap-forge'
+            journeyMapVersion = fileStem.substring('journeymap-forge-'.length())
+        } else if (fileStem.startsWith('journeymap-')) {
+            journeyMapModule = 'journeymap'
+            journeyMapVersion = fileStem.substring('journeymap-'.length())
+        } else {
+            throw new GradleException(
+                    "Unsupported JourneyMap compatibility filename: ${uiJourneyMapJar.name}")
+        }
+        uiTestRuntimeOnly fg.deobf("ui.compat:${journeyMapModule}:${journeyMapVersion}")
+        // All three loopback roles are real Forge clients. Reuse the exact local JourneyMap 6
+        // fixture required by production metadata without copying anything into an external
+        // Minecraft installation or the production JAR.
+        networkTestRuntimeOnly fg.deobf(
+                "ui.compat:${journeyMapModule}:${journeyMapVersion}")
+    }
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    // Unit tests exercise the API-only JourneyMap UI gate. This remains test-scoped and is never
+    // copied into the production JAR; the real JourneyMap 6 client supplies the API at runtime.
+    testImplementation 'info.journeymap:journeymap-api-forge:1.20.1-2.0.0'
+    // StaminaTestLauncher is a compiled test utility, so the launcher API must be present on
+    // both the test compile and runtime classpaths. Runtime-only hid this during clean rebuilds.
+    testImplementation 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test', Test).configure {
+    useJUnitPlatform()
+}
+
+def prepareGameTestStructures = tasks.register('prepareGameTestStructures', Copy) {
+    description = 'Copies source-controlled Forge GameTest structures into the run directory.'
+    from layout.projectDirectory.dir('src/gametest/resources/gameteststructures')
+    into layout.projectDirectory.dir('run/gameteststructures')
+}
+
+def prepareUiTestWorld = tasks.register('prepareUiTestWorld', Sync) {
+    description = 'Rebuilds the isolated UI acceptance world from the clean GameTest seed.'
+    from layout.projectDirectory.dir('run/world')
+    into layout.projectDirectory.dir('run/ui-test/saves/wok_ui_test')
+    exclude 'session.lock'
+    doFirst {
+        File expected = layout.projectDirectory
+                .dir('run/ui-test/saves/wok_ui_test').asFile.canonicalFile
+        File actual = destinationDir.canonicalFile
+        if (actual != expected) {
+            throw new GradleException("Refusing to sync unexpected UI fixture path: ${actual}")
+        }
+        if (!layout.projectDirectory.file('run/world/level.dat').asFile.isFile()) {
+            throw new GradleException('UI fixture seed run/world/level.dat is missing')
+        }
+    }
+}
+
+def prepareUiTestLoadouts = tasks.register('prepareUiTestLoadouts', Copy) {
+    description = 'Installs the source-controlled six-slot vanilla loadout into the UI fixture.'
+    from layout.projectDirectory.file('dev/vanilla_test_loadouts.json')
+    into layout.projectDirectory.dir('run/ui-test/config/wok_infantry')
+    rename { 'loadouts.json' }
+}
+
+def prepareNetworkTestWorld = tasks.register('prepareNetworkTestWorld', Sync) {
+    description = 'Rebuilds the isolated loopback network-test host world from the clean seed.'
+    from layout.projectDirectory.dir('run/world')
+    into layout.projectDirectory.dir('run/network-test/host/saves/wok_network_test')
+    exclude 'session.lock'
+    doFirst {
+        File projectRoot = layout.projectDirectory.asFile.canonicalFile
+        File sourceRoot = layout.projectDirectory.dir('run/world').asFile.canonicalFile
+        File allowedDestinationRoot = layout.projectDirectory
+                .dir('run/network-test/host/saves').asFile.canonicalFile
+        File expectedDestination = layout.projectDirectory
+                .dir('run/network-test/host/saves/wok_network_test').asFile.canonicalFile
+        File actualDestination = destinationDir.canonicalFile
+        if (!sourceRoot.toPath().startsWith(projectRoot.toPath())) {
+            throw new GradleException("Refusing to read network fixture outside project: ${sourceRoot}")
+        }
+        if (!allowedDestinationRoot.toPath().startsWith(projectRoot.toPath())
+                || !actualDestination.toPath().startsWith(allowedDestinationRoot.toPath())
+                || actualDestination != expectedDestination) {
+            throw new GradleException(
+                    "Refusing to sync unexpected network fixture path: ${actualDestination}")
+        }
+        if (!new File(sourceRoot, 'level.dat').isFile()) {
+            throw new GradleException('Network fixture seed run/world/level.dat is missing')
+        }
+    }
+}
+
+def validateNetworkTestRun = tasks.register('validateNetworkTestRun') {
+    description = 'Rejects network acceptance launches without an explicit unique run ID.'
+    doLast {
+        if (!project.hasProperty('networkTestRunId') || networkTestRunId.isEmpty()) {
+            throw new GradleException(
+                    'Network acceptance runs require -PnetworkTestRunId=<unique-safe-id>')
+        }
+        if (!(networkTestRunId ==~ /[A-Za-z0-9][A-Za-z0-9._-]{0,63}/)) {
+            throw new GradleException(
+                    'networkTestRunId must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}')
+        }
+    }
+}
+
+prepareNetworkTestWorld.configure {
+    dependsOn validateNetworkTestRun
+}
+
+// ForgeGradle materializes the run task late, so configureEach must be lazy here.
+tasks.matching { it.name == 'runGameTestServer' }.configureEach {
+    dependsOn prepareGameTestStructures
+}
+
+tasks.matching { it.name == 'runUiTestClient' }.configureEach {
+    dependsOn prepareUiTestWorld, prepareUiTestLoadouts
+    doFirst {
+        if (uiJourneyMapJar == null || !uiJourneyMapJar.isFile()) {
+            throw new GradleException(
+                    'JourneyMap 6.0.2 is required for UI acceptance; provide '
+                            + '-PuiJourneyMapJar=<journeymap-forge-1.20.1-6.0.2.jar>')
+        }
+        File expectedResult = layout.projectDirectory
+                .file('run/ui-test/ui-test-results/wok_ui_acceptance.txt').asFile.canonicalFile
+        if (uiTestResultFile != expectedResult
+                || !uiTestResultFile.toPath().startsWith(
+                layout.projectDirectory.dir('run/ui-test').asFile.canonicalFile.toPath())) {
+            throw new GradleException("Refusing to manage unexpected UI result path: ${uiTestResultFile}")
+        }
+        if (uiTestResultFile.exists() && !uiTestResultFile.delete()) {
+            throw new GradleException("Could not remove stale UI acceptance result: ${uiTestResultFile}")
+        }
+    }
+    doLast {
+        if (!uiTestResultFile.isFile()) {
+            throw new GradleException('UI acceptance client exited without writing a result')
+        }
+        List<String> resultLines = uiTestResultFile.readLines('UTF-8')
+        String status = resultLines.find { it.startsWith('status=') }
+        if (status != 'status=PASS') {
+            String failure = resultLines.find { it.startsWith('failure=') }
+            throw new GradleException("UI acceptance failed: ${failure ?: status ?: 'missing status'}")
+        }
+    }
+}
+
+tasks.matching { it.name == 'runNetworkTestHost' }.configureEach {
+    dependsOn prepareNetworkTestWorld
+}
+
+tasks.matching {
+    it.name in ['runNetworkTestHost', 'runNetworkTestGuestA', 'runNetworkTestGuestB']
+}.configureEach {
+    dependsOn validateNetworkTestRun
+    doFirst {
+        if (uiJourneyMapJar == null || !uiJourneyMapJar.isFile()) {
+            throw new GradleException(
+                    'JourneyMap 6.0.2 is required for network acceptance; provide '
+                            + '-PuiJourneyMapJar=<journeymap-forge-1.20.1-6.0.2.jar>')
+        }
+        if (networkSelectorFallbackDir.exists()) {
+            throw new GradleException(
+                    'Network-test selector fallback target must remain absent: '
+                            + networkSelectorFallbackDir)
+        }
+    }
 }
 
 tasks.named('processResources', ProcessResources).configure {
+    // Gradle's platform-default filter encoding corrupts the Chinese product name on Windows.
+    filteringCharset = 'UTF-8'
     def replaceProperties = [
             minecraft_version      : minecraft_version,
             minecraft_version_range: minecraft_version_range,
@@ -74,7 +428,8 @@ tasks.named('jar', Jar).configure {
                 'Implementation-Title'    : project.name,
                 'Implementation-Version'  : project.jar.archiveVersion,
                 'Implementation-Vendor'   : mod_authors,
-                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+                'MixinConfigs'             : 'wok_infantry.mixins.json'
         ])
     }
     finalizedBy 'reobfJar'
