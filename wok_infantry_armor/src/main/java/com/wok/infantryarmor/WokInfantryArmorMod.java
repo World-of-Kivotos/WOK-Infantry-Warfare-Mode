@@ -2,6 +2,7 @@ package com.wok.infantryarmor;
 
 import com.wok.infantryarmor.armor.PlateArmorDamageHandler;
 import com.wok.infantryarmor.armor.PlateArmorEquipmentHandler;
+import com.wok.infantryarmor.armor.HelmetVariant;
 import com.wok.infantryarmor.shield.PlasmaShieldHandler;
 import com.wok.infantryarmor.shield.network.PlasmaShieldNetwork;
 import net.minecraftforge.common.MinecraftForge;
@@ -41,7 +42,8 @@ public final class WokInfantryArmorMod {
             com.wok.infantryarmor.armor.integration.PlateArmorTaczIntegrationBootstrap.assemble(forgeBus);
         }
 
-        LOGGER.info("Registered 54 plate armors, 18 plasma shields and 3 compatibility shield aliases");
+        LOGGER.info("Registered 54 plate armors, {} helmets, 18 plasma shields and 3 compatibility shield aliases",
+                HelmetVariant.values().length);
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {

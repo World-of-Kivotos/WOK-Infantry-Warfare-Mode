@@ -49,6 +49,11 @@ public final class PlateArmorConfig {
     private final ForgeConfigSpec.DoubleValue lightMovement;
     private final ForgeConfigSpec.DoubleValue mediumMovement;
     private final ForgeConfigSpec.DoubleValue heavyMovement;
+    private final ForgeConfigSpec.IntValue lightHelmetIntegrity;
+    private final ForgeConfigSpec.IntValue mediumHelmetIntegrity;
+    private final ForgeConfigSpec.IntValue heavyHelmetIntegrity;
+    private final ForgeConfigSpec.DoubleValue helmetBallisticWearScale;
+    private final ForgeConfigSpec.DoubleValue helmetArmorPiercingWearMultiplier;
     private final Map<PlateArmorConstructionMaterial, MaterialProfile> materialProfiles =
             new EnumMap<>(PlateArmorConstructionMaterial.class);
 
@@ -71,6 +76,22 @@ public final class PlateArmorConfig {
                 .defineInRange("medium", 0.0D, -0.95D, 10.0D);
         heavyMovement = builder.comment("Heavy plate movement modifier; -0.12 = -12%, MULTIPLY_TOTAL.")
                 .defineInRange("heavy", -0.12D, -0.95D, 10.0D);
+        builder.pop();
+
+        builder.push("helmetIntegrity");
+        builder.comment("Helmet integrity is consumed from the bullet's actual normal/AP damage segments.",
+                "TaCZ duplicate hurt segments are consolidated, so one bullet settles wear once.");
+        lightHelmetIntegrity = builder.comment("Structural integrity of light helmets.")
+                .defineInRange("light", 60, 1, 10000);
+        mediumHelmetIntegrity = builder.comment("Structural integrity of medium helmets.")
+                .defineInRange("medium", 80, 1, 10000);
+        heavyHelmetIntegrity = builder.comment("Structural integrity of heavy helmets.")
+                .defineInRange("heavy", 180, 1, 10000);
+        helmetBallisticWearScale = builder.comment("Global multiplier applied to bullet structural wear.")
+                .defineInRange("ballisticWearScale", 1.0D, 0.0D, 100.0D);
+        helmetArmorPiercingWearMultiplier = builder.comment(
+                        "Additional structural wear multiplier for the armor-piercing damage segment.")
+                .defineInRange("armorPiercingWearMultiplier", 2.0D, 0.0D, 100.0D);
         builder.pop();
 
         builder.push("materialProfiles");
@@ -129,6 +150,22 @@ public final class PlateArmorConfig {
 
     public int maxDurability(PlateArmorConstructionMaterial material) {
         return profile(material).durability().get();
+    }
+
+    public int helmetMaxDurability(PlateArmorWeight weight) {
+        return switch (weight) {
+            case LIGHT -> lightHelmetIntegrity.get();
+            case MEDIUM -> mediumHelmetIntegrity.get();
+            case HEAVY -> heavyHelmetIntegrity.get();
+        };
+    }
+
+    public double helmetBallisticWearScale() {
+        return helmetBallisticWearScale.get();
+    }
+
+    public double helmetArmorPiercingWearMultiplier() {
+        return helmetArmorPiercingWearMultiplier.get();
     }
 
     public double ballisticLeakMultiplier(PlateArmorConstructionMaterial material) {
