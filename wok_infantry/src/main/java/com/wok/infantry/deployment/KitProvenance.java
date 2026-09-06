@@ -20,6 +20,7 @@ public final class KitProvenance {
     private static final String ISSUE_TOKEN_TAG = "IssueToken";
     private static final String INVENTORY_SLOT_TAG = "InventorySlot";
     private static final String AMMO_RESERVE_LIMIT_TAG = "AmmoReserveLimit";
+    private static final String TRANSPORT_CARGO_TAG = "TransportCargo";
     private static final int MAX_NESTED_TAG_DEPTH = 16;
     private static final int MAX_NESTED_TAG_NODES = 4_096;
 
@@ -57,6 +58,17 @@ public final class KitProvenance {
         provenance.putInt(INVENTORY_SLOT_TAG, inventorySlot);
         writeAmmoReserveLimit(provenance, ammoReserveLimit);
         stack.getOrCreateTag().put(ROOT_TAG, provenance);
+    }
+
+    /**
+     * Marks runtime logistics cargo as belonging to this life without binding it to one slot.
+     * The player must be able to move the deployer into either hand before placing it, while all
+     * ordinary combat-kit stacks remain fixed to their issued slots.
+     */
+    public static void stampTransportCargo(ItemStack stack, UUID sessionId, UUID ownerId,
+                                           UUID issueToken) {
+        stamp(stack, sessionId, ownerId, issueToken, 0);
+        markTransportCargo(stack.getTag().getCompound(ROOT_TAG));
     }
 
     public static java.util.OptionalInt ammoReserveLimit(ItemStack stack) {
@@ -118,8 +130,18 @@ public final class KitProvenance {
             return false;
         }
         CompoundTag provenance = stack.getTag().getCompound(ROOT_TAG);
-        return provenance.contains(INVENTORY_SLOT_TAG, Tag.TAG_INT)
-                && provenance.getInt(INVENTORY_SLOT_TAG) == inventorySlot;
+        return inventorySlotMatches(provenance, inventorySlot);
+    }
+
+    static void markTransportCargo(CompoundTag provenance) {
+        Objects.requireNonNull(provenance, "provenance");
+        provenance.putBoolean(TRANSPORT_CARGO_TAG, true);
+    }
+
+    static boolean inventorySlotMatches(CompoundTag provenance, int inventorySlot) {
+        return provenance != null && (provenance.getBoolean(TRANSPORT_CARGO_TAG)
+                || provenance.contains(INVENTORY_SLOT_TAG, Tag.TAG_INT)
+                && provenance.getInt(INVENTORY_SLOT_TAG) == inventorySlot);
     }
 
     /** Detects provenance hidden inside vanilla NBT or a Forge capability-backed container. */

@@ -15,7 +15,7 @@ public final class AmmoSupplyClientPacketBridge {
         Minecraft minecraft = Minecraft.getInstance();
         boolean preferVehicleMode = minecraft.screen instanceof AmmoSupplyScreen screen
                 ? screen.vehicleModeSelected()
-                : view.target().kind() == AmmoSupplyView.TargetKind.LARGE_STATION
+                : view.target().isLarge()
                 && !view.vehicleAmmunition().isEmpty();
         minecraft.setScreen(new AmmoSupplyScreen(view, preferVehicleMode));
     }

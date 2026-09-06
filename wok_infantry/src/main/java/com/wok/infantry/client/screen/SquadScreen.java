@@ -467,9 +467,11 @@ public final class SquadScreen extends Screen {
             int y = layout.listTop() + localIndex * layout.rowPitch();
             boolean selected = point.id().equals(deployment.selectedPointId());
             MutableComponent label = selected ? Component.literal("✓ ") : Component.empty();
-            String pointKey = point.kind() == DeploymentPointKind.MAIN_BASE
-                    ? "screen.wok_infantry.deployment.main_base"
-                    : "screen.wok_infantry.deployment.field_beacon";
+            String pointKey = switch (point.kind()) {
+                case MAIN_BASE -> "screen.wok_infantry.deployment.main_base";
+                case FIELD_BEACON -> "screen.wok_infantry.deployment.field_beacon";
+                case RALLY -> "screen.wok_infantry.deployment.rally";
+            };
             label.append(Component.translatable(pointKey,
                     point.dimension(), point.position().getX(), point.position().getY(),
                     point.position().getZ()));

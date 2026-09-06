@@ -2,6 +2,8 @@ package com.wok.infantry.ammo;
 
 import com.wok.infantry.battle.BattleRules;
 import com.wok.infantry.block.entity.AmmoSupplyCrateBlockEntity;
+import com.wok.infantry.block.entity.LargeAmmoSupplyStationBlockEntity;
+import com.wok.infantry.block.entity.MediumAmmoSupplyCrateBlockEntity;
 import com.wok.infantry.config.InfantryServerConfig;
 import com.wok.infantry.deployment.DeploymentService;
 import com.wok.infantry.deployment.KitProvenance;
@@ -20,11 +22,12 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,9 +37,8 @@ public final class AmmoSupplyService {
             ResourceLocation.fromNamespaceAndPath("dragonrise_reforge", "ammo_supply_station");
     private static final String LARGE_REMAINING_POINTS_TAG =
             "wok_infantry_ammo_remaining_points";
-    private static final String LARGE_EXPLODED_TAG = "wok_infantry_ammo_exploded";
     private static final String NEXT_SUPPLY_TICK_TAG = "wok_infantry_ammo_supply_next_tick";
-    private static final int FIRST_SUPPLEMENT_SLOT = 6;
+    private static final int FIRST_SUPPLEMENT_SLOT = 9;
     private static final int LAST_MAIN_INVENTORY_SLOT = 35;
     private static final double MAX_USE_DISTANCE_SQUARED = 64.0D;
     private static final double VEHICLE_SUPPLY_RANGE = 24.0D;
@@ -68,6 +70,40 @@ public final class AmmoSupplyService {
                 InfantryServerConfig.SMALL_AMMO_SUPPLY_POINTS, crate.remainingPoints());
     }
 
+    public static void openMediumCrate(ServerPlayer player, BlockPos pos,
+                                       MediumAmmoSupplyCrateBlockEntity crate) {
+        if (player == null) {
+            return;
+        }
+        if (!TaczAmmoAdapter.available()) {
+            player.sendSystemMessage(Component.translatable(
+                    "message.wok_infantry.ammo_supply.tacz_unavailable"));
+            return;
+        }
+        if (!canOpen(player) || crate == null || crate.isRemoved()
+                || player.distanceToSqr(pos.getX() + 0.5D, pos.getY() + 0.5D,
+                pos.getZ() + 0.5D) > MAX_USE_DISTANCE_SQUARED) {
+            return;
+        }
+        sendView(player, AmmoSupplyView.Target.mediumCrate(pos),
+                InfantryServerConfig.MEDIUM_AMMO_SUPPLY_POINTS, crate.remainingPoints());
+    }
+
+    public static void openLargeBlock(ServerPlayer player, BlockPos pos,
+                                      LargeAmmoSupplyStationBlockEntity station) {
+        if (player == null) {
+            return;
+        }
+        if (!canOpen(player) || station == null || station.isRemoved()
+                || player.distanceToSqr(pos.getX() + 0.5D, pos.getY() + 0.5D,
+                pos.getZ() + 0.5D) > MAX_USE_DISTANCE_SQUARED) {
+            return;
+        }
+        sendView(player, AmmoSupplyView.Target.largeBlock(pos),
+                InfantryServerConfig.LARGE_AMMO_SUPPLY_POINTS,
+                station.remainingPoints());
+    }
+
     public static boolean isLargeStation(Entity entity) {
         return entity != null && LARGE_STATION_ENTITY.equals(
                 BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()));
@@ -95,26 +131,6 @@ public final class AmmoSupplyService {
         administrator.sendSystemMessage(Component.translatable(
                 "message.wok_infantry.ammo_supply.refilled",
                 InfantryServerConfig.LARGE_AMMO_SUPPLY_POINTS));
-    }
-
-    /** Marks first, then schedules one destructive server explosion to avoid recursive chaining. */
-    public static void explodeLargeStation(Entity station) {
-        if (!isLargeStation(station) || !(station.level() instanceof ServerLevel level)
-                || station.getPersistentData().getBoolean(LARGE_EXPLODED_TAG)) {
-            return;
-        }
-        station.getPersistentData().putBoolean(LARGE_EXPLODED_TAG, true);
-        station.getPersistentData().putInt(LARGE_REMAINING_POINTS_TAG, 0);
-        double explosionX = station.getX();
-        double explosionY = station.getY() + 0.8D;
-        double explosionZ = station.getZ();
-        level.getServer().execute(() -> {
-            level.explode(station, explosionX, explosionY, explosionZ,
-                    10.0F, true, Level.ExplosionInteraction.TNT);
-            if (!station.isRemoved()) {
-                station.discard();
-            }
-        });
     }
 
     public static void selectGun(ServerPlayer player, AmmoSupplyView.Target target,
@@ -206,27 +222,65 @@ public final class AmmoSupplyService {
         sendView(player, target, supply.capacity(), supply.remaining());
     }
 
+    /**
+     * Installs the no-cost reserve ammunition for a player's first deployment of a battle
+     * session. The deployment state machine owns the once-per-session gate; this method derives
+     * the equipped guns' per-item limits and creates only server-stamped physical TaCZ ammunition.
+     */
+    public static InitialReserveGrant grantInitialReserve(ServerPlayer player, UUID sessionId,
+                                                           UUID issueToken) {
+        if (player == null || sessionId == null || issueToken == null
+                || !TaczAmmoAdapter.available()) {
+            return InitialReserveGrant.none();
+        }
+        LinkedHashMap<ResourceLocation, Integer> reserveLimits = new LinkedHashMap<>();
+        for (int slot = 0; slot <= LAST_MAIN_INVENTORY_SLOT; slot++) {
+            addInitialReserveRequirement(player, slot, sessionId, issueToken, reserveLimits);
+        }
+        addInitialReserveRequirement(player, 40, sessionId, issueToken, reserveLimits);
+        if (reserveLimits.isEmpty()) {
+            return InitialReserveGrant.none();
+        }
+
+        Map<ResourceLocation, Integer> deficits = AmmoSupplyPlanner.deficitsByType(
+                reserveLimits, ammoId -> countAmmo(player, ammoId));
+        int requested = 0;
+        int added = 0;
+        for (Map.Entry<ResourceLocation, Integer> entry : deficits.entrySet()) {
+            int deficit = entry.getValue();
+            requested += deficit;
+            added += addAmmo(player, entry.getKey(), deficit, true, sessionId, issueToken);
+        }
+        player.getInventory().setChanged();
+        player.inventoryMenu.broadcastChanges();
+        return new InitialReserveGrant(reserveLimits.size(), requested, added);
+    }
+
     /** Performs one explicit, package-aligned vehicle ammunition transaction. */
-    public static void supplyVehicleAmmo(ServerPlayer player, int stationEntityId,
+    public static void supplyVehicleAmmo(ServerPlayer player,
+                                         AmmoSupplyView.Target stationTarget,
                                          int vehicleEntityId, String weaponKey,
                                          int consumerIndex, int requestedRounds) {
-        if (!canOpen(player) || weaponKey == null || weaponKey.isBlank()
+        if (!canOpen(player) || stationTarget == null || !stationTarget.isLarge()
+                || weaponKey == null || weaponKey.isBlank()
                 || weaponKey.length() > 128 || consumerIndex < 0 || consumerIndex > 255
                 || requestedRounds < 1 || requestedRounds > MAX_VEHICLE_REQUEST_ROUNDS) {
             return;
         }
-        AmmoSupplyView.Target stationTarget = AmmoSupplyView.Target.largeStation(stationEntityId);
         ResolvedSupply supply = resolveTarget(player, stationTarget);
-        Entity station = player.level().getEntity(stationEntityId);
+        StationOrigin origin = stationOrigin(player, stationTarget);
         Entity vehicle = player.level().getEntity(vehicleEntityId);
-        if (supply == null || !isLargeStation(station)
-                || !SbwVehicleAmmoAdapter.isVehicle(vehicle) || vehicle == station
-                || station.distanceToSqr(vehicle) > VEHICLE_SUPPLY_RANGE_SQUARED) {
+        if (supply == null || origin == null
+                || !SbwVehicleAmmoAdapter.isVehicle(vehicle)
+                || vehicle == origin.excludedEntity()
+                || origin.distanceToSqr(vehicle) > VEHICLE_SUPPLY_RANGE_SQUARED) {
             player.sendSystemMessage(Component.translatable(
                     "message.wok_infantry.ammo_supply.vehicle_invalid"));
             return;
         }
-        disableNativeLargeStation(station);
+        if (origin.excludedEntity() != null) {
+            disableNativeLargeStation(origin.excludedEntity());
+        }
         long now = player.server.overworld().getGameTime();
         long next = player.getPersistentData().getLong(NEXT_SUPPLY_TICK_TAG);
         if (next > now) {
@@ -273,7 +327,7 @@ public final class AmmoSupplyService {
                 "message.wok_infantry.ammo_supply.vehicle_success",
                 vehicle.getDisplayName(), ammunition.ammunitionName(), suppliedRounds,
                 spent, supply.remaining()));
-        player.level().playSound(null, station.blockPosition(), SoundEvents.DISPENSER_DISPENSE,
+        player.level().playSound(null, origin.soundPos(), SoundEvents.DISPENSER_DISPENSE,
                 SoundSource.BLOCKS, 1.0F, 0.72F);
         sendView(player, stationTarget, supply.capacity(), supply.remaining());
     }
@@ -318,8 +372,7 @@ public final class AmmoSupplyService {
             addGunOption(player, guns, slot, remaining);
         }
         addGunOption(player, guns, 40, remaining);
-        List<AmmoSupplyView.VehicleAmmoOption> vehicleAmmunition = target.kind()
-                == AmmoSupplyView.TargetKind.LARGE_STATION
+        List<AmmoSupplyView.VehicleAmmoOption> vehicleAmmunition = target.isLarge()
                 ? nearbyVehicleAmmunition(player, target, remaining) : List.of();
         BattleNetwork.sendToPlayer(player, new OpenAmmoSupplyPacket(new AmmoSupplyView(target,
                 capacity, remaining, guns,
@@ -328,18 +381,27 @@ public final class AmmoSupplyService {
 
     private static List<AmmoSupplyView.VehicleAmmoOption> nearbyVehicleAmmunition(
             ServerPlayer player, AmmoSupplyView.Target target, int remainingPoints) {
-        Entity station = player.level().getEntity(target.entityId());
-        if (!isLargeStation(station)) {
+        StationOrigin origin = stationOrigin(player, target);
+        if (origin == null) {
             return List.of();
         }
-        disableNativeLargeStation(station);
-        AABB area = station.getBoundingBox().inflate(VEHICLE_SUPPLY_RANGE);
-        List<Entity> vehicles = player.level().getEntities(station, area,
+        if (origin.excludedEntity() != null) {
+            disableNativeLargeStation(origin.excludedEntity());
+        }
+        AABB area = new AABB(origin.x() - VEHICLE_SUPPLY_RANGE,
+                origin.y() - VEHICLE_SUPPLY_RANGE,
+                origin.z() - VEHICLE_SUPPLY_RANGE,
+                origin.x() + VEHICLE_SUPPLY_RANGE,
+                origin.y() + VEHICLE_SUPPLY_RANGE,
+                origin.z() + VEHICLE_SUPPLY_RANGE);
+        Entity excluded = origin.excludedEntity() == null
+                ? player : origin.excludedEntity();
+        List<Entity> vehicles = player.level().getEntities(excluded, area,
                         entity -> SbwVehicleAmmoAdapter.isVehicle(entity)
-                                && station.distanceToSqr(entity)
+                                && origin.distanceToSqr(entity)
                                 <= VEHICLE_SUPPLY_RANGE_SQUARED)
                 .stream().sorted((left, right) -> Double.compare(
-                        station.distanceToSqr(left), station.distanceToSqr(right)))
+                        origin.distanceToSqr(left), origin.distanceToSqr(right)))
                 .limit(MAX_NEARBY_VEHICLES).toList();
         List<AmmoSupplyView.VehicleAmmoOption> options = new ArrayList<>();
         for (Entity vehicle : vehicles) {
@@ -388,6 +450,17 @@ public final class AmmoSupplyService {
                 ammoId.get().toString(), cost, current, reserveLimit, receivable));
     }
 
+    private static void addInitialReserveRequirement(ServerPlayer player, int slot,
+                                                     UUID sessionId, UUID issueToken,
+                                                     Map<ResourceLocation, Integer> limits) {
+        ItemStack gun = player.getInventory().getItem(slot);
+        if (!KitProvenance.isValid(gun, sessionId, player.getUUID(), issueToken)) {
+            return;
+        }
+        TaczAmmoAdapter.ammunitionForGun(gun).ifPresent(ammoId -> limits.merge(ammoId,
+                ammoReserveLimit(gun), Math::max));
+    }
+
     private static ResolvedSupply resolveTarget(ServerPlayer player,
                                                 AmmoSupplyView.Target target) {
         if (target.kind() == AmmoSupplyView.TargetKind.SMALL_CRATE) {
@@ -403,6 +476,32 @@ public final class AmmoSupplyService {
             return new ResolvedSupply(InfantryServerConfig.SMALL_AMMO_SUPPLY_POINTS,
                     crate::remainingPoints, crate::consumePoints);
         }
+        if (target.kind() == AmmoSupplyView.TargetKind.MEDIUM_CRATE) {
+            BlockPos pos = target.blockPos();
+            if (player.distanceToSqr(pos.getX() + 0.5D, pos.getY() + 0.5D,
+                    pos.getZ() + 0.5D) > MAX_USE_DISTANCE_SQUARED
+                    || !player.level().getBlockState(pos).is(
+                    InfantryBlocks.MEDIUM_AMMO_SUPPLY_CRATE.get())
+                    || !(player.level().getBlockEntity(pos)
+                    instanceof MediumAmmoSupplyCrateBlockEntity crate)) {
+                return null;
+            }
+            return new ResolvedSupply(InfantryServerConfig.MEDIUM_AMMO_SUPPLY_POINTS,
+                    crate::remainingPoints, crate::consumePoints);
+        }
+        if (target.kind() == AmmoSupplyView.TargetKind.LARGE_BLOCK) {
+            BlockPos pos = target.blockPos();
+            if (player.distanceToSqr(pos.getX() + 0.5D, pos.getY() + 0.5D,
+                    pos.getZ() + 0.5D) > MAX_USE_DISTANCE_SQUARED
+                    || !player.level().getBlockState(pos).is(
+                    InfantryBlocks.LARGE_AMMO_SUPPLY_STATION.get())
+                    || !(player.level().getBlockEntity(pos)
+                    instanceof LargeAmmoSupplyStationBlockEntity station)) {
+                return null;
+            }
+            return new ResolvedSupply(InfantryServerConfig.LARGE_AMMO_SUPPLY_POINTS,
+                    station::remainingPoints, station::consumePoints);
+        }
         Entity entity = player.level().getEntity(target.entityId());
         if (!isLargeStation(entity) || player.distanceToSqr(entity) > MAX_USE_DISTANCE_SQUARED) {
             return null;
@@ -415,6 +514,28 @@ public final class AmmoSupplyService {
             entity.getPersistentData().putInt(LARGE_REMAINING_POINTS_TAG, current - consumed);
             return consumed;
         });
+    }
+
+    private static StationOrigin stationOrigin(ServerPlayer player,
+                                               AmmoSupplyView.Target target) {
+        if (target.kind() == AmmoSupplyView.TargetKind.LARGE_BLOCK) {
+            BlockPos pos = target.blockPos();
+            if (!player.level().getBlockState(pos).is(
+                    InfantryBlocks.LARGE_AMMO_SUPPLY_STATION.get())
+                    || !(player.level().getBlockEntity(pos)
+                    instanceof LargeAmmoSupplyStationBlockEntity)) {
+                return null;
+            }
+            return new StationOrigin(pos.getX() + 0.5D, pos.getY() + 0.5D,
+                    pos.getZ() + 0.5D, pos, null);
+        }
+        if (target.kind() != AmmoSupplyView.TargetKind.LARGE_STATION) {
+            return null;
+        }
+        Entity station = player.level().getEntity(target.entityId());
+        return isLargeStation(station)
+                ? new StationOrigin(station.getX(), station.getY(), station.getZ(),
+                station.blockPosition(), station) : null;
     }
 
     private static int largeStationRemainingPoints(Entity entity) {
@@ -480,11 +601,36 @@ public final class AmmoSupplyService {
         return slot >= 0 && slot <= LAST_MAIN_INVENTORY_SLOT || slot == 40;
     }
 
+    public record InitialReserveGrant(int ammunitionTypes, int requestedRounds,
+                                      int addedRounds) {
+        public InitialReserveGrant {
+            ammunitionTypes = Math.max(0, ammunitionTypes);
+            requestedRounds = Math.max(0, requestedRounds);
+            addedRounds = Math.max(0, Math.min(requestedRounds, addedRounds));
+        }
+
+        public static InitialReserveGrant none() {
+            return new InitialReserveGrant(0, 0, 0);
+        }
+
+        public boolean complete() {
+            return addedRounds == requestedRounds;
+        }
+    }
+
     private interface PointGetter { int get(); }
     private interface PointConsumer { int consume(int amount); }
 
     private record ResolvedSupply(int capacity, PointGetter getter, PointConsumer consumer) {
         int remaining() { return getter.get(); }
         int consume(int amount) { return consumer.consume(amount); }
+    }
+
+    private record StationOrigin(double x, double y, double z, BlockPos soundPos,
+                                 Entity excludedEntity) {
+        double distanceToSqr(Entity entity) {
+            return entity == null ? Double.POSITIVE_INFINITY
+                    : entity.distanceToSqr(x, y, z);
+        }
     }
 }

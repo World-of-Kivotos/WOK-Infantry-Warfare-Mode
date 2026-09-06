@@ -17,6 +17,8 @@ class SuperbWarfareVehicleGateTest {
             ResourceLocation.fromNamespaceAndPath("superbwarfare", "bradley");
     private static final ResourceLocation FCP_DRAGOON =
             ResourceLocation.fromNamespaceAndPath("fcp", "stryker_dragoon");
+    private static final ResourceLocation DRAGONRISE_LEOPARD_2A4 =
+            ResourceLocation.fromNamespaceAndPath("dragonrise_reforge", "leopard2a4");
 
     @Test
     void unloadedModFailsBeforeTouchingRegistryResolver() {
@@ -35,7 +37,7 @@ class SuperbWarfareVehicleGateTest {
     }
 
     @Test
-    void nonSuperbWarfareNamespaceIsRejectedWithoutFallback() {
+    void unsupportedVehicleNamespaceIsRejectedWithoutFallback() {
         ResourceLocation pig = ResourceLocation.fromNamespaceAndPath("minecraft", "pig");
         AtomicInteger resolutions = new AtomicInteger();
 
@@ -59,6 +61,17 @@ class SuperbWarfareVehicleGateTest {
 
         assertTrue(result.result().success());
         assertEquals("type:" + FCP_DRAGOON, result.values().get(FCP_DRAGOON));
+    }
+
+    @Test
+    void dragonRiseVehicleNamespaceIsPartOfTheSupportedVehicleEcosystem() {
+        SuperbWarfareVehicleGate.Resolution<String> result =
+                SuperbWarfareVehicleGate.resolve(true, List.of(DRAGONRISE_LEOPARD_2A4),
+                        id -> "type:" + id);
+
+        assertTrue(result.result().success());
+        assertEquals("type:" + DRAGONRISE_LEOPARD_2A4,
+                result.values().get(DRAGONRISE_LEOPARD_2A4));
     }
 
     @Test

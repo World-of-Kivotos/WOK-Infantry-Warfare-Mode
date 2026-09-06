@@ -35,7 +35,7 @@ public final class AmmoSupplyScreen extends Screen {
     private Mode mode;
 
     public AmmoSupplyScreen(AmmoSupplyView view) {
-        this(view, view.target().kind() == AmmoSupplyView.TargetKind.LARGE_STATION
+        this(view, view.target().isLarge()
                 && !view.vehicleAmmunition().isEmpty());
     }
 
@@ -43,7 +43,7 @@ public final class AmmoSupplyScreen extends Screen {
         super(Component.translatable("screen.wok_infantry.ammo_supply"));
         this.view = view;
         this.mode = preferVehicleMode
-                && view.target().kind() == AmmoSupplyView.TargetKind.LARGE_STATION
+                && view.target().isLarge()
                 ? Mode.VEHICLE : Mode.INFANTRY;
     }
 
@@ -57,8 +57,7 @@ public final class AmmoSupplyScreen extends Screen {
         int margin = layout.rich() ? 16 : 8;
         panelLeft = margin;
         panelRight = width - margin;
-        boolean hasModeTabs = view.target().kind()
-                == AmmoSupplyView.TargetKind.LARGE_STATION;
+        boolean hasModeTabs = view.target().isLarge();
         listTop = layout.rich() ? hasModeTabs ? 117 : 84 : hasModeTabs ? 101 : 68;
         listBottom = Math.max(listTop + rowHeight(), layout.footer().top() - 7);
         rebuildRows();
@@ -80,7 +79,7 @@ public final class AmmoSupplyScreen extends Screen {
     }
 
     private void addModeTabs() {
-        if (view.target().kind() != AmmoSupplyView.TargetKind.LARGE_STATION) {
+        if (!view.target().isLarge()) {
             return;
         }
         int gap = 4;
@@ -152,7 +151,7 @@ public final class AmmoSupplyScreen extends Screen {
                         int requested = selectedRounds.getOrDefault(selectorKey,
                                 option.roundStep());
                         BattleNetwork.sendToServer(new SupplyVehicleAmmoPacket(
-                                view.target().entityId(), option.vehicleEntityId(),
+                                view.target(), option.vehicleEntityId(),
                                 option.weaponKey(), option.consumerIndex(), requested));
                     }).kind(option.maxRounds() > 0
                             ? BattleUiButton.Kind.SUCCESS : BattleUiButton.Kind.NORMAL)
@@ -183,10 +182,12 @@ public final class AmmoSupplyScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         TacticalBoardChrome.renderShell(graphics, width, height, layout);
-        Component station = Component.translatable(view.target().kind()
-                == AmmoSupplyView.TargetKind.SMALL_CRATE
-                ? "screen.wok_infantry.ammo_supply.small"
-                : "screen.wok_infantry.ammo_supply.large");
+        String stationKey = switch (view.target().kind()) {
+            case SMALL_CRATE -> "screen.wok_infantry.ammo_supply.small";
+            case MEDIUM_CRATE -> "screen.wok_infantry.ammo_supply.medium";
+            case LARGE_STATION, LARGE_BLOCK -> "screen.wok_infantry.ammo_supply.large";
+        };
+        Component station = Component.translatable(stationKey);
         TacticalBoardChrome.renderHeader(graphics, font, layout,
                 Component.translatable("screen.wok_infantry.ammo_supply.board_title"),
                 station, true);

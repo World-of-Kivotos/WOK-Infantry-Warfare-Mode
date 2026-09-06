@@ -35,7 +35,7 @@ public final class BodyHealthConfig {
         builder.push("conversion");
         DAMAGE_SCALE = builder
                 .comment("每 1 点 Minecraft 最终伤害转换为多少部位伤害。")
-                .defineInRange("bodyDamageScale", 10.0D, 0.01D, 1_000.0D);
+                .defineInRange("bodyDamageScale", 8.0D, 0.01D, 1_000.0D);
         HEAL_SCALE = builder
                 .comment("每 1 点 Minecraft 治疗量转换为多少部位治疗量。")
                 .defineInRange("bodyHealScale", 10.0D, 0.01D, 1_000.0D);

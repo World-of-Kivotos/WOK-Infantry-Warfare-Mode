@@ -40,4 +40,29 @@ class AmmoSupplyPlannerTest {
         assertThrows(IllegalArgumentException.class,
                 () -> AmmoSupplyPlanner.deficits(List.of("tacz:9mm"), ignored -> 0, 0));
     }
+
+    @Test
+    void independentPerTypeLimitsProduceIndependentInitialDeficits() {
+        Map<String, Integer> result = AmmoSupplyPlanner.deficitsByType(
+                Map.of("tacz:556x45", 180, "tacz:9mm", 54),
+                ammo -> ammo.endsWith("9mm") ? 17 : 30);
+
+        assertEquals(150, result.get("tacz:556x45"));
+        assertEquals(37, result.get("tacz:9mm"));
+    }
+
+    @Test
+    void perTypeDeficitDoesNotRemoveRoundsAboveTheConfiguredLimit() {
+        Map<String, Integer> result = AmmoSupplyPlanner.deficitsByType(
+                Map.of("tacz:556x45", 180), ignored -> 240);
+
+        assertEquals(0, result.get("tacz:556x45"));
+    }
+
+    @Test
+    void perTypeDeficitRejectsInvalidLimits() {
+        assertThrows(IllegalArgumentException.class,
+                () -> AmmoSupplyPlanner.deficitsByType(Map.of("tacz:9mm", 0),
+                        ignored -> 0));
+    }
 }

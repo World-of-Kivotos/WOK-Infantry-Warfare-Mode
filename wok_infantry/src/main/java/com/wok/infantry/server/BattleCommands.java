@@ -26,15 +26,18 @@ import com.wok.infantry.registry.InfantryBlocks;
 import com.wok.infantry.stamina.StaminaEvents;
 import com.wok.infantry.stamina.StaminaRules;
 import com.wok.infantry.stamina.StaminaState;
+import com.wok.infantry.support.SupportService;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.AngleArgument;
 import net.minecraft.commands.arguments.DimensionArgument;
 import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.Block;
@@ -192,7 +195,7 @@ public final class BattleCommands {
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> formationAdminCommand() {
-        return Commands.literal("formation")
+        return CatalogTransferCommands.attach(Commands.literal("formation"))
                 .then(Commands.literal("reload")
                         .executes(context -> reloadFormations(context.getSource())))
                 .then(Commands.literal("assign")
@@ -246,6 +249,36 @@ public final class BattleCommands {
                         .then(Commands.literal("activate")
                                 .executes(context -> activateFormationVehicles(
                                         context.getSource()))));
+    }
+
+    static LiteralArgumentBuilder<CommandSourceStack> supportAdminCommand() {
+        return Commands.literal("support")
+                .then(Commands.literal("cooldown")
+                        .then(Commands.literal("clear")
+                                .then(Commands.argument("faction", StringArgumentType.word())
+                                        .suggests((context, builder) -> {
+                                            for (Faction faction : Faction.values()) {
+                                                builder.suggest(faction.id());
+                                            }
+                                            return builder.buildFuture();
+                                        })
+                                        .then(Commands.argument("supportId",
+                                                        ResourceLocationArgument.id())
+                                                .suggests((context, builder) -> {
+                                                    SupportService.get(context.getSource()
+                                                                    .getServer())
+                                                            .ifPresent(service -> service
+                                                                    .registeredSupportIds()
+                                                                    .forEach(id -> builder.suggest(
+                                                                            id.toString())));
+                                                    return builder.buildFuture();
+                                                })
+                                                .executes(context -> clearSupportCooldown(
+                                                        context.getSource(),
+                                                        StringArgumentType.getString(context,
+                                                                "faction"),
+                                                        ResourceLocationArgument.getId(context,
+                                                                "supportId")))))));
     }
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
@@ -377,6 +410,7 @@ public final class BattleCommands {
                 .then(Commands.literal("admin")
                         .requires(source -> source.hasPermission(BattleRules.ADMIN_PERMISSION_LEVEL))
                         .then(formationAdminCommand())
+                        .then(supportAdminCommand())
                         .then(vehicleTestCommand())
                         .then(heldWeaponCommand())
                         .then(staminaAdminCommand())
@@ -400,6 +434,27 @@ public final class BattleCommands {
                                                 BattleService::removeFromBattle))))
                         .then(Commands.literal("reset")
                                 .executes(context -> resetBattle(context.getSource())))));
+    }
+
+    private static int clearSupportCooldown(CommandSourceStack source, String factionId,
+                                            ResourceLocation supportId) {
+        Faction faction = Faction.byId(factionId).orElse(null);
+        if (faction == null) {
+            source.sendFailure(Component.literal("无效阵营: " + factionId));
+            return 0;
+        }
+        SupportService service = SupportService.get(source.getServer()).orElse(null);
+        if (service == null) {
+            source.sendFailure(Component.literal("支援服务尚未启动"));
+            return 0;
+        }
+        boolean changed = service.clearCooldown(faction, supportId);
+        String message = changed
+                ? "已清除 " + faction.id() + " 阵营的支援冷却: " + supportId
+                : faction.id() + " 阵营的该支援已经可以使用: " + supportId;
+        source.sendSuccess(() -> Component.literal(message
+                + "（正在执行的支援任务不会被中断）"), true);
+        return 1;
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> vehicleTestCommand() {

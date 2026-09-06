@@ -5,6 +5,7 @@ import com.wok.infantry.deployment.DeploymentService;
 import com.wok.infantry.server.FormationService;
 import com.wok.infantry.support.SupportService;
 import com.wok.infantry.support.SupportView;
+import com.wok.infantry.support.adapter.SupportIntelContact;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
@@ -30,6 +31,7 @@ import java.util.UUID;
 import java.util.WeakHashMap;
 import java.util.function.BiPredicate;
 import java.util.regex.Pattern;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Server-authoritative battle facade used by packets, commands and the loadout service.
@@ -45,6 +47,8 @@ public final class BattleService {
     private final BattleSavedData data;
     private final FormationSquadCapacityRules squadCapacityRules;
     private final Map<UUID, Deque<Long>> markerRateWindows = new LinkedHashMap<>();
+    private final Map<SupportIntelKey, List<TacticalMarker>> supportIntelMarkers =
+            new LinkedHashMap<>();
     private final Map<UUID, Long> observedOfflineSince = new LinkedHashMap<>();
     private final Map<SquadKickKey, Long> squadKickCooldowns = new LinkedHashMap<>();
     private long lastHeartbeatMillis = -1L;
@@ -162,6 +166,7 @@ public final class BattleService {
         long now = Math.max(0L, nowMillis);
         squadKickCooldowns.entrySet().removeIf(entry -> entry.getValue() <= now);
         data.removeExpiredMarkers(now);
+        removeExpiredSupportIntel(now);
         heartbeatOnlinePlayers(now);
         int released = 0;
         for (BattleSavedData.StoredPlayer player : data.players()) {
@@ -1097,6 +1102,65 @@ public final class BattleService {
         return ActionResult.ok(BattleFeedbackMessages.markerCreated(type));
     }
 
+    /**
+     * Replaces one accepted support call's short-lived contacts for the caller's faction.
+     * This path is intentionally separate from player-created markers and never persists data.
+     */
+    public synchronized ActionResult publishSupportIntel(ServerPlayer actor, UUID callId,
+                                                         Faction acceptedFaction,
+                                                         ResourceKey<Level> dimension,
+                                                         List<SupportIntelContact> contacts,
+                                                         int ttlTicks) {
+        ActionResult ready = requireAssigned(actor);
+        if (ready != null) {
+            return ready;
+        }
+        BattleSavedData.StoredPlayer player = data.player(actor.getUUID());
+        if (acceptedFaction == null || player.faction != acceptedFaction) {
+            return ActionResult.failure(ActionResult.Code.NOT_AUTHORIZED,
+                    "支援任务的受理阵营已失效，不能发布临时情报");
+        }
+        if (callId == null || dimension == null || contacts == null
+                || contacts.size() > BattleRules.MAX_MARKERS_PER_FACTION
+                || ttlTicks < 20 || ttlTicks > 20 * 60 * 10
+                || !actor.serverLevel().dimension().equals(dimension)) {
+            return ActionResult.failure(ActionResult.Code.INVALID_MARKER,
+                    "临时情报批次、维度、数量或持续时间无效");
+        }
+        ServerLevel level = server.getLevel(dimension);
+        if (level == null) {
+            return ActionResult.failure(ActionResult.Code.INVALID_MARKER,
+                    "临时情报维度不可用");
+        }
+
+        long now = Math.max(0L, System.currentTimeMillis());
+        long ttlMillis = Math.multiplyExact((long) ttlTicks, 50L);
+        List<TacticalMarker> replacement = new ArrayList<>(contacts.size());
+        Set<UUID> uniqueEntities = new LinkedHashSet<>();
+        for (SupportIntelContact contact : contacts) {
+            if (contact == null || !uniqueEntities.add(contact.entityId())) {
+                continue;
+            }
+            Vec3 position = new Vec3(contact.x(), contact.y(), contact.z());
+            if (!coordinatesFinite(position)
+                    || position.y < level.getMinBuildHeight()
+                    || position.y >= level.getMaxBuildHeight()
+                    || !level.getWorldBorder().isWithinBounds(BlockPos.containing(position))) {
+                return ActionResult.failure(ActionResult.Code.INVALID_MARKER,
+                        "临时情报包含无效坐标");
+            }
+            UUID markerId = supportIntelMarkerId(callId, contact.entityId());
+            replacement.add(new TacticalMarker(markerId, acceptedFaction,
+                    TacticalMarkerType.RECON_CONTACT, dimension.location(),
+                    position.x, position.y, position.z, position.x, position.z,
+                    player.playerId, player.squad, now, now + ttlMillis));
+        }
+        supportIntelMarkers.put(new SupportIntelKey(acceptedFaction, callId),
+                List.copyOf(replacement));
+        removeExpiredSupportIntel(now);
+        return ActionResult.ok("已刷新 " + replacement.size() + " 个临时侦察目标");
+    }
+
     public synchronized ActionResult removeMarker(ServerPlayer actor, UUID markerId) {
         ActionResult ready = requireAssigned(actor);
         if (ready != null) {
@@ -1155,6 +1219,7 @@ public final class BattleService {
         }
         long now = System.currentTimeMillis();
         data.removeExpiredMarkers(now);
+        removeExpiredSupportIntel(now);
         BattleSavedData.StoredPlayer self = data.player(viewer.getUUID());
         Faction faction = self == null ? null : self.faction;
         String formationId = self == null ? null : self.formationId;
@@ -1229,8 +1294,16 @@ public final class BattleService {
                         onlinePlayer.serverLevel().dimension().location(),
                         position.x, position.y, position.z, onlinePlayer.getYRot()));
             }
+            supportIntelMarkers.entrySet().stream()
+                    .filter(entry -> entry.getKey().faction() == faction)
+                    .flatMap(entry -> entry.getValue().stream())
+                    .filter(marker -> !marker.expiredAt(now))
+                    .sorted(Comparator.comparing(TacticalMarker::id))
+                    .limit(BattleRules.MAX_MARKERS_PER_FACTION)
+                    .forEach(markers::add);
             data.markers().stream().filter(marker -> marker.faction() == faction)
                     .sorted(Comparator.comparingLong(TacticalMarker::createdAtMillis))
+                    .limit(Math.max(0, BattleRules.MAX_MARKERS_PER_FACTION - markers.size()))
                     .forEach(markers::add);
         }
 
@@ -1362,6 +1435,7 @@ public final class BattleService {
         }
         data.clear();
         markerRateWindows.clear();
+        supportIntelMarkers.clear();
         observedOfflineSince.clear();
         squadKickCooldowns.clear();
         lastHeartbeatMillis = -1L;
@@ -1934,6 +2008,28 @@ public final class BattleService {
         return position.add(-Math.sin(radians) * BattleRules.LEGACY_ATTACK_DIRECTION_LENGTH_BLOCKS,
                 0.0D,
                 Math.cos(radians) * BattleRules.LEGACY_ATTACK_DIRECTION_LENGTH_BLOCKS);
+    }
+
+    private void removeExpiredSupportIntel(long nowMillis) {
+        supportIntelMarkers.entrySet().removeIf(entry -> {
+            List<TacticalMarker> active = entry.getValue().stream()
+                    .filter(marker -> !marker.expiredAt(nowMillis)).toList();
+            if (active.isEmpty()) {
+                return true;
+            }
+            if (active.size() != entry.getValue().size()) {
+                entry.setValue(active);
+            }
+            return false;
+        });
+    }
+
+    private static UUID supportIntelMarkerId(UUID callId, UUID entityId) {
+        return UUID.nameUUIDFromBytes(("wok-support-intel:" + callId + ':' + entityId)
+                .getBytes(StandardCharsets.UTF_8));
+    }
+
+    private record SupportIntelKey(Faction faction, UUID callId) {
     }
 
     private static long elapsedSince(long nowMillis, long earlierMillis) {

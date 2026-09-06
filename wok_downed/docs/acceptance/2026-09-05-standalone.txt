@@ -1,0 +1,20 @@
+status=PASS
+PASS expected Mafuyu presence
+PASS healthy pose requests pass through
+PASS lethal damage enters downed state
+PASS server prone immediately
+PASS server rejects null pose override
+PASS server rejects standing pose override
+PASS downed effect synchronized to client
+PASS local player prone
+PASS client rejects pose clear
+PASS downed keys cannot enable crawl or slide
+PASS pose remains prone after movement keys
+PASS movement and jump blocked
+PASS prone collision height
+PASS server remains prone through real movement-mod ticks
+PASS revived server state cleared
+PASS revived server pose released
+PASS healthy pose control restored
+PASS revive synchronized
+PASS revived client stands normally

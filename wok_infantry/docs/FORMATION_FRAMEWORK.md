@@ -1,6 +1,6 @@
 # WOK步战核心：阵营与编制框架
 
-本文记录 `WOK步战核心`（modId：`wok_infantry`）当前已经落地的阵营—编制框架。它描述的是代码现状与扩展边界；除已经确认的“千禧年研讨会机动部队”和源码安全默认项外，尚未定案的编制、枪械和载具名称不应写死在代码或本文中。
+本文记录 `WOK步战核心`（modId：`wok_infantry`）当前已经落地的阵营—编制框架。它描述的是代码现状与扩展边界；除已经确认的“千禧年研讨会机动部队”“234机械化作战单元”和源码安全默认项外，尚未定案的编制、枪械和载具名称不应写死在代码或本文中。
 
 ## 1. 三级选择与阵营共享编制模型
 
@@ -41,7 +41,7 @@ config/wok_infantry/formations.json
 ID 分为两类：
 
 - `faction.id`、`formation.id`、`classId`、`callsign` 和 `vehicle.id` 是 `wok_infantry` 内部稳定 ID，不是资源位置，不能带冒号。除 callsign 外，格式为最多 64 个小写字母、数字、`_`、`-`、`.`；显示文字放在 `displayName`。
-- `vehicle.entityId`、编制 `icon` 和 TaCZ 枪械 NBT 中的 `GunId` 才是 Minecraft 资源位置，必须采用 `namespace:path`。载具当前支持 `superbwarfare` 与 FCP 的 `fcp` namespace。
+- `vehicle.entityId`、编制 `icon` 和 TaCZ 枪械 NBT 中的 `GunId` 才是 Minecraft 资源位置，必须采用 `namespace:path`。载具当前支持 `superbwarfare`、FCP 的 `fcp` 以及龙之崛起的 `dragonrise_reforge` namespace。
 
 已经进入存档或被其他配置引用的稳定 ID 不宜改名。只修改 `displayName` 或 `description` 不会改变身份。
 
@@ -88,9 +88,9 @@ ID 分为两类：
 
 - `enabled`：是否允许该部署物。
 - `maxActive`：阵营兵站上限或每小队队包上限，范围 0–64。
-- `squadLeaderCanPlace`、`commanderCanPlace`：队长与指挥官放置权限。已确认兵站允许两者放置；队包由队长放置。
-- `maxHealth`：方块权威血量；0–1,000,000。伤害来源和友伤规则尚未确认。
-- `placementCooldownSeconds`、`replacementCooldownSeconds`、`destructionCooldownSeconds`：放置、替换及被毁后恢复 CD，范围 0–86,400 秒。轻步兵营可使用较短值，但当前不写死数值。
+- `squadLeaderCanPlace`、`commanderCanPlace`：队长与指挥官放置权限。队包运行时严格按这两个开关校验；新默认编制两者都允许。
+- `maxHealth`：方块权威血量；0–1,000,000。队包已接线：近战/投射物/爆炸每次扣 10/25/100 点，同阵营友伤关闭。
+- `placementCooldownSeconds`、`replacementCooldownSeconds`、`destructionCooldownSeconds`：通用部署物 schema 中的放置、替换及被毁后恢复 CD，范围 0–86,400 秒。当前队包运行时执行产品固定规则：成功部署后按 `(内部战斗侧, formationId, squad)` 共享 480 秒 CD，并写入世界存档；撤收、摧毁和重启不会清除，三个配置值不覆盖这条固定规则。新默认配置仍统一写为 480，避免目录表达与运行时规则不一致。
 
 `capabilities.respawn`：
 
@@ -170,7 +170,7 @@ ID 分为两类：
 
 ## 4. 源码生成的默认目录
 
-首次启动会为双方生成 `default` 常规安全编制，并在学院军中加入已经确认的首个正式编制 `millennium_seminar_mobile`。下面 JSON 展示双方共用的 `default` 骨架；正式机动部队的差异项紧随其后列出，未确认的枪械与其他编制仍不写入默认目录。
+首次启动会为双方生成 `default` 常规安全编制，并分别加入学院军首个正式编制 `millennium_seminar_mobile` 与凯撒首个正式编制 `caesar_234_mechanized`。下面 JSON 展示双方共用的 `default` 骨架；两个正式编制的差异项紧随其后列出，未确认的枪械与其他编制仍不写入默认目录。
 
 ```json
 {
@@ -193,7 +193,7 @@ ID 分为两类：
           "capacity": 40,
           "capabilities": {
             "outpost": { "enabled": false, "maxActive": 0, "squadLeaderCanPlace": false, "commanderCanPlace": false, "maxHealth": 0, "placementCooldownSeconds": 0, "replacementCooldownSeconds": 0, "destructionCooldownSeconds": 0 },
-            "rally": { "enabled": false, "maxActive": 0, "squadLeaderCanPlace": false, "commanderCanPlace": false, "maxHealth": 0, "placementCooldownSeconds": 0, "replacementCooldownSeconds": 0, "destructionCooldownSeconds": 0 },
+            "rally": { "enabled": true, "maxActive": 1, "squadLeaderCanPlace": true, "commanderCanPlace": true, "maxHealth": 100, "placementCooldownSeconds": 480, "replacementCooldownSeconds": 480, "destructionCooldownSeconds": 480 },
             "respawn": { "delaySeconds": -1, "mobileSpawnVehicleIds": [] },
             "support": { "mode": "none", "allowList": [] }
           },
@@ -231,7 +231,7 @@ ID 分为两类：
           "capacity": 40,
           "capabilities": {
             "outpost": { "enabled": false, "maxActive": 0, "squadLeaderCanPlace": false, "commanderCanPlace": false, "maxHealth": 0, "placementCooldownSeconds": 0, "replacementCooldownSeconds": 0, "destructionCooldownSeconds": 0 },
-            "rally": { "enabled": false, "maxActive": 0, "squadLeaderCanPlace": false, "commanderCanPlace": false, "maxHealth": 0, "placementCooldownSeconds": 0, "replacementCooldownSeconds": 0, "destructionCooldownSeconds": 0 },
+            "rally": { "enabled": true, "maxActive": 1, "squadLeaderCanPlace": true, "commanderCanPlace": true, "maxHealth": 100, "placementCooldownSeconds": 480, "replacementCooldownSeconds": 480, "destructionCooldownSeconds": 480 },
             "respawn": { "delaySeconds": -1, "mobileSpawnVehicleIds": [] },
             "support": { "mode": "none", "allowList": [] }
           },
@@ -256,7 +256,11 @@ ID 分为两类：
 }
 ```
 
-学院军的 `millennium_seminar_mobile` 显示为“千禧年研讨会机动部队”，类别为 `mechanized`，徽标为 `wok_infantry:textures/gui/formations/millennium_seminar_mobile.png`，并配置以下八个独立载具槽位：
+学院军的 `millennium_seminar_mobile` 显示为“千禧年研讨会机动部队”，类别为 `mechanized`，徽标为 `wok_infantry:textures/gui/formations/millennium_seminar_mobile.png`。其简介为：“由千禧年研讨会统一组建的先头力量，承担快速部署与快速反应任务。她们以多型斯特赖克（Stryker）轮式战车为核心，在航空兵支援下可于战斗初期投入大量轻型装甲载具；但后劲不足、单兵装备较为平庸，不擅长长时间消耗战。”该编制配置以下八个独立载具槽位：
+
+该编制的新生成能力白名单包含通用侦察卫星
+`wok_commander_support:recon_satellite`，并额外包含专属空袭
+`wok_commander_support:millennium_f15ex_jdam_1000lb`。其他默认编制只包含侦察卫星；已有 `formations.json` 不会自动补入新 ID。
 
 | 显示名 | 实体资源 ID | 数量 | 损毁后补充 |
 | --- | --- | ---: | --- |
@@ -264,6 +268,16 @@ ID 分为两类：
 | M1128 MGS | `fcp:stryker_mgs` | 2 | 不可再生 |
 | 悍马 M2 | `fcp:hmmwv_armored_m2` | 2 | 300 秒 |
 | 小鸟 机枪版 | `fcp:littlebird_armed` | 1 | 600 秒 |
+
+凯撒的 `caesar_234_mechanized` 显示为“234机械化作战单元”，类别为 `mechanized`。其简介为：“凯撒重工是凯撒公司旗下的重型军事生产企业，战争前几乎包揽了整个基沃托斯的军火与军用车辆生产，234机械化作战单元则是其核心作战力量之一。该单元以CV90步兵战车伴随推进，并配备略显过时的豹2A4主战坦克，作战职能偏向机动轻步兵。其装备水平尚可，擅长在复杂战线中进行混战缠斗；但重型载具数量有限、战损补充缓慢，一旦脱离步兵协同或分散投入，便容易失去进攻节奏。”在专属兵种、兵站、重生、支援和徽标另行确认前，该编制沿用源码安全默认能力、四兵种与五小队规则，并配置以下五个独立载具槽位：
+
+| 显示名 | 实体资源 ID | 数量 | 损毁后补充 |
+| --- | --- | ---: | --- |
+| 豹2A4 | `dragonrise_reforge:leopard2a4` | 1 | 900 秒 |
+| CV90 | `dragonrise_reforge:cv90` | 2 | 900 秒 |
+| 装甲无武装 HMMWV | `fcp:hmmwv_armored_unarmed` | 2 | 300 秒 |
+
+豹2A4与 CV90 由龙之崛起提供，装甲无武装 HMMWV 由 FCP 提供；两者仍通过卓越前线载具公共基类工作。缺失对应可选 MOD 或实体注册时，服务端会让整个编制失败关闭，不会跳过缺失载具或替换成其他型号。
 
 ## 5. 编制如何约束小队、兵种与装备
 

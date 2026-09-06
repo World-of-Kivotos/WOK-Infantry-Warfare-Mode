@@ -38,6 +38,21 @@ public final class InfantryItems {
             () -> new BlockItem(InfantryBlocks.AMMO_SUPPLY_CRATE.get(),
                     new Item.Properties().stacksTo(1)));
 
+    public static final RegistryObject<Item> MEDIUM_AMMO_SUPPLY_CRATE = ITEMS.register(
+            "medium_ammo_supply_crate",
+            () -> new BlockItem(InfantryBlocks.MEDIUM_AMMO_SUPPLY_CRATE.get(),
+                    new Item.Properties().stacksTo(1)));
+
+    public static final RegistryObject<Item> LARGE_AMMO_SUPPLY_STATION = ITEMS.register(
+            "large_ammo_supply_station",
+            () -> new BlockItem(InfantryBlocks.LARGE_AMMO_SUPPLY_STATION.get(),
+                    new Item.Properties().stacksTo(1)));
+
+    public static final RegistryObject<Item> RALLY_RADIO = ITEMS.register(
+            "rally_radio",
+            () -> new BlockItem(InfantryBlocks.RALLY_RADIO.get(),
+                    new Item.Properties().stacksTo(1)));
+
     private InfantryItems() {
     }
 

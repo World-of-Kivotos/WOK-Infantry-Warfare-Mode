@@ -230,9 +230,11 @@ public final class SupportService {
                 authoritativeTarget, actor, executeAt, executeAt, 0, definition.stepCount(),
                 validation.startSurfaceY(), validation.endSurfaceY());
         activeMissions.put(requestId, mission);
-        long inboundSeconds = Math.max(1L, (definition.inboundTicks() + 19L) / 20L);
-        return remember(actor, requestId, supportId, authoritativeTarget, now,
-                ActionResult.ok("支援呼叫已受理，预计 " + inboundSeconds + " 秒后到达"));
+        ActionResult accepted = definition.inboundTicks() == 0L
+                ? ActionResult.ok("支援呼叫已受理，立即执行")
+                : ActionResult.ok("支援呼叫已受理，预计 "
+                + Math.max(1L, (definition.inboundTicks() + 19L) / 20L) + " 秒后到达");
+        return remember(actor, requestId, supportId, authoritativeTarget, now, accepted);
     }
 
     /** Returns only the viewer's faction cooldowns and missions. */
@@ -296,6 +298,15 @@ public final class SupportService {
             if (now < mission.nextStepAtGameTick()) {
                 continue;
             }
+            Faction currentFaction = BattleService.get(server)
+                    .flatMap(battle -> battle.factionOf(mission.owner().getUUID()))
+                    .orElse(null);
+            if (currentFaction != mission.faction()) {
+                LOGGER.warn("Support mission {} cancelled because its accepted faction changed",
+                        mission.callId());
+                iterator.remove();
+                continue;
+            }
             SupportProvider provider = registry.provider(mission.supportId()).orElse(null);
             ServerLevel level = server.getLevel(ResourceKey.create(Registries.DIMENSION,
                     mission.target().dimension()));
@@ -323,7 +334,7 @@ public final class SupportService {
                 try {
                     provider.executeStep(new SupportSpawnContext(level,
                             mission.owner(), mission.callId(), mission.definition(),
-                            mission.target(), mission.nextStepIndex()));
+                            mission.target(), mission.nextStepIndex(), mission.faction()));
                     executionBudget--;
                     mission.advance();
                 } catch (SupportSpawnException failure) {
@@ -346,6 +357,18 @@ public final class SupportService {
         activeMissions.clear();
         requestReceipts.clear();
         savedData.resetAll();
+    }
+
+    /** Administrative API: clears one durable faction cooldown without cancelling a mission. */
+    public synchronized boolean clearCooldown(Faction faction, ResourceLocation supportId) {
+        Objects.requireNonNull(faction, "faction");
+        Objects.requireNonNull(supportId, "supportId");
+        return savedData.setReadyAt(faction, supportId, 0L);
+    }
+
+    /** Stable IDs exposed only for command completion and administrative diagnostics. */
+    public synchronized List<ResourceLocation> registeredSupportIds() {
+        return registry.definitions().stream().map(SupportDefinition::id).toList();
     }
 
     private TargetValidation validateTarget(ServerPlayer actor, SupportDefinition definition,

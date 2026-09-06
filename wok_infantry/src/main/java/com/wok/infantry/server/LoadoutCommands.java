@@ -16,9 +16,9 @@ public final class LoadoutCommands {
                         .requires(source -> source.hasPermission(LoadoutService.ADMIN_PERMISSION_LEVEL))
                         .executes(context -> apply(context.getSource().getPlayerOrException()))));
 
-        dispatcher.register(Commands.literal("loadoutadmin")
+        dispatcher.register(CatalogTransferCommands.attach(Commands.literal("loadoutadmin")
                 .requires(source -> source.hasPermission(LoadoutService.ADMIN_PERMISSION_LEVEL))
-                .executes(context -> openAdmin(context.getSource().getPlayerOrException())));
+                .executes(context -> openAdmin(context.getSource().getPlayerOrException()))));
     }
 
     private static int openPlayer(ServerPlayer player) {

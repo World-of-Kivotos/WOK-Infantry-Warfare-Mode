@@ -43,11 +43,18 @@ class FormationConfigDataTest {
         assertEquals(40, academyDefault.capacity());
         assertEquals(FormationCategory.INFANTRY, academyDefault.category());
         assertFalse(academyDefault.capabilities().outpost().enabled());
-        assertFalse(academyDefault.capabilities().rally().enabled());
+        assertTrue(academyDefault.capabilities().rally().enabled());
+        assertEquals(1, academyDefault.capabilities().rally().maxActive());
+        assertEquals(100, academyDefault.capabilities().rally().maxHealth());
+        assertEquals(480, academyDefault.capabilities().rally()
+                .placementCooldownSeconds());
         assertEquals(FormationRespawnPolicy.INHERIT_GLOBAL_DELAY,
                 academyDefault.capabilities().respawn().delaySeconds());
-        assertEquals(FormationSupportPolicy.Mode.NONE,
+        assertEquals(FormationSupportPolicy.Mode.ALLOW_LIST,
                 academyDefault.capabilities().support().mode());
+        assertEquals(List.of("wok_commander_support:recon_satellite",
+                        "wok_commander_support:f16c_gbu12_paveway_500lb"),
+                academyDefault.capabilities().support().allowList());
         assertEquals(List.of("assault", "support", "engineer", "recon"),
                 academyDefault.classes().stream().map(FormationClassRule::classId).toList());
         assertEquals(List.of("alpha", "bravo", "charlie", "delta", "echo"),
@@ -60,9 +67,17 @@ class FormationConfigDataTest {
         FormationDefinition millennium = data.findFormation("academy",
                 "millennium_seminar_mobile").orElseThrow();
         assertEquals("千禧年研讨会机动部队", millennium.displayName());
+        assertEquals("由千禧年研讨会统一组建的先头力量，承担快速部署与快速反应任务。"
+                        + "她们以多型斯特赖克（Stryker）轮式战车为核心，在航空兵支援下可于战斗初期"
+                        + "投入大量轻型装甲载具；但后劲不足、单兵装备较为平庸，不擅长长时间消耗战。",
+                millennium.description());
         assertEquals("wok_infantry:textures/gui/formations/"
                 + "millennium_seminar_mobile.png", millennium.icon());
         assertEquals(FormationCategory.MECHANIZED, millennium.category());
+        assertEquals(List.of("wok_commander_support:recon_satellite",
+                        "wok_commander_support:millennium_f15ex_jdam_1000lb",
+                        "wok_commander_support:f16c_gbu12_paveway_500lb"),
+                millennium.capabilities().support().allowList());
         assertEquals(8, millennium.vehicles().size());
         assertEquals(3, millennium.vehicles().stream()
                 .filter(vehicle -> vehicle.entityId().equals("fcp:stryker_dragoon"))
@@ -76,6 +91,50 @@ class FormationConfigDataTest {
         assertEquals(1, millennium.vehicles().stream()
                 .filter(vehicle -> vehicle.entityId().equals("fcp:littlebird_armed"))
                 .filter(vehicle -> vehicle.replenishmentCooldownSeconds() == 600).count());
+
+        FormationDefinition cavalry = data.findFormation("academy",
+                "millennium_seminar_cavalry_corps").orElseThrow();
+        assertEquals("研讨会骑兵军团", cavalry.displayName());
+        assertEquals(FormationCategory.ARMORED, cavalry.category());
+        assertEquals(40, cavalry.capacity());
+        assertEquals(4, cavalry.vehicles().size());
+        assertEquals(2, cavalry.vehicles().stream()
+                .filter(vehicle -> vehicle.entityId()
+                        .equals("dragonrise_reforge:m1a2sepv2"))
+                .filter(vehicle -> vehicle.replenishmentCooldownSeconds() == 1200).count());
+        assertEquals("dragonrise_reforge:m3a3", cavalry.findVehicle("m3a3_bradley")
+                .orElseThrow().entityId());
+        assertEquals(900, cavalry.findVehicle("m3a3_bradley")
+                .orElseThrow().replenishmentCooldownSeconds());
+        assertEquals("dragonrise_reforge:m3a3",
+                cavalry.findVehicle("m3a3_bradley_recon").orElseThrow().entityId());
+        assertEquals(900, cavalry.findVehicle("m3a3_bradley_recon")
+                .orElseThrow().replenishmentCooldownSeconds());
+
+        FormationDefinition caesar234 = data.findFormation("caesar",
+                "caesar_234_mechanized").orElseThrow();
+        assertEquals("234机械化作战单元", caesar234.displayName());
+        assertEquals("凯撒重工是凯撒公司旗下的重型军事生产企业，战争前几乎包揽了整个基沃托斯的"
+                        + "军火与军用车辆生产，234机械化作战单元则是其核心作战力量之一。"
+                        + "该单元以CV90步兵战车伴随推进，并配备略显过时的豹2A4主战坦克，"
+                        + "作战职能偏向机动轻步兵。其装备水平尚可，擅长在复杂战线中进行混战缠斗；"
+                        + "但重型载具数量有限、战损补充缓慢，一旦脱离步兵协同或分散投入，"
+                        + "便容易失去进攻节奏。",
+                caesar234.description());
+        assertEquals(FormationCategory.MECHANIZED, caesar234.category());
+        assertEquals(40, caesar234.capacity());
+        assertEquals(5, caesar234.vehicles().size());
+        assertEquals(1, caesar234.vehicles().stream()
+                .filter(vehicle -> vehicle.entityId()
+                        .equals("dragonrise_reforge:leopard2a4"))
+                .filter(vehicle -> vehicle.replenishmentCooldownSeconds() == 900).count());
+        assertEquals(2, caesar234.vehicles().stream()
+                .filter(vehicle -> vehicle.entityId().equals("dragonrise_reforge:cv90"))
+                .filter(vehicle -> vehicle.replenishmentCooldownSeconds() == 900).count());
+        assertEquals(2, caesar234.vehicles().stream()
+                .filter(vehicle -> vehicle.entityId()
+                        .equals("fcp:hmmwv_armored_unarmed"))
+                .filter(vehicle -> vehicle.replenishmentCooldownSeconds() == 300).count());
 
         assertEquals(2, data.formationsById("default").size());
         assertTrue(data.findFormation("default").isEmpty(),
@@ -97,6 +156,10 @@ class FormationConfigDataTest {
         assertEquals(Faction.BLUE, decoded.findFaction("academy").orElseThrow().battleSide());
         assertEquals(5, decoded.findFormation("caesar", "default")
                 .orElseThrow().squads().size());
+        assertEquals(5, decoded.findFormation("caesar", "caesar_234_mechanized")
+                .orElseThrow().vehicles().size());
+        assertEquals(4, decoded.findFormation("academy",
+                "millennium_seminar_cavalry_corps").orElseThrow().vehicles().size());
         assertTrue(decoded.diagnostics().isEmpty());
     }
 

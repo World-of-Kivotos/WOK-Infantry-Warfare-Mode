@@ -31,11 +31,11 @@ public final class VehicleModuleConfig {
                 .comment("Minimum optics maximum health when a vehicle has a very small turret health pool.")
                 .defineInRange("opticsMinMaxHealth", 30.0D, 1.0D, 10000.0D);
         OPTICS_PASSIVE_REPAIR_RATE = builder
-                .comment("Fraction of optics max health repaired each tick, matching Superb Warfare part repair style.")
-                .defineInRange("opticsPassiveRepairRate", 0.0025D, 0.0D, 0.1D);
+                .comment("Fraction of optics max health repaired each tick. 0.0005 restores a fully destroyed optic in about 100 seconds.")
+                .defineInRange("opticsPassiveRepairRate", 0.0005D, 0.0D, 0.1D);
         TURRET_DAMAGED_SPEED_MULTIPLIER = builder
                 .comment("Turret rotation multiplier after the turret ring has taken meaningful damage.")
-                .defineInRange("turretDamagedSpeedMultiplier", 0.25D, 0.01D, 1.0D);
+                .defineInRange("turretDamagedSpeedMultiplier", 0.45D, 0.01D, 1.0D);
         TURRET_DESTROYED_SPEED_MULTIPLIER = builder
                 .comment("Turret rotation multiplier after the turret ring reaches zero health.")
                 .defineInRange("turretDestroyedSpeedMultiplier", 0.08D, 0.0D, 1.0D);

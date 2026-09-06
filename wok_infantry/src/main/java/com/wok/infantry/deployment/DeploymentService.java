@@ -1,13 +1,18 @@
 package com.wok.infantry.deployment;
 
 import com.wok.infantry.WokInfantryMod;
+import com.wok.infantry.ammo.AmmoSupplyService;
 import com.wok.infantry.block.DeploymentBeaconBlock;
 import com.wok.infantry.block.DeploymentBeaconMode;
 import com.wok.infantry.block.VehicleDeploymentBlock;
+import com.wok.infantry.block.entity.RallyRadioBlockEntity;
 import com.wok.infantry.battle.ActionResult;
 import com.wok.infantry.battle.BattleRules;
 import com.wok.infantry.battle.BattleService;
 import com.wok.infantry.battle.Faction;
+import com.wok.infantry.battle.SquadCallsign;
+import com.wok.infantry.formation.FormationDefinition;
+import com.wok.infantry.formation.FormationDeployablePolicy;
 import com.wok.infantry.registry.InfantryBlocks;
 import com.wok.infantry.server.FormationService;
 import com.wok.infantry.server.LoadoutService;
@@ -65,6 +70,7 @@ public final class DeploymentService {
     private static final Vec3 REMOVED_PLAYER_LOBBY = new Vec3(0.5D, 2.0D, 0.5D);
     public static final long RESPAWN_DELAY_TICKS = 15L * 20L;
     public static final long RESUPPLY_COOLDOWN_TICKS = 60L * 20L;
+    public static final long RALLY_SQUAD_COOLDOWN_TICKS = 8L * 60L * 20L;
     private static final String ARMOR_ESCROW_TAG = WokInfantryMod.MOD_ID + ":armor_escrow";
 
     private static final Map<MinecraftServer, DeploymentService> INSTANCES =
@@ -77,6 +83,8 @@ public final class DeploymentService {
     private final Set<UUID> lobbyPlayers = new HashSet<>();
     /** Session-only administrator escape hatch for testing real Superb Warfare vehicles. */
     private final Set<UUID> vehicleTestPlayers = new HashSet<>();
+    /** Session-wide gate; removing/re-admitting a roster record must not mint another free batch. */
+    private final Set<UUID> initialReserveRecipients = new HashSet<>();
     private UUID sessionId = UUID.randomUUID();
 
     private DeploymentService(MinecraftServer server) {
@@ -305,7 +313,7 @@ public final class DeploymentService {
                 canDeploy, canResupply, points);
     }
 
-    /** Returns only the caller's own main base and block-backed field points. */
+    /** Returns the caller's main base, faction beacons and own-squad rally radios. */
     public List<DeploymentPoint> pointsFor(ServerPlayer player) {
         if (player == null || player.server != server) {
             return List.of();
@@ -323,7 +331,129 @@ public final class DeploymentService {
                         field.spawnPosition(), field.yaw(),
                         DeploymentPoint.DEFAULT_SUPPLY_RADIUS,
                         DeploymentPointKind.FIELD_BEACON)));
+        BattleService battle = BattleService.get(player).orElse(null);
+        String formationId = battle == null ? null
+                : battle.formationOf(player.getUUID()).orElse(null);
+        SquadCallsign squad = battle == null ? null
+                : battle.squadOf(player.getUUID()).orElse(null);
+        savedData.rallies(faction, formationId, squad).forEach(rally -> points.add(
+                new DeploymentPoint(rally.id(), rally.faction(), rally.dimension(),
+                        rally.spawnPosition(), rally.yaw(),
+                        DeploymentPoint.DEFAULT_SUPPLY_RADIUS,
+                        DeploymentPointKind.RALLY)));
         return List.copyOf(points);
+    }
+
+    /** Commits a just-placed radio as an own-squad rally after all authority checks. */
+    public ActionResult placeRally(ServerPlayer player, ServerLevel level, BlockPos anchor) {
+        ActionResult actorError = requireParticipant(player);
+        if (actorError != null) return actorError;
+        if (!isActive(player.getUUID()) || level == null || anchor == null
+                || player.serverLevel() != level
+                || !level.getBlockState(anchor).is(InfantryBlocks.RALLY_RADIO.get())) {
+            return ActionResult.failure(ActionResult.Code.INVALID_DEPLOYMENT_POINT,
+                    "只有已部署玩家才能放置真实队包无线电");
+        }
+        BattleService battle = BattleService.get(player).orElse(null);
+        FormationService formations = FormationService.get(player).orElse(null);
+        Faction faction = battle == null ? null
+                : battle.factionOf(player.getUUID()).orElse(null);
+        String formationId = battle == null ? null
+                : battle.formationOf(player.getUUID()).orElse(null);
+        SquadCallsign squad = battle == null ? null
+                : battle.squadOf(player.getUUID()).orElse(null);
+        FormationDefinition formation = formations == null ? null
+                : formations.selectedFormation(player.getUUID()).orElse(null);
+        FormationDeployablePolicy policy = formation == null ? null
+                : formation.capabilities().rally();
+        if (faction == null || formationId == null || squad == null || policy == null
+                || !policy.enabled()) {
+            return ActionResult.failure(ActionResult.Code.INVALID_TARGET,
+                    "当前编制未启用队包");
+        }
+        boolean leader = battle.isSquadLeader(player.getUUID());
+        boolean commander = battle.isCommander(player.getUUID());
+        if (!player.hasPermissions(BattleRules.ADMIN_PERMISSION_LEVEL)
+                && (!leader || !policy.squadLeaderCanPlace())
+                && (!commander || !policy.commanderCanPlace())) {
+            return ActionResult.failure(ActionResult.Code.NOT_AUTHORIZED,
+                    "当前编制只允许获授权的小队长或指挥官放置队包");
+        }
+        long gameTime = server.overworld().getGameTime();
+        long cooldownRemaining = savedData.rallyCooldownRemainingTicks(
+                faction, formationId, squad, gameTime);
+        if (cooldownRemaining > 0L) {
+            return ActionResult.failure(ActionResult.Code.INVALID_TARGET,
+                    "本小队的队包部署冷却中，还需 "
+                            + formatCooldown(cooldownRemaining));
+        }
+        if (savedData.rallies(faction, formationId, squad).size() >= policy.maxActive()) {
+            return ActionResult.failure(ActionResult.Code.INVALID_TARGET,
+                    "本小队的队包数量已达编制上限");
+        }
+        BlockPos spawn = findSafeFeet(level, anchor.above()).orElse(null);
+        if (spawn == null) {
+            return ActionResult.failure(ActionResult.Code.INVALID_DEPLOYMENT_POINT,
+                    "队包附近没有安全落脚位置");
+        }
+        UUID pointId = nextDeploymentPointId();
+        RallyDeploymentPoint rally = new RallyDeploymentPoint(pointId, faction, formationId,
+                squad, level.dimension().location(), anchor, spawn,
+                normalizeYaw(player.getYRot()));
+        if (!savedData.putRally(rally)) {
+            return ActionResult.failure(ActionResult.Code.INVALID_DEPLOYMENT_POINT,
+                    "队包位置或部署点身份发生冲突");
+        }
+        if (!(level.getBlockEntity(anchor) instanceof RallyRadioBlockEntity radio)) {
+            savedData.removeRally(rally.dimension(), rally.anchorPosition());
+            return ActionResult.failure(ActionResult.Code.INVALID_DEPLOYMENT_POINT,
+                    "队包生命组件缺失，放置已回滚");
+        }
+        radio.initialize(pointId, faction, formationId, squad, policy.maxHealth());
+        savedData.startRallyCooldown(faction, formationId, squad,
+                gameTime + RALLY_SQUAD_COOLDOWN_TICKS);
+        return ActionResult.ok("已放置 " + squad.id() + " 小队队包，生命值 "
+                + policy.maxHealth() + "，部署冷却 8 分钟");
+    }
+
+    private static String formatCooldown(long ticks) {
+        long seconds = ticks / 20L + (ticks % 20L == 0L ? 0L : 1L);
+        long minutes = seconds / 60L;
+        long remainingSeconds = seconds % 60L;
+        if (minutes == 0L) {
+            return remainingSeconds + " 秒";
+        }
+        if (remainingSeconds == 0L) {
+            return minutes + " 分钟";
+        }
+        return minutes + " 分 " + remainingSeconds + " 秒";
+    }
+
+    public ActionResult removeRally(ServerPlayer player, ServerLevel level, BlockPos anchor) {
+        RallyDeploymentPoint rally = level == null ? null
+                : savedData.rallyAt(level.dimension().location(), anchor).orElse(null);
+        if (player == null || rally == null) {
+            return ActionResult.failure(ActionResult.Code.INVALID_TARGET, "该位置没有有效队包");
+        }
+        BattleService battle = BattleService.get(player).orElse(null);
+        boolean ownsSquad = battle != null
+                && battle.factionOf(player.getUUID()).filter(rally.faction()::equals).isPresent()
+                && battle.formationOf(player.getUUID()).filter(rally.formationId()::equals).isPresent()
+                && battle.squadOf(player.getUUID()).filter(rally.squad()::equals).isPresent();
+        if (!player.hasPermissions(BattleRules.ADMIN_PERMISSION_LEVEL)
+                && !(ownsSquad && (battle.isSquadLeader(player.getUUID())
+                || battle.isCommander(player.getUUID())))) {
+            return ActionResult.failure(ActionResult.Code.NOT_AUTHORIZED,
+                    "只有所属小队长、所属指挥官或管理员能主动撤收队包");
+        }
+        level.destroyBlock(anchor, false, player);
+        return ActionResult.ok("已撤收队包");
+    }
+
+    public void onRallyRemoved(ServerLevel level, BlockPos anchor) {
+        if (level == null || anchor == null) return;
+        savedData.removeRally(level.dimension().location(), anchor)
+                .ifPresent(removed -> clearSelections(removed.id()));
     }
 
     public Optional<DeploymentPoint> mainBase(Faction faction) {
@@ -814,14 +944,17 @@ public final class DeploymentService {
                 .filter(candidate -> pointId.equals(candidate.id())).findFirst().orElse(null);
         if (point == null) {
             return ActionResult.failure(ActionResult.Code.INVALID_DEPLOYMENT_POINT,
-                    "部署点不存在或不属于你的阵营");
+                    "部署点不存在，或不属于你当前的阵营、编制和小队");
         }
         if (!point.id().equals(record.selectedPointId)) {
             record.selectedPointId = point.id();
             touch(record);
         }
-        return ActionResult.ok(point.kind() == DeploymentPointKind.MAIN_BASE
-                ? "已选择己方主基地" : "已选择己方前线部署信标");
+        return ActionResult.ok(switch (point.kind()) {
+            case MAIN_BASE -> "已选择己方主基地";
+            case FIELD_BEACON -> "已选择己方前线部署信标";
+            case RALLY -> "已选择本小队队包";
+        });
     }
 
     public ActionResult deploy(ServerPlayer player) {
@@ -869,6 +1002,10 @@ public final class DeploymentService {
             return ActionResult.failure(ActionResult.Code.INVALID_DEPLOYMENT_POINT,
                     "前线部署信标已被拆除或绑定已改变，请重新选择部署点");
         }
+        if (point.kind() == DeploymentPointKind.RALLY && !validateRallyAnchor(point)) {
+            return ActionResult.failure(ActionResult.Code.INVALID_DEPLOYMENT_POINT,
+                    "小队队包已被摧毁、撤收或归属改变，请重新选择部署点");
+        }
         Destination destination = findSafeDestination(point).orElse(null);
         if (destination == null) {
             return ActionResult.failure(ActionResult.Code.INVALID_DEPLOYMENT_POINT,
@@ -890,6 +1027,7 @@ public final class DeploymentService {
         }
 
         UUID issueToken = UUID.randomUUID();
+        boolean grantInitialReserve = !initialReserveRecipients.contains(player.getUUID());
         // Close/reset while the record is still READY. PlayerContainerEvent.Close synchronously
         // re-enters tickPlayer; doing this after kit installation would purge the new token.
         resetLifeBoundary(player);
@@ -914,7 +1052,13 @@ public final class DeploymentService {
         record.nextResupplyGameTick = now + RESUPPLY_COOLDOWN_TICKS;
         record.nextDeepInventoryScanTick = now;
         touch(record);
+        AmmoSupplyService.InitialReserveGrant initialReserve =
+                AmmoSupplyService.InitialReserveGrant.none();
         try {
+            if (grantInitialReserve) {
+                initialReserve = AmmoSupplyService.grantInitialReserve(
+                        player, sessionId, issueToken);
+            }
             player.setInvulnerable(false);
             teleportInternally(player, destination, point.yaw());
         } catch (RuntimeException exception) {
@@ -930,10 +1074,22 @@ public final class DeploymentService {
             return ActionResult.failure(ActionResult.Code.INVALID_DEPLOYMENT_POINT,
                     "传送未完成，部署装备已回收，请重试");
         }
+        if (grantInitialReserve && initialReserve.ammunitionTypes() > 0) {
+            initialReserveRecipients.add(player.getUUID());
+            if (!initialReserve.complete()) {
+                player.sendSystemMessage(Component.literal("首次部署备用弹药仅装入 "
+                        + initialReserve.addedRounds() + "/"
+                        + initialReserve.requestedRounds()
+                        + " 发：背包空间不足，请调整配装或弹药上限"));
+            }
+        }
         player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
                 "message.wok_infantry.applied"));
-        return ActionResult.ok(point.kind() == DeploymentPointKind.MAIN_BASE
-                ? "已从己方主基地部署" : "已从己方前线部署信标部署");
+        return ActionResult.ok(switch (point.kind()) {
+            case MAIN_BASE -> "已从己方主基地部署";
+            case FIELD_BEACON -> "已从己方前线部署信标部署";
+            case RALLY -> "已从本小队队包部署";
+        });
     }
 
     public ActionResult redeploy(ServerPlayer player) {
@@ -1186,6 +1342,7 @@ public final class DeploymentService {
     /** Applies the in-memory player reset after BattleService has committed its roster reset. */
     public int finishBattleReset() {
         vehicleTestPlayers.clear();
+        initialReserveRecipients.clear();
         records.clear();
         long now = gameTick();
         int failures = 0;
@@ -1305,6 +1462,37 @@ public final class DeploymentService {
                     field.id(), field.dimension(), field.anchorPosition(), exception);
             return false;
         }
+    }
+
+    private boolean validateRallyAnchor(DeploymentPoint point) {
+        RallyDeploymentPoint rally = savedData.rally(point.id()).orElse(null);
+        if (rally == null || rally.faction() != point.faction()
+                || !rally.dimension().equals(point.dimension())
+                || !rally.spawnPosition().equals(point.position())
+                || Float.compare(rally.yaw(), point.yaw()) != 0) return false;
+        ResourceKey<Level> key = ResourceKey.create(Registries.DIMENSION, rally.dimension());
+        ServerLevel level = server.getLevel(key);
+        if (level == null) {
+            onRallyMissing(rally);
+            return false;
+        }
+        level.getChunkAt(rally.anchorPosition());
+        boolean valid = level.getBlockState(rally.anchorPosition()).is(
+                InfantryBlocks.RALLY_RADIO.get())
+                && level.getBlockEntity(rally.anchorPosition())
+                instanceof RallyRadioBlockEntity radio
+                && radio.initialized() && radio.health() > 0
+                && rally.id().equals(radio.deploymentPointId())
+                && rally.faction() == radio.faction()
+                && rally.formationId().equals(radio.formationId())
+                && rally.squad() == radio.squad();
+        if (!valid) onRallyMissing(rally);
+        return valid;
+    }
+
+    private void onRallyMissing(RallyDeploymentPoint rally) {
+        savedData.removeRally(rally.dimension(), rally.anchorPosition())
+                .ifPresent(removed -> clearSelections(removed.id()));
     }
 
     private void removeStaleFieldPoint(FieldDeploymentPoint point) {

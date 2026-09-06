@@ -39,6 +39,37 @@ public final class VehicleModuleMath {
         return (float) -Math.toDegrees(Math.atan2(y, horizontal));
     }
 
+    /**
+     * Classifies a hit when an addon vehicle omits native part markers from its OBB data.
+     * SBW model space uses positive Z as the front for the current ground-vehicle packs.
+     */
+    public static VehicleModulePart classifyGroundFallback(boolean wheeled,
+                                                           boolean hasTurret,
+                                                           double localX,
+                                                           double localZ,
+                                                           double normalizedY,
+                                                           double halfWidth,
+                                                           double halfLength) {
+        double safeHalfWidth = Math.max(0.5D, halfWidth);
+        double safeHalfLength = Math.max(0.5D, halfLength);
+        if (normalizedY < 0.42D && Math.abs(localX) > safeHalfWidth * 0.45D) {
+            return localX >= 0.0D
+                    ? VehicleModulePart.TRACK_LEFT
+                    : VehicleModulePart.TRACK_RIGHT;
+        }
+
+        boolean engineEnd = wheeled
+                ? localZ > safeHalfLength * 0.55D
+                : localZ < -safeHalfLength * 0.55D;
+        if (engineEnd && normalizedY < 0.78D) {
+            return VehicleModulePart.ENGINE_MAIN;
+        }
+        if (normalizedY > 0.48D && hasTurret) {
+            return VehicleModulePart.TURRET_RING;
+        }
+        return VehicleModulePart.NONE;
+    }
+
     private static float wrapDegrees(float degrees) {
         float wrapped = degrees % 360.0F;
         if (wrapped >= 180.0F) {

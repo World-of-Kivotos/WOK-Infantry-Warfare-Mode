@@ -2,6 +2,8 @@
 
 从 World of Kivotos 主项目独立出来的纯护甲 Forge MOD。
 
+当前版本 `1.1.1-beta.1`。轻甲默认移速修正为 0%，中甲为 -5%，重甲保持 -12%；已有配置值不会自动覆盖，游戏内平衡验收仍待完成。
+
 ## 内容
 
 - 54 件六档插板护甲，保留独立模型、贴图、防弹/穿甲/物理防护、承压、机动与耐久逻辑。
@@ -34,7 +36,7 @@
 开发编译需要 ForgeGradle 映射后的 TaCZ 1.1.8-hotfix JAR。默认从本机 ForgeGradle
 缓存查找，也可通过 `-Ptacz_dev_jar_path=<path>` 指定；TaCZ 不会被打包进成品 JAR。
 
-成品位于 `build/libs/wok_infantry_armor-1.20.1-1.1.0.jar`。
+成品位于 `build/libs/wok_infantry_armor-1.20.1-1.1.1-beta.1.jar`。
 
 ## 接入别的项目
 

@@ -13,6 +13,8 @@ import net.minecraftforge.registries.ForgeRegistries;
 final class LoadoutStackFactory {
     private static final String LARGE_STATION_DEPLOYER =
             "dragonrise_reforge:ammo_supply_station";
+    private static final String LEGACY_LARGE_STATION_DEPLOYER =
+            "wok_infantry:large_ammo_supply_station";
     private LoadoutStackFactory() {
     }
 
@@ -25,7 +27,8 @@ final class LoadoutStackFactory {
             return ValidationResult.error("显示名称不能为空且不能超过 80 个字符");
         }
         ResourceLocation itemId = ResourceLocation.tryParse(entry.itemId());
-        if (LARGE_STATION_DEPLOYER.equals(entry.itemId())) {
+        if (LARGE_STATION_DEPLOYER.equals(entry.itemId())
+                || LEGACY_LARGE_STATION_DEPLOYER.equals(entry.itemId())) {
             return ValidationResult.error("大型弹药补给站只能由载具运输，不能加入步兵配装");
         }
         if (itemId == null || !ForgeRegistries.ITEMS.containsKey(itemId)) {

@@ -4,6 +4,7 @@ import java.util.Locale;
 import java.util.Optional;
 
 public enum TacticalMarkerType {
+    RECON_CONTACT,
     INFANTRY,
     TANK,
     IFV,

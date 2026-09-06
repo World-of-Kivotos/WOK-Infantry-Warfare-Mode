@@ -29,4 +29,21 @@ public final class AmmoSupplyPlanner {
         }
         return Map.copyOf(result);
     }
+
+    /** Calculates independent targets when different ammunition types use different limits. */
+    public static <T> Map<T, Integer> deficitsByType(Map<T, Integer> reserveLimits,
+                                                     ToIntFunction<T> currentCount) {
+        Objects.requireNonNull(reserveLimits, "reserveLimits");
+        Objects.requireNonNull(currentCount, "currentCount");
+        LinkedHashMap<T, Integer> result = new LinkedHashMap<>();
+        reserveLimits.forEach((type, reserveLimit) -> {
+            Objects.requireNonNull(type, "Ammunition type cannot be null");
+            if (reserveLimit == null || reserveLimit < 1) {
+                throw new IllegalArgumentException("Reserve limit must be positive");
+            }
+            int existing = Math.max(0, currentCount.applyAsInt(type));
+            result.put(type, Math.max(0, reserveLimit - existing));
+        });
+        return java.util.Collections.unmodifiableMap(result);
+    }
 }

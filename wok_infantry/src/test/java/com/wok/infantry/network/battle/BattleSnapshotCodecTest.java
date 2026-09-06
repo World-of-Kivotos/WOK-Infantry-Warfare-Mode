@@ -237,7 +237,7 @@ class BattleSnapshotCodecTest {
 
     @Test
     void dynamicSupportCatalogUsesCurrentProtocolAndItsExactWireLimit() {
-        assertEquals("15", BattleNetwork.PROTOCOL_VERSION);
+        assertEquals("18", BattleNetwork.PROTOCOL_VERSION);
         assertEquals(32, BattleNetworkLimits.MAX_SUPPORT_OPTIONS);
 
         List<SupportOptionView> options = new ArrayList<>();

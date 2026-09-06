@@ -15,8 +15,12 @@ import com.wok.infantry.battle.TacticalMarkerType;
 import com.wok.infantry.client.BattleClientActions;
 import com.wok.infantry.client.ClientBattleState;
 import com.wok.infantry.client.map.TacticalMapSegmentClipper;
+import com.wok.infantry.client.map.TacticalMapAreaOverlay;
+import com.wok.infantry.client.map.TacticalMapAreaOverlayRegistry;
 import com.wok.infantry.client.map.TacticalMapTerrainRegistry;
 import com.wok.infantry.client.map.TacticalMapTerrainRequest;
+import com.wok.infantry.client.map.TacticalSupportMapPresentation;
+import com.wok.infantry.client.map.TacticalSupportMapPresentationRegistry;
 import com.wok.infantry.config.InfantryClientConfig;
 import com.wok.infantry.deployment.DeploymentPoint;
 import com.wok.infantry.deployment.DeploymentPointKind;
@@ -46,6 +50,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.lang.ref.WeakReference;
@@ -67,6 +72,11 @@ public final class TacticalMapScreen extends Screen {
     static final int TANK_MARKER_ICON_HEIGHT = 30;
     static final int IFV_MARKER_ICON_WIDTH = 14;
     static final int IFV_MARKER_ICON_HEIGHT = 31;
+    static final int ALLIED_PLAYER_MARKER_RADIUS = 5;
+    static final int ALLIED_LEADER_MARKER_RADIUS = 6;
+    static final int ALLIED_COMMANDER_MARKER_RADIUS = 7;
+    static final int ALLIED_PLAYER_DIRECTION_LENGTH = 12;
+    static final int ALLIED_PLAYER_HOVER_RADIUS = 13;
     static final double MIN_INTEL_MARKER_SCALE =
             InfantryClientConfig.MIN_MAP_MARKER_SCALE;
     static final double MAX_INTEL_MARKER_SCALE =
@@ -76,6 +86,9 @@ public final class TacticalMapScreen extends Screen {
     private static final int MARKER_SELECTED_INDICATOR = 0xFFFFF2C4;
     private static final int SUPPORT_AREA_ALPHA = 0x38;
     private static final int SUPPORT_ACTIVE_AREA_ALPHA = 0x48;
+    private static final float MAP_TEXT_PHYSICAL_SCALE = 2.0F;
+    private static final int OFFENSIVE_SUPPORT_FILL_ALPHA = 0x50;
+    private static final int OFFENSIVE_SUPPORT_HATCH_ALPHA = 0x80;
     private static final int SUPPORT_PAGE_SIZE = 3;
     private static final ResourceLocation TANK_MARKER_TEXTURE = ResourceLocation.fromNamespaceAndPath(
             WokInfantryMod.MOD_ID, "textures/gui/tactical_markers/tank.png");
@@ -93,6 +106,19 @@ public final class TacticalMapScreen extends Screen {
             "..W..W.....",
             "...W..W....",
             "....WW....."
+    };
+    private static final String[] RECON_CONTACT_MARKER_ICON = {
+            "...........",
+            "...........",
+            "....AAA....",
+            "...AAAAA...",
+            "..AAAAAAA..",
+            "..AAAAAAA..",
+            "..AAAAAAA..",
+            "...AAAAA...",
+            "....AAA....",
+            "...........",
+            "..........."
     };
     private static final String[] DEFEND_MARKER_ICON = {
             "..WWWWWWW..",
@@ -700,7 +726,16 @@ public final class TacticalMapScreen extends Screen {
     }
 
     private static int supportColor(SupportOptionView option) {
-        return TacticalBoardTheme.ACCENT;
+        return switch (supportPresentation(option)) {
+            case OFFENSIVE -> TacticalBoardTheme.DANGER;
+            case INTELLIGENCE -> TacticalBoardTheme.SELECTED;
+            case UTILITY -> TacticalBoardTheme.ACCENT;
+        };
+    }
+
+    private static TacticalSupportMapPresentation supportPresentation(
+            SupportOptionView option) {
+        return TacticalSupportMapPresentationRegistry.presentation(option.id());
     }
 
     private static int supportPageCount(int optionCount) {
@@ -879,19 +914,34 @@ public final class TacticalMapScreen extends Screen {
                 frame.right(), frame.bottom(), TacticalBoardTheme.INSET);
         graphics.fill(mapLeft, mapTop, mapRight, mapBottom, 0xFF8D9996);
         graphics.enableScissor(mapLeft, mapTop, mapRight, mapBottom);
+
+        // Map layers are intentionally ordered from world background to interaction chrome.
+        // Keep translucent world areas below symbols, and reserve the final pass for labels,
+        // hover feedback and the cursor so add-ons cannot accidentally cover core controls.
         renderTerrain(graphics);
         renderGrid(graphics);
-        renderCompass(graphics);
         ResourceLocation dimension = currentDimension();
+        List<TacticalMapAreaOverlay> addonAreas = TacticalMapAreaOverlayRegistry.overlays();
+
+        // Area / order geometry.
+        renderAddonAreaGeometry(graphics, dimension, addonAreas);
+        renderSupportMissions(graphics, snapshot, dimension);
         renderAttackDirectionMarkers(graphics, dimension);
+
+        // World annotations are below discrete tactical symbols.
+        renderAddonAreaAnnotations(graphics, dimension, addonAreas);
         renderDeploymentPoints(graphics, snapshot, dimension);
+        renderPointMarkers(graphics, dimension);
+
+        // Live units and active previews take precedence over static map content.
         if (showPlayers) {
             renderPlayers(graphics, snapshot, dimension, mouseX, mouseY);
         }
-        renderPointMarkers(graphics, dimension);
         renderAttackPreview(graphics, dimension, mouseX, mouseY);
-        renderSupportMissions(graphics, snapshot, dimension);
         renderSupportPreview(graphics, dimension, mouseX, mouseY);
+
+        // Map chrome always remains readable regardless of add-on content beneath it.
+        renderCompass(graphics);
         renderMapCursor(graphics, mouseX, mouseY);
         graphics.disableScissor();
         renderMapScale(graphics);
@@ -931,15 +981,24 @@ public final class TacticalMapScreen extends Screen {
         int left = mapLeft + 12;
         int bottom = mapBottom - 9;
         int right = Math.min(mapRight - 12, left + pixelWidth);
-        graphics.fill(left - 5, bottom - 12, right + 6, bottom + 5, 0xA8D7DDDA);
-        BattleUiTheme.outline(graphics, left - 5, bottom - 12,
-                right + 6, bottom + 5, TacticalBoardTheme.BORDER);
+        String label = worldDistance + " m";
+        int labelWidth = mapTextLogicalWidth(label);
+        int labelHeight = mapTextLogicalHeight();
+        int centerX = (left + right) / 2;
+        int panelLeft = Math.min(left - 5,
+                centerX - labelWidth / 2 - mapPhysicalToLogical(4));
+        int panelRight = Math.max(right + 6,
+                centerX + (labelWidth + 1) / 2 + mapPhysicalToLogical(4));
+        int panelTop = bottom - labelHeight - mapPhysicalToLogical(8);
+        graphics.fill(panelLeft, panelTop, panelRight, bottom + 5, 0xA8D7DDDA);
+        BattleUiTheme.outline(graphics, panelLeft, panelTop,
+                panelRight, bottom + 5, TacticalBoardTheme.BORDER);
         graphics.fill(left, bottom, right + 1, bottom + 2, TacticalBoardTheme.TEXT);
         graphics.fill(left, bottom - 3, left + 2, bottom + 3, TacticalBoardTheme.TEXT);
         graphics.fill(right - 1, bottom - 3, right + 1, bottom + 3, TacticalBoardTheme.TEXT);
-        BattleUiTheme.drawCenteredText(graphics, font, worldDistance + " m",
-                (left + right) / 2,
-                bottom - 10, TacticalBoardTheme.TEXT);
+        drawMapCenteredString(graphics, label, centerX,
+                panelTop + labelHeight / 2 + mapPhysicalToLogical(2),
+                TacticalBoardTheme.TEXT);
     }
 
     private void renderGrid(GuiGraphics graphics) {
@@ -959,11 +1018,12 @@ public final class TacticalMapScreen extends Screen {
                     major ? TacticalBoardTheme.GRID_MAJOR : TacticalBoardTheme.GRID_MINOR);
             if (major && x > mapLeft + 3 && x < mapRight - 58) {
                 String label = axisGridLabel('E', 'W', worldX);
-                int labelWidth = font.width(label);
+                int labelWidth = mapTextLogicalWidth(label);
+                int labelHeight = mapTextLogicalHeight();
                 graphics.fill(x + 2, mapTop + 2, x + labelWidth + 6,
-                        mapTop + 13, 0xB8D7DDDA);
-                graphics.drawString(font, label, x + 4, mapTop + 3,
-                        TacticalBoardTheme.TEXT, false);
+                        mapTop + labelHeight + 5, 0xB8D7DDDA);
+                drawMapString(graphics, label, x + 4, mapTop + 3,
+                        TacticalBoardTheme.TEXT);
             }
         }
         index = 0;
@@ -974,11 +1034,12 @@ public final class TacticalMapScreen extends Screen {
                     major ? TacticalBoardTheme.GRID_MAJOR : TacticalBoardTheme.GRID_MINOR);
             if (major && y > mapTop + 14 && y < mapBottom - 28) {
                 String label = axisGridLabel('S', 'N', worldZ);
-                int labelWidth = font.width(label);
+                int labelWidth = mapTextLogicalWidth(label);
+                int labelHeight = mapTextLogicalHeight();
                 graphics.fill(mapLeft + 2, y + 2, mapLeft + labelWidth + 6,
-                        y + 13, 0xB8D7DDDA);
-                graphics.drawString(font, label, mapLeft + 4, y + 3,
-                        TacticalBoardTheme.TEXT, false);
+                        y + labelHeight + 5, 0xB8D7DDDA);
+                drawMapString(graphics, label, mapLeft + 4, y + 3,
+                        TacticalBoardTheme.TEXT);
             }
         }
     }
@@ -993,15 +1054,24 @@ public final class TacticalMapScreen extends Screen {
         int x = mapRight - 18;
         // Keep the compass below the top feedback banner.
         int y = mapTop + COMPASS_TOP_OFFSET;
-        graphics.fill(x - 9, y - 4, x + 10, y + 29, 0xA8D7DDDA);
-        BattleUiTheme.outline(graphics, x - 9, y - 4, x + 10, y + 29,
+        String north = Component.translatable("screen.wok_infantry.map.north").getString();
+        int labelWidth = mapTextLogicalWidth(north);
+        int labelHeight = mapTextLogicalHeight();
+        int halfWidth = Math.max(9, labelWidth / 2 + mapPhysicalToLogical(3));
+        int top = y - labelHeight / 2 - mapPhysicalToLogical(3);
+        int bottom = y + labelHeight / 2 + mapPhysicalToLogical(20);
+        graphics.fill(x - halfWidth, top, x + halfWidth + 1, bottom, 0xA8D7DDDA);
+        BattleUiTheme.outline(graphics, x - halfWidth, top, x + halfWidth + 1, bottom,
                 TacticalBoardTheme.BORDER);
-        BattleUiTheme.drawCenteredText(graphics, font,
-                Component.translatable("screen.wok_infantry.map.north"),
-                x, y, TacticalBoardTheme.TEXT);
-        drawLine(graphics, x, y + 10, x, y + 24, TacticalBoardTheme.ACCENT);
-        drawLine(graphics, x, y + 10, x - 3, y + 15, TacticalBoardTheme.ACCENT);
-        drawLine(graphics, x, y + 10, x + 3, y + 15, TacticalBoardTheme.ACCENT);
+        drawMapCenteredString(graphics, north, x, y, TacticalBoardTheme.TEXT);
+        int arrowTop = y + labelHeight / 2 + mapPhysicalToLogical(3);
+        int arrowBottom = bottom - mapPhysicalToLogical(4);
+        int arrowWing = mapPhysicalToLogical(5);
+        drawLine(graphics, x, arrowTop, x, arrowBottom, TacticalBoardTheme.ACCENT);
+        drawLine(graphics, x, arrowTop, x - arrowWing,
+                arrowTop + arrowWing, TacticalBoardTheme.ACCENT);
+        drawLine(graphics, x, arrowTop, x + arrowWing,
+                arrowTop + arrowWing, TacticalBoardTheme.ACCENT);
     }
 
     private void renderPlayers(GuiGraphics graphics, BattleSnapshot snapshot,
@@ -1014,7 +1084,7 @@ public final class TacticalMapScreen extends Screen {
         MemberView hovered = null;
         int hoveredX = 0;
         int hoveredY = 0;
-        double hoverRadius = 9.0D / mapGuiScale();
+        double hoverRadius = ALLIED_PLAYER_HOVER_RADIUS / mapGuiScale();
         double hoveredDistance = hoverRadius * hoverRadius;
         for (MemberPosition position : positions) {
             int x = worldToScreenX(position.x());
@@ -1027,24 +1097,29 @@ public final class TacticalMapScreen extends Screen {
             MemberView member = ClientBattleState.member(position.playerId());
             SquadCallsign squad = member == null ? null : member.squad();
             int color = self ? BattleUiTheme.ACCENT : squadColor(squad, squadMate);
-            int radius = self || member != null && member.commander() ? 5
-                    : member != null && member.leader() ? 4 : 3;
+            int radius = alliedPlayerMarkerRadius(self,
+                    member != null && member.commander(),
+                    member != null && member.leader());
             drawMapDiamond(graphics, x, y, radius, color);
             if (member != null && member.commander()) {
                 drawMapLocalLine(graphics, x, y,
-                        -5, 0, 5, 0, 0xFFFFFFFF, 2);
+                        -radius, 0, radius, 0, 0xFFFFFFFF, 2);
                 drawMapLocalLine(graphics, x, y,
-                        0, -5, 0, 5, 0xFFFFFFFF, 2);
+                        0, -radius, 0, radius, 0xFFFFFFFF, 2);
             }
             double radians = Math.toRadians(position.yaw());
-            int directionX = -(int) Math.round(Math.sin(radians) * 8.0D);
-            int directionY = (int) Math.round(Math.cos(radians) * 8.0D);
+            int directionX = -(int) Math.round(Math.sin(radians)
+                    * ALLIED_PLAYER_DIRECTION_LENGTH);
+            int directionY = (int) Math.round(Math.cos(radians)
+                    * ALLIED_PLAYER_DIRECTION_LENGTH);
             drawMapLocalLine(graphics, x, y,
                     0, 0, directionX, directionY, color, 2);
             if (member != null && (squadMate || member.leader() || member.commander())) {
                 String label = squadMate ? Integer.toString(memberNumber(snapshot, member))
                         : squadLetter(squad);
-                drawMapString(graphics, label, x, y, 5, -5, color);
+                int labelOffset = radius + 2;
+                drawMapString(graphics, label, x, y,
+                        labelOffset, -labelOffset, color);
             }
             double dx = mouseX - x;
             double dy = mouseY - y;
@@ -1063,14 +1138,17 @@ public final class TacticalMapScreen extends Screen {
             Component tooltip = hoveredSquad.copy()
                     .append(" · ").append(Component.literal(hovered.name()))
                     .append(" · ").append(SquadScreen.className(snapshot, hovered.classId()));
-            String visibleTooltip = fittedText(tooltip, mapRight - mapLeft - 10);
-            int tooltipWidth = font.width(visibleTooltip);
+            String visibleTooltip = fittedMapText(tooltip.getString(), mapRight - mapLeft - 10);
+            int tooltipWidth = mapTextLogicalWidth(visibleTooltip);
+            int tooltipHeight = mapTextLogicalHeight();
             int tooltipX = Math.max(mapLeft + 3,
                     Math.min(mapRight - tooltipWidth - 5, hoveredX + 8));
-            int tooltipY = Math.max(mapTop + 3, hoveredY - 13);
+            int tooltipY = Math.max(mapTop + 3,
+                    hoveredY - tooltipHeight - mapPhysicalToLogical(4));
             graphics.fill(tooltipX - 2, tooltipY - 2,
-                    tooltipX + tooltipWidth + 2, tooltipY + 10, 0xD9081014);
-            graphics.drawString(font, visibleTooltip, tooltipX, tooltipY, 0xFFF2F6F7, false);
+                    tooltipX + tooltipWidth + 2,
+                    tooltipY + tooltipHeight + 2, 0xD9081014);
+            drawMapString(graphics, visibleTooltip, tooltipX, tooltipY, 0xFFF2F6F7);
         }
     }
 
@@ -1089,9 +1167,79 @@ public final class TacticalMapScreen extends Screen {
             int radius = selected ? 8 : 7;
             drawMapSquare(graphics, x, y, radius, 0xE615242A,
                     selected ? BattleUiTheme.ACCENT : BattleUiTheme.FRIENDLY);
-            String symbol = point.kind() == DeploymentPointKind.MAIN_BASE ? "B" : "D";
+            String symbol = switch (point.kind()) {
+                case MAIN_BASE -> "B";
+                case FIELD_BEACON -> "D";
+                case RALLY -> "R";
+            };
             drawMapCenteredString(graphics, symbol, x, y,
                     selected ? BattleUiTheme.ACCENT : BattleUiTheme.FRIENDLY);
+        }
+    }
+
+    private void renderAddonAreaGeometry(GuiGraphics graphics, ResourceLocation dimension,
+                                         List<TacticalMapAreaOverlay> areas) {
+        for (TacticalMapAreaOverlay area : areas) {
+            if (!area.dimension().equals(dimension)) {
+                continue;
+            }
+            int left = Math.min(worldToScreenX(area.minX()), worldToScreenX(area.maxX()));
+            int right = Math.max(worldToScreenX(area.minX()), worldToScreenX(area.maxX()));
+            int top = Math.min(worldToScreenY(area.minZ()), worldToScreenY(area.maxZ()));
+            int bottom = Math.max(worldToScreenY(area.minZ()), worldToScreenY(area.maxZ()));
+            if (right < mapLeft || left > mapRight || bottom < mapTop || top > mapBottom) {
+                continue;
+            }
+            int color = area.locked() ? TacticalBoardTheme.MUTED_TEXT : area.color();
+            int fill = (color & 0x00FFFFFF) | 0x28000000;
+            graphics.fill(left, top, right + 1, bottom + 1, fill);
+            BattleUiTheme.outline(graphics, left, top, right + 1, bottom + 1, color);
+        }
+    }
+
+    private void renderAddonAreaAnnotations(GuiGraphics graphics, ResourceLocation dimension,
+                                            List<TacticalMapAreaOverlay> areas) {
+        for (TacticalMapAreaOverlay area : areas) {
+            if (!area.dimension().equals(dimension)) {
+                continue;
+            }
+            int left = Math.min(worldToScreenX(area.minX()), worldToScreenX(area.maxX()));
+            int right = Math.max(worldToScreenX(area.minX()), worldToScreenX(area.maxX()));
+            int top = Math.min(worldToScreenY(area.minZ()), worldToScreenY(area.maxZ()));
+            int bottom = Math.max(worldToScreenY(area.minZ()), worldToScreenY(area.maxZ()));
+            if (right < mapLeft || left > mapRight || bottom < mapTop || top > mapBottom) {
+                continue;
+            }
+            int color = area.locked() ? TacticalBoardTheme.MUTED_TEXT : area.color();
+            int centerX = (left + right) / 2;
+            int centerY = (top + bottom) / 2;
+            int availableLabelWidth = Math.max(mapPhysicalToLogical(18),
+                    right - left - mapPhysicalToLogical(8));
+            String label = fittedMapText(area.label().getString(), availableLabelWidth);
+            int labelWidth = mapTextLogicalWidth(label);
+            int labelHeight = mapTextLogicalHeight();
+            int horizontalPadding = mapPhysicalToLogical(4);
+            int verticalPadding = mapPhysicalToLogical(3);
+            int labelLeft = centerX - labelWidth / 2;
+            int labelTop = centerY - labelHeight / 2;
+            graphics.fill(labelLeft - horizontalPadding, labelTop - verticalPadding,
+                    labelLeft + labelWidth + horizontalPadding,
+                    labelTop + labelHeight + verticalPadding, 0xE4141C1E);
+            drawMapString(graphics, label, labelLeft, labelTop, color);
+
+            int minimumBarWidth = mapPhysicalToLogical(24);
+            int maximumBarWidth = mapPhysicalToLogical(84);
+            int barWidth = Math.max(minimumBarWidth,
+                    Math.min(maximumBarWidth,
+                            Math.max(minimumBarWidth, right - left - mapPhysicalToLogical(12))));
+            int barLeft = centerX - barWidth / 2;
+            int barTop = labelTop + labelHeight + verticalPadding + mapPhysicalToLogical(3);
+            int barHeight = mapPhysicalToLogical(5);
+            graphics.fill(barLeft, barTop, barLeft + barWidth,
+                    barTop + barHeight, 0xD920292B);
+            graphics.fill(barLeft, barTop,
+                    barLeft + (int) Math.round(barWidth * area.progress()),
+                    barTop + barHeight, color);
         }
     }
 
@@ -1273,10 +1421,11 @@ public final class TacticalMapScreen extends Screen {
             if (option == null) {
                 continue;
             }
+            TacticalSupportMapPresentation presentation = supportPresentation(option);
             int accent = supportColor(option);
             renderSupportGeometry(graphics, option,
                     mission.startX(), mission.startZ(), mission.endX(), mission.endZ(),
-                    withAlpha(accent, SUPPORT_ACTIVE_AREA_ALPHA), accent);
+                    withAlpha(accent, SUPPORT_ACTIVE_AREA_ALPHA), accent, presentation);
             long remainingTicks = Math.max(0L, mission.executeAtGameTick() - now);
             Component state = remainingTicks > 0L
                     ? Component.translatable(
@@ -1286,10 +1435,31 @@ public final class TacticalMapScreen extends Screen {
                             "screen.wok_infantry.map.support.status.seconds_suffix"))
                     : Component.translatable(
                             "screen.wok_infantry.map.support.mission.active");
-            int labelX = worldToScreenX((mission.startX() + mission.endX()) * 0.5D);
-            int labelY = worldToScreenY((mission.startZ() + mission.endZ()) * 0.5D) - 10;
-            drawMapCenteredString(graphics, state.getString(), labelX, labelY, accent);
+            renderSupportMissionStatus(graphics, option, mission, presentation,
+                    state.getString(), accent);
         }
+    }
+
+    private void renderSupportMissionStatus(GuiGraphics graphics, SupportOptionView option,
+                                            SupportMissionView mission,
+                                            TacticalSupportMapPresentation presentation,
+                                            String state, int accent) {
+        StringBuilder detail = new StringBuilder(state);
+        if (presentation == TacticalSupportMapPresentation.OFFENSIVE) {
+            detail.append(" · ").append(Component.translatable(
+                    "screen.wok_infantry.map.support.impact_radius",
+                    displayRadius(option.radius())).getString());
+        } else if (presentation == TacticalSupportMapPresentation.INTELLIGENCE) {
+            detail.append(" · ").append(Component.translatable(
+                    "screen.wok_infantry.map.support.scan_radius",
+                    displayRadius(option.radius())).getString());
+        }
+        int centerX = worldToScreenX((mission.startX() + mission.endX()) * 0.5D);
+        int centerY = worldToScreenY((mission.startZ() + mission.endZ()) * 0.5D);
+        int radius = supportRadiusPixels(option);
+        renderMapStatusCard(graphics, supportShortName(option).getString(),
+                detail.toString(), centerX,
+                centerY - radius - mapPhysicalToLogical(8), accent);
     }
 
     private void renderSupportPreview(GuiGraphics graphics, ResourceLocation dimension,
@@ -1303,6 +1473,7 @@ public final class TacticalMapScreen extends Screen {
         if (option == null) {
             return;
         }
+        TacticalSupportMapPresentation presentation = supportPresentation(option);
         WorldPoint cursor = screenToWorld(mouseX, mouseY);
         if (!cursor.dimension().equals(dimension)) {
             return;
@@ -1311,15 +1482,17 @@ public final class TacticalMapScreen extends Screen {
         if (!option.directional()) {
             renderSupportGeometry(graphics, option,
                     cursor.x(), cursor.z(), cursor.x(), cursor.z(),
-                    withAlpha(accent, SUPPORT_AREA_ALPHA), accent);
+                    withAlpha(accent, SUPPORT_AREA_ALPHA), accent, presentation);
+            renderSupportPreviewRange(graphics, option, presentation, mouseX, mouseY, accent);
             return;
         }
         if (supportStart == null || !supportStart.dimension().equals(dimension)) {
             renderSupportPointArea(graphics, worldToScreenX(cursor.x()),
                     worldToScreenY(cursor.z()), supportRadiusPixels(option),
-                    withAlpha(accent, SUPPORT_AREA_ALPHA), accent);
+                    withAlpha(accent, SUPPORT_AREA_ALPHA), accent, presentation);
             drawMapDiamond(graphics, worldToScreenX(cursor.x()),
                     worldToScreenY(cursor.z()), 3, accent);
+            renderSupportPreviewRange(graphics, option, presentation, mouseX, mouseY, accent);
             return;
         }
         boolean valid = isValidSupportDirectionGeometry(supportStart.x(), supportStart.z(),
@@ -1327,24 +1500,50 @@ public final class TacticalMapScreen extends Screen {
         int previewColor = valid ? accent : TacticalBoardTheme.DANGER;
         renderSupportGeometry(graphics, option,
                 supportStart.x(), supportStart.z(), cursor.x(), cursor.z(),
-                withAlpha(previewColor, SUPPORT_AREA_ALPHA), previewColor);
+                withAlpha(previewColor, SUPPORT_AREA_ALPHA), previewColor, presentation);
+        renderSupportPreviewRange(graphics, option, presentation,
+                (worldToScreenX(supportStart.x()) + mouseX) / 2,
+                (worldToScreenY(supportStart.z()) + mouseY) / 2, previewColor);
+    }
+
+    private void renderSupportPreviewRange(GuiGraphics graphics, SupportOptionView option,
+                                           TacticalSupportMapPresentation presentation,
+                                           int centerX, int centerY, int accent) {
+        if (presentation != TacticalSupportMapPresentation.OFFENSIVE) {
+            return;
+        }
+        String label = Component.translatable(
+                "screen.wok_infantry.map.support.impact_radius",
+                displayRadius(option.radius())).getString();
+        renderMapStatusTag(graphics, label, centerX,
+                centerY - supportRadiusPixels(option) - mapPhysicalToLogical(8), accent);
     }
 
     private void renderSupportGeometry(GuiGraphics graphics, SupportOptionView option,
                                        double startX, double startZ,
                                        double endX, double endZ,
-                                       int fillColor, int outlineColor) {
+                                       int fillColor, int outlineColor,
+                                       TacticalSupportMapPresentation presentation) {
         int screenStartX = worldToScreenX(startX);
         int screenStartY = worldToScreenY(startZ);
         int radius = supportRadiusPixels(option);
         if (!option.directional()) {
             renderSupportPointArea(graphics, screenStartX, screenStartY,
-                    radius, fillColor, outlineColor);
-            drawMapDiamond(graphics, screenStartX, screenStartY, 4, outlineColor);
+                    radius, fillColor, outlineColor, presentation);
+            if (presentation == TacticalSupportMapPresentation.OFFENSIVE) {
+                renderImpactCrosshair(graphics, screenStartX, screenStartY, outlineColor);
+            } else {
+                drawMapDiamond(graphics, screenStartX, screenStartY, 4, outlineColor);
+            }
             return;
         }
         int screenEndX = worldToScreenX(endX);
         int screenEndY = worldToScreenY(endZ);
+        if (presentation == TacticalSupportMapPresentation.OFFENSIVE) {
+            renderOffensiveCorridor(graphics, screenStartX, screenStartY,
+                    screenEndX, screenEndY, radius, outlineColor);
+            return;
+        }
         drawLine(graphics, screenStartX, screenStartY, screenEndX, screenEndY,
                 fillColor, Math.max(3, radius * 2 + 1));
         drawLine(graphics, screenStartX, screenStartY, screenEndX, screenEndY,
@@ -1356,7 +1555,17 @@ public final class TacticalMapScreen extends Screen {
     }
 
     private void renderSupportPointArea(GuiGraphics graphics, int centerX, int centerY,
-                                        int radius, int fillColor, int outlineColor) {
+                                        int radius, int fillColor, int outlineColor,
+                                        TacticalSupportMapPresentation presentation) {
+        if (presentation == TacticalSupportMapPresentation.OFFENSIVE) {
+            renderOffensiveImpactArea(graphics, centerX, centerY, radius, outlineColor);
+            return;
+        }
+        renderSupportDisc(graphics, centerX, centerY, radius, fillColor, outlineColor);
+    }
+
+    private void renderSupportDisc(GuiGraphics graphics, int centerX, int centerY,
+                                   int radius, int fillColor, int outlineColor) {
         int safeRadius = Math.max(2, radius);
         long radiusSquared = (long) safeRadius * safeRadius;
         for (int offsetY = -safeRadius; offsetY <= safeRadius; offsetY++) {
@@ -1371,8 +1580,85 @@ public final class TacticalMapScreen extends Screen {
         }
     }
 
+    private void renderOffensiveImpactArea(GuiGraphics graphics, int centerX, int centerY,
+                                           int radius, int outlineColor) {
+        int safeRadius = Math.max(3, radius);
+        renderSupportDisc(graphics, centerX, centerY, safeRadius,
+                withAlpha(outlineColor, OFFENSIVE_SUPPORT_FILL_ALPHA), outlineColor);
+        renderImpactHatching(graphics, centerX, centerY, safeRadius,
+                withAlpha(outlineColor, OFFENSIVE_SUPPORT_HATCH_ALPHA));
+        renderImpactCrosshair(graphics, centerX, centerY, outlineColor);
+    }
+
+    private void renderImpactHatching(GuiGraphics graphics, int centerX, int centerY,
+                                      int radius, int color) {
+        int spacing = Math.max(3, mapPhysicalToLogical(10));
+        int diagonalLimit = (int) Math.floor(radius * Math.sqrt(2.0D));
+        for (int diagonal = -diagonalLimit; diagonal <= diagonalLimit; diagonal += spacing) {
+            double discriminant = 2.0D * radius * radius - (double) diagonal * diagonal;
+            if (discriminant < 0.0D) {
+                continue;
+            }
+            double root = Math.sqrt(discriminant);
+            int startX = (int) Math.ceil((-diagonal - root) * 0.5D);
+            int endX = (int) Math.floor((-diagonal + root) * 0.5D);
+            drawLine(graphics, centerX + startX, centerY + startX + diagonal,
+                    centerX + endX, centerY + endX + diagonal, color, 1);
+        }
+    }
+
+    private void renderOffensiveCorridor(GuiGraphics graphics,
+                                         int startX, int startY, int endX, int endY,
+                                         int radius, int outlineColor) {
+        int safeRadius = Math.max(3, radius);
+        int fill = withAlpha(outlineColor, OFFENSIVE_SUPPORT_FILL_ALPHA);
+        drawLine(graphics, startX, startY, endX, endY,
+                fill, safeRadius * 2 + 1);
+        renderSupportDisc(graphics, startX, startY, safeRadius, fill, outlineColor);
+        renderSupportDisc(graphics, endX, endY, safeRadius, fill, outlineColor);
+
+        double dx = endX - startX;
+        double dy = endY - startY;
+        double length = Math.hypot(dx, dy);
+        if (length > 0.001D) {
+            int normalX = (int) Math.round(-dy / length * safeRadius);
+            int normalY = (int) Math.round(dx / length * safeRadius);
+            drawLine(graphics, startX + normalX, startY + normalY,
+                    endX + normalX, endY + normalY, outlineColor, 1);
+            drawLine(graphics, startX - normalX, startY - normalY,
+                    endX - normalX, endY - normalY, outlineColor, 1);
+            int stripeSpacing = Math.max(4, mapPhysicalToLogical(14));
+            int stripes = Math.max(1, (int) Math.floor(length / stripeSpacing));
+            int hatch = withAlpha(outlineColor, OFFENSIVE_SUPPORT_HATCH_ALPHA);
+            for (int index = 0; index <= stripes; index++) {
+                double progress = (double) index / stripes;
+                int centerX = (int) Math.round(startX + dx * progress);
+                int centerY = (int) Math.round(startY + dy * progress);
+                drawLine(graphics, centerX - normalX, centerY - normalY,
+                        centerX + normalX, centerY + normalY, hatch, 1);
+            }
+        }
+        renderImpactCrosshair(graphics, endX, endY, outlineColor);
+        drawMapArrow(graphics, startX, startY, endX, endY, outlineColor, 2);
+    }
+
+    private void renderImpactCrosshair(GuiGraphics graphics, int centerX, int centerY,
+                                       int color) {
+        int arm = Math.max(4, mapPhysicalToLogical(9));
+        int gap = Math.max(1, mapPhysicalToLogical(3));
+        drawLine(graphics, centerX - arm, centerY, centerX - gap, centerY, color, 1);
+        drawLine(graphics, centerX + gap, centerY, centerX + arm, centerY, color, 1);
+        drawLine(graphics, centerX, centerY - arm, centerX, centerY - gap, color, 1);
+        drawLine(graphics, centerX, centerY + gap, centerX, centerY + arm, color, 1);
+        drawMapDiamond(graphics, centerX, centerY, 2, color);
+    }
+
     private int supportRadiusPixels(SupportOptionView option) {
         return Math.max(3, Math.min(192, (int) Math.round(option.radius() * zoom)));
+    }
+
+    private static int displayRadius(double radius) {
+        return Math.max(0, (int) Math.round(radius));
     }
 
     private static int withAlpha(int color, int alpha) {
@@ -1498,10 +1784,9 @@ public final class TacticalMapScreen extends Screen {
         if (summaryBounds.width() <= 0 || summaryBounds.height() <= 0) {
             return;
         }
-        int summaryY = summaryBounds.top()
-                + Math.max(1, (summaryBounds.height() - font.lineHeight) / 2);
         Component summary;
         int color;
+        boolean activeSummary = false;
         if (!snapshot.commander()) {
             summary = Component.translatable(
                     "screen.wok_infantry.map.support.commander_locked");
@@ -1514,15 +1799,27 @@ public final class TacticalMapScreen extends Screen {
             summary = Component.translatable(
                     "screen.wok_infantry.map.support.mission.active").copy()
                     .append("  " + snapshot.support().activeMissions().size());
-            color = TacticalBoardTheme.ACCENT;
+            activeSummary = true;
+            color = snapshot.support().activeMissions().stream()
+                    .map(mission -> supportOption(snapshot, mission.supportId()))
+                    .filter(Objects::nonNull)
+                    .anyMatch(option -> supportPresentation(option)
+                            == TacticalSupportMapPresentation.OFFENSIVE)
+                    ? TacticalBoardTheme.DANGER : TacticalBoardTheme.ACCENT;
         } else {
             summary = Component.translatable(
                     "screen.wok_infantry.map.support.select_hint");
             color = TacticalBoardTheme.MUTED_TEXT;
         }
-        graphics.drawString(font, fittedText(summary,
-                        Math.max(20, summaryBounds.width())),
-                summaryBounds.left(), summaryY, color, false);
+        if (activeSummary) {
+            renderActiveSupportSummary(graphics, summary, summaryBounds, color);
+        } else {
+            int summaryY = summaryBounds.top()
+                    + Math.max(1, (summaryBounds.height() - font.lineHeight) / 2);
+            graphics.drawString(font, fittedText(summary,
+                            Math.max(20, summaryBounds.width())),
+                    summaryBounds.left(), summaryY, color, false);
+        }
 
         int pageCount = supportPageCount(options.size());
         if (pageCount > 1) {
@@ -1537,6 +1834,33 @@ public final class TacticalMapScreen extends Screen {
                         TacticalBoardTheme.MUTED_TEXT, false);
             }
         }
+    }
+
+    private void renderActiveSupportSummary(GuiGraphics graphics, Component summary,
+                                            TacticalMapLayout.Rect bounds, int accent) {
+        int left = bounds.left();
+        int top = bounds.top();
+        int right = bounds.right();
+        int bottom = bounds.bottom();
+        graphics.fill(left, top, right, bottom, 0xE51A2021);
+        BattleUiTheme.outline(graphics, left, top, right, bottom, accent);
+        graphics.fill(left + 1, top + 1, left + 4, bottom - 1, accent);
+
+        float scale = 1.25F;
+        int availableWidth = Math.max(1, right - left - 14);
+        String visible = fittedText(summary,
+                Math.max(1, (int) Math.floor(availableWidth / scale)));
+        float renderedWidth = font.width(visible) * scale;
+        float renderedHeight = font.lineHeight * scale;
+        float textX = left + 6 + Math.max(0.0F,
+                (availableWidth - renderedWidth) * 0.5F);
+        float textY = top + Math.max(0.0F,
+                (bottom - top - renderedHeight) * 0.5F);
+        graphics.pose().pushPose();
+        graphics.pose().translate(textX, textY, 0.0F);
+        graphics.pose().scale(scale, scale, 1.0F);
+        graphics.drawString(font, visible, 0, 0, accent, false);
+        graphics.pose().popPose();
     }
 
     private void renderSupportEmptyState(GuiGraphics graphics, BattleSnapshot snapshot,
@@ -1566,7 +1890,7 @@ public final class TacticalMapScreen extends Screen {
 
         int textWidth = Math.max(20, body.width() - 12);
         if (centeredCompact) {
-            graphics.drawCenteredString(font, fittedText(detail, textWidth),
+            BattleUiTheme.drawCenteredText(graphics, font, fittedText(detail, textWidth),
                     body.left() + body.width() / 2,
                     body.top() + Math.max(2, (body.height() - font.lineHeight) / 2),
                     headingColor);
@@ -2455,7 +2779,8 @@ public final class TacticalMapScreen extends Screen {
         double hitPadding = 3.0D;
         double fallbackRadius = 10.0D;
         for (TacticalMarker marker : ClientBattleState.activeMarkers()) {
-            if (!marker.dimension().equals(dimension) || !layerVisible(marker.type())) {
+            if (marker.type() == TacticalMarkerType.RECON_CONTACT
+                    || !marker.dimension().equals(dimension) || !layerVisible(marker.type())) {
                 continue;
             }
             int startX = worldToScreenX(marker.x());
@@ -2515,6 +2840,7 @@ public final class TacticalMapScreen extends Screen {
 
     private boolean layerVisible(TacticalMarkerType type) {
         return switch (type) {
+            case RECON_CONTACT -> showInfantry || showVehicles;
             case INFANTRY -> showInfantry;
             case TANK, IFV -> showVehicles;
             case ATTACK_DIRECTION, DEFEND, RALLY -> showOrders;
@@ -2611,6 +2937,7 @@ public final class TacticalMapScreen extends Screen {
 
     static String[] markerIconPattern(TacticalMarkerType type) {
         return switch (type) {
+            case RECON_CONTACT -> RECON_CONTACT_MARKER_ICON;
             case INFANTRY -> INFANTRY_MARKER_ICON;
             case DEFEND -> DEFEND_MARKER_ICON;
             case RALLY -> RALLY_MARKER_ICON;
@@ -2630,6 +2957,7 @@ public final class TacticalMapScreen extends Screen {
 
     static MarkerIconSize markerIconSize(TacticalMarkerType type, boolean compact) {
         return switch (type) {
+            case RECON_CONTACT -> new MarkerIconSize(compact ? 8 : 10, compact ? 8 : 10);
             case INFANTRY -> new MarkerIconSize(
                     compact ? INFANTRY_TOOL_ICON_SIZE : INFANTRY_MARKER_ICON_SIZE,
                     compact ? INFANTRY_TOOL_ICON_SIZE : INFANTRY_MARKER_ICON_SIZE);
@@ -2660,23 +2988,124 @@ public final class TacticalMapScreen extends Screen {
         return (float) (1.0D / mapGuiScale());
     }
 
+    private float mapTextLocalScale() {
+        return (float) (MAP_TEXT_PHYSICAL_SCALE / mapGuiScale());
+    }
+
+    private int mapPhysicalToLogical(int physicalPixels) {
+        return Math.max(1, (int) Math.ceil(Math.max(1, physicalPixels) / mapGuiScale()));
+    }
+
+    private int mapTextLogicalWidth(String text) {
+        return Math.max(1, (int) Math.ceil(font.width(text) * mapTextLocalScale()));
+    }
+
+    private int mapTextLogicalHeight() {
+        return Math.max(1, (int) Math.ceil(font.lineHeight * mapTextLocalScale()));
+    }
+
+    private String fittedMapText(String text, int logicalWidth) {
+        int nativeWidth = Math.max(1,
+                (int) Math.floor(Math.max(1, logicalWidth) / mapTextLocalScale()));
+        if (font.width(text) <= nativeWidth) {
+            return text;
+        }
+        String ellipsis = "…";
+        int bodyWidth = Math.max(1, nativeWidth - font.width(ellipsis));
+        return font.plainSubstrByWidth(text, bodyWidth) + ellipsis;
+    }
+
+    private double snapMapCoordinate(double logicalCoordinate) {
+        double guiScale = mapGuiScale();
+        return Math.round(logicalCoordinate * guiScale) / guiScale;
+    }
+
+    private void drawMapString(GuiGraphics graphics, String text,
+                               int x, int y, int color) {
+        // Two physical font pixels per authored glyph pixel keeps the map readable at 960x720,
+        // while dividing by the GUI scale prevents the same label from tripling at 320x240.
+        // The net framebuffer scale is the integer 2x, avoiding fractional glyph sampling.
+        graphics.pose().pushPose();
+        graphics.pose().translate(snapMapCoordinate(x), snapMapCoordinate(y), 0.0D);
+        graphics.pose().scale(mapTextLocalScale(), mapTextLocalScale(), 1.0F);
+        graphics.drawString(font, text, 0, 0, color, false);
+        graphics.pose().popPose();
+    }
+
     private void drawMapString(GuiGraphics graphics, String text,
                                int anchorX, int anchorY,
                                int offsetX, int offsetY, int color) {
-        graphics.pose().pushPose();
-        graphics.pose().translate(anchorX, anchorY, 0.0D);
-        graphics.pose().scale(mapInverseGuiScale(), mapInverseGuiScale(), 1.0F);
-        graphics.drawString(font, text, offsetX, offsetY, color, false);
-        graphics.pose().popPose();
+        drawMapString(graphics, text,
+                anchorX + (int) Math.round(offsetX / mapGuiScale()),
+                anchorY + (int) Math.round(offsetY / mapGuiScale()), color);
     }
 
     private void drawMapCenteredString(GuiGraphics graphics, String text,
                                        int centerX, int centerY, int color) {
         graphics.pose().pushPose();
-        graphics.pose().translate(centerX, centerY, 0.0D);
-        graphics.pose().scale(mapInverseGuiScale(), mapInverseGuiScale(), 1.0F);
-        BattleUiTheme.drawCenteredText(graphics, font, text, 0, -4, color);
+        graphics.pose().translate(snapMapCoordinate(centerX),
+                snapMapCoordinate(centerY), 0.0D);
+        graphics.pose().scale(mapTextLocalScale(), mapTextLocalScale(), 1.0F);
+        graphics.drawString(font, text, -font.width(text) / 2,
+                -font.lineHeight / 2, color, false);
         graphics.pose().popPose();
+    }
+
+    private void renderMapStatusTag(GuiGraphics graphics, String text,
+                                    int centerX, int centerY, int accent) {
+        int horizontalPadding = mapPhysicalToLogical(6);
+        int verticalPadding = mapPhysicalToLogical(4);
+        int accentWidth = mapPhysicalToLogical(3);
+        int availableWidth = Math.max(12,
+                mapRight - mapLeft - horizontalPadding * 2 - accentWidth - 4);
+        String visibleText = fittedMapText(text, availableWidth);
+        int textWidth = mapTextLogicalWidth(visibleText);
+        int textHeight = mapTextLogicalHeight();
+        int panelWidth = textWidth + horizontalPadding * 2 + accentWidth;
+        int panelHeight = textHeight + verticalPadding * 2;
+        int left = (int) clamp(centerX - panelWidth / 2.0D,
+                mapLeft + 2, Math.max(mapLeft + 2, mapRight - panelWidth - 2));
+        int top = (int) clamp(centerY - panelHeight / 2.0D,
+                mapTop + 2, Math.max(mapTop + 2, mapBottom - panelHeight - 2));
+        int right = Math.min(mapRight - 2, left + panelWidth);
+        int bottom = Math.min(mapBottom - 2, top + panelHeight);
+        graphics.fill(left, top, right, bottom, 0xE4141B1D);
+        BattleUiTheme.outline(graphics, left, top, right, bottom, accent);
+        graphics.fill(left + 1, top + 1, left + accentWidth, bottom - 1, accent);
+        drawMapString(graphics, visibleText,
+                left + accentWidth + horizontalPadding,
+                top + verticalPadding, 0xFFF3F6F4);
+    }
+
+    private void renderMapStatusCard(GuiGraphics graphics, String title, String detail,
+                                     int centerX, int centerY, int accent) {
+        int horizontalPadding = mapPhysicalToLogical(6);
+        int verticalPadding = mapPhysicalToLogical(4);
+        int lineGap = mapPhysicalToLogical(3);
+        int accentWidth = mapPhysicalToLogical(3);
+        int availableWidth = Math.max(12,
+                mapRight - mapLeft - horizontalPadding * 2 - accentWidth - 4);
+        String visibleTitle = fittedMapText(title, availableWidth);
+        String visibleDetail = fittedMapText(detail, availableWidth);
+        int textWidth = Math.max(mapTextLogicalWidth(visibleTitle),
+                mapTextLogicalWidth(visibleDetail));
+        int textHeight = mapTextLogicalHeight();
+        int panelWidth = textWidth + horizontalPadding * 2 + accentWidth;
+        int panelHeight = textHeight * 2 + lineGap + verticalPadding * 2;
+        int left = (int) clamp(centerX - panelWidth / 2.0D,
+                mapLeft + 2, Math.max(mapLeft + 2, mapRight - panelWidth - 2));
+        int top = (int) clamp(centerY - panelHeight / 2.0D,
+                mapTop + 2, Math.max(mapTop + 2, mapBottom - panelHeight - 2));
+        int right = Math.min(mapRight - 2, left + panelWidth);
+        int bottom = Math.min(mapBottom - 2, top + panelHeight);
+        graphics.fill(left, top, right, bottom, 0xE8141B1D);
+        BattleUiTheme.outline(graphics, left, top, right, bottom, accent);
+        graphics.fill(left + 1, top + 1, left + accentWidth, bottom - 1, accent);
+        int textX = left + accentWidth + horizontalPadding;
+        int titleY = top + verticalPadding;
+        drawMapString(graphics, visibleTitle, textX, titleY, 0xFFF3F6F4);
+        drawMapString(graphics, visibleDetail, textX,
+                titleY + textHeight + lineGap, accent);
     }
 
     private void renderMapMarkerSymbol(GuiGraphics graphics, TacticalMarkerType type,
@@ -2696,6 +3125,14 @@ public final class TacticalMapScreen extends Screen {
         return markerPhysicalIconSizeForMap(type, mapZoom, 1.0D);
     }
 
+    static int alliedPlayerMarkerRadius(boolean self, boolean commander,
+                                        boolean leader) {
+        if (self || commander) {
+            return ALLIED_COMMANDER_MARKER_RADIUS;
+        }
+        return leader ? ALLIED_LEADER_MARKER_RADIUS : ALLIED_PLAYER_MARKER_RADIUS;
+    }
+
     static MarkerIconSize markerPhysicalIconSizeForMap(TacticalMarkerType type,
                                                         double mapZoom,
                                                         double userScale) {
@@ -2704,6 +3141,7 @@ public final class TacticalMapScreen extends Screen {
                 ? mapZoom : DEFAULT_ZOOM;
         double zoomScale = clamp(Math.sqrt(safeZoom / DEFAULT_ZOOM), 0.42D, 1.0D);
         MarkerIconSize minimumPhysical = switch (type) {
+            case RECON_CONTACT -> new MarkerIconSize(6, 6);
             case TANK -> new MarkerIconSize(10, 15);
             case IFV -> new MarkerIconSize(7, 15);
             case INFANTRY, DEFEND, RALLY -> new MarkerIconSize(8, 8);
@@ -2751,11 +3189,13 @@ public final class TacticalMapScreen extends Screen {
 
     static int markerForegroundColor(TacticalMarkerType type, int accentColor) {
         return type == TacticalMarkerType.INFANTRY
+                || type == TacticalMarkerType.RECON_CONTACT
                 ? accentColor : MARKER_ICON_FOREGROUND;
     }
 
     static int markerColor(TacticalMarkerType type) {
         return switch (type) {
+            case RECON_CONTACT -> 0xFFFF2020;
             case INFANTRY -> 0xFFFF3030;
             case TANK -> 0xFFFF3038;
             case IFV -> 0xFFFFD166;
@@ -2773,7 +3213,8 @@ public final class TacticalMapScreen extends Screen {
     }
 
     private static boolean isIntelMarker(TacticalMarkerType type) {
-        return type == TacticalMarkerType.INFANTRY
+        return type == TacticalMarkerType.RECON_CONTACT
+                || type == TacticalMarkerType.INFANTRY
                 || type == TacticalMarkerType.TANK
                 || type == TacticalMarkerType.IFV;
     }

@@ -4,8 +4,8 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Extensible formation-level capability policy. This stage stores and validates rules only;
- * concrete deployables, vehicle respawns and support skills are implemented separately.
+ * Extensible formation-level capability policy. Rally health, limits and placement authority
+ * are consumed by the physical rally-radio implementation; other capabilities remain modular.
  */
 public final class FormationCapabilityProfile {
     private FormationDeployablePolicy outpost = new FormationDeployablePolicy();

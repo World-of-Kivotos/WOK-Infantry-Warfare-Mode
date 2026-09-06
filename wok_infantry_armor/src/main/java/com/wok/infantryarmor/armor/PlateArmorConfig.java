@@ -70,10 +70,10 @@ public final class PlateArmorConfig {
                 .defineList("pressureCapacityT", DEFAULT_T, PlateArmorConfig::isNonNegative);
 
         builder.push("movement");
-        lightMovement = builder.comment("Light plate movement modifier; 0.10 = +10%, MULTIPLY_TOTAL.")
-                .defineInRange("light", 0.10D, -0.95D, 10.0D);
+        lightMovement = builder.comment("Light plate movement modifier; 0.00 keeps the wearer's base speed.")
+                .defineInRange("light", 0.00D, -0.95D, 10.0D);
         mediumMovement = builder.comment("Medium plate movement modifier.")
-                .defineInRange("medium", 0.0D, -0.95D, 10.0D);
+                .defineInRange("medium", -0.05D, -0.95D, 10.0D);
         heavyMovement = builder.comment("Heavy plate movement modifier; -0.12 = -12%, MULTIPLY_TOTAL.")
                 .defineInRange("heavy", -0.12D, -0.95D, 10.0D);
         builder.pop();

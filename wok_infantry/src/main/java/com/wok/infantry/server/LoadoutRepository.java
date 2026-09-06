@@ -3,6 +3,7 @@ package com.wok.infantry.server;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.wok.infantry.WokInfantryMod;
+import com.wok.infantry.configtransfer.CatalogFiles;
 import com.wok.infantry.loadout.LoadoutConfigData;
 import com.wok.infantry.loadout.PlayerLoadoutData;
 import net.minecraft.server.MinecraftServer;
@@ -37,6 +38,11 @@ final class LoadoutRepository {
     }
 
     synchronized void load() {
+        try {
+            new CatalogFiles(configPath.getParent()).recover();
+        } catch (IOException exception) {
+            throw new IllegalStateException("无法恢复中断的阵营配装导入；保留原文件并停止加载", exception);
+        }
         config = read(configPath, LoadoutConfigData.class, LoadoutConfigData.defaultConfig());
         config.normalize();
         players = read(playerPath, PlayerStore.class, new PlayerStore());
@@ -46,6 +52,13 @@ final class LoadoutRepository {
 
     synchronized LoadoutConfigData config() {
         return config;
+    }
+
+    Path configPath() { return configPath; }
+
+    /** Called only after CatalogFiles has durably committed both configurations. */
+    synchronized void publishImported(LoadoutConfigData replacement) {
+        config = replacement.copy();
     }
 
     synchronized PlayerLoadoutData player(UUID playerId) {
@@ -68,11 +81,13 @@ final class LoadoutRepository {
     }
 
     synchronized boolean saveConfig() {
+        if (Files.exists(configPath.getParent().resolve(".catalog-import/ready"))) return false;
         return write(configPath, config);
     }
 
     /** Atomically persists and publishes a complete replacement configuration. */
     synchronized boolean replaceConfig(LoadoutConfigData replacement) {
+        if (Files.exists(configPath.getParent().resolve(".catalog-import/ready"))) return false;
         if (replacement == null) {
             return false;
         }

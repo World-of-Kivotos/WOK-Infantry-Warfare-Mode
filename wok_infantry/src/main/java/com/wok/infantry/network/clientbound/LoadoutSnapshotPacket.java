@@ -17,7 +17,8 @@ public record LoadoutSnapshotPacket(LoadoutSnapshot snapshot, OpenTarget openTar
         NONE,
         PLAYER,
         ADMIN,
-        REFRESH_ADMIN
+        REFRESH_ADMIN,
+        REFRESH_CATALOG
     }
 
     public static void encode(LoadoutSnapshotPacket packet, FriendlyByteBuf buffer) {

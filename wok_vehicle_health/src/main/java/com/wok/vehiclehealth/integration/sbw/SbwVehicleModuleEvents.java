@@ -1,15 +1,16 @@
 package com.wok.vehiclehealth.integration.sbw;
 
-import com.atsuishio.superbwarfare.api.event.LoadingDataEvent;
-import com.atsuishio.superbwarfare.data.vehicle.DefaultVehicleData;
 import com.atsuishio.superbwarfare.data.vehicle.subdata.CameraPos;
 import com.atsuishio.superbwarfare.data.vehicle.subdata.EngineType;
-import com.atsuishio.superbwarfare.data.vehicle.subdata.PartHealth;
 import com.atsuishio.superbwarfare.data.vehicle.subdata.SeatInfo;
 import com.atsuishio.superbwarfare.entity.mixin.OBBHitter;
 import com.atsuishio.superbwarfare.entity.vehicle.base.VehicleEntity;
 import com.atsuishio.superbwarfare.tools.OBB;
 import com.wok.vehiclehealth.WokVehicleHealthMod;
+import com.wok.vehiclehealth.balance.InfantryAntiTankWeapon;
+import com.wok.vehiclehealth.balance.TaczProjectileInspector;
+import com.wok.vehiclehealth.balance.VehicleBalanceState;
+import com.wok.vehiclehealth.balance.VehicleExplosionContexts;
 import com.wok.vehiclehealth.config.VehicleModuleConfig;
 import com.wok.vehiclehealth.module.VehicleModuleMath;
 import com.wok.vehiclehealth.module.VehicleModulePart;
@@ -45,46 +46,11 @@ public final class SbwVehicleModuleEvents {
             Collections.synchronizedMap(new WeakHashMap<>());
 
     @SubscribeEvent
-    public static void onVehicleDataLoading(LoadingDataEvent.Vehicle event) {
-        DefaultVehicleData data = event.getData();
-        if (data == null) {
-            return;
-        }
-
-        PartHealth partHealth = data.getPartHealth();
-        if (partHealth == null) {
-            partHealth = new PartHealth();
-            data.setPartHealth(partHealth);
-        }
-
-        float maxHealth = Math.max(1.0F, data.getMaxHealth());
-        boolean landVehicle = data.getEngineType() == EngineType.TRACK
-                || data.getEngineType() == EngineType.WHEEL;
-        if (landVehicle) {
-            float trackDefault = Math.max(40.0F, maxHealth * 0.20F);
-            float engineDefault = Math.max(50.0F, maxHealth * 0.25F);
-            if (!(partHealth.getLeftWheel() > 0.0F)) {
-                partHealth.setLeftWheel(trackDefault);
-            }
-            if (!(partHealth.getRightWheel() > 0.0F)) {
-                partHealth.setRightWheel(trackDefault);
-            }
-            if (!(partHealth.getMainEngine() > 0.0F)) {
-                partHealth.setMainEngine(engineDefault);
-            }
-        }
-
-        if (data.getTurretTurnSpeed() != null
-                && (Math.abs(data.getTurretTurnSpeed().x) > 0.001F
-                || Math.abs(data.getTurretTurnSpeed().y) > 0.001F)
-                && !(partHealth.getTurret() > 0.0F)) {
-            partHealth.setTurret(Math.max(40.0F, maxHealth * 0.20F));
-        }
-    }
-
-    @SubscribeEvent
     public static void onEntityJoin(EntityJoinLevelEvent event) {
         if (event.getEntity() instanceof VehicleEntity vehicle) {
+            if (!event.getLevel().isClientSide()) {
+                VehicleBalanceState.applyProfile(vehicle);
+            }
             trackers(event.getLevel()).put(vehicle.getId(), new VehicleTracker(vehicle));
         }
     }
@@ -123,9 +89,6 @@ public final class SbwVehicleModuleEvents {
                 nativePart,
                 vehicle.level().getGameTime()));
 
-        if (modulePart == VehicleModulePart.OPTICS) {
-            sendOpticsFeedback(vehicle);
-        }
     }
 
     /** TACZ explosive ammunition uses a custom Explosion rather than a projectile impact event. */
@@ -136,9 +99,15 @@ public final class SbwVehicleModuleEvents {
             return;
         }
         Vec3 origin = event.getExplosion().getPosition();
+        InfantryAntiTankWeapon antiTankWeapon = TaczProjectileInspector
+                .inspectExplosion(event.getExplosion())
+                .orElse(null);
         for (Entity entity : List.copyOf(event.getAffectedEntities())) {
             if (!(entity instanceof VehicleEntity vehicle)) {
                 continue;
+            }
+            if (antiTankWeapon != null) {
+                VehicleExplosionContexts.register(vehicle, antiTankWeapon, origin);
             }
             VehicleModulePart modulePart = classifyExplosion(vehicle, origin);
             if (modulePart == VehicleModulePart.NONE) {
@@ -150,9 +119,6 @@ public final class SbwVehicleModuleEvents {
             // hull loss into our fallback module damage exactly once.
             tracker.pendingHits.addLast(new PendingHit(
                     modulePart, OBB.Part.EMPTY, vehicle.level().getGameTime()));
-            if (modulePart == VehicleModulePart.OPTICS) {
-                sendOpticsFeedback(vehicle);
-            }
         }
     }
 
@@ -351,19 +317,15 @@ public final class SbwVehicleModuleEvents {
                     new Vector4d(hitLocation.x, hitLocation.y, hitLocation.z, 1.0D));
             double normalizedY = (hitLocation.y - vehicle.getBoundingBox().minY)
                     / Math.max(0.5D, vehicle.getBbHeight());
-            double halfWidth = Math.max(0.5D, vehicle.getBbWidth() * 0.5D);
-
-            if (normalizedY < 0.42D && Math.abs(local.x) > halfWidth * 0.45D) {
-                return local.x >= 0.0D
-                        ? VehicleModulePart.TRACK_LEFT
-                        : VehicleModulePart.TRACK_RIGHT;
-            }
-            if (local.z < -vehicle.getBbWidth() * 0.55D && normalizedY < 0.78D) {
-                return VehicleModulePart.ENGINE_MAIN;
-            }
-            if (normalizedY > 0.48D && vehicle.hasTurret()) {
-                return VehicleModulePart.TURRET_RING;
-            }
+            ModelBounds bounds = modelBounds(vehicle, inverse);
+            return VehicleModuleMath.classifyGroundFallback(
+                    engineType == EngineType.WHEEL,
+                    vehicle.hasTurret(),
+                    local.x,
+                    local.z,
+                    normalizedY,
+                    bounds.halfWidth,
+                    bounds.halfLength);
         } catch (RuntimeException exception) {
             WokVehicleHealthMod.LOGGER.debug(
                     "Could not classify model-space fallback hit for {}",
@@ -371,6 +333,27 @@ public final class SbwVehicleModuleEvents {
                     exception);
         }
         return VehicleModulePart.NONE;
+    }
+
+    private static ModelBounds modelBounds(VehicleEntity vehicle, Matrix4d inverse) {
+        double halfWidth = Math.max(0.5D, vehicle.getBbWidth() * 0.5D);
+        double halfLength = halfWidth;
+        List<OBB> obbs = vehicle.getOBBs();
+        boolean hasHullObb = obbs.stream().anyMatch(obb ->
+                obb.part == OBB.Part.BODY || obb.part == OBB.Part.EMPTY);
+        for (OBB obb : obbs) {
+            if (hasHullObb && obb.part != OBB.Part.BODY && obb.part != OBB.Part.EMPTY) {
+                continue;
+            }
+            for (Vector3d vertex : obb.getVertices()) {
+                Vector4d local = inverse.transform(
+                        new Vector4d(vertex.x, vertex.y, vertex.z, 1.0D),
+                        new Vector4d());
+                halfWidth = Math.max(halfWidth, Math.abs(local.x));
+                halfLength = Math.max(halfLength, Math.abs(local.z));
+            }
+        }
+        return new ModelBounds(halfWidth, halfLength);
     }
 
     private static boolean landVehicle(VehicleEntity vehicle) {
@@ -458,6 +441,7 @@ public final class SbwVehicleModuleEvents {
             for (PendingHit hit : ready) {
                 if (hit.modulePart == VehicleModulePart.OPTICS) {
                     VehicleOpticsData.damage(vehicle, perHitDamage);
+                    sendOpticsFeedback(vehicle);
                 } else if (!nativeBacked(hit)) {
                     applyFallbackDamage(hit.modulePart, perHitDamage);
                 }
@@ -536,16 +520,16 @@ public final class SbwVehicleModuleEvents {
                 return;
             }
 
-            boolean leftDestroyed = vehicle.getLeftWheelMaxHealth() > 0.0F
+            boolean leftDestroyed = vehicle.getWheelMaxHealth() > 0.0F
                     && vehicle.getLeftWheelDamaged();
-            boolean rightDestroyed = vehicle.getRightWheelMaxHealth() > 0.0F
+            boolean rightDestroyed = vehicle.getWheelMaxHealth() > 0.0F
                     && vehicle.getRightWheelDamaged();
             boolean trackDestroyed = VehicleModuleConfig.STOP_ON_SINGLE_TRACK_DESTROYED.get()
                     ? leftDestroyed || rightDestroyed
                     : leftDestroyed && rightDestroyed;
-            boolean engineDestroyed = (vehicle.getMainEngineMaxHealth() > 0.0F
+            boolean engineDestroyed = (vehicle.getEngineMaxHealth() > 0.0F
                     && vehicle.getMainEngineDamaged())
-                    || (vehicle.getSubEngineMaxHealth() > 0.0F
+                    || (vehicle.getEngineMaxHealth() > 0.0F
                     && vehicle.getSubEngineDamaged());
             if (!trackDestroyed && !engineDestroyed) {
                 return;
@@ -576,6 +560,9 @@ public final class SbwVehicleModuleEvents {
     private record PendingHit(VehicleModulePart modulePart,
                               OBB.Part nativePart,
                               long gameTick) {
+    }
+
+    private record ModelBounds(double halfWidth, double halfLength) {
     }
 
     private SbwVehicleModuleEvents() {

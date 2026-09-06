@@ -13,8 +13,9 @@ import java.util.function.Function;
 public final class SuperbWarfareVehicleGate {
     public static final String MOD_ID = "superbwarfare";
     public static final String FCP_MOD_ID = "fcp";
+    public static final String DRAGONRISE_MOD_ID = "dragonrise_reforge";
     private static final Set<String> SUPPORTED_ENTITY_NAMESPACES =
-            Set.of(MOD_ID, FCP_MOD_ID);
+            Set.of(MOD_ID, FCP_MOD_ID, DRAGONRISE_MOD_ID);
 
     private SuperbWarfareVehicleGate() {
     }

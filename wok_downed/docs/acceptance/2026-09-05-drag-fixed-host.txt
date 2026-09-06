@@ -1,0 +1,20 @@
+status=PASS
+PASS drag started; carrier=(0.5, 101.0, 0.5) downed=false alive=true; casualty=(0.5, 101.0, -0.65) alive=true
+PASS casualty entity visible at phase 2
+PASS phase 2 visible casualty follows server target: actual=(0.5, 101.050048828125, 8.962646484375) expected=(0.5, 101.05, 8.962738391917224)
+PASS phase 2 visible pose is correct
+PASS visible casualty traveled over two blocks
+PASS server drag position survives connection tick with delayed acknowledgements
+PASS server casualty moved with carrier
+PASS casualty entity visible at phase 4
+PASS phase 4 visible casualty follows server target: actual=(-7.962646484375, 101.050048828125, 10.11279296875) expected=(-7.962738391917217, 101.05, 10.112738391917224)
+PASS phase 4 visible pose is correct
+PASS server follows turn
+PASS casualty entity visible at phase 6
+PASS phase 6 visible casualty follows server target: actual=(-7.962646484375, 101.0, 10.11279296875) expected=(-7.962738391917217, 101.05, 10.112738391917224)
+PASS phase 6 visible pose is correct
+PASS released casualty stays put
+PASS casualty entity visible at phase 7
+PASS phase 7 visible casualty follows server target: actual=(-7.962738391917217, 101.0, 10.112738391917224) expected=(-7.962738391917217, 101.05, 10.112738391917224)
+PASS phase 7 visible pose is correct
+PASS revive clears downed state

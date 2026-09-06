@@ -57,6 +57,11 @@ if (!networkTestRoot.toPath().startsWith(layout.projectDirectory.asFile.canonica
 // A client-only visual acceptance harness. It is deliberately isolated from main/test so the
 // harness is available to runUiTestClient but can never enter the production JAR.
 sourceSets {
+    catalogTest {
+        java.srcDir 'src/catalogTest/java'
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
     uiTest {
         java.srcDir 'src/uiTest/java'
         resources.srcDir 'src/uiTest/resources'
@@ -87,6 +92,22 @@ minecraft {
         }
 
         client {}
+
+        clientCatalogTest {
+            parent runs.client
+            workingDirectory project.file(project.findProperty('catalogTestRoot')
+                    ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/catalog-transfer-acceptance/current')
+            jvmArgs '-Xms256m', '-Xmx2G'
+            args '--username', 'WokCatalogTest', '--quickPlaySingleplayer', 'wok_catalog_test',
+                    '--width', '960', '--height', '720'
+            property 'wok.catalogTest', 'true'
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.catalogTest
+                }
+            }
+        }
 
         uiTestClient {
             parent runs.client
@@ -259,6 +280,43 @@ dependencies {
 
 tasks.named('test', Test).configure {
     useJUnitPlatform()
+}
+
+// A fresh, disposable world inside the dedicated infantry test installation. Never use WOK本体.
+tasks.register('prepareCatalogTestWorld') {
+    doLast {
+        File testRoot = project.file(project.findProperty('catalogTestRoot')
+                ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/catalog-transfer-acceptance/current').canonicalFile
+        File allowedRoot = new File('D:/WOK步战测试/1.20.1-Forge_47.4.22/catalog-transfer-acceptance').canonicalFile
+        if (!testRoot.toPath().startsWith(allowedRoot.toPath()) || testRoot == allowedRoot) {
+            throw new GradleException('Catalog acceptance must stay within the dedicated infantry test directory')
+        }
+        if (new File(testRoot, 'saves/wok_catalog_test/level.dat').exists()) {
+            throw new GradleException('Use a fresh -PcatalogTestRoot to preserve previous acceptance artifacts')
+        }
+        copy {
+            from layout.projectDirectory.dir('run/world')
+            into new File(testRoot, 'saves/wok_catalog_test')
+            exclude 'session.lock'
+        }
+        copy {
+            from layout.projectDirectory.file('dev/vanilla_test_loadouts.json')
+            into new File(testRoot, 'config/wok_infantry')
+            rename { 'loadouts.json' }
+        }
+    }
+}
+
+tasks.matching { it.name == 'runClientCatalogTest' }.configureEach {
+    dependsOn 'prepareCatalogTestWorld'
+    doLast {
+        File testRoot = project.file(project.findProperty('catalogTestRoot')
+                ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/catalog-transfer-acceptance/current')
+        File result = new File(testRoot, 'catalog-acceptance.txt')
+        if (!result.isFile() || !result.getText('UTF-8').startsWith('status=PASS')) {
+            throw new GradleException('Catalog client acceptance failed or did not write a result')
+        }
+    }
 }
 
 def prepareGameTestStructures = tasks.register('prepareGameTestStructures', Copy) {

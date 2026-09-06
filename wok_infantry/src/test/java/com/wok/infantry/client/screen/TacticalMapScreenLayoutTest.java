@@ -208,6 +208,8 @@ class TacticalMapScreenLayoutTest {
         assertTrue(body.height() >= 54, context
                 + " support body must fit the full three-line empty state");
         TacticalMapLayout.Rect summary = TacticalMapLayout.supportSummary(layout, 3);
+        assertTrue(summary.height() >= 20,
+                context + " active-support status must remain a prominent banner");
         TacticalMapLayout.Rect previous = TacticalMapLayout.supportPagerButton(layout, false);
         TacticalMapLayout.Rect next = TacticalMapLayout.supportPagerButton(layout, true);
         assertContainedBy(summary, body, context + " support summary");
@@ -263,6 +265,7 @@ class TacticalMapScreenLayoutTest {
     void tacticalMarkerIconsAreDistinctNativePixelPatterns() {
         Set<String> distinctPatterns = new HashSet<>();
         for (TacticalMarkerType type : List.of(
+                TacticalMarkerType.RECON_CONTACT,
                 TacticalMarkerType.INFANTRY,
                 TacticalMarkerType.DEFEND,
                 TacticalMarkerType.RALLY,
@@ -278,6 +281,18 @@ class TacticalMapScreenLayoutTest {
             assertTrue(distinctPatterns.add(String.join("/", pattern)),
                     type + " must have a unique silhouette");
         }
+    }
+
+    @Test
+    void satelliteContactsRenderAsCompactRedDots() {
+        assertEquals(new TacticalMapScreen.MarkerIconSize(10, 10),
+                TacticalMapScreen.markerIconSize(TacticalMarkerType.RECON_CONTACT, false));
+        assertEquals(0xFFFF2020,
+                TacticalMapScreen.markerColor(TacticalMarkerType.RECON_CONTACT));
+        String joined = String.join("", TacticalMapScreen.markerIconPattern(
+                TacticalMarkerType.RECON_CONTACT));
+        assertFalse(joined.contains("W"), "satellite contact must be a solid red dot");
+        assertTrue(joined.contains("A"), "satellite contact dot must contain red pixels");
     }
 
     @Test
@@ -314,6 +329,20 @@ class TacticalMapScreenLayoutTest {
                 TacticalMapScreen.markerIconSize(
                         TacticalMarkerType.ATTACK_DIRECTION, true),
                 "attack-direction toolbar arrow must match the other order tools");
+    }
+
+    @Test
+    void alliedPlayerMarkersUseLargerStablePhysicalFootprints() {
+        assertEquals(5, TacticalMapScreen.alliedPlayerMarkerRadius(
+                false, false, false));
+        assertEquals(6, TacticalMapScreen.alliedPlayerMarkerRadius(
+                false, false, true));
+        assertEquals(7, TacticalMapScreen.alliedPlayerMarkerRadius(
+                false, true, false));
+        assertEquals(7, TacticalMapScreen.alliedPlayerMarkerRadius(
+                true, false, false));
+        assertEquals(12, TacticalMapScreen.ALLIED_PLAYER_DIRECTION_LENGTH);
+        assertEquals(13, TacticalMapScreen.ALLIED_PLAYER_HOVER_RADIUS);
     }
 
     @Test

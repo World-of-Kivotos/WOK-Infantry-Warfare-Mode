@@ -178,7 +178,16 @@ public final class FormationService {
             WokInfantryMod.LOGGER.error("Formation catalog reload rejected: {}", load.message());
             return ActionResult.failure(ActionResult.Code.FORMATION_UNAVAILABLE, load.message());
         }
-        FormationConfigData loaded = load.config();
+        return publishCatalog(load.config(), load.message());
+    }
+
+    /** The transfer transaction has already written both files before publishing either. */
+    ActionResult publishImportedCatalog(FormationConfigData imported) {
+        repository.publishImported(imported);
+        return publishCatalog(repository.config(), "阵营配装数据包已应用");
+    }
+
+    private ActionResult publishCatalog(FormationConfigData loaded, String message) {
         long loadedGeneration;
         synchronized (this) {
             catalog = loaded;
@@ -214,7 +223,7 @@ public final class FormationService {
             return ActionResult.failure(ActionResult.Code.INVALID_TARGET,
                     "编制目录已应用，但状态调和异常；客户端目录已刷新，请检查服务端日志");
         }
-        return ActionResult.ok(load.message() + "；generation=" + loadedGeneration);
+        return ActionResult.ok(message + "；generation=" + loadedGeneration);
     }
 
     private void reconcileVoteCandidates(FormationConfigData active) {
@@ -496,6 +505,16 @@ public final class FormationService {
         FactionDefinition faction = active.findFaction(record.faction()).orElse(null);
         return faction != null && faction.enabled()
                 ? Optional.of(faction) : Optional.empty();
+    }
+
+    /** Resolves a persisted public faction id (for example academy) to its blue/red battle side. */
+    public Optional<Faction> battleSideForPublicFaction(String publicFactionId) {
+        if (publicFactionId == null || publicFactionId.isBlank()) {
+            return Optional.empty();
+        }
+        FactionDefinition faction = catalog.findFaction(publicFactionId).orElse(null);
+        return faction == null || !faction.enabled()
+                ? Optional.empty() : Optional.ofNullable(faction.battleSide());
     }
 
     public Optional<FormationDefinition> selectedFormation(UUID playerId) {

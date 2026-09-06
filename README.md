@@ -2,19 +2,25 @@
 
 独立于“WOK计划”的 Minecraft 1.20.1 / Forge 47.4.22 步兵战争模式项目。
 
-当前仓库包含以下可独立安装、可选联动的模块：
+当前仓库包含以下模块；除指挥官支援需要步战核心外，其他附属按各自 README 声明的基础依赖安装：
 
 | 模块 | 正式名称 | 当前版本 | 源码目录 |
 | --- | --- | --- | --- |
-| `wok_infantry` | WOK步战核心 | `0.0.1` | `wok_infantry/` |
-| `wok_trauma` | WOK步战附属-创伤治疗 | `0.0.2` | 仓库根目录 |
-| `wok_body_health` | WOK步战附属-部位血量 | `0.0.3-beta.1` | `wok_body_health/` |
-| `wok_infantry_armor` | WOK步战附属-独立护甲 | `0.0.1` | `wok_infantry_armor/` |
+| `wok_infantry` | WOK步战核心 | `0.1.0` | `wok_infantry/` |
+| `wok_trauma` | WOK步战附属-创伤治疗 | `0.1.0-beta.1` | 仓库根目录 |
+| `wok_body_health` | WOK步战附属-部位血量 | `0.0.3-beta.2` | `wok_body_health/` |
+| `wok_infantry_armor` | WOK步战附属-独立护甲 | `1.1.1-beta.1` | `wok_infantry_armor/` |
+| `wok_vehicle_health` | WOK步战附属-载具部位血量 | `0.1.0-beta.1` | `wok_vehicle_health/` |
+| `wok_commander_support` | WOK步战附属-指挥官支援 | `0.1.0-beta.1` | `wok_commander_support/` |
+| `wok_capture_points` | WOK步战附属-占点 | `0.1.0-alpha.2` | `wok_capture_points/` |
+| `wok_downed` | WOK步战附属-倒地救援 | `0.1.0-alpha.2` | `wok_downed/` |
 
 `WOK` 与 `WOK步战` 是两个不同产品线；本仓库不属于 WOK 本体项目。
 
-版本号由各模块独立维护，普通提交不会自动升级版本。发布规则见
+版本号由各模块独立维护，每次交付新增内容或改变已有内容都必须换号，测试包同样适用；纯文档修改不升级。发布规则见
 [`docs/VERSIONING.md`](docs/VERSIONING.md)，历史更新见 [`CHANGELOG.md`](CHANGELOG.md)。
+Git 内容清单、版本归属及未完成验收见 [`2026-09-06 版本核对`](docs/CONTENT_VERSION_AUDIT_2026-09-06.md)。
+本次 Git 递交的更新内容见 [`2026-09-06 更新说明`](docs/UPDATE_NOTES_2026-09-06.md)。
 WOK步战附属专用客户端的当前依赖、地图后端和回滚基线见
 [`docs/WOK_INFANTRY_TEST_ENVIRONMENT.md`](docs/WOK_INFANTRY_TEST_ENVIRONMENT.md)。
 
@@ -76,4 +82,4 @@ $env:Path="$env:JAVA_HOME\bin;$env:Path"
 开发运行需要一份 ForgeGradle 已映射的 TaCZ 1.1.8-hotfix JAR。默认从 ForgeGradle
 缓存中寻找，也可以通过 `-Ptacz_dev_jar_path=<path>` 指定。
 
-构建产物位于 `build/libs/wok_trauma-0.0.1.jar`。
+构建产物位于 `build/libs/wok_trauma-0.1.0-beta.1.jar`。

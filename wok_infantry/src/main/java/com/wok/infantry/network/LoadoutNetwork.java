@@ -2,6 +2,8 @@ package com.wok.infantry.network;
 
 import com.wok.infantry.WokInfantryMod;
 import com.wok.infantry.network.clientbound.LoadoutSnapshotPacket;
+import com.wok.infantry.network.clientbound.CatalogTransferResultPacket;
+import com.wok.infantry.network.serverbound.AdminCatalogTransferPacket;
 import com.wok.infantry.network.serverbound.AdminClassPacket;
 import com.wok.infantry.network.serverbound.AdminEntryPacket;
 import com.wok.infantry.network.serverbound.AdminFormationLoadoutPacket;
@@ -17,7 +19,7 @@ import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
 
 public final class LoadoutNetwork {
-    private static final String PROTOCOL = "10";
+    private static final String PROTOCOL = "11";
     private static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(WokInfantryMod.MOD_ID, "loadouts"))
             .networkProtocolVersion(() -> PROTOCOL)
@@ -30,6 +32,12 @@ public final class LoadoutNetwork {
     }
 
     public static void init() {
+        CHANNEL.messageBuilder(AdminCatalogTransferPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(AdminCatalogTransferPacket::encode).decoder(AdminCatalogTransferPacket::decode)
+                .consumerMainThread(AdminCatalogTransferPacket::handle).add();
+        CHANNEL.messageBuilder(CatalogTransferResultPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(CatalogTransferResultPacket::encode).decoder(CatalogTransferResultPacket::decode)
+                .consumerMainThread(CatalogTransferResultPacket::handle).add();
         CHANNEL.messageBuilder(OpenLoadoutPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
                 .encoder(OpenLoadoutPacket::encode)
                 .decoder(OpenLoadoutPacket::decode)

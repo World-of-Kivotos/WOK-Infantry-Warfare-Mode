@@ -2,6 +2,7 @@ package com.wok.vehiclehealth.module;
 
 import com.atsuishio.superbwarfare.entity.vehicle.base.VehicleEntity;
 import com.wok.vehiclehealth.config.VehicleModuleConfig;
+import com.wok.vehiclehealth.balance.VehicleBalanceProfiles;
 import net.minecraft.nbt.CompoundTag;
 
 public final class VehicleOpticsData {
@@ -50,10 +51,12 @@ public final class VehicleOpticsData {
                 ? persistent.getCompound(ROOT_KEY)
                 : new CompoundTag();
 
-        float desiredMaximum = Math.max(
-                VehicleModuleConfig.OPTICS_MIN_MAX_HEALTH.get().floatValue(),
-                vehicle.getTurretMaxHealth()
-                        * VehicleModuleConfig.OPTICS_MAX_HEALTH_RATIO.get().floatValue());
+        float desiredMaximum = VehicleBalanceProfiles.find(vehicle)
+                .map(profile -> profile.opticsHealth())
+                .orElseGet(() -> Math.max(
+                        VehicleModuleConfig.OPTICS_MIN_MAX_HEALTH.get().floatValue(),
+                        vehicle.getTurretMaxHealth()
+                                * VehicleModuleConfig.OPTICS_MAX_HEALTH_RATIO.get().floatValue()));
         float storedMaximum = data.getFloat(MAX_KEY);
         if (!(storedMaximum > 0.0F)) {
             data.putFloat(MAX_KEY, desiredMaximum);

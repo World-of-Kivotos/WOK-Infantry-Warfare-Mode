@@ -19,7 +19,8 @@ public record AmmoSupplyView(Target target, int capacityPoints, int remainingPoi
                 ? List.of() : vehicleAmmunition);
     }
 
-    public enum TargetKind { SMALL_CRATE, LARGE_STATION }
+    /** Append-only wire order: existing small/legacy-large/medium ordinals remain stable. */
+    public enum TargetKind { SMALL_CRATE, LARGE_STATION, MEDIUM_CRATE, LARGE_BLOCK }
 
     public record Target(TargetKind kind, long value) {
         public Target {
@@ -34,8 +35,21 @@ public record AmmoSupplyView(Target target, int capacityPoints, int remainingPoi
             return new Target(TargetKind.LARGE_STATION, entityId);
         }
 
+        public static Target mediumCrate(BlockPos pos) {
+            return new Target(TargetKind.MEDIUM_CRATE, Objects.requireNonNull(pos).asLong());
+        }
+
+        public static Target largeBlock(BlockPos pos) {
+            return new Target(TargetKind.LARGE_BLOCK, Objects.requireNonNull(pos).asLong());
+        }
+
+        public boolean isLarge() {
+            return kind == TargetKind.LARGE_STATION || kind == TargetKind.LARGE_BLOCK;
+        }
+
         public BlockPos blockPos() {
-            if (kind != TargetKind.SMALL_CRATE) {
+            if (kind != TargetKind.SMALL_CRATE && kind != TargetKind.MEDIUM_CRATE
+                    && kind != TargetKind.LARGE_BLOCK) {
                 throw new IllegalStateException("Target is not a block");
             }
             return BlockPos.of(value);

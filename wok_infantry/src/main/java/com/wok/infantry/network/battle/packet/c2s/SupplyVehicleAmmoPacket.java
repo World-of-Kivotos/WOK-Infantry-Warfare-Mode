@@ -1,6 +1,7 @@
 package com.wok.infantry.network.battle.packet.c2s;
 
 import com.wok.infantry.ammo.AmmoSupplyService;
+import com.wok.infantry.ammo.AmmoSupplyView;
 import com.wok.infantry.network.ServerRequestLimiter;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
@@ -10,18 +11,21 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 /** Explicit request for one nearby SBW vehicle weapon/ammunition/round amount. */
-public record SupplyVehicleAmmoPacket(int stationEntityId, int vehicleEntityId,
+public record SupplyVehicleAmmoPacket(AmmoSupplyView.Target stationTarget,
+                                      int vehicleEntityId,
                                       String weaponKey, int consumerIndex,
                                       int requestedRounds) {
     private static final int MAX_WEAPON_KEY_LENGTH = 128;
     private static final int MAX_REQUESTED_ROUNDS = 10_000;
 
     public SupplyVehicleAmmoPacket {
+        Objects.requireNonNull(stationTarget, "stationTarget");
         Objects.requireNonNull(weaponKey, "weaponKey");
     }
 
     public static void encode(SupplyVehicleAmmoPacket packet, FriendlyByteBuf buffer) {
-        buffer.writeVarInt(packet.stationEntityId);
+        buffer.writeByte(packet.stationTarget.kind().ordinal());
+        buffer.writeLong(packet.stationTarget.value());
         buffer.writeVarInt(packet.vehicleEntityId);
         buffer.writeUtf(packet.weaponKey, MAX_WEAPON_KEY_LENGTH);
         buffer.writeByte(packet.consumerIndex);
@@ -29,17 +33,23 @@ public record SupplyVehicleAmmoPacket(int stationEntityId, int vehicleEntityId,
     }
 
     public static SupplyVehicleAmmoPacket decode(FriendlyByteBuf buffer) {
-        int stationEntityId = buffer.readVarInt();
+        int kindOrdinal = buffer.readUnsignedByte();
+        AmmoSupplyView.TargetKind[] kinds = AmmoSupplyView.TargetKind.values();
+        if (kindOrdinal >= kinds.length) {
+            throw new IllegalArgumentException("Invalid large supply target kind");
+        }
+        AmmoSupplyView.Target stationTarget = new AmmoSupplyView.Target(
+                kinds[kindOrdinal], buffer.readLong());
         int vehicleEntityId = buffer.readVarInt();
         String weaponKey = buffer.readUtf(MAX_WEAPON_KEY_LENGTH);
         int consumerIndex = buffer.readUnsignedByte();
         int requestedRounds = buffer.readVarInt();
-        if (stationEntityId < 0 || vehicleEntityId < 0 || weaponKey.isBlank()
+        if (!stationTarget.isLarge() || vehicleEntityId < 0 || weaponKey.isBlank()
                 || requestedRounds < 1 || requestedRounds > MAX_REQUESTED_ROUNDS
                 || buffer.readableBytes() != 0) {
             throw new IllegalArgumentException("Invalid vehicle ammunition request");
         }
-        return new SupplyVehicleAmmoPacket(stationEntityId, vehicleEntityId, weaponKey,
+        return new SupplyVehicleAmmoPacket(stationTarget, vehicleEntityId, weaponKey,
                 consumerIndex, requestedRounds);
     }
 
@@ -52,7 +62,7 @@ public record SupplyVehicleAmmoPacket(int stationEntityId, int vehicleEntityId,
                 ServerRequestLimiter.Kind.DEPLOYMENT_ACTION)) {
             return;
         }
-        AmmoSupplyService.supplyVehicleAmmo(sender, packet.stationEntityId,
+        AmmoSupplyService.supplyVehicleAmmo(sender, packet.stationTarget,
                 packet.vehicleEntityId, packet.weaponKey, packet.consumerIndex,
                 packet.requestedRounds);
     }

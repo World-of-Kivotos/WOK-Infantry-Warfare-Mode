@@ -2,6 +2,7 @@ package com.wok.infantry.deployment;
 
 import com.wok.infantry.battle.BattleRules;
 import com.wok.infantry.battle.Faction;
+import com.wok.infantry.battle.SquadCallsign;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -27,7 +28,7 @@ import java.util.UUID;
 /** World-persistent faction deployment points; per-life state intentionally remains runtime-only. */
 final class DeploymentSavedData extends SavedData {
     private static final String DATA_NAME = "wok_infantry_deployment";
-    static final int DATA_VERSION = 3;
+    static final int DATA_VERSION = 5;
     static final int MAX_FIELD_POINTS_PER_FACTION = 15;
     private static final int MAX_FIELD_POINTS_TOTAL =
             MAX_FIELD_POINTS_PER_FACTION * Faction.values().length;
@@ -49,6 +50,9 @@ final class DeploymentSavedData extends SavedData {
             new EnumMap<>(Faction.class);
     private final Map<UUID, FieldDeploymentPoint> fieldPointsById = new HashMap<>();
     private final Map<AnchorKey, UUID> fieldPointIdsByAnchor = new HashMap<>();
+    private final Map<UUID, RallyDeploymentPoint> ralliesById = new HashMap<>();
+    private final Map<AnchorKey, UUID> rallyIdsByAnchor = new HashMap<>();
+    private final Map<RallyCooldownKey, Long> rallyCooldownReadyAt = new HashMap<>();
 
     DeploymentSavedData() {
         for (Faction faction : Faction.values()) {
@@ -124,6 +128,36 @@ final class DeploymentSavedData extends SavedData {
                 }
             }
         }
+        if (version >= 4) {
+            ListTag rallyList = root.getList("Rallies", Tag.TAG_COMPOUND);
+            int rallyLimit = Math.min(rallyList.size(), 256);
+            for (int index = 0; index < rallyLimit; index++) {
+                RallyDeploymentPoint point = readRallyPoint(rallyList.getCompound(index));
+                if (point != null && !acceptedIds.contains(point.id())
+                        && data.putRally(point, false)) {
+                    acceptedIds.add(point.id());
+                }
+            }
+        }
+        if (version >= 5) {
+            ListTag cooldownList = root.getList("RallyCooldowns", Tag.TAG_COMPOUND);
+            int cooldownLimit = Math.min(cooldownList.size(), 2_048);
+            for (int index = 0; index < cooldownLimit
+                    && data.rallyCooldownReadyAt.size() < 1_024; index++) {
+                CompoundTag tag = cooldownList.getCompound(index);
+                Faction faction = Faction.byId(tag.getString("Faction")).orElse(null);
+                SquadCallsign squad = SquadCallsign.byId(tag.getString("Squad"))
+                        .orElse(null);
+                String formation = tag.getString("Formation").trim();
+                long readyAt = tag.getLong("ReadyAt");
+                if (faction == null || squad == null || formation.isEmpty()
+                        || formation.length() > 64 || readyAt <= 0L) {
+                    continue;
+                }
+                data.rallyCooldownReadyAt.put(
+                        new RallyCooldownKey(faction, formation, squad), readyAt);
+            }
+        }
         // Canonicalize corrupt/old input on the next world save.
         data.setDirty();
         return data;
@@ -181,7 +215,69 @@ final class DeploymentSavedData extends SavedData {
             vehicleList.add(tag);
         }
         root.put("VehiclePoints", vehicleList);
+
+        ListTag rallyList = new ListTag();
+        ralliesById.values().stream().sorted(Comparator.comparing(
+                RallyDeploymentPoint::id)).forEach(point -> {
+            CompoundTag tag = new CompoundTag();
+            tag.putUUID("Id", point.id());
+            tag.putString("Faction", point.faction().id());
+            tag.putString("Formation", point.formationId());
+            tag.putString("Squad", point.squad().id());
+            tag.putString("Dimension", point.dimension().toString());
+            tag.putInt("AnchorX", point.anchorPosition().getX());
+            tag.putInt("AnchorY", point.anchorPosition().getY());
+            tag.putInt("AnchorZ", point.anchorPosition().getZ());
+            tag.putInt("SpawnX", point.spawnPosition().getX());
+            tag.putInt("SpawnY", point.spawnPosition().getY());
+            tag.putInt("SpawnZ", point.spawnPosition().getZ());
+            tag.putFloat("Yaw", point.yaw());
+            rallyList.add(tag);
+        });
+        root.put("Rallies", rallyList);
+
+        ListTag cooldownList = new ListTag();
+        rallyCooldownReadyAt.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> {
+                    CompoundTag tag = new CompoundTag();
+                    tag.putString("Faction", entry.getKey().faction().id());
+                    tag.putString("Formation", entry.getKey().formationId());
+                    tag.putString("Squad", entry.getKey().squad().id());
+                    tag.putLong("ReadyAt", entry.getValue());
+                    cooldownList.add(tag);
+                });
+        root.put("RallyCooldowns", cooldownList);
         return root;
+    }
+
+    long rallyCooldownRemainingTicks(Faction faction, String formationId,
+                                     SquadCallsign squad, long gameTime) {
+        RallyCooldownKey key = RallyCooldownKey.of(faction, formationId, squad);
+        if (key == null) {
+            return 0L;
+        }
+        Long readyAt = rallyCooldownReadyAt.get(key);
+        if (readyAt == null) {
+            return 0L;
+        }
+        if (readyAt <= gameTime) {
+            rallyCooldownReadyAt.remove(key);
+            setDirty();
+            return 0L;
+        }
+        return readyAt - gameTime;
+    }
+
+    void startRallyCooldown(Faction faction, String formationId,
+                            SquadCallsign squad, long readyAt) {
+        RallyCooldownKey key = RallyCooldownKey.of(faction, formationId, squad);
+        if (key == null || readyAt <= 0L) {
+            throw new IllegalArgumentException("Invalid rally cooldown identity or deadline");
+        }
+        if (!Objects.equals(rallyCooldownReadyAt.put(key, readyAt), readyAt)) {
+            setDirty();
+        }
     }
 
     Optional<DeploymentPoint> mainBase(Faction faction) {
@@ -263,8 +359,57 @@ final class DeploymentSavedData extends SavedData {
         if (id == null) {
             return false;
         }
-        return fieldPointsById.containsKey(id)
+        return fieldPointsById.containsKey(id) || ralliesById.containsKey(id)
                 || mainBases.values().stream().anyMatch(point -> id.equals(point.id()));
+    }
+
+    List<RallyDeploymentPoint> rallies(Faction faction, String formationId,
+                                        SquadCallsign squad) {
+        if (faction == null || formationId == null || squad == null) return List.of();
+        return ralliesById.values().stream()
+                .filter(point -> point.faction() == faction
+                        && point.formationId().equals(formationId)
+                        && point.squad() == squad)
+                .sorted(Comparator.comparing((RallyDeploymentPoint point) ->
+                                point.dimension().toString())
+                        .thenComparing(point -> point.anchorPosition().asLong()))
+                .toList();
+    }
+
+    Optional<RallyDeploymentPoint> rally(UUID id) {
+        return Optional.ofNullable(id == null ? null : ralliesById.get(id));
+    }
+
+    Optional<RallyDeploymentPoint> rallyAt(ResourceLocation dimension, BlockPos anchor) {
+        if (dimension == null || anchor == null) return Optional.empty();
+        UUID id = rallyIdsByAnchor.get(new AnchorKey(dimension, anchor));
+        return Optional.ofNullable(id == null ? null : ralliesById.get(id));
+    }
+
+    boolean putRally(RallyDeploymentPoint point) {
+        return putRally(point, true);
+    }
+
+    private boolean putRally(RallyDeploymentPoint point, boolean dirty) {
+        if (!validRallyPoint(point) || containsPointId(point.id())) return false;
+        AnchorKey key = new AnchorKey(point.dimension(), point.anchorPosition());
+        if (rallyIdsByAnchor.containsKey(key) || fieldPointIdsByAnchor.containsKey(key)
+                || vehiclePointAt(point.dimension(), point.anchorPosition()).isPresent()) {
+            return false;
+        }
+        ralliesById.put(point.id(), point);
+        rallyIdsByAnchor.put(key, point.id());
+        if (dirty) setDirty();
+        return true;
+    }
+
+    Optional<RallyDeploymentPoint> removeRally(ResourceLocation dimension, BlockPos anchor) {
+        if (dimension == null || anchor == null) return Optional.empty();
+        AnchorKey key = new AnchorKey(dimension, anchor);
+        UUID id = rallyIdsByAnchor.remove(key);
+        RallyDeploymentPoint removed = id == null ? null : ralliesById.remove(id);
+        if (removed != null) setDirty();
+        return Optional.ofNullable(removed);
     }
 
     /** Adds a new record; only an exact replay is accepted as an idempotent success. */
@@ -279,7 +424,8 @@ final class DeploymentSavedData extends SavedData {
             return false;
         }
         AnchorKey key = AnchorKey.of(point);
-        if (vehiclePointAt(point.dimension(), point.anchorPosition()).isPresent()) {
+        if (vehiclePointAt(point.dimension(), point.anchorPosition()).isPresent()
+                || rallyIdsByAnchor.containsKey(key)) {
             return false;
         }
         UUID anchoredId = fieldPointIdsByAnchor.get(key);
@@ -340,7 +486,8 @@ final class DeploymentSavedData extends SavedData {
         UUID anchoredId = fieldPointIdsByAnchor.get(key);
         FieldDeploymentPoint withId = fieldPointsById.get(point.id());
         if (mainBaseUsesId(point.id())
-                || vehiclePointAt(point.dimension(), point.anchorPosition()).isPresent()) {
+                || vehiclePointAt(point.dimension(), point.anchorPosition()).isPresent()
+                || rallyIdsByAnchor.containsKey(key)) {
             return false;
         }
         if (anchoredId != null || withId != null) {
@@ -372,6 +519,8 @@ final class DeploymentSavedData extends SavedData {
     private boolean insertVehiclePoint(VehicleDeploymentPoint point, boolean dirty) {
         if (!validVehiclePoint(point)
                 || fieldPointIdsByAnchor.containsKey(new AnchorKey(point.dimension(),
+                point.anchorPosition()))
+                || rallyIdsByAnchor.containsKey(new AnchorKey(point.dimension(),
                 point.anchorPosition()))) {
             return false;
         }
@@ -473,6 +622,35 @@ final class DeploymentSavedData extends SavedData {
         return new VehicleDeploymentPoint(faction, dimension, new BlockPos(x, y, z), facing);
     }
 
+    private static RallyDeploymentPoint readRallyPoint(CompoundTag tag) {
+        if (!tag.hasUUID("Id") || !tag.contains("Faction", Tag.TAG_STRING)
+                || !tag.contains("Formation", Tag.TAG_STRING)
+                || !tag.contains("Squad", Tag.TAG_STRING)
+                || !tag.contains("Dimension", Tag.TAG_STRING)) return null;
+        Faction faction = Faction.byId(tag.getString("Faction")).orElse(null);
+        SquadCallsign squad = SquadCallsign.byId(tag.getString("Squad")).orElse(null);
+        ResourceLocation dimension = ResourceLocation.tryParse(tag.getString("Dimension"));
+        String formation = tag.getString("Formation").trim();
+        int anchorX = tag.getInt("AnchorX");
+        int anchorY = tag.getInt("AnchorY");
+        int anchorZ = tag.getInt("AnchorZ");
+        int spawnX = tag.getInt("SpawnX");
+        int spawnY = tag.getInt("SpawnY");
+        int spawnZ = tag.getInt("SpawnZ");
+        float yaw = tag.getFloat("Yaw");
+        if (faction == null || squad == null || dimension == null || formation.isEmpty()
+                || internalDimension(dimension) || !Float.isFinite(yaw)
+                || yaw < 0.0F || yaw >= 360.0F
+                || !validCoordinate(anchorX) || !validCoordinate(anchorY)
+                || !validCoordinate(anchorZ) || !validCoordinate(spawnX)
+                || !validCoordinate(spawnY) || !validCoordinate(spawnZ)
+                || Math.abs(spawnX - anchorX) > 2 || Math.abs(spawnZ - anchorZ) > 2
+                || spawnY - anchorY < 1 || spawnY - anchorY > 3) return null;
+        return new RallyDeploymentPoint(tag.getUUID("Id"), faction, formation, squad,
+                dimension, new BlockPos(anchorX, anchorY, anchorZ),
+                new BlockPos(spawnX, spawnY, spawnZ), yaw);
+    }
+
     private static boolean validCoordinate(int coordinate) {
         return Math.abs((double) coordinate) <= BattleRules.MAX_COORDINATE;
     }
@@ -498,6 +676,18 @@ final class DeploymentSavedData extends SavedData {
                 && validCoordinate(point.anchorPosition().getZ());
     }
 
+    private static boolean validRallyPoint(RallyDeploymentPoint point) {
+        return point != null && !internalDimension(point.dimension())
+                && point.dimension().toString().length() <= BattleRules.MAX_DIMENSION_ID_LENGTH
+                && point.formationId().length() <= 64
+                && validCoordinate(point.anchorPosition().getX())
+                && validCoordinate(point.anchorPosition().getY())
+                && validCoordinate(point.anchorPosition().getZ())
+                && validCoordinate(point.spawnPosition().getX())
+                && validCoordinate(point.spawnPosition().getY())
+                && validCoordinate(point.spawnPosition().getZ());
+    }
+
     private static boolean sameAnchor(VehicleDeploymentPoint left,
                                       VehicleDeploymentPoint right) {
         return left.dimension().equals(right.dimension())
@@ -517,6 +707,39 @@ final class DeploymentSavedData extends SavedData {
 
         static AnchorKey of(FieldDeploymentPoint point) {
             return new AnchorKey(point.dimension(), point.anchorPosition());
+        }
+    }
+
+    private record RallyCooldownKey(Faction faction, String formationId,
+                                    SquadCallsign squad)
+            implements Comparable<RallyCooldownKey> {
+        private RallyCooldownKey {
+            Objects.requireNonNull(faction, "faction");
+            Objects.requireNonNull(formationId, "formationId");
+            Objects.requireNonNull(squad, "squad");
+        }
+
+        static RallyCooldownKey of(Faction faction, String formationId,
+                                   SquadCallsign squad) {
+            String normalizedFormation = formationId == null ? "" : formationId.trim();
+            if (faction == null || squad == null || normalizedFormation.isEmpty()
+                    || normalizedFormation.length() > 64) {
+                return null;
+            }
+            return new RallyCooldownKey(faction, normalizedFormation, squad);
+        }
+
+        @Override
+        public int compareTo(RallyCooldownKey other) {
+            int factionOrder = faction.id().compareTo(other.faction.id());
+            if (factionOrder != 0) {
+                return factionOrder;
+            }
+            int formationOrder = formationId.compareTo(other.formationId);
+            if (formationOrder != 0) {
+                return formationOrder;
+            }
+            return squad.id().compareTo(other.squad.id());
         }
     }
 }

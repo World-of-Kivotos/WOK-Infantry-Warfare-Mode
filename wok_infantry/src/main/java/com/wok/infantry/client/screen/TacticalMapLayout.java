@@ -5,7 +5,7 @@ final class TacticalMapLayout {
     private static final int SUPPORT_PANEL_TOP_OFFSET = 94;
     private static final int RICH_MIN_HEIGHT = 620;
     private static final int SUPPORT_VERTICAL_MIN_HEIGHT = 100;
-    private static final int SUPPORT_BOTTOM_CONTENT_HEIGHT = 42;
+    private static final int SUPPORT_BOTTOM_CONTENT_HEIGHT = 58;
 
     private TacticalMapLayout() {
     }
@@ -187,8 +187,8 @@ final class TacticalMapLayout {
         }
         int pagerTop = body.bottom() - 21;
         Rect lastButton = supportButton(layout, visibleCount - 1, visibleCount);
-        int top = lastButton.bottom() + 6;
-        int bottom = Math.min(top + 13, pagerTop - 4);
+        int top = lastButton.bottom() + 5;
+        int bottom = Math.min(top + 22, pagerTop - 4);
         return bottom <= top ? Rect.EMPTY
                 : new Rect(body.left() + 4, top, body.right() - 4, bottom);
     }

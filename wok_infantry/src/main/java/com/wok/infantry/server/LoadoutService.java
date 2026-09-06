@@ -53,6 +53,7 @@ public final class LoadoutService {
 
     private final LoadoutRepository repository;
     private final MinecraftServer server;
+    private final CatalogTransferService catalogTransfers;
     private boolean playersDirty;
     private long nextPlayerSaveTick;
 
@@ -60,6 +61,14 @@ public final class LoadoutService {
         this.server = Objects.requireNonNull(server, "server");
         repository = new LoadoutRepository(server);
         repository.load();
+        catalogTransfers = new CatalogTransferService(server, repository, this);
+    }
+
+    public CatalogTransferService catalogTransfers() { return catalogTransfers; }
+
+    void refreshCatalogClients() {
+        server.getPlayerList().getPlayers().forEach(player ->
+                sendSnapshot(player, LoadoutSnapshotPacket.OpenTarget.REFRESH_CATALOG));
     }
 
     public static void start(MinecraftServer server) {
@@ -1114,7 +1123,8 @@ public final class LoadoutService {
                 .filter(classId -> repository.config().findClass(classId).isPresent())
                 .ifPresent(playerData::setActiveClassId);
         boolean administratorView = openTarget == LoadoutSnapshotPacket.OpenTarget.ADMIN
-                || openTarget == LoadoutSnapshotPacket.OpenTarget.REFRESH_ADMIN;
+                || openTarget == LoadoutSnapshotPacket.OpenTarget.REFRESH_ADMIN
+                || openTarget == LoadoutSnapshotPacket.OpenTarget.REFRESH_CATALOG && isAdministrator(player);
         LoadoutSnapshot snapshot = new LoadoutSnapshot(
                 administratorView ? repository.config().copy() : configForPlayer(player), playerData,
                 isAdministrator(player), administratorView

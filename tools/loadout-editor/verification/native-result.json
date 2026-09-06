@@ -1,0 +1,107 @@
+{
+  "status": "PASS",
+  "verifiedAt": "2026-09-06T02:18:39.9042418Z",
+  "decoder": "com.wok.infantry.configtransfer.CatalogArchive.decode",
+  "classpathNote": "Delivered production JAR from outputs/loadout-editor-20260906/游戏端MOD before dependency JARs; no build/classes/java/main directory on decoder classpath.",
+  "java": "D:\\DevTools\\jdk-17\\bin\\java.exe",
+  "decoderExitCode": 0,
+  "decoderOutput": [
+    "PASS D:\\Wok步战附属-创伤治疗\\outputs\\loadout-editor-20260906\\verification\\browser-export.json | 2 阵营 / 3 编制 / 16 兵种 132 槽位 / 127 装备 / 21 载具配置",
+    "PASS D:\\Wok步战附属-创伤治疗\\outputs\\loadout-editor-20260906\\示例数据包-仅供学习.json | 2 阵营 / 2 编制 / 10 兵种 78 槽位 / 73 装备 / 13 载具配置"
+  ],
+  "builtJar": {
+    "path": "D:\\Wok步战附属-创伤治疗\\outputs\\loadout-editor-20260906\\游戏端MOD\\wok_infantry-0.0.1.jar",
+    "sha256": "702DD173E240F738651439F847328F89DC9CFA3DD46AFEA1842617C3E8E5EEB3",
+    "length": 1444746,
+    "version": "0.0.1"
+  },
+  "artifacts": [
+    {
+      "path": "D:\\Wok步战附属-创伤治疗\\outputs\\loadout-editor-20260906\\verification\\browser-export.json",
+      "sha256": "E3EB47CDAA725974C53E620316C4A90C80F46461F3B215FF781A8A07CC259B17",
+      "factions": 2,
+      "formations": 3,
+      "classes": 16,
+      "slots": 132,
+      "entries": 127,
+      "vehicles": 21
+    },
+    {
+      "path": "D:\\Wok步战附属-创伤治疗\\outputs\\loadout-editor-20260906\\示例数据包-仅供学习.json",
+      "sha256": "084F8A731E8AE649425C73573217132A192E69AA0C9B834FC58F6C12A672DC3B",
+      "factions": 2,
+      "formations": 2,
+      "classes": 10,
+      "slots": 78,
+      "entries": 73,
+      "vehicles": 13
+    }
+  ],
+  "importantClassChecks": [
+    {
+      "class": "com.wok.infantry.configtransfer.CatalogArchive",
+      "jarSha256": "72E1C14ADF2E2619AD6CE930C4382DDB70CD4F404545BD66AEAE6FDD42B07727",
+      "compiledClassSha256": "4AE2FEA003CB6F122E5099DF2E5C8AE2ACB5EFF7F2D0EBA0B77956BA9F33028F",
+      "byteIdentical": false,
+      "signaturesMatch": true
+    },
+    {
+      "class": "com.wok.infantry.loadout.LoadoutConfigData",
+      "jarSha256": "30BB37FF45EE496535C14E2B4D03DBC7572A73518489638A4127D6D0C94CA2E5",
+      "compiledClassSha256": "8888E6F4D862B2D4C336E102D2BCB328C5647C089E144B78E653D264DBBA3E13",
+      "byteIdentical": false,
+      "signaturesMatch": true
+    },
+    {
+      "class": "com.wok.infantry.formation.FormationConfigData",
+      "jarSha256": "335B7A5E4DF492935FD495F02569D1E914E89513D1FCDAB47256679394E6880F",
+      "compiledClassSha256": "7404DA9666E783AB85F43A0ADF1E10F034D5F8399D6F5D4C9C56FA538688F61A",
+      "byteIdentical": false,
+      "signaturesMatch": true
+    },
+    {
+      "class": "com.wok.infantry.formation.FormationClassRule",
+      "jarSha256": "89421F2F16416A38C6292375CB74AB4246E793FD60B0D6AD7EAC101602A7117B",
+      "compiledClassSha256": "8ABBB7E1CCBC3D2F4A086A7C3CC3E3CC291A8692A2E0A77AAF23BFE4D266A83C",
+      "byteIdentical": false,
+      "signaturesMatch": true
+    },
+    {
+      "class": "com.wok.infantry.server.CatalogTransferService",
+      "jarSha256": "AF4864AA2D25FF5F6B49107BA254BC4832FEE45527E93F0A672329F6CE39BFFC",
+      "compiledClassSha256": "13E674766651990952EB8C15ED92D9E85BAC3B58E2A5C33931245308ADA9EC1F",
+      "byteIdentical": false,
+      "signaturesMatch": true
+    }
+  ],
+  "classComparisonNote": "Built JAR classes are not byte-identical to development classes; public/private signatures match. Compatibility is established by successful direct decoding with the built JAR itself.",
+  "modsToml": "modLoader=\"javafml\"\nloaderVersion=\"[47,)\"\nlicense=\"All Rights Reserved\"\n\n[[mods]]\nmodId=\"wok_infantry\"\nversion=\"0.0.1\"\ndisplayName=\"WOK步战核心\"\nauthors=\"Wok Team\"\ndescription='''Server-authoritative 40v40 infantry framework with squads, role quotas, deployment, tactical map, an extensible commander-support framework, HUD, and configurable loadouts.'''\n\n[[dependencies.wok_infantry]]\nmodId=\"forge\"\nmandatory=true\nversionRange=\"[47,)\"\nordering=\"NONE\"\nside=\"BOTH\"\n\n[[dependencies.wok_infantry]]\nmodId=\"minecraft\"\nmandatory=true\nversionRange=\"[1.20.1,1.21)\"\nordering=\"NONE\"\nside=\"BOTH\"\n\n[[dependencies.wok_infantry]]\nmodId=\"journeymap\"\nmandatory=false\n# JourneyMap 6 remains the preferred persistent terrain engine when installed. Xaero Minimap\n# 24.x can now supply local terrain instead, so neither map backend is a hard dependency.\nversionRange=\"[1.20.1-6.0.2,1.20.1-7.0.0)\"\nordering=\"AFTER\"\nside=\"CLIENT\"\n\n[[dependencies.wok_infantry]]\nmodId=\"xaerominimapfair\"\nmandatory=false\nversionRange=\"[24.2.0,25.0.0)\"\nordering=\"AFTER\"\nside=\"CLIENT\"\n\n[[dependencies.wok_infantry]]\nmodId=\"xaerominimap\"\nmandatory=false\nversionRange=\"[24.2.0,25.0.0)\"\nordering=\"AFTER\"\nside=\"CLIENT\"\n\n[[dependencies.wok_infantry]]\nmodId=\"tacz\"\nmandatory=false\nversionRange=\"[1.1.8,)\"\nordering=\"AFTER\"\nside=\"BOTH\"\n\n[[dependencies.wok_infantry]]\nmodId=\"superbwarfare\"\nmandatory=false\n# The adapter validates every configured entity id at runtime, so the core stays installable\n# without卓越前线 and does not pretend an unregistered vehicle is usable.\nversionRange=\"[0.8.9,)\"\nordering=\"AFTER\"\nside=\"BOTH\"\n\n[[dependencies.wok_infantry]]\nmodId=\"fcp\"\nmandatory=false\n# FCP provides the first production formation's Stryker, HMMWV and Little Bird entities.\n# It remains optional so installations that use only the infantry framework still start.\nversionRange=\"[1.2.1,)\"\nordering=\"AFTER\"\nside=\"BOTH\"\n\n[[dependencies.wok_infantry]]\nmodId=\"caps_awim_tactical_gear_rework\"\nmandatory=false\n# Supplies the installed 3D model used by the portable 100-point rifleman crate.\nversionRange=\"[3.0.1906.26,)\"\nordering=\"AFTER\"\nside=\"CLIENT\"\n\n[[dependencies.wok_infantry]]\nmodId=\"doomsday_decoration\"\nmandatory=false\n# Supplies the installed weapon-box and radio models used by the medium crate and squad rally.\nversionRange=\"[1.0.0,)\"\nordering=\"AFTER\"\nside=\"CLIENT\"\n\n[[dependencies.wok_infantry]]\nmodId=\"dragonrise_reforge\"\nmandatory=false\n# Provides the authoritative large ammo-supply deployer/entity and the Leopard 2A4/CV90\n# used by Caesar's 234th Mechanized Infantry Brigade. The core still starts without\n# DragonRise, but the large cargo item and formations that reference its vehicles fail closed.\nversionRange=\"[1.4.1,)\"\nordering=\"AFTER\"\nside=\"BOTH\"\n",
+  "liveJar": {
+    "path": "D:\\WOK步战测试\\1.20.1-Forge_47.4.22\\mods\\wok_infantry-0.0.1.jar",
+    "sha256": "8723D505E6E566ADE92F68C3F5E801D547902A0C9A37C21BA156E42B4ACFFF9A",
+    "catalogClassChecks": [
+      {
+        "class": "com/wok/infantry/configtransfer/CatalogArchive.class",
+        "present": false
+      },
+      {
+        "class": "com/wok/infantry/server/CatalogTransferService.class",
+        "present": false
+      },
+      {
+        "class": "com/wok/infantry/server/CatalogTransferCommands.class",
+        "present": false
+      },
+      {
+        "class": "com/wok/infantry/client/screen/CatalogTransferScreen.class",
+        "present": false
+      }
+    ],
+    "modified": false
+  },
+  "limitations": [
+    "Offline decoder validates archive schema, lossless normalization and references; does not test item registries, actual deployment or firing.",
+    "No Gradle build or game-directory write was performed.",
+    "Existing live core lacks catalog import/export; replace its same-version core JAR only after stopping the game/server, keeping a backup."
+  ]
+}

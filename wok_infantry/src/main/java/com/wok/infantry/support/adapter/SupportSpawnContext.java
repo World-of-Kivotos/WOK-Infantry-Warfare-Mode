@@ -2,6 +2,7 @@ package com.wok.infantry.support.adapter;
 
 import com.wok.infantry.support.SupportDefinition;
 import com.wok.infantry.support.SupportTarget;
+import com.wok.infantry.battle.Faction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 
@@ -15,7 +16,8 @@ public record SupportSpawnContext(
         UUID callId,
         SupportDefinition definition,
         SupportTarget target,
-        int stepIndex
+        int stepIndex,
+        Faction faction
 ) {
     public SupportSpawnContext {
         Objects.requireNonNull(level, "level");
@@ -23,6 +25,7 @@ public record SupportSpawnContext(
         Objects.requireNonNull(callId, "callId");
         Objects.requireNonNull(definition, "definition");
         Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(faction, "faction");
         if (stepIndex < 0 || stepIndex >= definition.stepCount()) {
             throw new IllegalArgumentException("Support step is outside the mission");
         }

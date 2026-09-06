@@ -80,9 +80,19 @@ ordering="AFTER"
 side="CLIENT"
 
 [[dependencies.${mod_id}]]
+modId="doomsday_decoration"
+mandatory=false
+# Supplies the installed weapon-box and radio models used by the medium crate and squad rally.
+versionRange="[1.0.0,)"
+ordering="AFTER"
+side="CLIENT"
+
+[[dependencies.${mod_id}]]
 modId="dragonrise_reforge"
 mandatory=false
-# Its vehicle-transported ammo_supply_station entity becomes the 1500-point large station.
+# Provides the authoritative large ammo-supply deployer/entity and the Leopard 2A4/CV90
+# used by Caesar's 234th Mechanized Infantry Brigade. The core still starts without
+# DragonRise, but the large cargo item and formations that reference its vehicles fail closed.
 versionRange="[1.4.1,)"
 ordering="AFTER"
 side="BOTH"

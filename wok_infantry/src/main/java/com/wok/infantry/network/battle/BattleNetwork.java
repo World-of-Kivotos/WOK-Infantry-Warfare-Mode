@@ -47,7 +47,7 @@ import java.util.Map;
 public final class BattleNetwork {
     public static final ResourceLocation CHANNEL_NAME =
             ResourceLocation.fromNamespaceAndPath(WokInfantryMod.MOD_ID, "battle");
-    public static final String PROTOCOL_VERSION = "15";
+    public static final String PROTOCOL_VERSION = "18";
 
     public static final int C2S_OPEN_ID = 0;
     public static final int C2S_SNAPSHOT_REQUEST_ID = 1;

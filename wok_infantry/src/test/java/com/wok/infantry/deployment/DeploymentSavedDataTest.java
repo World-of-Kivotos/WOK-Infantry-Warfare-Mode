@@ -1,6 +1,7 @@
 package com.wok.infantry.deployment;
 
 import com.wok.infantry.battle.Faction;
+import com.wok.infantry.battle.SquadCallsign;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -45,7 +46,7 @@ class DeploymentSavedDataTest {
         assertTrue(loaded.fieldPoints(Faction.RED).isEmpty());
 
         CompoundTag migrated = loaded.save(new CompoundTag());
-        assertEquals(3, migrated.getInt("Version"));
+        assertEquals(DeploymentSavedData.DATA_VERSION, migrated.getInt("Version"));
         assertTrue(migrated.getList("FieldPoints", Tag.TAG_COMPOUND).isEmpty());
     }
 
@@ -67,7 +68,7 @@ class DeploymentSavedDataTest {
         original.putFieldPoint(blueOne);
 
         CompoundTag encoded = original.save(new CompoundTag());
-        assertEquals(3, encoded.getInt("Version"));
+        assertEquals(DeploymentSavedData.DATA_VERSION, encoded.getInt("Version"));
         assertEquals(3, encoded.getList("FieldPoints", Tag.TAG_COMPOUND).size());
 
         DeploymentSavedData decoded = DeploymentSavedData.load(encoded.copy());
@@ -230,7 +231,7 @@ class DeploymentSavedDataTest {
                 OVERWORLD, blue.anchorPosition().east(), Direction.WEST)));
 
         CompoundTag encoded = original.save(new CompoundTag());
-        assertEquals(3, encoded.getInt("Version"));
+        assertEquals(DeploymentSavedData.DATA_VERSION, encoded.getInt("Version"));
         assertEquals(2, encoded.getList("VehiclePoints", Tag.TAG_COMPOUND).size());
         DeploymentSavedData decoded = DeploymentSavedData.load(encoded.copy());
 
@@ -282,6 +283,55 @@ class DeploymentSavedDataTest {
                 OVERWORLD, anchor)));
         assertFalse(fieldFirst.bindVehiclePoint(new VehicleDeploymentPoint(Faction.RED,
                 OVERWORLD, anchor, Direction.SOUTH)));
+    }
+
+    @Test
+    void versionFiveRoundTripsSquadScopedRallyCooldownAndRejectsSharedAnchor() {
+        assertEquals(8L * 60L * 20L, DeploymentService.RALLY_SQUAD_COOLDOWN_TICKS);
+        DeploymentSavedData data = new DeploymentSavedData();
+        BlockPos anchor = new BlockPos(610, 64, 610);
+        RallyDeploymentPoint rally = new RallyDeploymentPoint(id("alpha-rally"),
+                Faction.BLUE, "millennium_seminar_mobile", SquadCallsign.ALPHA,
+                OVERWORLD, anchor, anchor.above(), 45.0F);
+
+        assertTrue(data.putRally(rally));
+        assertFalse(data.putFieldPoint(field("field-on-rally", Faction.BLUE,
+                OVERWORLD, anchor)));
+        assertEquals(List.of(rally), data.rallies(Faction.BLUE,
+                "millennium_seminar_mobile", SquadCallsign.ALPHA));
+        assertTrue(data.rallies(Faction.BLUE, "millennium_seminar_mobile",
+                SquadCallsign.BRAVO).isEmpty());
+        data.startRallyCooldown(Faction.BLUE, "millennium_seminar_mobile",
+                SquadCallsign.ALPHA, 12_345L);
+        assertEquals(2_345L, data.rallyCooldownRemainingTicks(Faction.BLUE,
+                "millennium_seminar_mobile", SquadCallsign.ALPHA, 10_000L));
+        assertEquals(0L, data.rallyCooldownRemainingTicks(Faction.BLUE,
+                "millennium_seminar_mobile", SquadCallsign.BRAVO, 10_000L));
+        assertEquals(0L, data.rallyCooldownRemainingTicks(Faction.BLUE,
+                "another_formation", SquadCallsign.ALPHA, 10_000L));
+        assertEquals(0L, data.rallyCooldownRemainingTicks(Faction.RED,
+                "millennium_seminar_mobile", SquadCallsign.ALPHA, 10_000L));
+
+        CompoundTag encoded = data.save(new CompoundTag());
+        assertEquals(DeploymentSavedData.DATA_VERSION, encoded.getInt("Version"));
+        assertEquals(1, encoded.getList("Rallies", Tag.TAG_COMPOUND).size());
+        assertEquals(1, encoded.getList("RallyCooldowns", Tag.TAG_COMPOUND).size());
+        DeploymentSavedData decoded = DeploymentSavedData.load(encoded.copy());
+
+        assertEquals(rally, decoded.rally(rally.id()).orElseThrow());
+        assertEquals(rally, decoded.rallyAt(OVERWORLD, anchor).orElseThrow());
+        assertEquals(2_345L, decoded.rallyCooldownRemainingTicks(Faction.BLUE,
+                "millennium_seminar_mobile", SquadCallsign.ALPHA, 10_000L));
+        assertEquals(encoded, decoded.save(new CompoundTag()));
+        assertEquals(rally, decoded.removeRally(OVERWORLD, anchor).orElseThrow());
+        assertTrue(decoded.rally(rally.id()).isEmpty());
+        assertEquals(2_345L, decoded.rallyCooldownRemainingTicks(Faction.BLUE,
+                "millennium_seminar_mobile", SquadCallsign.ALPHA, 10_000L),
+                "removing the radio must not clear its squad deployment cooldown");
+        assertEquals(0L, decoded.rallyCooldownRemainingTicks(Faction.BLUE,
+                "millennium_seminar_mobile", SquadCallsign.ALPHA, 12_345L));
+        assertEquals(0, decoded.save(new CompoundTag())
+                .getList("RallyCooldowns", Tag.TAG_COMPOUND).size());
     }
 
     private static CompoundTag rootWithFields(List<CompoundTag> fields) {

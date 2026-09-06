@@ -6,7 +6,8 @@ import java.util.Optional;
 /** Wire-visible kind used to distinguish the permanent main base from field beacons. */
 public enum DeploymentPointKind {
     MAIN_BASE("main_base"),
-    FIELD_BEACON("field_beacon");
+    FIELD_BEACON("field_beacon"),
+    RALLY("rally");
 
     private final String id;
 

@@ -26,6 +26,14 @@ outputs/
 *.log
 *.log.gz
 
+# Local delivery archives, launcher state and compiled verification helpers.
+/dist/
+/PCL.ini
+/launcher_profiles.json
+*.class
+__pycache__/
+*.py[cod]
+
 # Local generated validation/build directories and compiler diagnostics.
 .tmp_*/
 wok_infantry/build-*/

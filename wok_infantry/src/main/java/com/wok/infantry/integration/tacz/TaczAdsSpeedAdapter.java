@@ -10,9 +10,11 @@ import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModList;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.Map;
 import java.util.UUID;
 
@@ -38,6 +40,10 @@ public final class TaczAdsSpeedAdapter {
     public static final String HORIZONTAL_RECOIL_SCALE_TAG =
             "wok_infantry_horizontal_recoil_scale";
     public static final String SPREAD_SCALE_TAG = "wok_infantry_spread_scale";
+    public static final String DAMAGE_SCALE_TAG = "wok_infantry_damage_scale";
+    public static final String ARMOR_IGNORE_SCALE_TAG =
+            "wok_infantry_armor_ignore_scale";
+    public static final String RPM_SCALE_TAG = "wok_infantry_rpm_scale";
     private static final String EDITOR_ID_TAG = "wok_infantry_weapon_editor_id";
 
     private static volatile boolean bridgeInitialized;
@@ -61,7 +67,7 @@ public final class TaczAdsSpeedAdapter {
             }
             registerListener(MinecraftForge.EVENT_BUS, current.propertyEventType());
             listenerRegistered = true;
-            WokInfantryMod.LOGGER.info("Enabled per-weapon TaCZ ADS speed integration");
+            WokInfantryMod.LOGGER.info("Enabled per-weapon TaCZ tuning integration");
         }
     }
 
@@ -190,6 +196,9 @@ public final class TaczAdsSpeedAdapter {
         result = 31 * result + Float.floatToIntBits(tuning.verticalRecoilScale());
         result = 31 * result + Float.floatToIntBits(tuning.horizontalRecoilScale());
         result = 31 * result + Float.floatToIntBits(tuning.spreadScale());
+        result = 31 * result + Float.floatToIntBits(readScale(stack, DAMAGE_SCALE_TAG));
+        result = 31 * result + Float.floatToIntBits(readScale(stack, ARMOR_IGNORE_SCALE_TAG));
+        result = 31 * result + Float.floatToIntBits(readScale(stack, RPM_SCALE_TAG));
         return result;
     }
 
@@ -223,8 +232,12 @@ public final class TaczAdsSpeedAdapter {
                     tuning.spreadScale());
             applySpreadScale(current, cache, current.aimInaccuracyProperty(),
                     tuning.spreadScale());
+            applyDamageScale(current, cache, readScale(stack, DAMAGE_SCALE_TAG));
+            applyArmorIgnoreScale(current, cache,
+                    readScale(stack, ARMOR_IGNORE_SCALE_TAG));
+            applyRpmScale(current, cache, readScale(stack, RPM_SCALE_TAG));
         } catch (ReflectiveOperationException | RuntimeException exception) {
-            logFailureOnce("TaCZ ADS property event integration failed", exception);
+            logFailureOnce("TaCZ weapon property event integration failed", exception);
         }
     }
 
@@ -276,6 +289,57 @@ public final class TaczAdsSpeedAdapter {
                     ? Math.max(0.0F, amount * scale) : spread);
         }
         current.setCache().invoke(cache, property, adjusted);
+    }
+
+    /** Scales the complete TaCZ distance-damage curve without replacing third-party gun packs. */
+    private static void applyDamageScale(Bridge current, Object cache, float scale)
+            throws ReflectiveOperationException {
+        if (scale == WeaponTuning.DEFAULT_SCALE) {
+            return;
+        }
+        Object value = current.getCache().invoke(cache, current.damageProperty());
+        if (!(value instanceof Iterable<?> original)) {
+            return;
+        }
+        LinkedList<Object> adjusted = new LinkedList<>();
+        for (Object pair : original) {
+            if (pair == null || !current.damagePairType().isInstance(pair)) {
+                return;
+            }
+            Object distanceValue = current.getDamageDistance().invoke(pair);
+            Object damageValue = current.getDamageAmount().invoke(pair);
+            if (!(distanceValue instanceof Float distance)
+                    || !(damageValue instanceof Float damage)) {
+                return;
+            }
+            adjusted.add(current.damagePairConstructor().newInstance(
+                    distance, Math.max(0.0F, damage * scale)));
+        }
+        current.setCache().invoke(cache, current.damageProperty(), adjusted);
+    }
+
+    private static void applyArmorIgnoreScale(Bridge current, Object cache, float scale)
+            throws ReflectiveOperationException {
+        if (scale == WeaponTuning.DEFAULT_SCALE) {
+            return;
+        }
+        Object value = current.getCache().invoke(cache, current.armorIgnoreProperty());
+        if (value instanceof Float amount) {
+            current.setCache().invoke(cache, current.armorIgnoreProperty(),
+                    Math.max(0.0F, Math.min(1.0F, amount * scale)));
+        }
+    }
+
+    private static void applyRpmScale(Bridge current, Object cache, float scale)
+            throws ReflectiveOperationException {
+        if (scale == WeaponTuning.DEFAULT_SCALE) {
+            return;
+        }
+        Object value = current.getCache().invoke(cache, current.rpmProperty());
+        if (value instanceof Integer rpm) {
+            current.setCache().invoke(cache, current.rpmProperty(),
+                    Math.max(1, Math.round(rpm * scale)));
+        }
     }
 
     private static float readScale(ItemStack stack, String key) {
@@ -351,6 +415,13 @@ public final class TaczAdsSpeedAdapter {
             Field recoil = gunPropertiesType.getField("RECOIL");
             Field inaccuracy = gunPropertiesType.getField("INACCURACY");
             Field aimInaccuracy = gunPropertiesType.getField("AIM_INACCURACY");
+            Field damage = gunPropertiesType.getField("DAMAGE");
+            Field armorIgnore = gunPropertiesType.getField("ARMOR_IGNORE");
+            Field rpm = gunPropertiesType.getField("ROUNDS_PER_MINUTE");
+            Class<?> damagePairType = Class.forName(
+                    "com.tacz.guns.resource.pojo.data.gun.ExtraDamage$DistanceDamagePair");
+            Constructor<?> damagePairConstructor = damagePairType.getConstructor(
+                    float.class, float.class);
             Field parameterizedMultiplier = parameterizedCacheType.getDeclaredField(
                     "multiplier");
             parameterizedMultiplier.setAccessible(true);
@@ -364,7 +435,10 @@ public final class TaczAdsSpeedAdapter {
                     propertyManagerType.getMethod(
                             "postChangeEvent", LivingEntity.class, ItemStack.class),
                     adsTime.get(null), recoil.get(null), inaccuracy.get(null),
-                    aimInaccuracy.get(null), pairType.getMethod("left"),
+                    aimInaccuracy.get(null), damage.get(null), armorIgnore.get(null),
+                    rpm.get(null), damagePairType, damagePairConstructor,
+                    damagePairType.getMethod("getDistance"),
+                    damagePairType.getMethod("getDamage"), pairType.getMethod("left"),
                     pairType.getMethod("right"), parameterizedMultiplier);
         } catch (ReflectiveOperationException | RuntimeException exception) {
             logFailureOnce("TaCZ ADS API integration is unavailable", exception);
@@ -383,7 +457,10 @@ public final class TaczAdsSpeedAdapter {
                           Method getGunItem, Method getCacheProperty, Method getCache,
                           Method setCache, Method postChangeEvent, Object adsTimeProperty,
                           Object recoilProperty, Object inaccuracyProperty,
-                          Object aimInaccuracyProperty, Method pairLeft, Method pairRight,
-                          Field parameterizedMultiplier) {
+                          Object aimInaccuracyProperty, Object damageProperty,
+                          Object armorIgnoreProperty, Object rpmProperty,
+                          Class<?> damagePairType, Constructor<?> damagePairConstructor,
+                          Method getDamageDistance, Method getDamageAmount,
+                          Method pairLeft, Method pairRight, Field parameterizedMultiplier) {
     }
 }

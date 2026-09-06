@@ -3,6 +3,7 @@ package com.wok.infantry.server;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.wok.infantry.WokInfantryMod;
+import com.wok.infantry.configtransfer.CatalogFiles;
 import com.wok.infantry.formation.FormationConfigData;
 import net.minecraftforge.fml.loading.FMLPaths;
 
@@ -37,6 +38,11 @@ final class FormationRepository {
      * Defaults are written only when the file does not exist yet.
      */
     synchronized LoadResult load() {
+        try {
+            new CatalogFiles(configPath.getParent()).recover();
+        } catch (IOException exception) {
+            return LoadResult.failure(config, "中断的阵营配装导入恢复失败；原文件保持不变，请检查服务端日志");
+        }
         if (!Files.isRegularFile(configPath)) {
             FormationConfigData defaults = FormationConfigData.defaultConfig();
             config = defaults;
@@ -89,6 +95,10 @@ final class FormationRepository {
         return configPath;
     }
 
+    synchronized void publishImported(FormationConfigData replacement) {
+        config = replacement.copy();
+    }
+
     private FormationConfigData readExisting() throws IOException {
         try (Reader reader = Files.newBufferedReader(configPath, StandardCharsets.UTF_8)) {
             FormationConfigData parsed = GSON.fromJson(reader, FormationConfigData.class);
@@ -100,6 +110,7 @@ final class FormationRepository {
     }
 
     private boolean save(FormationConfigData target) {
+        if (Files.exists(configPath.getParent().resolve(".catalog-import/ready"))) return false;
         try {
             Files.createDirectories(configPath.getParent());
             Path temporary = configPath.resolveSibling(configPath.getFileName() + ".tmp");

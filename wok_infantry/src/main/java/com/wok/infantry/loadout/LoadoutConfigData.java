@@ -45,7 +45,7 @@ public final class LoadoutConfigData {
             for (LoadoutSlotDefinition slot : definition.slotDefinitions()) {
                 Set<String> entryIds = new HashSet<>();
                 List<LoadoutEntry> entries = definition.entries(slot.id());
-                entries.removeIf(entry -> entry == null || !validId(entry.id())
+                entries.removeIf(entry -> entry == null || !validEntryId(entry.id())
                         || !entryIds.add(entry.id()));
                 if (entries.size() > MAX_ENTRIES_PER_SLOT) {
                     entries.subList(MAX_ENTRIES_PER_SLOT, entries.size()).clear();
@@ -71,6 +71,10 @@ public final class LoadoutConfigData {
             }
         }
         return true;
+    }
+
+    private static boolean validEntryId(String id) {
+        return id != null && id.matches("[a-z0-9_./-]{1,64}");
     }
 
     public LoadoutConfigData copy() {

@@ -3,6 +3,8 @@
   "values": [
     "wok_infantry:deployment_beacon",
     "wok_infantry:vehicle_deployment",
-    "wok_infantry:ammo_supply_crate"
+    "wok_infantry:ammo_supply_crate",
+    "wok_infantry:medium_ammo_supply_crate",
+    "wok_infantry:large_ammo_supply_station"
   ]
 }

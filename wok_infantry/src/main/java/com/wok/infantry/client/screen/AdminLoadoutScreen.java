@@ -112,6 +112,9 @@ public final class AdminLoadoutScreen extends Screen {
     }
 
     private void initListPage() {
+        addRenderableWidget(BattleUiButton.builder(Component.literal("导入 / 导出"), ignored -> {
+            if (minecraft != null) minecraft.setScreen(new CatalogTransferScreen(this));
+        }).kind(BattleUiButton.Kind.CONTROL).bounds(width - 88, 4, 80, 17).build());
         LoadoutClassDefinition definition = selectedClass();
         if (definition == null) {
             return;
@@ -582,7 +585,12 @@ public final class AdminLoadoutScreen extends Screen {
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(graphics);
         graphics.fill(6, 5, width - 6, height - 5, 0xB0141922);
-        BattleUiTheme.drawCenteredText(graphics, font, title, width / 2, 8, 0xFFFFFF);
+        if (mode == PageMode.LIST) {
+            graphics.drawString(font, font.plainSubstrByWidth(title.getString(), width - 108),
+                    12, 8, 0xFFFFFF, false);
+        } else {
+            BattleUiTheme.drawCenteredText(graphics, font, title, width / 2, 8, 0xFFFFFF);
+        }
 
         switch (mode) {
             case LIST -> renderListPage(graphics);

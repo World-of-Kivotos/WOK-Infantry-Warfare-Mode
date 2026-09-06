@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.wok.downed.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "PlayerForcedPoseMixin"
+  ],
+  "client": [
+    "MafuyuMovementKeysMixin",
+    "MafuyuClimbKeysMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

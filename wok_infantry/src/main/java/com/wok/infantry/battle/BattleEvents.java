@@ -1,6 +1,7 @@
 package com.wok.infantry.battle;
 
 import com.wok.infantry.WokInfantryMod;
+import com.wok.infantry.ammo.transport.SupplyTransportService;
 import com.wok.infantry.deployment.DeploymentService;
 import com.wok.infantry.deployment.KitProvenance;
 import com.wok.infantry.server.BattleCommands;
@@ -15,6 +16,7 @@ import com.wok.infantry.registry.InfantryItems;
 import com.wok.infantry.support.SupportService;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.BucketItem;
 import net.minecraftforge.event.RegisterCommandsEvent;
@@ -262,7 +264,10 @@ public final class BattleEvents {
         boolean administratorSetupBlock = player.hasPermissions(
                 BattleRules.ADMIN_PERMISSION_LEVEL)
                 && (event.getItemStack().is(InfantryItems.DEPLOYMENT_BEACON.get())
-                || event.getItemStack().is(InfantryItems.AMMO_SUPPLY_CRATE.get()));
+                || event.getItemStack().is(InfantryItems.AMMO_SUPPLY_CRATE.get())
+                || event.getItemStack().is(InfantryItems.MEDIUM_AMMO_SUPPLY_CRATE.get())
+                || event.getItemStack().is(InfantryItems.LARGE_AMMO_SUPPLY_STATION.get())
+                || SupplyTransportService.isLargeAmmoCrate(event.getItemStack()));
         if (isWaitingParticipant(player) && !administratorSetupBlock) {
             event.setCanceled(true);
             return;
@@ -271,7 +276,10 @@ public final class BattleEvents {
                 .map(service -> !service.isVehicleTestMode(player.getUUID())
                         && service.isActive(player.getUUID())).orElse(false);
         boolean issuedPortableAmmoCrate = active
-                && event.getItemStack().is(InfantryItems.AMMO_SUPPLY_CRATE.get())
+                && (event.getItemStack().is(InfantryItems.AMMO_SUPPLY_CRATE.get())
+                || event.getItemStack().is(InfantryItems.MEDIUM_AMMO_SUPPLY_CRATE.get())
+                || event.getItemStack().is(InfantryItems.LARGE_AMMO_SUPPLY_STATION.get())
+                || SupplyTransportService.isLargeAmmoCrate(event.getItemStack()))
                 && DeploymentService.get(player)
                 .map(service -> service.isValidIssuedStack(player,
                         event.getItemStack())).orElse(false);
@@ -380,16 +388,38 @@ public final class BattleEvents {
             boolean administratorSetupBlock = player.hasPermissions(
                     BattleRules.ADMIN_PERMISSION_LEVEL)
                     && (event.getPlacedBlock().is(InfantryBlocks.DEPLOYMENT_BEACON.get())
-                    || event.getPlacedBlock().is(InfantryBlocks.AMMO_SUPPLY_CRATE.get()))
+                    || event.getPlacedBlock().is(InfantryBlocks.AMMO_SUPPLY_CRATE.get())
+                    || event.getPlacedBlock().is(
+                    InfantryBlocks.MEDIUM_AMMO_SUPPLY_CRATE.get())
+                    || event.getPlacedBlock().is(
+                    InfantryBlocks.LARGE_AMMO_SUPPLY_STATION.get()))
                     && event.getLevel() instanceof net.minecraft.server.level.ServerLevel level
                     && !level.dimension().equals(DeploymentService.HOLDING_LEVEL)
                     && !level.dimension().equals(DeploymentService.LOBBY_LEVEL);
             boolean portableAmmoDeployment = event.getPlacedBlock().is(
                     InfantryBlocks.AMMO_SUPPLY_CRATE.get())
+                    || event.getPlacedBlock().is(InfantryBlocks.MEDIUM_AMMO_SUPPLY_CRATE.get())
+                    || event.getPlacedBlock().is(
+                    InfantryBlocks.LARGE_AMMO_SUPPLY_STATION.get());
+            portableAmmoDeployment = portableAmmoDeployment
                     && DeploymentService.get(player)
                     .map(service -> service.isActive(player.getUUID())
                             && !service.isVehicleTestMode(player.getUUID())).orElse(false);
-            if (managed && !administratorSetupBlock && !portableAmmoDeployment) {
+            boolean rallyDeployment = event.getPlacedBlock().is(
+                    InfantryBlocks.RALLY_RADIO.get())
+                    && event.getLevel() instanceof net.minecraft.server.level.ServerLevel level
+                    && DeploymentService.get(player).map(service -> {
+                        ActionResult result = service.placeRally(player, level, event.getPos());
+                        if (!result.message().isBlank()) {
+                            player.sendSystemMessage(Component.literal(result.message()));
+                        }
+                        return result.success();
+                    }).orElse(false);
+            if (event.getPlacedBlock().is(InfantryBlocks.RALLY_RADIO.get())
+                    && !rallyDeployment) {
+                event.setCanceled(true);
+            } else if (managed && !administratorSetupBlock && !portableAmmoDeployment
+                    && !rallyDeployment) {
                 event.setCanceled(true);
             }
         }

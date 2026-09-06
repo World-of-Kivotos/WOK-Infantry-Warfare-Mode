@@ -13,6 +13,8 @@ import com.wok.infantry.client.ClientBattleState;
 import com.wok.infantry.client.ClientFormationState;
 import com.wok.infantry.client.map.TacticalMapTerrainRequest;
 import com.wok.infantry.client.map.TacticalMapTerrainRegistry;
+import com.wok.infantry.client.map.TacticalSupportMapPresentation;
+import com.wok.infantry.client.map.TacticalSupportMapPresentationRegistry;
 import com.wok.infantry.client.screen.AdminLoadoutScreen;
 import com.wok.infantry.client.screen.FormationSelectionScreen;
 import com.wok.infantry.client.screen.PlayerLoadoutScreen;
@@ -42,6 +44,11 @@ import com.wok.infantry.network.battle.BattleOpenTarget;
 import com.wok.infantry.network.formation.FormationNetwork;
 import com.wok.infantry.registry.InfantryItems;
 import com.wok.infantry.server.FormationService;
+import com.wok.infantry.support.adapter.SupportIntelContact;
+import com.wok.infantry.support.SupportMissionView;
+import com.wok.infantry.support.SupportOptionView;
+import com.wok.infantry.support.SupportTargetMode;
+import com.wok.infantry.support.SupportView;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.client.KeyMapping;
@@ -84,6 +91,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -145,6 +153,7 @@ public final class UiRuntimeAcceptanceHarness {
     private static boolean worldOpenRequested;
     private static Screen handledWorldConfirmation;
     private static boolean autoDeploymentObserved;
+    private static int stableDeploymentScreenTicks;
     private static boolean formationSelectionSent;
     private static volatile String formationFixtureResult;
     private static boolean compactSquadKeySent;
@@ -182,6 +191,8 @@ public final class UiRuntimeAcceptanceHarness {
     private static BattleClientActions.MarkerTool pendingMarker;
     private static int pendingMarkerSentTick = -1;
     private static int nextMarkerAllowedTick;
+    private static boolean reconContactQueued;
+    private static volatile String reconContactResult;
     private static volatile boolean terrainProbePending;
     private static volatile boolean terrainProbeSucceeded;
     private static volatile int terrainProbeNextAttemptTick;
@@ -253,6 +264,10 @@ public final class UiRuntimeAcceptanceHarness {
         phaseTicks++;
         if (!initialized) {
             initializeArtifacts(minecraft);
+        }
+        if (phase == Phase.OPEN_COMPACT_MAP || phase == Phase.CAPTURE_COMPACT_MAP
+                || phase == Phase.OPEN_LARGE_MAP || phase == Phase.CAPTURE_LARGE_MAP) {
+            installCommanderSupportFixture(minecraft);
         }
         if (totalTicks > GLOBAL_TIMEOUT_TICKS && phase != Phase.FINISH
                 && phase != Phase.FAIL) {
@@ -408,6 +423,7 @@ public final class UiRuntimeAcceptanceHarness {
             return;
         }
         if (!(minecraft.screen instanceof SquadScreen)) {
+            stableDeploymentScreenTicks = 0;
             if (formationFixtureResult != null
                     && formationFixtureResult.startsWith("OK:")
                     && minecraft.screen == null && phaseTicks >= 20) {
@@ -422,6 +438,10 @@ public final class UiRuntimeAcceptanceHarness {
             if (phaseTicks > 250) {
                 fail("Login snapshot arrived but the deployment screen did not auto-open");
             }
+            return;
+        }
+        stableDeploymentScreenTicks++;
+        if (stableDeploymentScreenTicks < 20) {
             return;
         }
         autoDeploymentObserved = true;
@@ -1080,8 +1100,19 @@ public final class UiRuntimeAcceptanceHarness {
             nextMarkerIndex++;
         }
         if (nextMarkerIndex >= REQUIRED_MARKERS.size()) {
+            if (!present.contains(TacticalMarkerType.RECON_CONTACT)) {
+                if (reconContactResult != null && reconContactResult.startsWith("ERROR:")) {
+                    fail(reconContactResult);
+                    return;
+                }
+                if (!reconContactQueued) {
+                    queueReconContactFixture(snapshot);
+                }
+                return;
+            }
             observations.add("activeMarkerCount=" + ClientBattleState.activeMarkers().size());
             observations.add("markerTypes=" + present);
+            observations.add("reconContactRedDot=true");
             transition(Phase.OPEN_COMPACT_MAP);
             return;
         }
@@ -1114,6 +1145,37 @@ public final class UiRuntimeAcceptanceHarness {
         BattleClientActions.createMarker(marker);
         pendingMarker = tool;
         pendingMarkerSentTick = totalTicks;
+    }
+
+    private static void queueReconContactFixture(BattleSnapshot snapshot) {
+        Minecraft minecraft = Minecraft.getInstance();
+        MinecraftServer server = minecraft.getSingleplayerServer();
+        if (server == null || minecraft.player == null || snapshot.faction() == null) {
+            return;
+        }
+        reconContactQueued = true;
+        java.util.UUID playerId = minecraft.player.getUUID();
+        Faction faction = snapshot.faction();
+        server.execute(() -> {
+            ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+            BattleService battle = player == null ? null
+                    : BattleService.get(player).orElse(null);
+            if (player == null || battle == null) {
+                reconContactResult = "ERROR: UI fixture could not resolve the commander";
+                return;
+            }
+            SupportIntelContact contact = new SupportIntelContact(
+                    java.util.UUID.nameUUIDFromBytes("ui-recon-contact".getBytes(
+                            StandardCharsets.UTF_8)),
+                    player.getX() + 36.0D, player.getY(), player.getZ() + 24.0D);
+            ActionResult result = battle.publishSupportIntel(player,
+                    java.util.UUID.nameUUIDFromBytes("ui-recon-call".getBytes(
+                            StandardCharsets.UTF_8)), faction,
+                    player.serverLevel().dimension(), List.of(contact), 20 * 60 * 10);
+            reconContactResult = result.success()
+                    ? "OK: tactical map received a satellite red-dot fixture"
+                    : "ERROR: " + result.message();
+        });
     }
 
     private static void openCompactMap(Minecraft minecraft) {
@@ -1187,8 +1249,8 @@ public final class UiRuntimeAcceptanceHarness {
 
         if (!compactSupportModeSelected) {
             BattleSnapshot snapshot = ClientBattleState.snapshot();
-            if (snapshot == null || !snapshot.support().options().isEmpty()) {
-                fail("Compact support empty-state acceptance requires an empty catalog");
+            if (snapshot == null || snapshot.support().options().size() != 3) {
+                fail("Compact commander-support acceptance requires three support options");
                 return;
             }
             String supportLabel = Component.translatable(
@@ -1203,8 +1265,22 @@ public final class UiRuntimeAcceptanceHarness {
                 return;
             }
             supportButton.onPress();
+            if (!supportButtonPresent(tacticalMapScreen,
+                    new ResourceLocation("wok_commander_support",
+                            "millennium_f15ex_jdam_1000lb"))) {
+                fail("Compact tactical map did not render the F-15EX JDAM support button");
+                return;
+            }
+            if (!supportButtonPresent(tacticalMapScreen,
+                    new ResourceLocation("wok_commander_support",
+                            "f16c_gbu12_paveway_500lb"))) {
+                fail("Compact tactical map did not render the F-16C Paveway support button");
+                return;
+            }
             compactSupportModeSelected = true;
-            observations.add("compactSupportEmptyState=true");
+            observations.add("compactSupportOptions=3");
+            observations.add("compactJdamSupportVisible=true");
+            observations.add("compactPavewaySupportVisible=true");
             return;
         }
 
@@ -1400,7 +1476,105 @@ public final class UiRuntimeAcceptanceHarness {
         if (minecraft.screen instanceof TacticalMapScreen tacticalMapScreen
                 && phaseTicks >= SCREEN_SETTLE_TICKS
                 && fullTerrainCoverageReady(tacticalMapScreen, SCREENSHOTS[5])) {
+            if (!supportButtonPresent(tacticalMapScreen,
+                    new ResourceLocation("wok_commander_support",
+                            "millennium_f15ex_jdam_1000lb"))) {
+                fail("Large tactical map did not render the F-15EX JDAM support button");
+                return;
+            }
+            if (!supportButtonPresent(tacticalMapScreen,
+                    new ResourceLocation("wok_commander_support",
+                            "f16c_gbu12_paveway_500lb"))) {
+                fail("Large tactical map did not render the F-16C Paveway support button");
+                return;
+            }
+            observations.add("largeJdamSupportVisible=true");
+            observations.add("largePavewaySupportVisible=true");
             transition(Phase.CAPTURE_LARGE_MAP);
+        }
+    }
+
+    /**
+     * Keeps the production tactical map fed with a deterministic Millennium commander catalog.
+     * This uiTest-only fixture is required because the optional commander-support MOD is not part
+     * of the core client's isolated acceptance launch.
+     */
+    private static void installCommanderSupportFixture(Minecraft minecraft) {
+        BattleSnapshot snapshot = ClientBattleState.snapshot();
+        if (snapshot == null) {
+            return;
+        }
+        ResourceLocation jdamId = new ResourceLocation("wok_commander_support",
+                "millennium_f15ex_jdam_1000lb");
+        ResourceLocation reconId = new ResourceLocation(
+                "wok_commander_support", "recon_satellite");
+        ResourceLocation pavewayId = new ResourceLocation(
+                "wok_commander_support", "f16c_gbu12_paveway_500lb");
+        TacticalSupportMapPresentationRegistry.register(reconId,
+                TacticalSupportMapPresentation.INTELLIGENCE);
+        TacticalSupportMapPresentationRegistry.register(jdamId,
+                TacticalSupportMapPresentation.OFFENSIVE);
+        TacticalSupportMapPresentationRegistry.register(pavewayId,
+                TacticalSupportMapPresentation.OFFENSIVE);
+        if (snapshot.support().options().stream().anyMatch(option -> option.id().equals(jdamId))) {
+            return;
+        }
+        List<SupportOptionView> options = List.of(
+                new SupportOptionView(
+                        reconId,
+                        "support.wok_commander_support.recon_satellite",
+                        "侦察卫星", "侦察卫星", SupportTargetMode.POINT, 150.0D,
+                        true, "", 0L, false),
+                new SupportOptionView(
+                        jdamId,
+                        "support.wok_commander_support.millennium_f15ex_jdam_1000lb",
+                        "千禧年 F-15EX 杰达姆 1000磅空袭", "F-15EX JDAM空袭",
+                        SupportTargetMode.POINT, 32.0D,
+                        true, "", 0L, true),
+                new SupportOptionView(
+                        pavewayId,
+                        "support.wok_commander_support.f16c_gbu12_paveway_500lb",
+                        "F-16C GBU-12 宝石路 II 500磅精准空袭", "F-16C 宝石路空袭",
+                        SupportTargetMode.POINT, 64.0D,
+                        true, "", 0L, true));
+        SupportMissionView activeJdam = new SupportMissionView(
+                UUID.fromString("a9185f44-0dbd-4b0f-8ba7-d62f4397a14c"),
+                jdamId, Level.OVERWORLD.location(), 80.0D, 80.0D,
+                80.0D, 80.0D, snapshot.support().serverGameTick() + 80L, 5);
+        SupportView support = new SupportView(options, List.of(activeJdam),
+                snapshot.support().serverGameTick(),
+                snapshot.support().structuralRevision() + 1L, true, "");
+        ClientBattleState.update(snapshot.withSupport(support));
+        if (minecraft.screen instanceof TacticalMapScreen tacticalMapScreen) {
+            tacticalMapScreen.resize(minecraft, tacticalMapScreen.width,
+                    tacticalMapScreen.height);
+        }
+    }
+
+    private static boolean supportButtonPresent(TacticalMapScreen screen,
+                                                ResourceLocation supportId) {
+        try {
+            Field field = TacticalMapScreen.class.getDeclaredField("supportButtons");
+            field.setAccessible(true);
+            Object value = field.get(screen);
+            if (!(value instanceof Map<?, ?> buttons)) {
+                fail("Tactical map support button registry has an unexpected type");
+                return false;
+            }
+            Object button = buttons.get(supportId);
+            if (!(button instanceof Button renderedButton)
+                    || !renderedButton.visible
+                    || renderedButton.getWidth() <= 0
+                    || renderedButton.getHeight() <= 0) {
+                return false;
+            }
+            observations.add("supportButton[" + supportId.getPath() + "]="
+                    + renderedButton.getMessage().getString() + "@"
+                    + renderedButton.getWidth() + "x" + renderedButton.getHeight());
+            return true;
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            fail("Could not inspect tactical map support buttons: " + exception);
+            return false;
         }
     }
 
@@ -1519,7 +1693,10 @@ public final class UiRuntimeAcceptanceHarness {
             boolean awaitingAdministratorOpen) {
         List<FormationSelectionView> academy = List.of(
                 new FormationSelectionView("millennium_seminar_mobile",
-                        "千禧年研讨会机动部队", "学院军所属的千禧年研讨会快速机动编制。",
+                        "千禧年研讨会机动部队",
+                        "由千禧年研讨会统一组建的先头力量，承担快速部署与快速反应任务。"
+                                + "她们以多型斯特赖克（Stryker）轮式战车为核心，在航空兵支援下可于战斗初期"
+                                + "投入大量轻型装甲载具；但后劲不足、单兵装备较为平庸，不擅长长时间消耗战。",
                         "wok_infantry:textures/gui/formations/"
                                 + "millennium_seminar_mobile.png",
                         "mechanized", "机械化步兵营", 0, 40, true, "",
@@ -1548,8 +1725,20 @@ public final class UiRuntimeAcceptanceHarness {
                         "armored", "装甲营", List.of("坦克数量：待配置", "支援：未配置")),
                 visualFormation("caesar_motorized", "凯撒摩步营", "摩托化框架",
                         "motorized", "摩步营", List.of("载具：待配置")),
-                visualFormation("caesar_mechanized", "凯撒机械化营", "机械化步兵框架",
-                        "mechanized", "机械化步兵营", List.of("步战车：待配置")),
+                new FormationSelectionView("caesar_234_mechanized",
+                        "234机械化作战单元",
+                        "凯撒重工是凯撒公司旗下的重型军事生产企业，战争前几乎包揽了整个基沃托斯的"
+                                + "军火与军用车辆生产，234机械化作战单元则是其核心作战力量之一。"
+                                + "该单元以CV90步兵战车伴随推进，并配备略显过时的豹2A4主战坦克，"
+                                + "作战职能偏向机动轻步兵。其装备水平尚可，擅长在复杂战线中进行混战缠斗；"
+                                + "但重型载具数量有限、战损补充缓慢，一旦脱离步兵协同或分散投入，"
+                                + "便容易失去进攻节奏。",
+                        "mechanized", "机械化步兵营", 0, 40, true, "",
+                        List.of("突击兵", "支援兵", "工程兵", "侦察兵"),
+                        List.of("Alpha–Echo，每队 8 人"),
+                        List.of("豹2A4 ×1（15分钟）", "CV90 ×2（15分钟）",
+                                "装甲无武装 HMMWV ×2（5分钟）"),
+                        List.of("支援：通用编制支援")),
                 visualFormation("caesar_special", "凯撒特种编制", "特种编制框架",
                         "special", "特种编制", List.of("能力：待配置")));
         return new FormationSelectionSnapshot(1L, true, "academy", "",
