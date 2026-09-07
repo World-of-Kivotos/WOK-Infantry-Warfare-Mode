@@ -35,7 +35,8 @@ public final class BodyHealthService {
         boolean fatal = applyPartDamage(data, part, points, true);
         data.setLastDamagedPart(part);
         saveAndSync(player, data);
-        return new DamageOutcome(fatal, part, points);
+        return new DamageOutcome(fatal, part, points,
+                fatal && !part.isCritical());
     }
 
     public static DamageOutcome applyExplosion(ServerPlayer player, float vanillaDamage) {
@@ -48,7 +49,7 @@ public final class BodyHealthService {
         }
         data.setLastDamagedPart(BodyPart.CHEST);
         saveAndSync(player, data);
-        return new DamageOutcome(fatal, BodyPart.CHEST, points);
+        return new DamageOutcome(fatal, BodyPart.CHEST, points, false);
     }
 
     public static DamageOutcome applyFall(ServerPlayer player, float vanillaDamage) {
@@ -58,7 +59,7 @@ public final class BodyHealthService {
         fatal |= applyPartDamage(data, BodyPart.RIGHT_LEG, points * 0.5F, true);
         data.setLastDamagedPart(BodyPart.LEFT_LEG);
         saveAndSync(player, data);
-        return new DamageOutcome(fatal, BodyPart.LEFT_LEG, points);
+        return new DamageOutcome(fatal, BodyPart.LEFT_LEG, points, false);
     }
 
     public static DamageOutcome applySystemic(ServerPlayer player, float vanillaDamage) {
@@ -66,7 +67,7 @@ public final class BodyHealthService {
         BodyHealthData data = BodyHealthData.load(player);
         boolean fatal = distributeDamage(data, points, null);
         saveAndSync(player, data);
-        return new DamageOutcome(fatal, data.lastDamagedPart(), points);
+        return new DamageOutcome(fatal, data.lastDamagedPart(), points, false);
     }
 
     public static boolean heal(ServerPlayer player, float vanillaAmount) {
@@ -86,6 +87,37 @@ public final class BodyHealthService {
             float restored = Math.min(missing, remaining);
             data.set(target, data.get(target) + restored);
             remaining -= restored;
+            changed = true;
+        }
+
+        if (changed) {
+            saveAndSync(player, data);
+        }
+        return changed;
+    }
+
+    /**
+     * Restores every damaged body part by the supplied amount. Injector
+     * regeneration uses this path so one regeneration pulse affects all
+     * seven parts simultaneously instead of selecting only one treatment
+     * target or distributing a shared healing pool.
+     */
+    public static boolean healAllParts(ServerPlayer player, float vanillaAmount) {
+        if (!(vanillaAmount > 0.0F) || !Float.isFinite(vanillaAmount)) {
+            return false;
+        }
+
+        BodyHealthData data = BodyHealthData.load(player);
+        float restoredPerPart = vanillaAmount
+                * BodyHealthConfig.HEAL_SCALE.get().floatValue();
+        boolean changed = false;
+        for (BodyPart part : BodyPart.values()) {
+            float maximum = BodyHealthConfig.maxHealth(part);
+            float current = data.get(part);
+            if (current >= maximum - 0.0001F) {
+                continue;
+            }
+            data.set(part, Math.min(maximum, current + restoredPerPart));
             changed = true;
         }
 
@@ -222,13 +254,17 @@ public final class BodyHealthService {
         }
 
         float before = data.get(part);
+        boolean wasAlreadyDestroyed = before <= 0.0001F;
         float absorbed = Math.min(before, damage);
         data.set(part, before - absorbed);
         float overflow = damage - absorbed;
         boolean fatal = part.isCritical() && data.isDestroyed(part);
 
         if (allowOverflow && overflow > 0.0001F && !part.isCritical()) {
-            fatal |= distributeDamage(data, overflow * part.overflowMultiplier(), part);
+            float transferMultiplier = wasAlreadyDestroyed
+                    ? BodyHealthConfig.DESTROYED_PART_DAMAGE_TRANSFER_MULTIPLIER.get().floatValue()
+                    : part.overflowMultiplier();
+            fatal |= distributeDamage(data, overflow * transferMultiplier, part);
         }
         return fatal;
     }

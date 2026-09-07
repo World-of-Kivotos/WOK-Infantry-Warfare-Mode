@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "wok_infantry:block/large_ammo_supply_station" },
+    "facing=east": { "model": "wok_infantry:block/large_ammo_supply_station", "y": 90, "uvlock": true },
+    "facing=south": { "model": "wok_infantry:block/large_ammo_supply_station", "y": 180, "uvlock": true },
+    "facing=west": { "model": "wok_infantry:block/large_ammo_supply_station", "y": 270, "uvlock": true }
+  }
+}

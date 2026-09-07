@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WOK步战 · 编制工作台</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="device">
+    <header class="topbar">
+      <div class="brand"><span class="status-dot"></span><div><strong>WOK步战</strong><small>阵营 · 编制 · 配装工作台</small></div><span class="offline">离线编辑</span></div>
+      <div class="toolbar"><button data-action="open">打开文件</button><button data-action="save-project">保存工程</button><button data-action="undo" id="undo">撤销</button><button data-action="export" class="success">导出数据包 <span>↗</span></button></div>
+    </header>
+    <div class="workspace">
+      <aside id="sidebar" class="sidebar"></aside>
+      <main>
+        <div id="context" class="context"></div>
+        <nav id="tabs" class="tabs" aria-label="编辑分区"></nav>
+        <div id="content" class="content"></div>
+      </main>
+    </div>
+    <footer><span id="status" role="status">准备就绪</span><span>本地文件 · 无需账号 · 无网络上传</span><button data-action="help">使用说明</button></footer>
+    <i class="rivet tl"></i><i class="rivet tr"></i><i class="rivet bl"></i><i class="rivet br"></i>
+  </div>
+  <input type="file" id="file" accept=".json,application/json" hidden>
+  <dialog id="modal"><div id="modal-body"></div></dialog>
+  <script src="catalog-core.js"></script>
+  <script src="snbt.js"></script>
+  <script src="seed.js"></script>
+  <script src="resource-bank.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

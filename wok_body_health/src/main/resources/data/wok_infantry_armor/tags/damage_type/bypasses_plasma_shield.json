@@ -1,0 +1,12 @@
+{
+  "replace": false,
+  "values": [
+    "wok_body_health:pvp_kill_head",
+    "wok_body_health:pvp_kill_chest",
+    "wok_body_health:pvp_kill_abdomen",
+    "wok_body_health:pvp_kill_left_arm",
+    "wok_body_health:pvp_kill_right_arm",
+    "wok_body_health:pvp_kill_left_leg",
+    "wok_body_health:pvp_kill_right_leg"
+  ]
+}

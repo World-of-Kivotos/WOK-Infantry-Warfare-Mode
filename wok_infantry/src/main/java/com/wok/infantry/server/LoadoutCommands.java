@@ -13,11 +13,12 @@ public final class LoadoutCommands {
         dispatcher.register(Commands.literal("loadout")
                 .executes(context -> openPlayer(context.getSource().getPlayerOrException()))
                 .then(Commands.literal("apply")
+                        .requires(source -> source.hasPermission(LoadoutService.ADMIN_PERMISSION_LEVEL))
                         .executes(context -> apply(context.getSource().getPlayerOrException()))));
 
-        dispatcher.register(Commands.literal("loadoutadmin")
+        dispatcher.register(CatalogTransferCommands.attach(Commands.literal("loadoutadmin")
                 .requires(source -> source.hasPermission(LoadoutService.ADMIN_PERMISSION_LEVEL))
-                .executes(context -> openAdmin(context.getSource().getPlayerOrException())));
+                .executes(context -> openAdmin(context.getSource().getPlayerOrException()))));
     }
 
     private static int openPlayer(ServerPlayer player) {

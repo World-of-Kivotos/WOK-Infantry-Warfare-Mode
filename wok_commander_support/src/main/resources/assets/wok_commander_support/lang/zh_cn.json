@@ -1,0 +1,12 @@
+{
+  "support.wok_commander_support.recon_satellite": "侦察卫星",
+  "support.wok_commander_support.millennium_f15ex_jdam_1000lb": "千禧年 F-15EX 杰达姆 1000磅空袭",
+  "support.wok_commander_support.f16c_gbu12_paveway_500lb": "F-16C GBU-12 宝石路 II 500磅精准空袭",
+  "message.wok_commander_support.paveway_no_designation": "宝石路航弹未释放：许可区内没有友军持续照射",
+  "message.wok_commander_support.paveway_designation_acquired": "宝石路航弹已锁定制导员：%s",
+  "message.wok_commander_support.paveway_designator_linked": "宝石路航弹已接入：保持火炮指示器持续照射",
+  "message.wok_commander_support.paveway_guidance_lost": "宝石路激光制导丢失：航弹保持最后一次修正",
+  "message.wok_commander_support.paveway_designator_lost": "宝石路制导已断开",
+  "subtitles.wok_commander_support.jdam_f15_approach": "F-15EX 从高空掠过",
+  "subtitles.wok_commander_support.jdam_bomb_tail": "重型炸弹爆炸回响"
+}

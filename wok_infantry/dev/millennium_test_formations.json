@@ -1,0 +1,156 @@
+{
+  "version": 2,
+  "factions": [
+    {
+      "id": "academy",
+      "displayName": "学院军",
+      "description": "学院军战场阵营",
+      "battleSide": "blue",
+      "enabled": true,
+      "maxPlayers": 40,
+      "formations": [
+        {
+          "id": "default",
+          "displayName": "常规编制",
+          "description": "默认步兵常规编制",
+          "category": "infantry",
+          "enabled": true,
+          "capacity": 40,
+          "classes": [
+            { "classId": "assault", "squadLimit": 8, "allowedEntries": {} },
+            { "classId": "support", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "engineer", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "recon", "squadLimit": 1, "allowedEntries": {} }
+          ],
+          "squads": [
+            { "callsign": "alpha", "displayName": "Alpha", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "bravo", "displayName": "Bravo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "charlie", "displayName": "Charlie", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "delta", "displayName": "Delta", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "echo", "displayName": "Echo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } }
+          ],
+          "vehicles": []
+        },
+        {
+          "id": "millennium_seminar_mobile",
+          "displayName": "千禧年研讨会机动部队",
+          "description": "由千禧年研讨会统一组建的先头力量，承担快速部署与快速反应任务。她们以多型斯特赖克（Stryker）轮式战车为核心，在航空兵支援下可于战斗初期投入大量轻型装甲载具；但后劲不足、单兵装备较为平庸，不擅长长时间消耗战。",
+          "icon": "wok_infantry:textures/gui/formations/millennium_seminar_mobile.png",
+          "category": "mechanized",
+          "enabled": true,
+          "capacity": 40,
+          "classes": [
+            { "classId": "assault", "squadLimit": 8, "allowedEntries": {} },
+            { "classId": "support", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "engineer", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "recon", "squadLimit": 1, "allowedEntries": {} }
+          ],
+          "squads": [
+            { "callsign": "alpha", "displayName": "Alpha", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "bravo", "displayName": "Bravo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "charlie", "displayName": "Charlie", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "delta", "displayName": "Delta", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "echo", "displayName": "Echo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } }
+          ],
+          "vehicles": [
+            { "id": "m1296_dragoon_1", "displayName": "M1296 龙骑兵", "entityId": "fcp:stryker_dragoon", "offsetX": -10.0, "offsetY": 0.0, "offsetZ": 6.0, "yaw": 0.0, "replenishmentCooldownSeconds": -1 },
+            { "id": "m1296_dragoon_2", "displayName": "M1296 龙骑兵", "entityId": "fcp:stryker_dragoon", "offsetX": -5.0, "offsetY": 0.0, "offsetZ": 6.0, "yaw": 0.0, "replenishmentCooldownSeconds": -1 },
+            { "id": "m1296_dragoon_3", "displayName": "M1296 龙骑兵", "entityId": "fcp:stryker_dragoon", "offsetX": 0.0, "offsetY": 0.0, "offsetZ": 6.0, "yaw": 0.0, "replenishmentCooldownSeconds": -1 },
+            { "id": "m1128_mgs_1", "displayName": "M1128 MGS", "entityId": "fcp:stryker_mgs", "offsetX": 5.0, "offsetY": 0.0, "offsetZ": 6.0, "yaw": 0.0, "replenishmentCooldownSeconds": -1 },
+            { "id": "m1128_mgs_2", "displayName": "M1128 MGS", "entityId": "fcp:stryker_mgs", "offsetX": 10.0, "offsetY": 0.0, "offsetZ": 6.0, "yaw": 0.0, "replenishmentCooldownSeconds": -1 },
+            { "id": "hmmwv_m2_1", "displayName": "悍马 M2", "entityId": "fcp:hmmwv_armored_m2", "offsetX": -4.0, "offsetY": 0.0, "offsetZ": 13.0, "yaw": 0.0, "replenishmentCooldownSeconds": 300 },
+            { "id": "hmmwv_m2_2", "displayName": "悍马 M2", "entityId": "fcp:hmmwv_armored_m2", "offsetX": 4.0, "offsetY": 0.0, "offsetZ": 13.0, "yaw": 0.0, "replenishmentCooldownSeconds": 300 },
+            { "id": "littlebird_armed", "displayName": "小鸟 机枪版", "entityId": "fcp:littlebird_armed", "offsetX": 0.0, "offsetY": 0.0, "offsetZ": 23.0, "yaw": 0.0, "replenishmentCooldownSeconds": 600 }
+          ]
+        },
+        {
+          "id": "millennium_seminar_cavalry_corps",
+          "displayName": "研讨会骑兵军团",
+          "description": "学院军所属的研讨会装甲旅级编制。",
+          "category": "armored",
+          "enabled": true,
+          "capacity": 40,
+          "classes": [
+            { "classId": "assault", "squadLimit": 8, "allowedEntries": {} },
+            { "classId": "support", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "engineer", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "recon", "squadLimit": 1, "allowedEntries": {} }
+          ],
+          "squads": [
+            { "callsign": "alpha", "displayName": "Alpha", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "bravo", "displayName": "Bravo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "charlie", "displayName": "Charlie", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "delta", "displayName": "Delta", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "echo", "displayName": "Echo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } }
+          ],
+          "vehicles": [
+            { "id": "m1a2_sep_tusk_ii_1", "displayName": "M1A2 SEP TUSK II", "entityId": "dragonrise_reforge:m1a2sepv2", "offsetX": -8.0, "offsetY": 0.0, "offsetZ": 6.0, "yaw": 0.0, "replenishmentCooldownSeconds": 1200 },
+            { "id": "m1a2_sep_tusk_ii_2", "displayName": "M1A2 SEP TUSK II", "entityId": "dragonrise_reforge:m1a2sepv2", "offsetX": 8.0, "offsetY": 0.0, "offsetZ": 6.0, "yaw": 0.0, "replenishmentCooldownSeconds": 1200 },
+            { "id": "m3a3_bradley", "displayName": "M3A3 布莱德利", "entityId": "dragonrise_reforge:m3a3", "offsetX": -5.0, "offsetY": 0.0, "offsetZ": 16.0, "yaw": 0.0, "replenishmentCooldownSeconds": 900 },
+            { "id": "m3a3_bradley_recon", "displayName": "M3A3 布莱德利侦察型", "entityId": "dragonrise_reforge:m3a3", "offsetX": 5.0, "offsetY": 0.0, "offsetZ": 16.0, "yaw": 0.0, "replenishmentCooldownSeconds": 900 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caesar",
+      "displayName": "凯撒",
+      "description": "凯撒战场阵营",
+      "battleSide": "red",
+      "enabled": true,
+      "maxPlayers": 40,
+      "formations": [
+        {
+          "id": "default",
+          "displayName": "常规编制",
+          "description": "默认步兵常规编制",
+          "category": "infantry",
+          "enabled": true,
+          "capacity": 40,
+          "classes": [
+            { "classId": "assault", "squadLimit": 8, "allowedEntries": {} },
+            { "classId": "support", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "engineer", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "recon", "squadLimit": 1, "allowedEntries": {} }
+          ],
+          "squads": [
+            { "callsign": "alpha", "displayName": "Alpha", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "bravo", "displayName": "Bravo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "charlie", "displayName": "Charlie", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "delta", "displayName": "Delta", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "echo", "displayName": "Echo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } }
+          ],
+          "vehicles": []
+        },
+        {
+          "id": "caesar_234_mechanized",
+          "displayName": "234机械化作战单元",
+          "description": "凯撒重工是凯撒公司旗下的重型军事生产企业，战争前几乎包揽了整个基沃托斯的军火与军用车辆生产，234机械化作战单元则是其核心作战力量之一。该单元以CV90步兵战车伴随推进，并配备略显过时的豹2A4主战坦克，作战职能偏向机动轻步兵。其装备水平尚可，擅长在复杂战线中进行混战缠斗；但重型载具数量有限、战损补充缓慢，一旦脱离步兵协同或分散投入，便容易失去进攻节奏。",
+          "category": "mechanized",
+          "enabled": true,
+          "capacity": 40,
+          "classes": [
+            { "classId": "assault", "squadLimit": 8, "allowedEntries": {} },
+            { "classId": "support", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "engineer", "squadLimit": 2, "allowedEntries": {} },
+            { "classId": "recon", "squadLimit": 1, "allowedEntries": {} }
+          ],
+          "squads": [
+            { "callsign": "alpha", "displayName": "Alpha", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "bravo", "displayName": "Bravo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "charlie", "displayName": "Charlie", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "delta", "displayName": "Delta", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } },
+            { "callsign": "echo", "displayName": "Echo", "capacity": 8, "classLimits": { "assault": 8, "support": 2, "engineer": 2, "recon": 1 } }
+          ],
+          "vehicles": [
+            { "id": "leopard_2a4", "displayName": "豹2A4", "entityId": "dragonrise_reforge:leopard2a4", "offsetX": 0.0, "offsetY": 0.0, "offsetZ": 6.0, "yaw": 0.0, "replenishmentCooldownSeconds": 900 },
+            { "id": "cv90_1", "displayName": "CV90", "entityId": "dragonrise_reforge:cv90", "offsetX": -8.0, "offsetY": 0.0, "offsetZ": 14.0, "yaw": 0.0, "replenishmentCooldownSeconds": 900 },
+            { "id": "cv90_2", "displayName": "CV90", "entityId": "dragonrise_reforge:cv90", "offsetX": 8.0, "offsetY": 0.0, "offsetZ": 14.0, "yaw": 0.0, "replenishmentCooldownSeconds": 900 },
+            { "id": "hmmwv_armored_unarmed_1", "displayName": "装甲无武装 HMMWV", "entityId": "fcp:hmmwv_armored_unarmed", "offsetX": -4.0, "offsetY": 0.0, "offsetZ": 22.0, "yaw": 0.0, "replenishmentCooldownSeconds": 300 },
+            { "id": "hmmwv_armored_unarmed_2", "displayName": "装甲无武装 HMMWV", "entityId": "fcp:hmmwv_armored_unarmed", "offsetX": 4.0, "offsetY": 0.0, "offsetZ": 22.0, "yaw": 0.0, "replenishmentCooldownSeconds": 300 }
+          ]
+        }
+      ]
+    }
+  ]
+}

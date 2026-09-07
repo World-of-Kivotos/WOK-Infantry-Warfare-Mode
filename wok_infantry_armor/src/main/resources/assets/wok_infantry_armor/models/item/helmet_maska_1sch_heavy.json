@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "wok_infantry_armor:item/helmet_maska_1sch_heavy"
+  }
+}

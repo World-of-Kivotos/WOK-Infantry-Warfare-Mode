@@ -1,0 +1,21 @@
+{
+  "effect.wok_downed.downed": "倒地",
+  "gui.wok_downed.title": "已倒地",
+  "gui.wok_downed.bleedout": "失血倒计时：%s 秒",
+  "gui.wok_downed.waiting": "等待队友右键施救",
+  "message.wok_downed.entered": "你已倒地，等待队友救援。",
+  "message.wok_downed.rescue_started": "正在救援 %s，请保持静止。",
+  "message.wok_downed.being_rescued": "%s 正在救援你。",
+  "message.wok_downed.rescue_progress": "救援进度：%s%%",
+  "message.wok_downed.rescue_busy": "已有玩家正在救援该伤员。",
+  "message.wok_downed.rescue_invalid": "现在无法救援该玩家。",
+  "message.wok_downed.rescue_canceled": "救援已中断。",
+  "message.wok_downed.drag_started": "正在拖行 %s；潜行右键可放下伤员。",
+  "message.wok_downed.being_dragged": "%s 正在拖行你。",
+  "message.wok_downed.drag_stopped": "已停止拖行。",
+  "message.wok_downed.drag_invalid": "现在无法拖行该伤员。",
+  "message.wok_downed.revived": "救援完成。",
+  "message.wok_downed.gave_up": "你已放弃等待救援。",
+  "command.wok_downed.not_downed": "你当前没有倒地。",
+  "command.wok_downed.revived_count": "已救起 %s 名玩家。"
+}

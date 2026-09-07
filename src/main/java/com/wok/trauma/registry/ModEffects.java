@@ -4,6 +4,7 @@ import com.wok.trauma.WokTraumaMod;
 import com.wok.trauma.effect.BleedingEffect;
 import com.wok.trauma.effect.SimpleTraumaEffect;
 import com.wok.trauma.effect.TimedRegenerationEffect;
+import com.wok.trauma.effect.TimedRegenerationEffect.BodyHealthHealingMode;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectCategory;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -18,9 +19,11 @@ public final class ModEffects {
     public static final RegistryObject<MobEffect> ANALGESIA = EFFECTS.register(
             "analgesia", () -> new SimpleTraumaEffect(MobEffectCategory.BENEFICIAL, 0x36C7D9));
     public static final RegistryObject<MobEffect> REGENERATION = EFFECTS.register(
-            "regeneration", () -> new TimedRegenerationEffect(0x20D766, 20, 1.0F));
+            "regeneration", () -> new TimedRegenerationEffect(
+                    0x20D766, 20, 1.0F, BodyHealthHealingMode.ALL_DAMAGED_PARTS));
     public static final RegistryObject<MobEffect> PROPITAL_REGENERATION = EFFECTS.register(
-            "propital_regeneration", () -> new TimedRegenerationEffect(0xA5C43B, 60, 1.0F));
+            "propital_regeneration", () -> new TimedRegenerationEffect(
+                    0xA5C43B, 20, 0.1F, BodyHealthHealingMode.SHARED_POOL));
     public static final RegistryObject<MobEffect> PAIN = EFFECTS.register(
             "pain", () -> new SimpleTraumaEffect(MobEffectCategory.HARMFUL, 0x8E4054));
     public static final RegistryObject<MobEffect> BLEEDING = EFFECTS.register(

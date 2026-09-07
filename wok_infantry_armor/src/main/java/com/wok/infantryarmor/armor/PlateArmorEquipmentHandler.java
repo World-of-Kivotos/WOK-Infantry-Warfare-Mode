@@ -1,5 +1,6 @@
 package com.wok.infantryarmor.armor;
 
+import com.wok.infantryarmor.armor.item.HelmetItem;
 import com.wok.infantryarmor.armor.item.PlateArmorItem;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
@@ -51,6 +52,10 @@ public final class PlateArmorEquipmentHandler {
         ItemStack chest = player.getItemBySlot(EquipmentSlot.CHEST);
         if (chest.getItem() instanceof PlateArmorItem plate && !plate.isFunctional(chest)) {
             plate.breakExhausted(chest, player);
+        }
+        ItemStack head = player.getItemBySlot(EquipmentSlot.HEAD);
+        if (head.getItem() instanceof HelmetItem helmet && !helmet.isFunctional(head)) {
+            helmet.breakExhausted(head, player);
         }
         PlateArmorItem armor = PlateArmorItem.equippedBy(player);
         if (armor == null) {

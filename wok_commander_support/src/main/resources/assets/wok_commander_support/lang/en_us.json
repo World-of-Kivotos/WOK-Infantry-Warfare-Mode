@@ -1,0 +1,12 @@
+{
+  "support.wok_commander_support.recon_satellite": "Recon Satellite",
+  "support.wok_commander_support.millennium_f15ex_jdam_1000lb": "Millennium F-15EX JDAM 1000 lb Airstrike",
+  "support.wok_commander_support.f16c_gbu12_paveway_500lb": "F-16C GBU-12 Paveway II 500 lb Precision Strike",
+  "message.wok_commander_support.paveway_no_designation": "Paveway not released: no allied continuous designation in the authorized area",
+  "message.wok_commander_support.paveway_designation_acquired": "Paveway linked to designator: %s",
+  "message.wok_commander_support.paveway_designator_linked": "Paveway linked: keep using the artillery indicator on target",
+  "message.wok_commander_support.paveway_guidance_lost": "Paveway guidance lost: retaining the last correction",
+  "message.wok_commander_support.paveway_designator_lost": "Paveway guidance link lost",
+  "subtitles.wok_commander_support.jdam_f15_approach": "F-15EX roars overhead",
+  "subtitles.wok_commander_support.jdam_bomb_tail": "Heavy bomb blast reverberates"
+}

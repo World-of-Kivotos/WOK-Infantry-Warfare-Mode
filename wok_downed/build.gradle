@@ -1,0 +1,188 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+// Isolated real-client regression fixture; never included in the distributable JAR.
+sourceSets {
+    dragTest {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
+    poseTest {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
+}
+def poseTestDir = file(findProperty('poseTestDir') ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/wok-downed-acceptance/standalone')
+def poseTestMafuyu = findProperty('poseTestMafuyuJar') ? file(property('poseTestMafuyuJar')) : null
+def dragTestRun = (findProperty('dragTestRun') ?: 'drag').toString()
+if (!(dragTestRun ==~ /[a-zA-Z0-9_-]+/)) throw new GradleException('Invalid dragTestRun')
+def dragTestRoot = file("D:/WOK步战测试/1.20.1-Forge_47.4.22/wok-downed-acceptance/${dragTestRun}")
+if (poseTestMafuyu != null && (!poseTestMafuyu.isFile()
+        || poseTestMafuyu.name != 'moveslikemafuyu-1.1.3.jar')) {
+    throw new GradleException('poseTestMafuyuJar must point to a local moveslikemafuyu-1.1.3.jar fixture')
+}
+
+minecraft {
+    mappings channel: mapping_channel, version: mapping_version
+    copyIdeResources = true
+
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            property 'forge.logging.console.level', 'info'
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+        client {}
+        ['Host', 'Guest'].each { role ->
+            create("dragTest${role}") {
+                parent runs.client
+                workingDirectory new File(dragTestRoot, role.toLowerCase())
+                singleInstance false
+                jvmArgs '-Xmx1536m'
+                jvmArgs "-Djdk.net.unixdomain.tmpdir=${file('run/.selector-tcp-fallback/not-created').absolutePath}"
+                args '--mixin', 'wok_downed.mixins.json', '--username', "Downed${role}",
+                        '--width', '960', '--height', '720'
+                property 'wok.downed.dragTestRole', role.toLowerCase()
+                property 'wok.downed.dragTestRoot', dragTestRoot.absolutePath
+                property 'wok.downed.dragTestMafuyu', (poseTestMafuyu != null).toString()
+                property 'mixin.env.remapRefMap', 'true'
+                property 'mixin.env.refMapRemappingFile', layout.buildDirectory.file('createSrgToMcp/output.srg').get().asFile.absolutePath
+                mods { "${mod_id}" { source sourceSets.dragTest } }
+            }
+        }
+        poseTestClient {
+            parent runs.client
+            workingDirectory poseTestDir
+            jvmArgs '-Xmx2G'
+            jvmArgs "-Djdk.net.unixdomain.tmpdir=${file('run/.selector-tcp-fallback/not-created').absolutePath}"
+            args '--mixin', 'wok_downed.mixins.json',
+                    '--width', '960', '--height', '720'
+            property 'wok.downed.poseTestMafuyu', (poseTestMafuyu != null).toString()
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', layout.buildDirectory.file('createSrgToMcp/output.srg').get().asFile.absolutePath
+            mods {
+                "${mod_id}" { source sourceSets.poseTest }
+            }
+        }
+        server { args '--nogui' }
+    }
+}
+
+repositories {
+    mavenCentral()
+    if (poseTestMafuyu != null) {
+        flatDir { dirs poseTestMafuyu.parentFile }
+    }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    if (poseTestMafuyu != null) {
+        // The fixture is named moveslikemafuyu-1.1.3.jar and remains an external local dependency.
+        poseTestRuntimeOnly fg.deobf('pose.compat:moveslikemafuyu:1.1.3')
+        dragTestRuntimeOnly fg.deobf('pose.compat:moveslikemafuyu:1.1.3')
+    }
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    filteringCharset = 'UTF-8'
+    def replaceProperties = [
+            minecraft_version       : minecraft_version,
+            minecraft_version_range : minecraft_version_range,
+            forge_version           : forge_version,
+            forge_version_range     : forge_version_range,
+            loader_version_range    : loader_version_range,
+            mod_id                  : mod_id,
+            mod_name                : mod_name,
+            mod_license             : mod_license,
+            mod_version             : mod_version,
+            mod_authors             : mod_authors,
+            mod_description         : mod_description
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+                'Specification-Title'      : mod_id,
+                'Specification-Vendor'     : mod_authors,
+                'Specification-Version'    : '1',
+                'Implementation-Title'     : project.name,
+                'Implementation-Version'   : project.jar.archiveVersion,
+                'Implementation-Vendor'    : mod_authors,
+                'Implementation-Timestamp' : new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+                'MixinConfigs'             : 'wok_downed.mixins.json'
+        ])
+    }
+    finalizedBy 'reobfJar'
+}
+
+tasks.named('test', Test).configure {
+    useJUnitPlatform()
+}
+
+tasks.matching { it.name == 'runPoseTestClient' }.configureEach {
+    doFirst {
+        def allowedRoot = file('D:/WOK步战测试/1.20.1-Forge_47.4.22/wok-downed-acceptance').canonicalFile.toPath()
+        if (!poseTestDir.canonicalFile.toPath().startsWith(allowedRoot)
+                || poseTestDir.canonicalFile.toPath() == allowedRoot) {
+            throw new GradleException('Pose acceptance must run in an isolated WOK Infantry test fixture')
+        }
+        def result = new File(poseTestDir, 'pose-test-results/result.txt')
+        if (result.exists() && !result.delete()) {
+            throw new GradleException("Cannot clear stale acceptance result: ${result}")
+        }
+    }
+    doLast {
+        def result = new File(poseTestDir, 'pose-test-results/result.txt')
+        if (!result.isFile() || !result.getText('UTF-8').startsWith('status=PASS\n')) {
+            throw new GradleException("Downed pose acceptance failed; inspect ${result}")
+        }
+    }
+}
+
+tasks.matching { it.name in ['runDragTestHost', 'runDragTestGuest'] }.configureEach {
+    doFirst {
+        def role = name == 'runDragTestHost' ? 'host' : 'guest'
+        if (new File(dragTestRoot, "${role}-result.txt").exists()
+                || new File(dragTestRoot, 'failure.txt').exists()) {
+            throw new GradleException('Use a fresh dragTestRun for each two-client acceptance run')
+        }
+    }
+    doLast {
+        def role = name == 'runDragTestHost' ? 'host' : 'guest'
+        def result = new File(dragTestRoot, "${role}-result.txt")
+        if (!result.isFile() || !result.getText('UTF-8').startsWith('status=PASS\n')) {
+            throw new GradleException("Drag client acceptance failed; inspect ${result}")
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs.add('-Xlint:deprecation')
+}

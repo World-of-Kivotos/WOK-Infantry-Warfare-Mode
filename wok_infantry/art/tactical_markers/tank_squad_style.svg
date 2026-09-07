@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="256" viewBox="0 0 128 256">
+  <title>WOK Infantry Squad-style top-down tank tactical marker</title>
+  <g fill="none" stroke="#ff3038" stroke-linejoin="round">
+    <!-- Long gun and muzzle, pointing toward the top of the tactical map. -->
+    <path d="M64 82V15" stroke="#2a090c" stroke-width="15" stroke-linecap="round"/>
+    <path d="M64 82V15" stroke-width="9" stroke-linecap="round"/>
+    <path d="M53 15H75" stroke="#2a090c" stroke-width="15" stroke-linecap="square"/>
+    <path d="M53 15H75" stroke-width="9" stroke-linecap="square"/>
+
+    <!-- Continuous tracks: bold at 20 x 28 pixels, without photographic detail. -->
+    <rect x="10" y="72" width="28" height="165" rx="8"
+          fill="#451014" stroke="#2a090c" stroke-width="14"/>
+    <rect x="10" y="72" width="28" height="165" rx="8" stroke-width="9"/>
+    <rect x="90" y="72" width="28" height="165" rx="8"
+          fill="#451014" stroke="#2a090c" stroke-width="14"/>
+    <rect x="90" y="72" width="28" height="165" rx="8" stroke-width="9"/>
+
+    <!-- Angular hull and centered turret follow the previous approved silhouette. -->
+    <path d="M39 67H89L101 93V208L87 229H41L27 208V93Z"
+          fill="#65161c" stroke="#2a090c" stroke-width="15"/>
+    <path d="M39 67H89L101 93V208L87 229H41L27 208V93Z" stroke-width="9"/>
+    <rect x="41" y="72" width="46" height="58" rx="8"
+          fill="#65161c" stroke="#2a090c" stroke-width="15"/>
+    <rect x="41" y="72" width="46" height="58" rx="8" stroke-width="9"/>
+    <circle cx="64" cy="101" r="13" fill="#2a090c" stroke-width="8"/>
+  </g>
+</svg>

@@ -1,0 +1,22 @@
+{
+  "jdam_f15_approach": {
+    "subtitle": "subtitles.wok_commander_support.jdam_f15_approach",
+    "sounds": [
+      {
+        "name": "wok_commander_support:jdam_f15_approach",
+        "stream": false,
+        "preload": true
+      }
+    ]
+  },
+  "jdam_bomb_tail": {
+    "subtitle": "subtitles.wok_commander_support.jdam_bomb_tail",
+    "sounds": [
+      {
+        "name": "wok_commander_support:jdam_bomb_tail",
+        "stream": false,
+        "preload": true
+      }
+    ]
+  }
+}

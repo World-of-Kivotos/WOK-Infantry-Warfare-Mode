@@ -1,0 +1,21 @@
+// Rebuild the portable, self-contained HTML from the maintained offline sources.
+const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto');
+const dir=__dirname,version=fs.readFileSync(path.join(dir,'VERSION'),'utf8').trim();
+const coreVersion=fs.readFileSync(path.resolve(dir,'../../wok_infantry/gradle.properties'),'utf8').match(/^mod_version=(.+)$/m)[1].trim();
+const jarName=`wok_infantry-${coreVersion}.jar`;
+const out=path.resolve(dir,`../../outputs/loadout-editor-${version}-core-${coreVersion}`);
+fs.mkdirSync(out,{recursive:true});
+let html=fs.readFileSync(path.join(dir,'index.html'),'utf8');
+html=html.replace('<link rel="stylesheet" href="style.css">',()=>'<style>\n'+fs.readFileSync(path.join(dir,'style.css'),'utf8')+'\n</style>');
+html=html.replace(/<script src="([^"]+)"><\/script>/g,(_,file)=>'<script>\n'+fs.readFileSync(path.join(dir,file),'utf8').replace(/<\/script/gi,'<\\/script')+'\n</script>');
+fs.writeFileSync(path.join(out,'WOK步战编制配装编辑器.html'),html,'utf8');
+const sandbox={window:{}};vm.runInNewContext(fs.readFileSync(path.join(dir,'seed.js'),'utf8'),sandbox);
+fs.writeFileSync(path.join(out,'示例数据包-仅供学习.json'),JSON.stringify(sandbox.window.WOK_EDITOR_SEED.catalog,null,2)+'\n');
+fs.copyFileSync(path.join(dir,'README.md'),path.join(out,'使用说明.md'));
+fs.copyFileSync(path.join(dir,'验收说明.md'),path.join(out,'验收说明.md'));
+fs.mkdirSync(path.join(out,'游戏端MOD'),{recursive:true});
+fs.copyFileSync(path.resolve(dir,'../../wok_infantry/build/libs',jarName),path.join(out,'游戏端MOD',jarName));
+fs.writeFileSync(path.join(out,'VERSION.json'),JSON.stringify({editorVersion:version,coreVersion,coreJar:jarName},null,2)+'\n');
+const files=['WOK步战编制配装编辑器.html','使用说明.md','验收说明.md','示例数据包-仅供学习.json',`游戏端MOD/${jarName}`,'VERSION.json'];
+fs.writeFileSync(path.join(out,'SHA256SUMS.txt'),files.map(f=>crypto.createHash('sha256').update(fs.readFileSync(path.join(out,f))).digest('hex')+'  '+f).join('\n')+'\n');
+console.log('Portable HTML saved to '+out);
