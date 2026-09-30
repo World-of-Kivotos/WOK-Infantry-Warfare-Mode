@@ -2,6 +2,39 @@
 
 本文件按模块记录变化。版本规则见 `docs/VERSIONING.md`；当前版本不代表已发布或全部游戏验收通过。2026-09-06 的 Git 内容清单和验收边界见 `docs/CONTENT_VERSION_AUDIT_2026-09-06.md`。
 
+## WOK步战附属-独立护甲 1.2.0-beta.1 — 2026-09-30
+
+#### 新增
+
+- 新增头盔模型生成工具 `wok_infantry_armor/tools/helmet-models`：设计脚本、预览页、自检脚本（`check.mjs`）和导出脚本（`export.mjs`，产出 GeckoLib 模型与贴图）。
+
+#### 修改
+
+- 全部 17 件头部防具的穿戴模型和贴图按《逃离塔科夫》原物重做，统一为折中 2× 精度（半像素网格、每像素 2×2 贴图）。原来 14 件共用同一个阶梯盔壳、只换颜色，现在每件按各自原物做切口、挂座、导轨、魔术贴、面罩等部件。
+- 对应关系：防暴头盔 = Kolpak-1S；轻量化防弹面具 = Death Shadow；CQCM = Atomic Defense CQCM；LZSh = LShZ 轻型；6B47 两款 = 6B47 Ratnik-BSh（橄榄绿 / 数码植被迷彩盔罩）；凯门鳄 = Galvion Caiman；Kiver-M；ACHHC = HighCom Striker ACHHC；STRIKE = MTEK STRIKE；FAST MT = Ops-Core FAST MT 超级高切；AirFrame = Crye AirFrame；FLUX = MTEK FLUX；Vulkan-5 = LShZ-5；阿尔金 = Altyn；FAST 重型套件 = FAST MT + SLAAP 附加板 + Gunsight 下颌护具；Maska-1SCh。
+- 盔沿按 Minecraft 头部比例压低：前沿在眼睛上方半格，两侧到眼睛高度，后面盖到后颈；只保留型号自身的特征切口。阿尔金、Maska-1SCh、Vulkan-5 保持面罩放下的外观，眼睛从观察窗/观察缝露出。
+- 所有可见面距皮肤帽子层至少 0.25 像素，渲染器不再整体放大 1.10 / 1.06 倍。面罩玻璃与骷髅面具镜片放在 `visor_glass` 骨骼，在不透明盔壳画完后以半透明单独绘制；原先仅限 Vulkan-5 的特殊处理改为通用规则。
+
+#### 修复
+
+- 修复旧头盔模型全部方块尺寸不在 ¼ 像素网格、532 个方块薄于 0.5 像素，以及部分部件埋进皮肤帽子层导致闪烁或被遮住的问题。
+
+#### 兼容性
+
+- modId、物品 ID、物品图标、防护数值、耐久与部位血量联动均未改动；只替换 `geo/helmet_*.geo.json`、`textures/models/armor/helmet_*_layer_1.png` 和 `HelmetGeoRenderer`。仍需 GeckoLib 4.8.4 或更高版本；模型改用按面 UV，旧资源包若覆盖这些文件需同步更新。
+- WOK-本体护甲 未改动。
+
+#### 配置/存档影响
+
+- 无。
+
+#### 测试结果
+
+- 17 件模型全部通过 `check.mjs`（无面位于或贴近帽子层，普通头盔不遮挡眼睛）；导出文件按 GeckoLib 4.8.4 的坐标与按面 UV 规则读回后，与设计稿逐面贴图一致。
+- `wok_infantry_armor` Gradle 构建通过；成品 JAR 内部版本为 `1.2.0-beta.1`，包含 17 个新模型和贴图，强制依赖仅 Forge、Minecraft 与 GeckoLib，TaCZ 和部位血量仍为可选。
+- 已安装到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`（替换原 1.1.0，旧包改名为 `.bak` 备份）。
+- 游戏内外观验收（各头盔穿戴、转头低头、面罩玻璃半透明、窄屏第三人称）尚未完成，因此保持 beta。
+
 ## WOK步战核心 0.1.0 — 2026-09-06
 
 ### 累积核心功能与阵营配装全量导入导出
