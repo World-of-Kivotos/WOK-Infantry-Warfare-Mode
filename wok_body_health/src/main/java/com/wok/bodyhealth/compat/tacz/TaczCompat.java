@@ -45,7 +45,7 @@ public final class TaczCompat {
         BodyPart part = HitLocationResolver.fromHitbox(
                 player, taczHitbox, impact, event.isHeadShot());
         PendingHitStore.record(
-                player, part, player.level().getGameTime(),
+                player, part, player.level().getGameTime(), bulletEntity,
                 event.getDamageSource(GunDamageSourcePart.NON_ARMOR_PIERCING),
                 event.getDamageSource(GunDamageSourcePart.ARMOR_PIERCING));
     }

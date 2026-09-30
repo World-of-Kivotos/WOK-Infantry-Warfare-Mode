@@ -14,6 +14,25 @@ base {
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
+// Isolated real-client HUD acceptance fixture; never included in the distributable JAR.
+sourceSets {
+    hudTest {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
+}
+def hudTestRun = (findProperty('hudTestRun') ?: 'hud').toString()
+if (!(hudTestRun ==~ /[a-zA-Z0-9_-]+/)) throw new GradleException('Invalid hudTestRun')
+def hudTestRoot = file("D:/WOK步战测试/1.20.1-Forge_47.4.22/wok-body-health-acceptance/${hudTestRun}")
+// Optional production WOK步战核心 JAR, deobfuscated for the run so its stamina panel can be checked.
+def hudTestCoreJar = findProperty('hudTestCoreJar') ? file(property('hudTestCoreJar')) : null
+if (hudTestCoreJar != null && (!hudTestCoreJar.isFile()
+        || !(hudTestCoreJar.name ==~ /wok_infantry-[0-9A-Za-z.+-]+\.jar/))) {
+    throw new GradleException('hudTestCoreJar must point to a built wok_infantry-<version>.jar')
+}
+def hudTestCoreVersion = hudTestCoreJar == null ? null
+        : hudTestCoreJar.name.substring('wok_infantry-'.length(), hudTestCoreJar.name.length() - 4)
+
 minecraft {
     mappings channel: mapping_channel, version: mapping_version
     copyIdeResources = true
@@ -31,6 +50,26 @@ minecraft {
 
         client {}
 
+        hudTestClient {
+            parent runs.client
+            workingDirectory hudTestRoot
+            jvmArgs '-Xmx2G',
+                    "-Djdk.net.unixdomain.tmpdir=${file('run/.selector-tcp-fallback/not-created').absolutePath}"
+            args '--username', 'WokHudTest', '--width', '960', '--height', '720'
+            property 'wok.bodyhealth.hudTest', 'true'
+            property 'wok.bodyhealth.hudTestCore', (hudTestCoreJar != null).toString()
+            // The production core JAR ships an SRG refmap; userdev runs official names.
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile',
+                    layout.buildDirectory.file('createSrgToMcp/output.srg').get().asFile.absolutePath
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.hudTest
+                }
+            }
+        }
+
         server {
             args '--nogui'
         }
@@ -39,22 +78,33 @@ minecraft {
 
 repositories {
     mavenCentral()
+    if (hudTestCoreJar != null) {
+        flatDir { dirs hudTestCoreJar.parentFile }
+    }
 }
 
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
 
     def taczJar = file(providers.gradleProperty('tacz_dev_jar_path')
             .orElse("${System.getProperty('user.home')}/.gradle/caches/forge_gradle/deobf_dependencies/local/tacz-1.20.1/1.1.8-hotfix_mapped_official_1.20.1/tacz-1.20.1-1.1.8-hotfix_mapped_official_1.20.1.jar")
             .get())
     if (taczJar.exists()) {
-        implementation files(taczJar)
+        // Compile-only: the release TaCZ JAR is SRG-named and would crash a userdev client.
+        compileOnly files(taczJar)
     } else {
         logger.warn("Mapped TaCZ development jar was not found; TaCZ compatibility sources will not compile.")
+    }
+    if (hudTestCoreJar != null) {
+        hudTestRuntimeOnly fg.deobf("wok.hudtest:wok_infantry:${hudTestCoreVersion}")
     }
 }
 
 tasks.named('processResources', ProcessResources).configure {
+    // Without this, mods.toml is written in the platform charset (GBK on Chinese Windows).
+    filteringCharset = 'UTF-8'
     def replaceProperties = [
             minecraft_version      : minecraft_version,
             minecraft_version_range: minecraft_version_range,
@@ -87,6 +137,32 @@ tasks.named('jar', Jar).configure {
         ])
     }
     finalizedBy 'reobfJar'
+}
+
+tasks.named('test', Test).configure {
+    useJUnitPlatform()
+}
+
+tasks.matching { it.name == 'runHudTestClient' }.configureEach {
+    def createSrgToMcp = project.tasks.findByName('createSrgToMcp')
+    if (createSrgToMcp != null) {
+        dependsOn createSrgToMcp
+    }
+    doFirst {
+        def allowedRoot = file('D:/WOK步战测试/1.20.1-Forge_47.4.22/wok-body-health-acceptance').canonicalFile.toPath()
+        if (!hudTestRoot.canonicalFile.toPath().startsWith(allowedRoot)) {
+            throw new GradleException('HUD acceptance must run inside the WOK步战 test directory')
+        }
+        if (new File(hudTestRoot, 'hud-test-results/result.txt').exists()) {
+            throw new GradleException('Use a fresh -PhudTestRun so earlier acceptance artifacts are kept')
+        }
+    }
+    doLast {
+        def result = new File(hudTestRoot, 'hud-test-results/result.txt')
+        if (!result.isFile() || !result.getText('UTF-8').startsWith('status=PASS')) {
+            throw new GradleException("Body-health HUD acceptance failed; inspect ${result}")
+        }
+    }
 }
 
 tasks.withType(JavaCompile).configureEach {

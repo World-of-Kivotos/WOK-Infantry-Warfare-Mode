@@ -6,37 +6,11 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.Optional;
+
 public final class HitLocationResolver {
-    public static BodyPart fromImpact(Player target, Vec3 impact, boolean headshot) {
-        if (headshot) {
-            return BodyPart.HEAD;
-        }
-
-        AABB bounds = target.getBoundingBox();
-        double height = Math.max(0.01D, bounds.getYsize());
-        double yRatio = Mth.clamp((impact.y - bounds.minY) / height, 0.0D, 1.0D);
-
-        float yawRadians = target.getYRot() * Mth.DEG_TO_RAD;
-        Vec3 right = new Vec3(-Mth.cos(yawRadians), 0.0D, -Mth.sin(yawRadians));
-        Vec3 center = bounds.getCenter();
-        double lateral = impact.subtract(center).dot(right);
-        boolean rightSide = lateral >= 0.0D;
-        boolean outsideTorso = Math.abs(lateral) > bounds.getXsize() * 0.22D;
-
-        if (yRatio >= 0.78D) {
-            return BodyPart.HEAD;
-        }
-        if (yRatio >= 0.52D) {
-            if (outsideTorso) {
-                return rightSide ? BodyPart.RIGHT_ARM : BodyPart.LEFT_ARM;
-            }
-            return BodyPart.CHEST;
-        }
-        if (yRatio >= 0.36D) {
-            return BodyPart.ABDOMEN;
-        }
-        return rightSide ? BodyPart.RIGHT_LEG : BodyPart.LEFT_LEG;
-    }
+    /** Vanilla ProjectileUtil inflates target boxes by this much when testing projectile hits. */
+    private static final double PROJECTILE_HIT_MARGIN = 0.3D;
 
     /**
      * Resolves an exact ray/AABB entry point against seven mutually exclusive
@@ -48,23 +22,54 @@ public final class HitLocationResolver {
             return BodyPart.HEAD;
         }
 
-        Pose pose = target.getPose();
-        if (pose == Pose.SWIMMING
-                || pose == Pose.FALL_FLYING
-                || pose == Pose.SPIN_ATTACK
-                || pose == Pose.SLEEPING) {
-            return fromHorizontalHitbox(target, hitbox, impact);
+        Vec3 right = rightVector(target.yBodyRot);
+        if (isHorizontal(target.getPose())) {
+            Vec3 forward = target.getViewVector(1.0F).normalize();
+            if (!isFiniteDirection(forward)) {
+                forward = forwardVector(target.yBodyRot);
+            }
+            return fromHorizontalHitbox(hitbox, impact, forward, right);
         }
-        return fromVerticalHitbox(target, hitbox, impact);
+        return fromVerticalHitbox(hitbox, impact, right);
     }
 
-    private static BodyPart fromVerticalHitbox(Player target, AABB hitbox, Vec3 impact) {
+    /**
+     * Finds where a projectile enters the target. During a hurt call the
+     * projectile still sits at its position from before this tick's movement,
+     * which may be several blocks away, so its motion is traced into the box.
+     */
+    public static Vec3 traceImpact(AABB target, Vec3 start, Vec3 motion) {
+        if (target.contains(start)) {
+            return start;
+        }
+        if (motion.lengthSqr() > 1.0E-8D) {
+            Vec3 end = start.add(motion);
+            Optional<Vec3> entry = target.clip(start, end);
+            if (entry.isPresent()) {
+                return entry.get();
+            }
+            // Vanilla also accepts rays that only graze the inflated margin.
+            Optional<Vec3> grazing = target.inflate(PROJECTILE_HIT_MARGIN).clip(start, end);
+            if (grazing.isPresent()) {
+                return closestPoint(target, grazing.get());
+            }
+        }
+        return closestPoint(target, start);
+    }
+
+    public static Vec3 closestPoint(AABB box, Vec3 point) {
+        return new Vec3(
+                Mth.clamp(point.x, box.minX, box.maxX),
+                Mth.clamp(point.y, box.minY, box.maxY),
+                Mth.clamp(point.z, box.minZ, box.maxZ));
+    }
+
+    static BodyPart fromVerticalHitbox(AABB hitbox, Vec3 impact, Vec3 right) {
         Vec3 center = hitbox.getCenter();
         double yRatio = Mth.clamp(
                 (impact.y - hitbox.minY) / Math.max(0.01D, hitbox.getYsize()),
                 0.0D, 1.0D);
-        double lateral = normalizedProjection(
-                impact.subtract(center), rightVector(target), hitbox);
+        double lateral = normalizedProjection(impact.subtract(center), right, hitbox);
 
         // Minecraft's 16-pixel-wide player model consists of an 8-pixel torso
         // with 4-pixel arms on both sides. The outer quarters of TaCZ's player
@@ -84,14 +89,8 @@ public final class HitLocationResolver {
         return sidePart(lateral, BodyPart.RIGHT_LEG, BodyPart.LEFT_LEG);
     }
 
-    private static BodyPart fromHorizontalHitbox(Player target, AABB hitbox, Vec3 impact) {
-        Vec3 center = hitbox.getCenter();
-        Vec3 offset = impact.subtract(center);
-        Vec3 forward = target.getViewVector(1.0F).normalize();
-        if (!isFiniteDirection(forward)) {
-            forward = forwardVector(target);
-        }
-        Vec3 right = rightVector(target);
+    static BodyPart fromHorizontalHitbox(AABB hitbox, Vec3 impact, Vec3 forward, Vec3 right) {
+        Vec3 offset = impact.subtract(hitbox.getCenter());
         double longitudinal = normalizedProjection(offset, forward, hitbox);
         double lateral = normalizedProjection(offset, right, hitbox);
 
@@ -113,6 +112,23 @@ public final class HitLocationResolver {
         return sidePart(lateral, BodyPart.RIGHT_LEG, BodyPart.LEFT_LEG);
     }
 
+    static Vec3 rightVector(float bodyYaw) {
+        float yawRadians = bodyYaw * Mth.DEG_TO_RAD;
+        return new Vec3(-Mth.cos(yawRadians), 0.0D, -Mth.sin(yawRadians));
+    }
+
+    private static Vec3 forwardVector(float bodyYaw) {
+        float yawRadians = bodyYaw * Mth.DEG_TO_RAD;
+        return new Vec3(-Mth.sin(yawRadians), 0.0D, Mth.cos(yawRadians));
+    }
+
+    private static boolean isHorizontal(Pose pose) {
+        return pose == Pose.SWIMMING
+                || pose == Pose.FALL_FLYING
+                || pose == Pose.SPIN_ATTACK
+                || pose == Pose.SLEEPING;
+    }
+
     private static double normalizedProjection(Vec3 offset, Vec3 axis, AABB hitbox) {
         double halfX = hitbox.getXsize() * 0.5D;
         double halfY = hitbox.getYsize() * 0.5D;
@@ -124,16 +140,6 @@ public final class HitLocationResolver {
             return 0.0D;
         }
         return Mth.clamp(offset.dot(axis) / extent, -1.0D, 1.0D);
-    }
-
-    private static Vec3 rightVector(Player target) {
-        float yawRadians = target.yBodyRot * Mth.DEG_TO_RAD;
-        return new Vec3(-Mth.cos(yawRadians), 0.0D, -Mth.sin(yawRadians));
-    }
-
-    private static Vec3 forwardVector(Player target) {
-        float yawRadians = target.yBodyRot * Mth.DEG_TO_RAD;
-        return new Vec3(-Mth.sin(yawRadians), 0.0D, Mth.cos(yawRadians));
     }
 
     private static boolean isFiniteDirection(Vec3 direction) {
