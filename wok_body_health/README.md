@@ -2,7 +2,7 @@
 
 面向 Minecraft 1.20.1 / Forge 47.4.22 的七部位血量模组。
 
-当前版本 `0.1.0-beta.1`；产物为 `build/libs/wok_body_health-0.1.0-beta.1.jar`。
+当前版本 `0.1.0-beta.2`；产物为 `build/libs/wok_body_health-0.1.0-beta.2.jar`。
 
 - 头部 35、胸部 85、腹部 70
 - 左右手臂各 60、左右腿各 65
@@ -77,8 +77,8 @@ TaCZ 兼容代码编译需要 TaCZ 1.1.8 JAR（只参与编译，不进入产物
 .\gradlew.bat -p wok_body_health build "-Ptacz_dev_jar_path=E:\wok\Wok-Project\libs\tacz-1.20.1-1.1.8-hotfix.jar"
 ```
 
-HUD 真实客户端验收会在 `D:\WOK步战测试\1.20.1-Forge_47.4.22\wok-body-health-acceptance\<批次>` 建隔离超平坦存档，设定固定伤势后按 320×240、342×256、427×240、960×720 截图并校验布局，结果写入该目录的 `hud-test-results/result.txt` 后自动退出。每批次用新的 `hudTestRun`；加 `hudTestCoreJar` 时同时加载 WOK步战核心，检查体力条位置：
+HUD 真实客户端验收会在 `D:\WOK步战测试\1.20.1-Forge_47.4.22\wok-body-health-acceptance\<批次>` 建隔离超平坦存档，设定固定伤势后按 320×240（紧凑）、427×240（精简）、480×270 与 960×720（完整）截图并校验布局，结果写入该目录的 `hud-test-results/result.txt` 后自动退出。每批次用新的 `hudTestRun`；加 `hudTestCoreJar` 时同时加载 WOK步战核心，检查体力条位置：
 
 ```powershell
-.\gradlew.bat -p wok_body_health runHudTestClient -PhudTestRun=<批次> "-PhudTestCoreJar=..\wok_infantry\build\libs\wok_infantry-0.1.1-beta.1.jar" "-Ptacz_dev_jar_path=E:\wok\Wok-Project\libs\tacz-1.20.1-1.1.8-hotfix.jar"
+.\gradlew.bat -p wok_body_health runHudTestClient -PhudTestRun=<批次> "-PhudTestCoreJar=<绝对路径>\wok_infantry\build\libs\wok_infantry-0.3.0-beta.2.jar" "-Ptacz_dev_jar_path=E:\wok\Wok-Project\libs\tacz-1.20.1-1.1.8-hotfix.jar"
 ```

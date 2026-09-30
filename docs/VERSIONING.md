@@ -7,9 +7,9 @@
 
 | 模块 | 当前版本 | 稳定阶段 |
 | --- | --- | --- |
-| `wok_infantry` | `0.3.0-beta.1` | 基地十五秒补给、兵力值、机枪渐进卧姿；保留体力协议 2，新增兵力通道 1 |
+| `wok_infantry` | `0.3.0-beta.2` | 基地十五秒补给、兵力值、机枪渐进卧姿；体力条跟随部位血量 HUD |
 | `wok_trauma` | `0.1.0-beta.1` | 黄针共享慢回与延迟副作用；待完整游戏验收 |
-| `wok_body_health` | `0.1.0-beta.1` | 绝对部位血量 API 与一血救援联动 |
+| `wok_body_health` | `0.1.0-beta.2` | 受伤判定修复、数据驱动伤害标签、HUD 与持枪人形重画 |
 | `wok_infantry_armor` | `1.1.1-beta.1` | 护甲移动惩罚调整；保留原 1.1 产品版本序列 |
 | `wok_vehicle_health` | `0.1.0-beta.1` | 载具 T 级、方向装甲与反坦克归一化 |
 | `wok_commander_support` | `0.1.0-beta.1` | 侦察卫星、F-15EX 与 F-16C；需核心 0.1.0+ |
