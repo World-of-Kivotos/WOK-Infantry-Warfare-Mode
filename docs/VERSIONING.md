@@ -9,8 +9,7 @@
 | --- | --- | --- |
 | `wok_infantry` | `0.3.0-beta.3` | 基地十五秒补给、兵力值、机枪渐进卧姿；体力条跟随部位血量 HUD；修复目录联接下进存档崩溃 |
 | `wok_trauma` | `0.1.0-beta.1` | 黄针共享慢回与延迟副作用；待完整游戏验收 |
-| `wok_body_health` | `0.1.0-beta.2` | 受伤判定修复、数据驱动伤害标签、HUD 与持枪人形重画 |
-| `wok_infantry_armor` | `1.1.1-beta.1` | 护甲移动惩罚调整；保留原 1.1 产品版本序列 |
+| `wok_body_health` | `0.1.0-beta.2` | 受伤判定修复、数据驱动伤害标签、HUD 与持枪人形重画 || `wok_infantry_armor` | `1.2.0-beta.1` | 17 件头部防具按塔科夫原物重做模型；待游戏内外观验收 |
 | `wok_vehicle_health` | `0.1.0-beta.1` | 载具 T 级、方向装甲与反坦克归一化 |
 | `wok_commander_support` | `0.1.0-beta.1` | 侦察卫星、F-15EX 与 F-16C；需核心 0.1.0+ |
 | `wok_capture_points` | `0.1.0-alpha.3` | 作战资格过滤；可选核心兵力与新局联动 |
