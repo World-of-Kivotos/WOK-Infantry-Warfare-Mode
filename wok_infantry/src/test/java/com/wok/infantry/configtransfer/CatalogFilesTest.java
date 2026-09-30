@@ -67,6 +67,39 @@ class CatalogFilesTest {
         assertEquals("original", Files.readString(root.resolve("formations.json")));
     }
 
+    @Test void junctionAboveConfigDirectoryDoesNotBlockLoadingOrImport() throws Exception {
+        // PCL version isolation reaches the game directory through versions\<name> junctions.
+        Path real = Files.createDirectories(root.resolve("real"));
+        Path linked = root.resolve("linked");
+        link(linked, real);
+        Path config = Files.createDirectories(linked.resolve("config").resolve("wok_infantry"));
+        var files = new CatalogFiles(config);
+        files.recover();
+        files.replace(CatalogArchiveTest.fixture());
+        assertTrue(Files.exists(real.resolve("config/wok_infantry/loadouts.json")));
+        assertEquals("备份.json", files.export("备份", new byte[]{1}));
+    }
+
+    @Test void linkInsideConfigDirectoryIsStillRejected() throws Exception {
+        Path outside = Files.createDirectories(root.resolve("outside"));
+        Path config = Files.createDirectories(root.resolve("config"));
+        link(config.resolve(".catalog-import"), outside);
+        assertThrows(IOException.class, () -> new CatalogFiles(config).recover());
+        link(config.resolve("catalogs"), outside);
+        assertThrows(IOException.class, () -> new CatalogFiles(config).list());
+    }
+
+    private static void link(Path link, Path target) throws Exception {
+        if (System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT).contains("win")) {
+            Process process = new ProcessBuilder("cmd", "/c", "mklink", "/J", link.toString(), target.toString())
+                    .redirectErrorStream(true).start();
+            process.getInputStream().readAllBytes();
+            org.junit.jupiter.api.Assumptions.assumeTrue(process.waitFor() == 0, "无法创建目录联接");
+        } else {
+            Files.createSymbolicLink(link, target);
+        }
+    }
+
     @Test void digestDetectsAnyFileChange() {
         assertNotEquals(CatalogFiles.digest(new byte[]{1}), CatalogFiles.digest(new byte[]{2}));
         assertEquals(64, CatalogFiles.digest(new byte[0]).length());
