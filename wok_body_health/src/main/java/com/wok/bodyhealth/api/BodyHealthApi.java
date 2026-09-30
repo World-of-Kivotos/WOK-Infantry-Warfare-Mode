@@ -11,6 +11,12 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.LivingEntity;
 
 public final class BodyHealthApi {
+    /** Optional rescue bridge: sets each part to an absolute value, not a healing amount. */
+    public static boolean setAllPartsHealth(LivingEntity entity, float points) {
+        return entity instanceof ServerPlayer player
+                && BodyHealthService.setAllPartsHealth(player, points);
+    }
+
     /**
      * Reflection-friendly bridge for WOK Trauma's silent bleeding damage.
      */

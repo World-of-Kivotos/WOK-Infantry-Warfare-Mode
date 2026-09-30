@@ -1468,8 +1468,14 @@ public final class BattleService {
                     "Could not finish formation-vote cleanup after committed battle reset",
                     exception);
         }
+        try {
+            com.wok.infantry.battle.tickets.TicketService.reset(server);
+        } catch (RuntimeException | LinkageError exception) {
+            postCommitFailures++;
+            WokInfantryMod.LOGGER.error("Could not reset manpower/capture state after battle reset", exception);
+        }
         return postCommitFailures == 0
-                ? ActionResult.ok("已重置战局、小队、兵种占位和标记")
+                ? ActionResult.ok("已重置战局、兵力值、占点、小队、兵种占位和标记")
                 : ActionResult.ok("战局重置已提交，但有 " + postCommitFailures
                 + " 项玩家/支援清理失败；已记录服务端日志并保持新会话");
     }

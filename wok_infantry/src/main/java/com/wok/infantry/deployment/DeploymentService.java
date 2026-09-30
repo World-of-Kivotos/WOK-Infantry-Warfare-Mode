@@ -69,7 +69,6 @@ public final class DeploymentService {
     private static final double HOLDING_Y = 64.0D;
     private static final Vec3 REMOVED_PLAYER_LOBBY = new Vec3(0.5D, 2.0D, 0.5D);
     public static final long RESPAWN_DELAY_TICKS = 15L * 20L;
-    public static final long RESUPPLY_COOLDOWN_TICKS = 60L * 20L;
     public static final long RALLY_SQUAD_COOLDOWN_TICKS = 8L * 60L * 20L;
     private static final String ARMOR_ESCROW_TAG = WokInfantryMod.MOD_ID + ":armor_escrow";
 
@@ -199,6 +198,7 @@ public final class DeploymentService {
         DeploymentRecord record = records.computeIfAbsent(player.getUUID(), ignored ->
                 newWaitingRecord(now, player.getUUID()));
         if (record.phase == DeploymentPhase.ACTIVE) {
+            com.wok.infantry.battle.tickets.TicketService.playerLoss(player, record.issueToken);
             beginWaiting(record, now, true, player.getUUID());
         }
     }
@@ -222,6 +222,7 @@ public final class DeploymentService {
         // Normal death should already have entered WAITING in LivingDeathEvent. Fail closed if
         // another mod bypassed that event; returning from the End is not a death.
         if (!endConquered && record.phase == DeploymentPhase.ACTIVE) {
+            com.wok.infantry.battle.tickets.TicketService.playerLoss(player, record.issueToken);
             beginWaiting(record, now, true, player.getUUID());
         }
         updateReady(record, now);
@@ -299,15 +300,17 @@ public final class DeploymentService {
         updateReady(record, now);
         List<DeploymentPoint> points = pointsFor(player);
         boolean canDeploy = record.phase == DeploymentPhase.READY
+                && !com.wok.infantry.battle.tickets.TicketService.finished(server)
                 && record.issuedLifeSerial != record.lifeSerial
                 && record.selectedPointId != null
                 && points.stream().anyMatch(point -> point.id().equals(record.selectedPointId))
                 && BattleService.get(player).flatMap(battle ->
                         battle.squadOf(player.getUUID())).isPresent();
         boolean canResupply = record.phase == DeploymentPhase.ACTIVE
-                && now >= record.nextResupplyGameTick && atOwnMainBase(player);
+                && player.isAlive() && !com.wok.infantry.battle.CombatantStatus.isDowned(player)
+                && atOwnMainBase(player);
         return new DeploymentView(record.phase, record.revision, now, record.eligibleGameTick,
-                record.nextResupplyGameTick, record.selectedPointId,
+                now, record.selectedPointId,
                 record.phase != DeploymentPhase.ACTIVE,
                 record.phase != DeploymentPhase.ACTIVE,
                 canDeploy, canResupply, points);
@@ -391,7 +394,9 @@ public final class DeploymentService {
             return ActionResult.failure(ActionResult.Code.INVALID_TARGET,
                     "本小队的队包数量已达编制上限");
         }
-        BlockPos spawn = findSafeFeet(level, anchor.above()).orElse(null);
+        // A radio is shorter than a block and cannot support a player. Search its own ground
+        // level so the adjacent floor is considered; starting above it rejects flat terrain.
+        BlockPos spawn = findSafeFeet(level, anchor).orElse(null);
         if (spawn == null) {
             return ActionResult.failure(ActionResult.Code.INVALID_DEPLOYMENT_POINT,
                     "队包附近没有安全落脚位置");
@@ -958,6 +963,8 @@ public final class DeploymentService {
     }
 
     public ActionResult deploy(ServerPlayer player) {
+        if (com.wok.infantry.battle.tickets.TicketService.finished(server))
+            return ActionResult.failure(ActionResult.Code.NOT_WAITING_FOR_DEPLOYMENT, "本局已结束，请等待管理员开始新局");
         ActionResult actorError = requireParticipant(player);
         if (actorError != null) {
             return actorError;
@@ -1049,7 +1056,7 @@ public final class DeploymentService {
         record.phase = DeploymentPhase.ACTIVE;
         record.issuedLifeSerial = record.lifeSerial;
         record.issueToken = issueToken;
-        record.nextResupplyGameTick = now + RESUPPLY_COOLDOWN_TICKS;
+        record.nextResupplyGameTick = now;
         record.nextDeepInventoryScanTick = now;
         touch(record);
         AmmoSupplyService.InitialReserveGrant initialReserve =
@@ -1102,6 +1109,7 @@ public final class DeploymentService {
             return ActionResult.failure(ActionResult.Code.NOT_WAITING_FOR_DEPLOYMENT,
                     "你当前没有可放弃的存活部署");
         }
+        com.wok.infantry.battle.tickets.TicketService.playerLoss(player, record.issueToken);
         beginWaiting(record, gameTick(), true, player.getUUID());
         KitProvenance.purgeAllIssued(player);
         player.inventoryMenu.broadcastChanges();
@@ -1110,7 +1118,33 @@ public final class DeploymentService {
         return ActionResult.ok("已进入重新部署等待");
     }
 
+    public void endRound() {
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            DeploymentRecord record = records.get(player.getUUID());
+            if (record == null || !isParticipant(player.getUUID())) continue;
+            beginWaiting(record, gameTick(), true, player.getUUID());
+            KitProvenance.purgeAllIssued(player);
+            if (player.isAlive()) {
+                resetLifeBoundary(player);
+                holdPlayer(player);
+            }
+        }
+    }
+
     public ActionResult resupply(ServerPlayer player) {
+        ActionResult actorError = requireParticipant(player);
+        if (actorError != null) return actorError;
+        if (!isActive(player.getUUID()) || !player.isAlive()
+                || com.wok.infantry.battle.CombatantStatus.isDowned(player))
+            return ActionResult.failure(ActionResult.Code.NOT_WAITING_FOR_DEPLOYMENT, "只有正常作战的已部署玩家可以补给");
+        if (!atOwnMainBase(player))
+            return ActionResult.failure(ActionResult.Code.NOT_AT_SUPPLY, "请返回己方圈定的基地补给区，停留 15 秒");
+        BaseSupplyEvents.request(player);
+        return ActionResult.ok("已进入基地补给流程，请留在区域内完成 15 秒补给");
+    }
+
+    /** Called by the server's continuous base-area timer, never directly by a client packet. */
+    public ActionResult completeBaseResupply(ServerPlayer player) {
         ActionResult actorError = requireParticipant(player);
         if (actorError != null) {
             return actorError;
@@ -1121,11 +1155,8 @@ public final class DeploymentService {
             return ActionResult.failure(ActionResult.Code.NOT_WAITING_FOR_DEPLOYMENT,
                     "只有已部署玩家可以补给");
         }
-        if (now < record.nextResupplyGameTick) {
-            return ActionResult.failure(ActionResult.Code.RESUPPLY_COOLDOWN,
-                    "补给冷却尚未结束");
-        }
-        if (!atOwnMainBase(player)) {
+        if (!atOwnMainBase(player) || !player.isAlive()
+                || com.wok.infantry.battle.CombatantStatus.isDowned(player)) {
             return ActionResult.failure(ActionResult.Code.NOT_AT_SUPPLY,
                     "必须位于己方主基地补给范围内");
         }
@@ -1138,19 +1169,14 @@ public final class DeploymentService {
         if (!prepared.result().success()) {
             return prepared.result();
         }
-        ActionResult slotValidation = loadout.validateInstallSlots(player, prepared);
-        if (!slotValidation.success()) {
-            return slotValidation;
-        }
-        UUID replacementToken = UUID.randomUUID();
-        loadout.installPreparedLoadout(player, prepared, sessionId, replacementToken);
-        record.issueToken = replacementToken;
-        record.nextResupplyGameTick = now + RESUPPLY_COOLDOWN_TICKS;
+        int blockedSlots = loadout.replenishPreparedLoadout(player, prepared, sessionId, record.issueToken);
+        var ammo = AmmoSupplyService.grantInitialReserve(player, sessionId, record.issueToken);
+        record.nextResupplyGameTick = now;
         record.nextDeepInventoryScanTick = now;
         touch(record);
-        player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
-                "message.wok_infantry.applied"));
-        return ActionResult.ok("己方主基地补给完成");
+        return ActionResult.ok("基地补给完成，已有弹药与运输物资已保留"
+                + (blockedSlots > 0 ? "；部分配装槽被占用，未覆盖" : "")
+                + (ammo.addedRounds() < ammo.requestedRounds() ? "；背包空间不足，备用弹药未补满" : ""));
     }
 
     public ActionResult setMainBase(ServerPlayer administrator, Faction faction) {
@@ -1416,15 +1442,7 @@ public final class DeploymentService {
     }
 
     private boolean atOwnMainBase(ServerPlayer player) {
-        Faction faction = BattleService.get(player).flatMap(battle ->
-                battle.factionOf(player.getUUID())).orElse(null);
-        DeploymentPoint point = savedData.mainBase(faction).orElse(null);
-        if (point == null || !player.serverLevel().dimension().location().equals(point.dimension())) {
-            return false;
-        }
-        Vec3 center = Vec3.atBottomCenterOf(point.position());
-        double radius = point.supplyRadius();
-        return player.position().distanceToSqr(center) <= radius * radius;
+        return BaseSupplyEvents.inside(player);
     }
 
     private boolean validateFieldPointAnchor(DeploymentPoint point) {
@@ -1654,6 +1672,7 @@ public final class DeploymentService {
         // command (health > 0) and can strand the player forever. Only the post-clone entity may
         // receive a health reset.
         if (!deathScreenEntity) {
+            com.wok.infantry.battle.CombatantStatus.resetForNewLife(player);
             player.setHealth(player.getMaxHealth());
         }
         player.getFoodData().setFoodLevel(20);

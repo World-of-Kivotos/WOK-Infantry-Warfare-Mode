@@ -35,6 +35,7 @@ public final class InfantryCreativeTabs {
                             output.accept(nativeLargeStation);
                         }
                         output.accept(InfantryItems.RALLY_RADIO.get());
+                        output.accept(InfantryItems.BASE_SUPPLY_TOOL.get());
                     })
                     .build());
 

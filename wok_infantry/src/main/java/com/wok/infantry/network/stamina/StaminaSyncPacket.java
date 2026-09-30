@@ -13,11 +13,12 @@ public record StaminaSyncPacket(StaminaSnapshot snapshot) {
         buffer.writeFloat(packet.snapshot.arms());
         buffer.writeFloat(packet.snapshot.legs());
         buffer.writeBoolean(packet.snapshot.enabled());
+        buffer.writeBoolean(packet.snapshot.sprintBlocked());
     }
 
     public static StaminaSyncPacket decode(FriendlyByteBuf buffer) {
         StaminaSnapshot snapshot = new StaminaSnapshot(buffer.readFloat(), buffer.readFloat(),
-                buffer.readBoolean());
+                buffer.readBoolean(), buffer.readBoolean());
         if (buffer.readableBytes() != 0) {
             throw new IllegalArgumentException("Unexpected trailing stamina sync data");
         }

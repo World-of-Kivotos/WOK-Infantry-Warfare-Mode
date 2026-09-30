@@ -66,10 +66,26 @@ public final class CaptureService {
         ticks++;
         int calculationInterval = CaptureConfig.TICK_INTERVAL.get();
         boolean calculated = ticks % calculationInterval == 0L;
-        if (calculated) calculate(calculationInterval);
+        if (calculated && !roundFinished()) calculate(calculationInterval);
         if (ticks % CaptureConfig.SYNC_INTERVAL.get() == 0L) {
             syncAll();
         }
+    }
+
+    private boolean roundFinished() {
+        if (!net.minecraftforge.fml.ModList.get().isLoaded("wok_infantry")) return false;
+        try {
+            return Boolean.TRUE.equals(Class.forName("com.wok.infantry.battle.tickets.TicketService")
+                    .getMethod("finished", MinecraftServer.class).invoke(null, server));
+        } catch (ReflectiveOperationException ignored) { return false; }
+    }
+
+    /** Keeps authored geometry, order and options; clears all previous-round control. */
+    public void resetForNewRound() {
+        for (CapturePoint point : data.points()) point.setControl(0);
+        runtime.clear();
+        data.changed();
+        syncAll();
     }
 
     public void sync(ServerPlayer player) {
@@ -101,7 +117,8 @@ public final class CaptureService {
         for (CapturePoint point : points) counts.put(point.id(), new Counts());
 
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            if (player.isSpectator() || (!CaptureConfig.COUNT_CREATIVE.get() && player.isCreative())) {
+            if (!CaptureEligibility.canCount(player)
+                    || (!CaptureConfig.COUNT_CREATIVE.get() && player.isCreative())) {
                 continue;
             }
             CaptureTeam team = CaptureTeamResolver.resolve(player);

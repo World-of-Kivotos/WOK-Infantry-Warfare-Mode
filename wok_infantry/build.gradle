@@ -57,6 +57,21 @@ if (!networkTestRoot.toPath().startsWith(layout.projectDirectory.asFile.canonica
 // A client-only visual acceptance harness. It is deliberately isolated from main/test so the
 // harness is available to runUiTestClient but can never enter the production JAR.
 sourceSets {
+    gameplayTest {
+        java.srcDir 'src/gameplayTest/java'
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
+    rallyTest {
+        java.srcDir 'src/rallyTest/java'
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
+    staminaTest {
+        java.srcDir 'src/staminaTest/java'
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
     catalogTest {
         java.srcDir 'src/catalogTest/java'
         compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
@@ -92,6 +107,55 @@ minecraft {
         }
 
         client {}
+
+        clientGameplayTest {
+            parent runs.client
+            workingDirectory project.file(project.findProperty('gameplayTestRoot')
+                    ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/gameplay-acceptance/current')
+            jvmArgs '-Xms256m', '-Xmx2G'
+            jvmArgs "-Djdk.net.unixdomain.tmpdir=${networkSelectorFallbackDir.absolutePath}"
+            args '--mixin', 'wok_infantry.mixins.json', '--username', 'WokGameplayTest',
+                    '--quickPlaySingleplayer', 'wok_gameplay_test', '--width', '960', '--height', '720'
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', layout.buildDirectory.file('createSrgToMcp/output.srg').get().asFile.absolutePath
+            mods { "${mod_id}" { source sourceSets.main; source sourceSets.gameplayTest } }
+        }
+
+        clientRallyTest {
+            parent runs.client
+            workingDirectory project.file(project.findProperty('rallyTestRoot')
+                    ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/rally-acceptance/current')
+            jvmArgs '-Xms256m', '-Xmx2G'
+            jvmArgs "-Djdk.net.unixdomain.tmpdir=${networkSelectorFallbackDir.absolutePath}"
+            args '--mixin', 'wok_infantry.mixins.json', '--username', 'WokRallyTest',
+                    '--quickPlaySingleplayer', 'wok_rally_test', '--width', '960', '--height', '720'
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.rallyTest
+                }
+            }
+        }
+
+        clientStaminaTest {
+            parent runs.client
+            workingDirectory project.file(project.findProperty('staminaTestRoot')
+                    ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/stamina-acceptance/current')
+            jvmArgs '-Xms256m', '-Xmx2G'
+            jvmArgs "-Djdk.net.unixdomain.tmpdir=${networkSelectorFallbackDir.absolutePath}"
+            args '--mixin', 'wok_infantry.mixins.json', '--username', 'WokStaminaTest',
+                    '--quickPlaySingleplayer', 'wok_stamina_test', '--width', '960', '--height', '720'
+            property 'wok.staminaTestTacz', project.hasProperty('staminaTestTaczJar').toString()
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', layout.buildDirectory
+                    .file('createSrgToMcp/output.srg').get().asFile.absolutePath
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.staminaTest
+                }
+            }
+        }
 
         clientCatalogTest {
             parent runs.client
@@ -240,6 +304,14 @@ repositories {
 
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    if (project.hasProperty('gameplayTestFixtures')) {
+        gameplayTestRuntimeOnly fileTree(dir: project.property('gameplayTestFixtures'), include: '*.jar')
+    }
+    if (project.hasProperty('staminaTestTaczJar')) {
+        File staminaTaczJar = project.file(project.property('staminaTestTaczJar'))
+        if (!staminaTaczJar.isFile()) throw new GradleException('Missing mapped stamina TaCZ test fixture')
+        staminaTestRuntimeOnly files(staminaTaczJar)
+    }
     // Required client integration, compile-only so JourneyMap's API is never shaded into our JAR.
     compileOnly 'info.journeymap:journeymap-api-forge:1.20.1-2.0.0'
     // UI and network acceptance load one exact local JourneyMap 6 distribution. ForgeGradle
@@ -282,7 +354,117 @@ tasks.named('test', Test).configure {
     useJUnitPlatform()
 }
 
+tasks.register('prepareRallyTestWorld') {
+    doLast {
+        File root = project.file(project.findProperty('rallyTestRoot')
+                ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/rally-acceptance/current').canonicalFile
+        File allowed = new File('D:/WOK步战测试/1.20.1-Forge_47.4.22/rally-acceptance').canonicalFile
+        if (root == allowed || !root.toPath().startsWith(allowed.toPath())) {
+            throw new GradleException('Rally acceptance must use the dedicated infantry test directory')
+        }
+        if (new File(root, 'saves/wok_rally_test/level.dat').exists()) {
+            throw new GradleException('Use a fresh rallyTestRoot to preserve previous results')
+        }
+        copy {
+            from layout.projectDirectory.dir('run/world')
+            into new File(root, 'saves/wok_rally_test')
+            exclude 'session.lock'
+        }
+        File config = new File(root, 'config/wok_infantry/loadouts.json')
+        config.parentFile.mkdirs()
+        config.setText(layout.projectDirectory.file('dev/vanilla_test_loadouts.json').asFile
+                .getText('UTF-8').replace('minecraft:iron_sword', 'wok_infantry:rally_radio'), 'UTF-8')
+    }
+}
+
+tasks.matching { it.name == 'runClientRallyTest' }.configureEach {
+    dependsOn 'prepareRallyTestWorld'
+    doLast {
+        File root = project.file(project.findProperty('rallyTestRoot')
+                ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/rally-acceptance/current')
+        File result = new File(root, 'rally-acceptance.txt')
+        if (!result.isFile() || !result.getText('UTF-8').startsWith('status=PASS')) {
+            throw new GradleException('Rally client acceptance failed or did not write a result')
+        }
+    }
+}
+
 // A fresh, disposable world inside the dedicated infantry test installation. Never use WOK本体.
+tasks.register('prepareStaminaTestWorld') {
+    doLast {
+        File root = project.file(project.findProperty('staminaTestRoot')
+                ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/stamina-acceptance/current').canonicalFile
+        File allowed = new File('D:/WOK步战测试/1.20.1-Forge_47.4.22/stamina-acceptance').canonicalFile
+        if (root == allowed || !root.toPath().startsWith(allowed.toPath())) {
+            throw new GradleException('Stamina acceptance must use the dedicated infantry test directory')
+        }
+        if (new File(root, 'saves/wok_stamina_test/level.dat').exists()) {
+            throw new GradleException('Use a fresh staminaTestRoot; previous results must be preserved')
+        }
+        copy {
+            from layout.projectDirectory.dir('run/world')
+            into new File(root, 'saves/wok_stamina_test')
+            exclude 'session.lock'
+        }
+        // Let Forge populate the current default instead of inheriting the seed's old 16 ticks.
+        File serverConfig = new File(root, 'saves/wok_stamina_test/serverconfig/wok_infantry-server.toml')
+        if (serverConfig.isFile()) {
+            serverConfig.setText(serverConfig.getText('UTF-8').replaceAll(
+                    /(?m)^[\t ]*recoveryDelayTicks[\t ]*=.*\r?\n?/, ''), 'UTF-8')
+        }
+        copy {
+            from layout.projectDirectory.file('dev/vanilla_test_loadouts.json')
+            into new File(root, 'config/wok_infantry')
+            rename { 'loadouts.json' }
+        }
+    }
+}
+tasks.matching { it.name == 'runClientStaminaTest' }.configureEach {
+    dependsOn 'prepareStaminaTestWorld'
+    doLast {
+        File root = project.file(project.findProperty('staminaTestRoot')
+                ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/stamina-acceptance/current')
+        File result = new File(root, 'stamina-acceptance.txt')
+        if (!result.isFile() || !result.getText('UTF-8').startsWith('status=PASS')) {
+            throw new GradleException('Stamina client acceptance failed or did not write a result')
+        }
+    }
+}
+
+tasks.register('prepareGameplayTestWorld') {
+    doLast {
+        File testRoot = project.file(project.property('gameplayTestRoot')).canonicalFile
+        File allowed = new File('D:/WOK步战测试/1.20.1-Forge_47.4.22/gameplay-acceptance').canonicalFile
+        if (!testRoot.toPath().startsWith(allowed.toPath()) || testRoot == allowed)
+            throw new GradleException('Gameplay tests must remain in the dedicated test directory')
+        if (new File(testRoot, 'saves/wok_gameplay_test/level.dat').exists())
+            throw new GradleException('Use a fresh gameplayTestRoot')
+        copy { from layout.projectDirectory.dir('run/world'); into new File(testRoot, 'saves/wok_gameplay_test'); exclude 'session.lock' }
+        def loadouts = new groovy.json.JsonSlurper().parse(file('dev/vanilla_test_loadouts.json'))
+        if (project.hasProperty('gameplayTestFixtures')) {
+            def primary = loadouts.classes.find { it.id == 'assault' }.slots.primary[0]
+            primary.itemId = 'tacz:modern_kinetic_gun'
+            primary.snbt = '{GunId:"tacz:m249",GunCurrentAmmoCount:100,GunFireMode:"AUTO",HasBulletInBarrel:1b,wok_infantry_vertical_recoil_scale:8.0f,wok_infantry_horizontal_recoil_scale:6.0f}'
+            primary.ammoReserveLimit = 20
+            copy {
+                from 'D:/WOK步战测试/1.20.1-Forge_47.4.22/tacz/tacz_default_gun'
+                into new File(testRoot, 'tacz/tacz_default_gun')
+            }
+        }
+        File config = new File(testRoot, 'config/wok_infantry/loadouts.json')
+        config.parentFile.mkdirs()
+        config.setText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(loadouts)), 'UTF-8')
+    }
+}
+tasks.matching { it.name == 'runClientGameplayTest' }.configureEach {
+    dependsOn 'prepareGameplayTestWorld'
+    doLast {
+        File result = new File(project.file(project.property('gameplayTestRoot')), 'gameplay-acceptance.txt')
+        if (!result.isFile() || !result.getText('UTF-8').startsWith('status=PASS'))
+            throw new GradleException('Gameplay acceptance failed or did not finish')
+    }
+}
+
 tasks.register('prepareCatalogTestWorld') {
     doLast {
         File testRoot = project.file(project.findProperty('catalogTestRoot')

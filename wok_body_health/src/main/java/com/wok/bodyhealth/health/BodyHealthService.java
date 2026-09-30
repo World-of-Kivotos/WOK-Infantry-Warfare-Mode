@@ -15,6 +15,17 @@ import java.util.List;
 import java.util.UUID;
 
 public final class BodyHealthService {
+    /** Absolute health, deliberately unaffected by the configurable healing conversion scale. */
+    public static boolean setAllPartsHealth(ServerPlayer player, float points) {
+        if (!Float.isFinite(points) || points <= 0.0F) return false;
+        BodyHealthData data = BodyHealthData.load(player);
+        for (BodyPart part : BodyPart.values()) {
+            data.set(part, Math.min(BodyHealthConfig.maxHealth(part), points));
+        }
+        saveAndSync(player, data);
+        return true;
+    }
+
     private static final UUID LEG_SPEED_MODIFIER_ID =
             UUID.fromString("cb450589-8c55-4e21-9160-b22442a6e195");
     private static final String LEG_SPEED_MODIFIER_NAME = "WOK destroyed leg penalty";

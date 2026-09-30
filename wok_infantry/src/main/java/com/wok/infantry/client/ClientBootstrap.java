@@ -90,6 +90,7 @@ public final class ClientBootstrap {
         }
         XaeroMinimapIntegration.onClientTick();
         TaczAdsSpeedAdapter.clientTick(Minecraft.getInstance().player);
+        ClientProneStability.tick();
         while (OPEN_LOADOUT.consumeClick()) {
             Minecraft minecraft = Minecraft.getInstance();
             if (minecraft.getConnection() != null && minecraft.player != null

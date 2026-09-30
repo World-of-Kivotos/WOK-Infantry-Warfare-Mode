@@ -11,6 +11,19 @@ import net.minecraftforge.registries.ForgeRegistries;
 import java.lang.reflect.Method;
 
 public final class MedicalCompat {
+    public static void reviveAtOneHealth(ServerPlayer player) {
+        removeEffect(player, "wok_trauma", "bleeding");
+        removeEffect(player, "wok_trauma", "major_bleeding");
+        if (!ModList.get().isLoaded("wok_body_health")) return;
+        try {
+            Class.forName("com.wok.bodyhealth.api.BodyHealthApi")
+                    .getMethod("setAllPartsHealth", LivingEntity.class, float.class)
+                    .invoke(null, player, 1.0F);
+        } catch (ReflectiveOperationException exception) {
+            WokDownedMod.LOGGER.error("One-health rescue requires an updated WOK Body Health API", exception);
+        }
+    }
+
     private static Method bodyHealthHealAllParts;
     private static boolean bodyHealthBridgeResolved;
 

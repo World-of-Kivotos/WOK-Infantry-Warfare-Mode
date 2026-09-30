@@ -68,9 +68,9 @@
   "screen.wok_infantry.deployment.select_point": "选择己方主基地后即可部署",
   "screen.wok_infantry.deployment.ready": "部署就绪；随身物品将在部署时直接清空",
   "screen.wok_infantry.deployment.not_ready": "请检查完整配装并清空普通背包/副手",
-  "screen.wok_infantry.deployment.resupply_ready": "你位于己方主基地，可立即补给",
+  "screen.wok_infantry.deployment.resupply_ready": "留在己方基地补给区 15 秒完成补给",
   "screen.wok_infantry.deployment.resupply_cooldown": "下一次补给还需 %s 秒",
-  "screen.wok_infantry.deployment.return_to_base": "返回己方主基地范围后可以补给",
+  "screen.wok_infantry.deployment.return_to_base": "返回己方圈定的基地补给区，停留 15 秒",
   "screen.wok_infantry.map.north": "北",
   "screen.wok_infantry.map.board_title": "WOK // 战术拼板",
   "screen.wok_infantry.map.link_connecting": "战术链路连接中",
@@ -307,5 +307,6 @@
   "hud.wok_infantry.stamina.arms": "手部",
   "hud.wok_infantry.stamina.legs": "腿部",
   "message.wok_infantry.stamina.admin.status": "当前体力：手部 %1$s / 腿部 %2$s",
-  "message.wok_infantry.stamina.admin.set": "已设置体力：手部 %1$s / 腿部 %2$s"
+  "message.wok_infantry.stamina.admin.set": "已设置体力：手部 %1$s / 腿部 %2$s",
+  "item.wok_infantry.base_supply_tool": "基地圈地工具"
 }

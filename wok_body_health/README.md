@@ -2,7 +2,9 @@
 
 面向 Minecraft 1.20.1 / Forge 47.4.22 的七部位血量模组。
 
-当前版本 `0.0.3-beta.2`；产物为 `build/libs/wok_body_health-0.0.3-beta.2.jar`。默认 `bodyDamageScale` 从 10 改为 8，已有配置不会自动覆盖；HUD 为可选体力条预留底部空间。
+当前版本 `0.1.0-beta.1`；产物为 `build/libs/wok_body_health-0.1.0-beta.1.jar`。默认 `bodyDamageScale` 从 10 改为 8，已有配置不会自动覆盖；HUD 为可选体力条预留底部空间。
+
+本版新增绝对部位血量 API `BodyHealthApi.setAllPartsHealth`，供一血救援和新生命重置软联动使用；不受 `bodyHealScale` 影响，原有医疗接口保留。
 
 - 头部 35、胸部 85、腹部 70
 - 左右手臂各 60、左右腿各 65

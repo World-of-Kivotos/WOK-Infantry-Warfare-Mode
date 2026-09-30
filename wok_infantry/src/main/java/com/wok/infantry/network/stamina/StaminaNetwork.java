@@ -13,7 +13,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
 public final class StaminaNetwork {
     public static final ResourceLocation CHANNEL_NAME =
             ResourceLocation.fromNamespaceAndPath(WokInfantryMod.MOD_ID, "stamina");
-    public static final String PROTOCOL_VERSION = "1";
+    public static final String PROTOCOL_VERSION = "2";
 
     private static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(CHANNEL_NAME)

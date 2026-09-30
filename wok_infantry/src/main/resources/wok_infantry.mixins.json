@@ -5,7 +5,12 @@
   "compatibilityLevel": "JAVA_17",
   "mixins": [
     "ServerGamePacketListenerImplMixin",
+    "ServerStaminaSprintMixin",
     "VehicleEntityDestroyMixin"
+  ],
+  "client": [
+    "ClientStaminaSprintMixin",
+    "TaczProneRecoilMixin"
   ],
   "injectors": {
     "defaultRequire": 1

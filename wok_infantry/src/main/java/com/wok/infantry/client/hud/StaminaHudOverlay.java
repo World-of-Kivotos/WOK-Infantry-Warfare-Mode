@@ -3,6 +3,7 @@ package com.wok.infantry.client.hud;
 import com.wok.infantry.client.ClientStaminaState;
 import com.wok.infantry.client.screen.BattleUiTheme;
 import com.wok.infantry.stamina.StaminaSnapshot;
+import com.wok.infantry.stamina.StaminaRules;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
@@ -32,7 +33,9 @@ public final class StaminaHudOverlay {
         }
 
         int panelWidth = Math.min(PANEL_WIDTH, Math.max(32, screenWidth - 6));
-        int left = Math.min(PANEL_LEFT, Math.max(3, screenWidth - panelWidth - 3));
+        // Vanilla's hotbar occupies the centered 182 pixels along the bottom edge.
+        int hotbarLeft = screenWidth / 2 - 91;
+        int left = Math.max(3, Math.min(PANEL_LEFT, hotbarLeft - panelWidth - 3));
         int top = Math.max(2, screenHeight - PANEL_HEIGHT - 2);
         int right = left + panelWidth;
         graphics.fill(left, top, right, top + PANEL_HEIGHT, 0xB5121A20);
@@ -51,7 +54,7 @@ public final class StaminaHudOverlay {
         float ratio = Math.max(0.0F, Math.min(1.0F, value / 100.0F));
         int fillRight = x + Math.round(width * ratio);
         int color = ratio <= 0.15F ? BattleUiTheme.DANGER
-                : ratio <= 0.35F ? BattleUiTheme.ACCENT : normalColor;
+                : value < StaminaRules.SWAY_START_STAMINA ? BattleUiTheme.ACCENT : normalColor;
         graphics.fill(x, y, fillRight, y + 3, color);
     }
 }

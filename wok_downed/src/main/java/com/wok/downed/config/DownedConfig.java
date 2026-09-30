@@ -10,8 +10,7 @@ public final class DownedConfig {
     public static final ForgeConfigSpec.IntValue RESCUE_SECONDS;
     public static final ForgeConfigSpec.DoubleValue RESCUE_DISTANCE;
     public static final ForgeConfigSpec.DoubleValue MOVEMENT_TOLERANCE;
-    public static final ForgeConfigSpec.DoubleValue REVIVE_HEALTH;
-    public static final ForgeConfigSpec.DoubleValue BODY_HEALTH_REVIVE_AMOUNT;
+    public static final ForgeConfigSpec.IntValue REVIVE_BLINDNESS_SECONDS;
     public static final ForgeConfigSpec.DoubleValue DRAG_SPEED_MULTIPLIER;
     public static final ForgeConfigSpec.DoubleValue DRAG_FOLLOW_DISTANCE;
     public static final ForgeConfigSpec.IntValue FINISHING_DAMAGE_GRACE_SECONDS;
@@ -30,11 +29,9 @@ public final class DownedConfig {
                 .defineInRange("rescueDistance", 3.0D, 1.0D, 12.0D);
         MOVEMENT_TOLERANCE = builder.comment("Maximum movement from the rescue start position.")
                 .defineInRange("movementTolerance", 0.75D, 0.0D, 4.0D);
-        REVIVE_HEALTH = builder.comment("Vanilla health restored when rescue completes.")
-                .defineInRange("reviveHealth", 6.0D, 1.0D, 1024.0D);
-        BODY_HEALTH_REVIVE_AMOUNT = builder.comment(
-                        "Amount restored to each body part when WOK Body Health is installed.")
-                .defineInRange("bodyHealthReviveAmount", 8.0D, 0.0D, 1024.0D);
+        REVIVE_BLINDNESS_SECONDS = builder.comment(
+                        "Blindness after rescue. Vanilla health and every body part are set to exactly one point.")
+                .defineInRange("reviveBlindnessSeconds", 5, 1, 120);
         DRAG_SPEED_MULTIPLIER = builder.comment(
                         "Movement-speed multiplier applied while dragging a casualty.")
                 .defineInRange("dragSpeedMultiplier", 0.55D, 0.1D, 1.0D);
