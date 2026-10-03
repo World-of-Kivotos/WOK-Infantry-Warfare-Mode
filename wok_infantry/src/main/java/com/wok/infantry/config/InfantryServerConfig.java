@@ -25,6 +25,7 @@ public final class InfantryServerConfig {
     public static final double DEFAULT_ARM_ADS_DRAIN_PER_SECOND = 2.8D;
     public static final double DEFAULT_LEG_SPRINT_DRAIN_PER_SECOND = 8.0D;
     public static final double DEFAULT_LEG_JUMP_COST = 10.0D;
+    public static final double DEFAULT_LEG_MANTLE_COST = 15.0D;
     public static final double DEFAULT_ARM_RECOVERY_PER_SECOND = 8.4D;
     public static final double DEFAULT_LEG_RECOVERY_PER_SECOND = 6.8D;
     public static final int DEFAULT_STAMINA_RECOVERY_DELAY_TICKS = 60;
@@ -39,6 +40,7 @@ public final class InfantryServerConfig {
     private static final ForgeConfigSpec.DoubleValue ARM_ADS_DRAIN_PER_SECOND;
     private static final ForgeConfigSpec.DoubleValue LEG_SPRINT_DRAIN_PER_SECOND;
     private static final ForgeConfigSpec.DoubleValue LEG_JUMP_COST;
+    private static final ForgeConfigSpec.DoubleValue LEG_MANTLE_COST;
     private static final ForgeConfigSpec.DoubleValue ARM_RECOVERY_PER_SECOND;
     private static final ForgeConfigSpec.DoubleValue LEG_RECOVERY_PER_SECOND;
     private static final ForgeConfigSpec.IntValue STAMINA_RECOVERY_DELAY_TICKS;
@@ -87,6 +89,10 @@ public final class InfantryServerConfig {
         LEG_JUMP_COST = builder
                 .comment("Leg stamina consumed for each jump")
                 .defineInRange("legJumpCost", DEFAULT_LEG_JUMP_COST, 0.0D, 100.0D);
+        LEG_MANTLE_COST = builder
+                .comment("Leg stamina consumed for each Tactical Mantle ledge climb",
+                        "A climb is refused while leg stamina is below this cost")
+                .defineInRange("legMantleCost", DEFAULT_LEG_MANTLE_COST, 0.0D, 100.0D);
         ARM_RECOVERY_PER_SECOND = builder
                 .comment("Arm stamina recovered per second after the recovery delay")
                 .defineInRange("armRecoveryPerSecond", DEFAULT_ARM_RECOVERY_PER_SECOND,
@@ -151,6 +157,10 @@ public final class InfantryServerConfig {
 
     public static float legJumpCost() {
         return (float) configured(LEG_JUMP_COST, DEFAULT_LEG_JUMP_COST);
+    }
+
+    public static float legMantleCost() {
+        return (float) configured(LEG_MANTLE_COST, DEFAULT_LEG_MANTLE_COST);
     }
 
     public static float armRecoveryPerTick() {

@@ -1,5 +1,40 @@
 # 更新日志
 
+## WOK步战核心 0.3.0-beta.4 — 2026-10-03
+
+### 新增
+- 可选联动 Tactical Mantle（modId `tacticalmantle`，1.0.2）：翻越改走步战规则。腿部体力低于翻越消耗、疾跑已被体力锁定、处于趴下或爬行姿态（陆地上的游泳姿态），或部位血量判定任一条腿已损毁时，服务端拒绝翻越；翻越成功开始时扣除腿部体力，并重新计算体力恢复延迟。Tactical Mantle 用传送移动玩家，不触发跳跃事件，原先会绕过跳跃体力消耗与断腿限制。
+- 服务端配置 `stamina.legMantleCost`，默认 15（跳跃为 10），范围 0–100。
+### 修改
+- 无。
+### 修复
+- 无。
+### 兼容性
+- 联动通过 mixin 插件按 `tacticalmantle` 是否安装决定是否注入，不装 Tactical Mantle 时不加载相关 mixin；不新增硬依赖。
+- 断腿判定通过反射调用部位血量 0.1.0-beta.5 新增的 `BodyHealthApi.destroyedLegCount`；搭配更早的部位血量版本时只跳过断腿判定，体力与姿态判定照常生效。
+- 已核对与 Tacz-Animation-Additions 1.2.5（modId `locknar_doorkick`）同装：趴下同样使用游泳姿态，因此趴下时不能翻越。
+### 配置/存档影响
+- 服务端配置新增 `stamina.legMantleCost`；旧配置文件会由 Forge 自动补入默认值。存档无影响。
+### 测试结果
+- 生产构建、`reobfJar` 与 313 项 JUnit 通过（`LargeSupplyStationModelContractTest` 在 `core.autocrlf=true` 的新检出中因 `geo.json` 被转为 CRLF 而哈希不符，转回 LF 后通过，与本次改动无关）。
+- 已部署到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`；真实客户端翻越拦截与扣体力尚待游戏内验证。
+
+## WOK步战附属-部位血量 0.1.0-beta.9 — 2026-10-03
+
+### 新增
+- 无（合并版）。
+### 修改
+- 合并两条并行线：包含 0.1.0-beta.5 起的 `BodyHealthApi.destroyedLegCount`（翻越联动用）与 0.1.0-beta.8 的原生像素 M4A1 人形（39×48，1:1 绘制，同 beta.3）。测试端此前的 beta.7 是 256×256 原图人形，本版起改为 beta.8 的人形。
+### 修复
+- 无。
+### 兼容性
+- 公共 API、网络协议与存档键与 beta.7、beta.8 兼容；`body_hud*.png` 为 39×48，与 beta.3、beta.8 相同。
+### 配置/存档影响
+- 无。
+### 测试结果
+- `.\gradlew.bat -p wok_body_health clean build`（TaCZ 1.1.8 仅编译）通过，19 个 JUnit 全部通过；JAR 内 8 张 `body_hud*.png` 与 beta.8 逐字节相同，`BodyHealthApi` 含 `destroyedLegCount`。
+- 已部署到步战测试目录替换 beta.7（旧包备份为 `.bak`）；人形外观以 beta.8 的真实客户端验收 `20261003-m4a1-pixel-beta8` 为准，翻越断腿判定尚待游戏内验证。
+
 ## WOK步战附属-部位血量 0.1.0-beta.8 — 2026-10-03
 
 ### 新增
@@ -19,6 +54,22 @@
 - 真实客户端验收 `20261003-m4a1-pixel-beta8`（同装 WOK步战核心 0.3.0-beta.3）PASS：320×240 紧凑、427×240 精简、480×270 与 960×720 完整；与 beta.3 验收 `20261003-m4a1` 的 480×270 截图对比，人形与枪械一致。
 - 未游戏内实测：真实 TaCZ/SBW 枪击部位、PvP 补刀兜底、虚空死亡、重连、断腿跳跃（同 beta.2）。
 
+## WOK步战附属-部位血量 0.1.0-beta.7 — 2026-10-03
+
+### 新增
+- 无（合并版）。
+### 修改
+- 合并两条并行线：包含 0.1.0-beta.5 的 `BodyHealthApi.destroyedLegCount`（翻越联动用）与 0.1.0-beta.6 的原图人形 HUD。测试端此前装的 beta.5 仍是 4 倍精度 M4A1 人形，本版起改为原图。
+### 修复
+- 无。
+### 兼容性
+- 与 beta.5、beta.6 的公共 API、网络协议与存档键均兼容；`body_hud*.png` 为 256×256 原件。
+### 配置/存档影响
+- 无。
+### 测试结果
+- `.\gradlew.bat -p wok_body_health clean build`（TaCZ 1.1.8 仅编译）通过，19 个 JUnit 全部通过；JAR 内 `body_hud.png` 为 256×256 原件，`BodyHealthApi` 含 `destroyedLegCount`。
+- 已部署到步战测试目录替换 beta.5（旧包备份为 `.bak`）；HUD 与翻越断腿判定尚待真实客户端验收。
+
 ## WOK步战附属-部位血量 0.1.0-beta.6 — 2026-10-03
 
 ### 新增
@@ -37,6 +88,21 @@
 - `.\gradlew.bat -p wok_body_health clean build`（TaCZ 1.1.8 仅编译）通过，19 个 JUnit 全部通过；JAR 内 8 张 `body_hud*.png` 为 256×256 原件。
 - 真实客户端验收 `20261003-original-figure-beta6`（同装 WOK步战核心 0.3.0-beta.3）PASS：320×240 紧凑、427×240 精简、480×270 与 960×720 完整，人形、读数与体力条无重叠，创造模式隐藏。
 - 未游戏内实测：真实 TaCZ/SBW 枪击部位、PvP 补刀兜底、虚空死亡、重连、断腿跳跃（同 beta.2）。
+
+## WOK步战附属-部位血量 0.1.0-beta.5 — 2026-10-03
+
+### 新增
+- `BodyHealthApi.destroyedLegCount(LivingEntity)`：返回已损毁的腿数（0–2），供绕过跳跃事件的移动方式（如翻越）判定断腿。
+### 修改
+- 无。
+### 修复
+- 无。
+### 兼容性
+- 仅新增接口，原有 API、网络协议与存档键不变；仍可独立安装。
+### 配置/存档影响
+- 无。
+### 测试结果
+- 构建与 JUnit 通过；已部署到步战测试目录，替换 0.1.0-beta.4（旧包已备份为 `.bak`）。
 
 ## WOK步战附属-部位血量 0.1.0-beta.4 — 2026-10-03
 
