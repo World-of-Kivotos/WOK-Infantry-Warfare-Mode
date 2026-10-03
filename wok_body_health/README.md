@@ -2,7 +2,7 @@
 
 面向 Minecraft 1.20.1 / Forge 47.4.22 的七部位血量模组。
 
-当前版本 `0.1.0-beta.3`；产物为 `build/libs/wok_body_health-0.1.0-beta.3.jar`。
+当前版本 `0.1.0-beta.4`；产物为 `build/libs/wok_body_health-0.1.0-beta.4.jar`。
 
 - 头部 35、胸部 85、腹部 70
 - 左右手臂各 60、左右腿各 65
@@ -42,7 +42,7 @@ HUD 始终位于快捷栏左边缘以左，按屏幕宽度自动选择档位；�
 | 精简 | 352–435 | 人形 + 七个当前值 + 总血量 |
 | 紧凑 | < 352 | 人形（颜色表示伤势）+ 总血量 |
 
-人形沿用改版前的持枪方块人姿势，手上的枪按 M4A1 逐像素手绘（伸缩枪托、平顶导轨与后觇孔、手枪握把、弧形弹匣、散热孔护木、三角准星座、消焰器），`tools/body_health_hud_icon.ps1` 从 `tools/body_health_hud_icon/source` 里的原 256×256 贴图生成 39×48 原生像素版本（一个贴图像素对应一个界面像素），改图后改源图或脚本再重跑即可覆盖 `textures/gui/body_hud*.png`。人形是正面视角：右臂、右腿在屏幕左侧，所以这两个读数在左列，左臂、左腿在右列，引线总是指向正在变色的部位。数字放在深色底牌上，不使用文字阴影；创造与旁观模式不显示。
+人形沿用改版前的持枪方块人姿势。`tools/body_health_hud_icon.ps1` 以 `tools/body_health_hud_icon/source` 里的原 256×256 贴图为底，生成 156×192 贴图（每个界面像素 4 个贴图像素，HUD 用线性过滤绘制）：身体保留原图的面和描线；原图的枪被去掉，换成按 M4A1 真实比例绘制的步枪（提把与后照门、伸缩枪托、STANAG 弹匣、带散热孔的护木、三角准星座、鸟笼消焰器），握把在后手、护木压在前手。改图后修改源图或脚本再重跑即可覆盖 `textures/gui/body_hud*.png`。人形是正面视角：右臂、右腿在屏幕左侧，所以这两个读数在左列，左臂、左腿在右列，引线总是指向正在变色的部位。数字放在深色底牌上，不使用文字阴影；创造与旁观模式不显示。
 
 人形下方预留一条 52×11 的伴随栏，供 `WOK步战核心` 的体力条使用。其他客户端 HUD 可通过反射调用 `com.wok.bodyhealth.api.BodyHealthHudApi.companionSlot(int screenWidth, int screenHeight)` 取得 `{left, top, width, height}`；HUD 隐藏时返回 `null`。
 
