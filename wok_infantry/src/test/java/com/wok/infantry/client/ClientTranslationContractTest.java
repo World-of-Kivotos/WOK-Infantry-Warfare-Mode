@@ -56,6 +56,7 @@ class ClientTranslationContractTest {
             Map.entry("screen.wok_infantry.map.footer", 2),
             Map.entry("screen.wok_infantry.map.support.impact_radius", 1),
             Map.entry("screen.wok_infantry.map.support.scan_radius", 1),
+            Map.entry("screen.wok_infantry.map.support.guidance_radius", 1),
             Map.entry("screen.wok_infantry.map.terrain.loading", 2),
             Map.entry("screen.wok_infantry.map.terrain.failed", 2),
             Map.entry("screen.wok_infantry.loadout.choices", 1),

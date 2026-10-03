@@ -4,6 +4,7 @@
     "sounds": [
       {
         "name": "wok_commander_support:jdam_f15_approach",
+        "attenuation_distance": 96,
         "stream": false,
         "preload": true
       }
@@ -14,6 +15,29 @@
     "sounds": [
       {
         "name": "wok_commander_support:jdam_bomb_tail",
+        "stream": false,
+        "preload": true
+      }
+    ]
+  },
+  "paveway_f16_approach": {
+    "subtitle": "subtitles.wok_commander_support.paveway_f16_approach",
+    "sounds": [
+      {
+        "name": "wok_commander_support:jdam_f15_approach",
+        "pitch": 1.1,
+        "attenuation_distance": 96,
+        "stream": false,
+        "preload": true
+      }
+    ]
+  },
+  "paveway_bomb_tail": {
+    "subtitle": "subtitles.wok_commander_support.paveway_bomb_tail",
+    "sounds": [
+      {
+        "name": "wok_commander_support:jdam_bomb_tail",
+        "pitch": 1.1,
         "stream": false,
         "preload": true
       }

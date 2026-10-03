@@ -334,7 +334,9 @@ final class BattleSavedData extends SavedData {
                     : factionCounts.getOrDefault(faction, 0);
             int creatorCount = creatorId == null ? Integer.MAX_VALUE
                     : creatorCounts.getOrDefault(creatorId, 0);
+            // 卫星红点只存在于内存中的支援情报；存档里出现的 RECON_CONTACT 只可能来自旧版手工发布，丢弃。
             if (markerId == null || creatorId == null || faction == null || type == null
+                    || type == TacticalMarkerType.RECON_CONTACT
                     || dimension == null || !coordinatesFinite(x, y, z)
                     || (hasPersistedEndpoint && !coordinatesFinite(endX, y, endZ))
                     || (!hasPersistedEndpoint && type == TacticalMarkerType.ATTACK_DIRECTION
@@ -591,7 +593,8 @@ final class BattleSavedData extends SavedData {
             StoredPlayer creator = player(marker.creatorId());
             long markerTtl = marker.expiresAtMillis() >= marker.createdAtMillis()
                     ? marker.expiresAtMillis() - marker.createdAtMillis() : Long.MAX_VALUE;
-            if (marker.expiredAt(now) || marker.createdAtMillis() < 0L
+            if (marker.type() == TacticalMarkerType.RECON_CONTACT
+                    || marker.expiredAt(now) || marker.createdAtMillis() < 0L
                     || marker.createdAtMillis() > now || markerTtl > BattleRules.MAX_MARKER_TTL_MILLIS
                     || parseDimension(marker.dimension().toString()) == null
                     || !coordinatesFinite(marker.x(), marker.y(), marker.z())

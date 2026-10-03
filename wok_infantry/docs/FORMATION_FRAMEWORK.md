@@ -258,16 +258,23 @@ ID 分为两类：
 
 学院军的 `millennium_seminar_mobile` 显示为“千禧年研讨会机动部队”，类别为 `mechanized`，徽标为 `wok_infantry:textures/gui/formations/millennium_seminar_mobile.png`。其简介为：“由千禧年研讨会统一组建的先头力量，承担快速部署与快速反应任务。她们以多型斯特赖克（Stryker）轮式战车为核心，在航空兵支援下可于战斗初期投入大量轻型装甲载具；但后劲不足、单兵装备较为平庸，不擅长长时间消耗战。”该编制配置以下八个独立载具槽位：
 
-该编制的新生成能力白名单包含通用侦察卫星
-`wok_commander_support:recon_satellite`，并额外包含专属空袭
-`wok_commander_support:millennium_f15ex_jdam_1000lb`。其他默认编制只包含侦察卫星；已有 `formations.json` 不会自动补入新 ID。
-
 | 显示名 | 实体资源 ID | 数量 | 损毁后补充 |
 | --- | --- | ---: | --- |
 | M1296 龙骑兵 | `fcp:stryker_dragoon` | 3 | 不可再生 |
 | M1128 MGS | `fcp:stryker_mgs` | 2 | 不可再生 |
 | 悍马 M2 | `fcp:hmmwv_armored_m2` | 2 | 300 秒 |
 | 小鸟 机枪版 | `fcp:littlebird_armed` | 1 | 600 秒 |
+
+新生成的默认编制支援白名单（`support.mode` 均为 `allow_list`）：
+
+| 阵营 | 编制 | 允许的支援 |
+| --- | --- | --- |
+| 学院军、凯撒 | `default` | 侦察卫星 `wok_commander_support:recon_satellite`、F-16C `wok_commander_support:f16c_gbu12_paveway_500lb` |
+| 凯撒 | `caesar_234_mechanized` | 侦察卫星、F-16C |
+| 学院军 | `millennium_seminar_cavalry_corps` | 侦察卫星、F-16C |
+| 学院军 | `millennium_seminar_mobile` | 侦察卫星、F-16C，另加专属 F-15EX `wok_commander_support:millennium_f15ex_jdam_1000lb` |
+
+已有 `formations.json` 不会自动补入新 ID。每个支援只有一个全局冷却，编制只决定能否使用，不能按编制改冷却或其他数值。
 
 凯撒的 `caesar_234_mechanized` 显示为“234机械化作战单元”，类别为 `mechanized`。其简介为：“凯撒重工是凯撒公司旗下的重型军事生产企业，战争前几乎包揽了整个基沃托斯的军火与军用车辆生产，234机械化作战单元则是其核心作战力量之一。该单元以CV90步兵战车伴随推进，并配备略显过时的豹2A4主战坦克，作战职能偏向机动轻步兵。其装备水平尚可，擅长在复杂战线中进行混战缠斗；但重型载具数量有限、战损补充缓慢，一旦脱离步兵协同或分散投入，便容易失去进攻节奏。”在专属兵种、兵站、重生、支援和徽标另行确认前，该编制沿用源码安全默认能力、四兵种与五小队规则，并配置以下五个独立载具槽位：
 

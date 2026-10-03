@@ -113,6 +113,47 @@ class IntentPacketBoundaryTest {
     }
 
     @Test
+    void markerIntentRejectsSatelliteReconContactType() {
+        assertThrows(IllegalArgumentException.class, () -> new CreateMarkerPacket(
+                TacticalMarkerType.RECON_CONTACT, OVERWORLD,
+                10.0D, 20.0D, 10.0D, 20.0D, 0L));
+
+        // A modified client can still put the enum id on the wire; decode must reject it the
+        // same way it rejects an unknown marker type instead of forwarding it to the service.
+        FriendlyByteBuf forged = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            forged.writeUtf(TacticalMarkerType.RECON_CONTACT.id(),
+                    BattleNetworkLimits.MAX_ENUM_ID_LENGTH);
+            forged.writeUtf(OVERWORLD.toString(), BattleNetworkLimits.MAX_DIMENSION_ID_LENGTH);
+            forged.writeDouble(10.0D);
+            forged.writeDouble(20.0D);
+            forged.writeDouble(10.0D);
+            forged.writeDouble(20.0D);
+            forged.writeVarLong(0L);
+            assertThrows(IllegalArgumentException.class,
+                    () -> CreateMarkerPacket.decode(forged));
+        } finally {
+            forged.release();
+        }
+
+        for (TacticalMarkerType type : TacticalMarkerType.values()) {
+            if (type == TacticalMarkerType.RECON_CONTACT) {
+                continue;
+            }
+            CreateMarkerPacket packet = new CreateMarkerPacket(type, OVERWORLD,
+                    10.0D, 20.0D, 110.0D, 20.0D, 0L);
+            FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+            try {
+                CreateMarkerPacket.encode(packet, buffer);
+                assertEquals(packet, CreateMarkerPacket.decode(buffer),
+                        "player marker type must still round-trip: " + type);
+            } finally {
+                buffer.release();
+            }
+        }
+    }
+
+    @Test
     void markerIntentRejectsTrailingPayload() {
         CreateMarkerPacket packet = new CreateMarkerPacket(
                 TacticalMarkerType.ATTACK_DIRECTION, OVERWORLD,

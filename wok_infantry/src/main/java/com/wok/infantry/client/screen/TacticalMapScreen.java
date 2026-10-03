@@ -51,6 +51,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.UUID;
 import java.lang.ref.WeakReference;
@@ -89,6 +90,18 @@ public final class TacticalMapScreen extends Screen {
     private static final float MAP_TEXT_PHYSICAL_SCALE = 2.0F;
     private static final int OFFENSIVE_SUPPORT_FILL_ALPHA = 0x50;
     private static final int OFFENSIVE_SUPPORT_HATCH_ALPHA = 0x80;
+    static final int SUPPORT_RADIUS_MAX_PIXELS = 192;
+    static final int SUPPORT_GUIDANCE_MIN_RING_PIXELS = 3;
+    static final int SUPPORT_GUIDANCE_MIN_DASHES = 8;
+    static final int SUPPORT_GUIDANCE_MAX_DASHES = 256;
+    // Designation zones are partition lines, not danger boundaries: thin amber dashes on a dark
+    // casing stay distinct from the red impact outline and its hatching on any terrain.
+    private static final int SUPPORT_GUIDANCE_COLOR = BattleUiTheme.ACCENT;
+    private static final int SUPPORT_GUIDANCE_CASING = 0xB0141B1D;
+    private static final int SUPPORT_GUIDANCE_LINE_PHYSICAL = 2;
+    private static final int SUPPORT_GUIDANCE_CASING_PHYSICAL = 4;
+    private static final int SUPPORT_GUIDANCE_DASH_PHYSICAL = 9;
+    private static final int SUPPORT_GUIDANCE_GAP_PHYSICAL = 6;
     private static final int SUPPORT_PAGE_SIZE = 3;
     private static final ResourceLocation TANK_MARKER_TEXTURE = ResourceLocation.fromNamespaceAndPath(
             WokInfantryMod.MOD_ID, "textures/gui/tactical_markers/tank.png");
@@ -972,6 +985,23 @@ public final class TacticalMapScreen extends Screen {
     }
 
     private void renderMapScale(GuiGraphics graphics) {
+        MapScaleBar bar = mapScaleBar();
+        TacticalMapLayout.Rect panel = bar.panel();
+        graphics.fill(panel.left(), panel.top(), panel.right(), panel.bottom(), 0xA8D7DDDA);
+        BattleUiTheme.outline(graphics, panel.left(), panel.top(),
+                panel.right(), panel.bottom(), TacticalBoardTheme.BORDER);
+        int left = bar.left();
+        int right = bar.right();
+        int bottom = bar.bottom();
+        graphics.fill(left, bottom, right + 1, bottom + 2, TacticalBoardTheme.TEXT);
+        graphics.fill(left, bottom - 3, left + 2, bottom + 3, TacticalBoardTheme.TEXT);
+        graphics.fill(right - 1, bottom - 3, right + 1, bottom + 3, TacticalBoardTheme.TEXT);
+        drawMapCenteredString(graphics, bar.label(), (left + right) / 2,
+                panel.top() + mapTextLogicalHeight() / 2 + mapPhysicalToLogical(2),
+                TacticalBoardTheme.TEXT);
+    }
+
+    private MapScaleBar mapScaleBar() {
         double targetWorldDistance = 80.0D / Math.max(zoom, 0.001D);
         double magnitude = Math.pow(10.0D, Math.floor(Math.log10(targetWorldDistance)));
         double normalized = targetWorldDistance / magnitude;
@@ -990,15 +1020,8 @@ public final class TacticalMapScreen extends Screen {
         int panelRight = Math.max(right + 6,
                 centerX + (labelWidth + 1) / 2 + mapPhysicalToLogical(4));
         int panelTop = bottom - labelHeight - mapPhysicalToLogical(8);
-        graphics.fill(panelLeft, panelTop, panelRight, bottom + 5, 0xA8D7DDDA);
-        BattleUiTheme.outline(graphics, panelLeft, panelTop,
-                panelRight, bottom + 5, TacticalBoardTheme.BORDER);
-        graphics.fill(left, bottom, right + 1, bottom + 2, TacticalBoardTheme.TEXT);
-        graphics.fill(left, bottom - 3, left + 2, bottom + 3, TacticalBoardTheme.TEXT);
-        graphics.fill(right - 1, bottom - 3, right + 1, bottom + 3, TacticalBoardTheme.TEXT);
-        drawMapCenteredString(graphics, label, centerX,
-                panelTop + labelHeight / 2 + mapPhysicalToLogical(2),
-                TacticalBoardTheme.TEXT);
+        return new MapScaleBar(left, right, bottom, label,
+                new TacticalMapLayout.Rect(panelLeft, panelTop, panelRight, bottom + 5));
     }
 
     private void renderGrid(GuiGraphics graphics) {
@@ -1055,13 +1078,11 @@ public final class TacticalMapScreen extends Screen {
         // Keep the compass below the top feedback banner.
         int y = mapTop + COMPASS_TOP_OFFSET;
         String north = Component.translatable("screen.wok_infantry.map.north").getString();
-        int labelWidth = mapTextLogicalWidth(north);
         int labelHeight = mapTextLogicalHeight();
-        int halfWidth = Math.max(9, labelWidth / 2 + mapPhysicalToLogical(3));
-        int top = y - labelHeight / 2 - mapPhysicalToLogical(3);
-        int bottom = y + labelHeight / 2 + mapPhysicalToLogical(20);
-        graphics.fill(x - halfWidth, top, x + halfWidth + 1, bottom, 0xA8D7DDDA);
-        BattleUiTheme.outline(graphics, x - halfWidth, top, x + halfWidth + 1, bottom,
+        TacticalMapLayout.Rect panel = mapCompassPanel();
+        int bottom = panel.bottom();
+        graphics.fill(panel.left(), panel.top(), panel.right(), bottom, 0xA8D7DDDA);
+        BattleUiTheme.outline(graphics, panel.left(), panel.top(), panel.right(), bottom,
                 TacticalBoardTheme.BORDER);
         drawMapCenteredString(graphics, north, x, y, TacticalBoardTheme.TEXT);
         int arrowTop = y + labelHeight / 2 + mapPhysicalToLogical(3);
@@ -1072,6 +1093,22 @@ public final class TacticalMapScreen extends Screen {
                 arrowTop + arrowWing, TacticalBoardTheme.ACCENT);
         drawLine(graphics, x, arrowTop, x + arrowWing,
                 arrowTop + arrowWing, TacticalBoardTheme.ACCENT);
+    }
+
+    private TacticalMapLayout.Rect mapCompassPanel() {
+        int x = mapRight - 18;
+        int y = mapTop + COMPASS_TOP_OFFSET;
+        String north = Component.translatable("screen.wok_infantry.map.north").getString();
+        int labelHeight = mapTextLogicalHeight();
+        int halfWidth = Math.max(9, mapTextLogicalWidth(north) / 2 + mapPhysicalToLogical(3));
+        int top = y - labelHeight / 2 - mapPhysicalToLogical(3);
+        int bottom = y + labelHeight / 2 + mapPhysicalToLogical(20);
+        return new TacticalMapLayout.Rect(x - halfWidth, top, x + halfWidth + 1, bottom);
+    }
+
+    /** Scale bar and compass are drawn above every map layer, so labels must keep clear. */
+    private List<TacticalMapLayout.Rect> mapChrome() {
+        return List.of(mapScaleBar().panel(), mapCompassPanel());
     }
 
     private void renderPlayers(GuiGraphics graphics, BattleSnapshot snapshot,
@@ -1413,19 +1450,25 @@ public final class TacticalMapScreen extends Screen {
     private void renderSupportMissions(GuiGraphics graphics, BattleSnapshot snapshot,
                                        ResourceLocation dimension) {
         long now = ClientBattleState.estimatedSupportGameTick();
-        for (SupportMissionView mission : snapshot.support().activeMissions()) {
-            if (!mission.dimension().equals(dimension)) {
-                continue;
-            }
+        List<SupportMissionView> missions = snapshot.support().activeMissions().stream()
+                .filter(mission -> mission.dimension().equals(dimension))
+                .filter(mission -> supportOption(snapshot, mission.supportId()) != null)
+                .toList();
+        // Every footprint first, then every label, so a later mission's area or dashed zone is
+        // never drawn across an earlier mission's card.
+        for (SupportMissionView mission : missions) {
             SupportOptionView option = supportOption(snapshot, mission.supportId());
-            if (option == null) {
-                continue;
-            }
-            TacticalSupportMapPresentation presentation = supportPresentation(option);
             int accent = supportColor(option);
             renderSupportGeometry(graphics, option,
                     mission.startX(), mission.startZ(), mission.endX(), mission.endZ(),
-                    withAlpha(accent, SUPPORT_ACTIVE_AREA_ALPHA), accent, presentation);
+                    withAlpha(accent, SUPPORT_ACTIVE_AREA_ALPHA), accent,
+                    supportPresentation(option), supportGuidanceZone(option));
+        }
+        for (SupportMissionView mission : missions) {
+            SupportOptionView option = supportOption(snapshot, mission.supportId());
+            TacticalSupportMapPresentation presentation = supportPresentation(option);
+            SupportGuidanceZone guidance = supportGuidanceZone(option);
+            int accent = supportColor(option);
             long remainingTicks = Math.max(0L, mission.executeAtGameTick() - now);
             Component state = remainingTicks > 0L
                     ? Component.translatable(
@@ -1435,7 +1478,7 @@ public final class TacticalMapScreen extends Screen {
                             "screen.wok_infantry.map.support.status.seconds_suffix"))
                     : Component.translatable(
                             "screen.wok_infantry.map.support.mission.active");
-            renderSupportMissionStatus(graphics, option, mission, presentation,
+            renderSupportMissionStatus(graphics, option, mission, presentation, guidance,
                     state.getString(), accent);
         }
     }
@@ -1443,6 +1486,7 @@ public final class TacticalMapScreen extends Screen {
     private void renderSupportMissionStatus(GuiGraphics graphics, SupportOptionView option,
                                             SupportMissionView mission,
                                             TacticalSupportMapPresentation presentation,
+                                            SupportGuidanceZone guidance,
                                             String state, int accent) {
         StringBuilder detail = new StringBuilder(state);
         if (presentation == TacticalSupportMapPresentation.OFFENSIVE) {
@@ -1454,12 +1498,17 @@ public final class TacticalMapScreen extends Screen {
                     "screen.wok_infantry.map.support.scan_radius",
                     displayRadius(option.radius())).getString());
         }
+        if (guidance != null && !guidance.separateLabel()) {
+            detail.append(" · ").append(guidance.label());
+        }
+        renderSupportGuidanceLabel(graphics, worldToScreenX(mission.startX()),
+                worldToScreenY(mission.startZ()), guidance);
         int centerX = worldToScreenX((mission.startX() + mission.endX()) * 0.5D);
         int centerY = worldToScreenY((mission.startZ() + mission.endZ()) * 0.5D);
-        int radius = supportRadiusPixels(option);
         renderMapStatusCard(graphics, supportShortName(option).getString(),
                 detail.toString(), centerX,
-                centerY - radius - mapPhysicalToLogical(8), accent);
+                centerY - supportLabelOffset(option, guidance, (mapStatusCardHeight() + 1) / 2),
+                accent);
     }
 
     private void renderSupportPreview(GuiGraphics graphics, ResourceLocation dimension,
@@ -1479,20 +1528,26 @@ public final class TacticalMapScreen extends Screen {
             return;
         }
         int accent = supportColor(option);
+        SupportGuidanceZone guidance = supportGuidanceZone(option);
+        int cursorX = worldToScreenX(cursor.x());
+        int cursorY = worldToScreenY(cursor.z());
         if (!option.directional()) {
             renderSupportGeometry(graphics, option,
                     cursor.x(), cursor.z(), cursor.x(), cursor.z(),
-                    withAlpha(accent, SUPPORT_AREA_ALPHA), accent, presentation);
-            renderSupportPreviewRange(graphics, option, presentation, mouseX, mouseY, accent);
+                    withAlpha(accent, SUPPORT_AREA_ALPHA), accent, presentation, guidance);
+            renderSupportGuidanceLabel(graphics, cursorX, cursorY, guidance);
+            renderSupportPreviewRange(graphics, option, presentation, guidance,
+                    mouseX, mouseY, accent);
             return;
         }
         if (supportStart == null || !supportStart.dimension().equals(dimension)) {
-            renderSupportPointArea(graphics, worldToScreenX(cursor.x()),
-                    worldToScreenY(cursor.z()), supportRadiusPixels(option),
+            renderSupportPointArea(graphics, cursorX, cursorY, supportRadiusPixels(option),
                     withAlpha(accent, SUPPORT_AREA_ALPHA), accent, presentation);
-            drawMapDiamond(graphics, worldToScreenX(cursor.x()),
-                    worldToScreenY(cursor.z()), 3, accent);
-            renderSupportPreviewRange(graphics, option, presentation, mouseX, mouseY, accent);
+            renderSupportGuidanceRing(graphics, cursorX, cursorY, guidance);
+            drawMapDiamond(graphics, cursorX, cursorY, 3, accent);
+            renderSupportGuidanceLabel(graphics, cursorX, cursorY, guidance);
+            renderSupportPreviewRange(graphics, option, presentation, guidance,
+                    mouseX, mouseY, accent);
             return;
         }
         boolean valid = isValidSupportDirectionGeometry(supportStart.x(), supportStart.z(),
@@ -1500,30 +1555,60 @@ public final class TacticalMapScreen extends Screen {
         int previewColor = valid ? accent : TacticalBoardTheme.DANGER;
         renderSupportGeometry(graphics, option,
                 supportStart.x(), supportStart.z(), cursor.x(), cursor.z(),
-                withAlpha(previewColor, SUPPORT_AREA_ALPHA), previewColor, presentation);
-        renderSupportPreviewRange(graphics, option, presentation,
+                withAlpha(previewColor, SUPPORT_AREA_ALPHA), previewColor, presentation,
+                guidance);
+        renderSupportGuidanceLabel(graphics, worldToScreenX(supportStart.x()),
+                worldToScreenY(supportStart.z()), guidance);
+        renderSupportPreviewRange(graphics, option, presentation, guidance,
                 (worldToScreenX(supportStart.x()) + mouseX) / 2,
                 (worldToScreenY(supportStart.z()) + mouseY) / 2, previewColor);
     }
 
     private void renderSupportPreviewRange(GuiGraphics graphics, SupportOptionView option,
                                            TacticalSupportMapPresentation presentation,
+                                           SupportGuidanceZone guidance,
                                            int centerX, int centerY, int accent) {
-        if (presentation != TacticalSupportMapPresentation.OFFENSIVE) {
+        // A support area too small for a separate zone tag folds the zone label into this one
+        // so zooming out never drops the authorization radius from the preview.
+        String guidanceLabel = guidance != null && !guidance.separateLabel()
+                ? guidance.label() : null;
+        String label;
+        if (presentation == TacticalSupportMapPresentation.OFFENSIVE) {
+            label = Component.translatable(
+                    "screen.wok_infantry.map.support.impact_radius",
+                    displayRadius(option.radius())).getString();
+            if (guidanceLabel != null) {
+                label = label + " · " + guidanceLabel;
+            }
+        } else if (guidanceLabel != null) {
+            label = guidanceLabel;
+        } else {
             return;
         }
-        String label = Component.translatable(
-                "screen.wok_infantry.map.support.impact_radius",
-                displayRadius(option.radius())).getString();
         renderMapStatusTag(graphics, label, centerX,
-                centerY - supportRadiusPixels(option) - mapPhysicalToLogical(8), accent);
+                centerY - supportLabelOffset(option, guidance, (mapStatusTagHeight() + 1) / 2),
+                accent);
     }
 
     private void renderSupportGeometry(GuiGraphics graphics, SupportOptionView option,
                                        double startX, double startZ,
                                        double endX, double endZ,
                                        int fillColor, int outlineColor,
-                                       TacticalSupportMapPresentation presentation) {
+                                       TacticalSupportMapPresentation presentation,
+                                       SupportGuidanceZone guidance) {
+        renderSupportFootprint(graphics, option, startX, startZ, endX, endZ,
+                fillColor, outlineColor, presentation);
+        // Designations are validated around the support's target anchor, which is the start
+        // point for both point and directional calls.
+        renderSupportGuidanceRing(graphics, worldToScreenX(startX), worldToScreenY(startZ),
+                guidance);
+    }
+
+    private void renderSupportFootprint(GuiGraphics graphics, SupportOptionView option,
+                                        double startX, double startZ,
+                                        double endX, double endZ,
+                                        int fillColor, int outlineColor,
+                                        TacticalSupportMapPresentation presentation) {
         int screenStartX = worldToScreenX(startX);
         int screenStartY = worldToScreenY(startZ);
         int radius = supportRadiusPixels(option);
@@ -1644,7 +1729,7 @@ public final class TacticalMapScreen extends Screen {
 
     private void renderImpactCrosshair(GuiGraphics graphics, int centerX, int centerY,
                                        int color) {
-        int arm = Math.max(4, mapPhysicalToLogical(9));
+        int arm = impactCrosshairArm();
         int gap = Math.max(1, mapPhysicalToLogical(3));
         drawLine(graphics, centerX - arm, centerY, centerX - gap, centerY, color, 1);
         drawLine(graphics, centerX + gap, centerY, centerX + arm, centerY, color, 1);
@@ -1653,8 +1738,150 @@ public final class TacticalMapScreen extends Screen {
         drawMapDiamond(graphics, centerX, centerY, 2, color);
     }
 
+    private int impactCrosshairArm() {
+        return Math.max(4, mapPhysicalToLogical(9));
+    }
+
+    private SupportGuidanceZone supportGuidanceZone(SupportOptionView option) {
+        OptionalDouble radius = TacticalSupportMapPresentationRegistry.guidanceRadius(
+                option.id());
+        if (radius.isEmpty()) {
+            return null;
+        }
+        int areaPixels = supportRadiusPixels(option);
+        int ringPixels = supportGuidanceRadiusPixels(radius.getAsDouble(), option.radius(),
+                areaPixels, zoom);
+        String label = Component.translatable(
+                "screen.wok_infantry.map.support.guidance_radius",
+                displayRadius(radius.getAsDouble())).getString();
+        // The zone tag sits wholly below both rings, so its opaque panel never covers the dashed
+        // inner ring or the outer outline.
+        int labelHalfHeight = (mapStatusTagHeight() + 1) / 2;
+        int labelOffset = supportGuidanceLabelOffset(areaPixels, ringPixels,
+                mapPhysicalToLogical(SUPPORT_GUIDANCE_CASING_PHYSICAL / 2),
+                mapPhysicalToLogical(4), labelHalfHeight);
+        int centerClearance = impactCrosshairArm() + mapPhysicalToLogical(4);
+        return new SupportGuidanceZone(ringPixels, labelOffset, label,
+                supportGuidanceLabelClearsTarget(labelOffset, labelHalfHeight,
+                        centerClearance));
+    }
+
+    /**
+     * Centre offset above the target for a mission card or range tag: like the zone tag below,
+     * the panel sits wholly outside the area outline and the dashed zone, never across them.
+     */
+    private int supportLabelOffset(SupportOptionView option, SupportGuidanceZone guidance,
+                                   int labelHalfHeight) {
+        return supportGuidanceLabelOffset(supportRadiusPixels(option),
+                guidance == null ? 0 : guidance.ringPixels(),
+                mapPhysicalToLogical(SUPPORT_GUIDANCE_CASING_PHYSICAL / 2),
+                mapPhysicalToLogical(4), labelHalfHeight);
+    }
+
+    private void renderSupportGuidanceRing(GuiGraphics graphics, int centerX, int centerY,
+                                           SupportGuidanceZone guidance) {
+        // At strategic zoom a ring inside the target crosshair is noise; the zone label still
+        // reports the radius through its own tag or the folded range text.
+        if (guidance == null || guidance.ringPixels() <= impactCrosshairArm()) {
+            return;
+        }
+        int dash = Math.max(2, mapPhysicalToLogical(SUPPORT_GUIDANCE_DASH_PHYSICAL));
+        int gap = Math.max(1, mapPhysicalToLogical(SUPPORT_GUIDANCE_GAP_PHYSICAL));
+        int dashes = supportGuidanceDashCount(guidance.ringPixels(), dash + gap);
+        if (dashes <= 0) {
+            return;
+        }
+        double step = Math.PI * 2.0D / dashes;
+        double sweep = step * dash / (dash + gap);
+        // Casing first for every dash, so neighbouring casings never cover an amber dash.
+        renderSupportGuidanceDashes(graphics, centerX, centerY, guidance.ringPixels(),
+                dashes, step, sweep, SUPPORT_GUIDANCE_CASING,
+                SUPPORT_GUIDANCE_CASING_PHYSICAL);
+        renderSupportGuidanceDashes(graphics, centerX, centerY, guidance.ringPixels(),
+                dashes, step, sweep, SUPPORT_GUIDANCE_COLOR,
+                SUPPORT_GUIDANCE_LINE_PHYSICAL);
+    }
+
+    private void renderSupportGuidanceDashes(GuiGraphics graphics, int centerX, int centerY,
+                                             int radius, int dashes,
+                                             double step, double sweep,
+                                             int color, int physicalThickness) {
+        for (int index = 0; index < dashes; index++) {
+            double from = index * step - Math.PI * 0.5D;
+            double to = from + sweep;
+            drawMapWorldLine(graphics,
+                    centerX + (int) Math.round(Math.cos(from) * radius),
+                    centerY + (int) Math.round(Math.sin(from) * radius),
+                    centerX + (int) Math.round(Math.cos(to) * radius),
+                    centerY + (int) Math.round(Math.sin(to) * radius),
+                    color, physicalThickness);
+        }
+    }
+
+    private void renderSupportGuidanceLabel(GuiGraphics graphics, int centerX, int centerY,
+                                            SupportGuidanceZone guidance) {
+        if (guidance == null || !guidance.separateLabel()) {
+            return;
+        }
+        renderMapStatusTag(graphics, guidance.label(), centerX,
+                centerY + guidance.labelOffset(), SUPPORT_GUIDANCE_COLOR);
+    }
+
+    /**
+     * Converts a guidance radius to map pixels in proportion to the drawn outer area, so the
+     * inner zone keeps its true ratio even when the outer area is clamped at extreme zoom.
+     */
+    static int supportGuidanceRadiusPixels(double guidanceRadius, double supportRadius,
+                                           int supportRadiusPixels, double mapZoom) {
+        if (!Double.isFinite(guidanceRadius) || guidanceRadius <= 0.0D) {
+            return 0;
+        }
+        double pixels;
+        if (Double.isFinite(supportRadius) && supportRadius > 0.0D
+                && supportRadiusPixels > 0) {
+            pixels = supportRadiusPixels * guidanceRadius / supportRadius;
+        } else if (Double.isFinite(mapZoom) && mapZoom > 0.0D) {
+            pixels = guidanceRadius * mapZoom;
+        } else {
+            return 0;
+        }
+        return (int) Math.max(0L, Math.min(SUPPORT_RADIUS_MAX_PIXELS, Math.round(pixels)));
+    }
+
+    /**
+     * Centre offset from the target for a label panel outside the support area: the panel's near
+     * edge keeps {@code gap} beyond whichever reaches further of the outer area outline and the
+     * dashed inner ring including its casing half-width, so the label never covers either ring.
+     * The zone tag uses it below the target; mission cards and range tags above it.
+     */
+    static int supportGuidanceLabelOffset(int areaPixels, int ringPixels, int ringHalfWidth,
+                                          int gap, int labelHalfHeight) {
+        int ringEdge = Math.max(0, ringPixels) + Math.max(0, ringHalfWidth);
+        return Math.max(Math.max(0, areaPixels), ringEdge) + Math.max(0, gap)
+                + Math.max(0, labelHalfHeight);
+    }
+
+    /**
+     * A separate zone tag centred {@code labelOffset} below the target must not cover the
+     * target crosshair; otherwise its label is folded into the range tag or mission card.
+     */
+    static boolean supportGuidanceLabelClearsTarget(int labelOffset, int labelHalfHeight,
+                                                    int centerClearance) {
+        return labelOffset - Math.max(0, labelHalfHeight) >= Math.max(0, centerClearance);
+    }
+
+    static int supportGuidanceDashCount(int ringPixels, int dashPeriodPixels) {
+        if (ringPixels < SUPPORT_GUIDANCE_MIN_RING_PIXELS) {
+            return 0;
+        }
+        long dashes = Math.round(2.0D * Math.PI * ringPixels / Math.max(2, dashPeriodPixels));
+        return (int) Math.max(SUPPORT_GUIDANCE_MIN_DASHES,
+                Math.min(SUPPORT_GUIDANCE_MAX_DASHES, dashes));
+    }
+
     private int supportRadiusPixels(SupportOptionView option) {
-        return Math.max(3, Math.min(192, (int) Math.round(option.radius() * zoom)));
+        return Math.max(3, Math.min(SUPPORT_RADIUS_MAX_PIXELS,
+                (int) Math.round(option.radius() * zoom)));
     }
 
     private static int displayRadius(double radius) {
@@ -3060,13 +3287,14 @@ public final class TacticalMapScreen extends Screen {
                 mapRight - mapLeft - horizontalPadding * 2 - accentWidth - 4);
         String visibleText = fittedMapText(text, availableWidth);
         int textWidth = mapTextLogicalWidth(visibleText);
-        int textHeight = mapTextLogicalHeight();
         int panelWidth = textWidth + horizontalPadding * 2 + accentWidth;
-        int panelHeight = textHeight + verticalPadding * 2;
-        int left = (int) clamp(centerX - panelWidth / 2.0D,
-                mapLeft + 2, Math.max(mapLeft + 2, mapRight - panelWidth - 2));
+        int panelHeight = mapStatusTagHeight();
+        int left = mapLabelLeft(centerX, panelWidth);
         int top = (int) clamp(centerY - panelHeight / 2.0D,
                 mapTop + 2, Math.max(mapTop + 2, mapBottom - panelHeight - 2));
+        left = clearOfMapChrome(new TacticalMapLayout.Rect(left, top,
+                        left + panelWidth, top + panelHeight),
+                mapLeft + 2, mapLabelMaxLeft(panelWidth), mapPhysicalToLogical(4), mapChrome());
         int right = Math.min(mapRight - 2, left + panelWidth);
         int bottom = Math.min(mapBottom - 2, top + panelHeight);
         graphics.fill(left, top, right, bottom, 0xE4141B1D);
@@ -3091,11 +3319,13 @@ public final class TacticalMapScreen extends Screen {
                 mapTextLogicalWidth(visibleDetail));
         int textHeight = mapTextLogicalHeight();
         int panelWidth = textWidth + horizontalPadding * 2 + accentWidth;
-        int panelHeight = textHeight * 2 + lineGap + verticalPadding * 2;
-        int left = (int) clamp(centerX - panelWidth / 2.0D,
-                mapLeft + 2, Math.max(mapLeft + 2, mapRight - panelWidth - 2));
+        int panelHeight = mapStatusCardHeight();
+        int left = mapLabelLeft(centerX, panelWidth);
         int top = (int) clamp(centerY - panelHeight / 2.0D,
                 mapTop + 2, Math.max(mapTop + 2, mapBottom - panelHeight - 2));
+        left = clearOfMapChrome(new TacticalMapLayout.Rect(left, top,
+                        left + panelWidth, top + panelHeight),
+                mapLeft + 2, mapLabelMaxLeft(panelWidth), mapPhysicalToLogical(4), mapChrome());
         int right = Math.min(mapRight - 2, left + panelWidth);
         int bottom = Math.min(mapBottom - 2, top + panelHeight);
         graphics.fill(left, top, right, bottom, 0xE8141B1D);
@@ -3106,6 +3336,55 @@ public final class TacticalMapScreen extends Screen {
         drawMapString(graphics, visibleTitle, textX, titleY, 0xFFF3F6F4);
         drawMapString(graphics, visibleDetail, textX,
                 titleY + textHeight + lineGap, accent);
+    }
+
+    private int mapStatusTagHeight() {
+        return mapTextLogicalHeight() + mapPhysicalToLogical(4) * 2;
+    }
+
+    private int mapStatusCardHeight() {
+        return mapTextLogicalHeight() * 2 + mapPhysicalToLogical(3)
+                + mapPhysicalToLogical(4) * 2;
+    }
+
+    private int mapLabelLeft(int centerX, int panelWidth) {
+        return (int) clamp(centerX - panelWidth / 2.0D, mapLeft + 2,
+                mapLabelMaxLeft(panelWidth));
+    }
+
+    private int mapLabelMaxLeft(int panelWidth) {
+        return Math.max(mapLeft + 2, mapRight - panelWidth - 2);
+    }
+
+    /**
+     * Slides a map label sideways along its row until it no longer sits under map chrome, which is
+     * drawn above every map layer. Keeping the row preserves the label's clearance from the area
+     * it describes. The nearest clear position inside {@code [minLeft, maxLeft]} wins; when there
+     * is none the label keeps its place.
+     */
+    static int clearOfMapChrome(TacticalMapLayout.Rect label, int minLeft, int maxLeft, int gap,
+                                List<TacticalMapLayout.Rect> chrome) {
+        if (chrome.stream().noneMatch(label::intersects)) {
+            return label.left();
+        }
+        int width = label.width();
+        int best = label.left();
+        int bestDistance = Integer.MAX_VALUE;
+        for (TacticalMapLayout.Rect blocker : chrome) {
+            for (int candidate : new int[]{blocker.right() + gap, blocker.left() - gap - width}) {
+                if (candidate < minLeft || candidate > maxLeft) {
+                    continue;
+                }
+                TacticalMapLayout.Rect moved = new TacticalMapLayout.Rect(candidate, label.top(),
+                        candidate + width, label.bottom());
+                int distance = Math.abs(candidate - label.left());
+                if (distance < bestDistance && chrome.stream().noneMatch(moved::intersects)) {
+                    best = candidate;
+                    bestDistance = distance;
+                }
+            }
+        }
+        return best;
     }
 
     private void renderMapMarkerSymbol(GuiGraphics graphics, TacticalMarkerType type,
@@ -3407,6 +3686,20 @@ public final class TacticalMapScreen extends Screen {
     }
 
     private record SupportUiStatus(Component label, Component shortLabel) {
+    }
+
+    /**
+     * Client-registered inner designation zone of one support at the current zoom. When the
+     * outer area is too small for a separate tag below it, {@code separateLabel} is false and
+     * the label is folded into the support's range tag or mission card instead.
+     */
+    private record SupportGuidanceZone(int ringPixels, int labelOffset, String label,
+                                       boolean separateLabel) {
+    }
+
+    /** Scale bar line ends, label and the chrome panel behind them. */
+    private record MapScaleBar(int left, int right, int bottom, String label,
+                               TacticalMapLayout.Rect panel) {
     }
 
     record SupportPagingState(int page, ResourceLocation selectedSupport,

@@ -114,6 +114,7 @@
   "screen.wok_infantry.map.support.mission.active": "SUPPORT ACTIVE",
   "screen.wok_infantry.map.support.impact_radius": "IMPACT RADIUS R%sm",
   "screen.wok_infantry.map.support.scan_radius": "SCAN RADIUS R%sm",
+  "screen.wok_infantry.map.support.guidance_radius": "Designation zone R%sm",
   "screen.wok_infantry.map.support.point_hint": "Left-click an impact point · right-click to cancel",
   "screen.wok_infantry.map.support.direction_start_hint": "Left-click a route start · right-click to cancel",
   "screen.wok_infantry.map.support.direction_finish_hint": "Left-click the direction endpoint · right-click to cancel",

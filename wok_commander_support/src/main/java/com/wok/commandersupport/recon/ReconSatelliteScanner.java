@@ -21,7 +21,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** Server-only contact acquisition with no third-party vehicle classes in its API surface. */
+/**
+ * Server-only contact acquisition with no third-party vehicle classes in its API surface.
+ *
+ * <p>The recon definition does not require a loaded footprint, so this scan must never load or
+ * generate chunks. It only walks the level's player list and the entity sections that are
+ * already loaded ({@code getEntities} skips unloaded sections), and reads entity positions, NBT
+ * and the world border; no block, height or chunk lookup is made. Contacts in unloaded parts of
+ * the scan radius are therefore not reported, which is expected.</p>
+ */
 public final class ReconSatelliteScanner {
     private ReconSatelliteScanner() {
     }
@@ -29,12 +37,12 @@ public final class ReconSatelliteScanner {
     public static List<SupportIntelContact> scan(SupportSpawnContext context)
             throws SupportSpawnException {
         if (context == null || !(context.owner() instanceof ServerPlayer owner)) {
-            throw new SupportSpawnException("侦察卫星缺少在线指挥官");
+            throw SupportSpawnException.endMission("侦察卫星缺少在线指挥官");
         }
         BattleService battle = BattleService.get(owner).orElse(null);
         Faction friendly = context.faction();
         if (battle == null || friendly == null) {
-            throw new SupportSpawnException("侦察卫星无法确定调用方阵营");
+            throw SupportSpawnException.endMission("侦察卫星无法确定调用方阵营");
         }
 
         ServerLevel level = context.level();

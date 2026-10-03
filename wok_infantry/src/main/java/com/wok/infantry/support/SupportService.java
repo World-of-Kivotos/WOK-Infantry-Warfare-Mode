@@ -15,13 +15,14 @@ import com.wok.infantry.support.adapter.SupportSpawnException;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
-import net.minecraft.world.level.Level;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 import org.slf4j.Logger;
@@ -41,6 +42,12 @@ import java.util.WeakHashMap;
  * Server-authoritative commander support scheduler. Optional-mod failures are isolated behind
  * providers; no request can force chunks, choose Y, bypass deployment state, or spawn fallback
  * vanilla ordnance.
+ *
+ * <p>Every mission leaves the active table through {@code finishMission}. A cooldown consumed
+ * at acceptance is returned only while no mission step has completed: either because the
+ * provider reported {@link SupportSpawnException#refundCooldown()} or because the core itself
+ * cancelled the mission. The refund is a compare-and-set, so an administrator who changed the
+ * cooldown in the meantime keeps the last word.</p>
  */
 public final class SupportService {
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -58,6 +65,7 @@ public final class SupportService {
     private final MinecraftServer server;
     private final SupportSavedData savedData;
     private final SupportRegistry registry;
+    // Keyed by the server-generated call id; client request ids only key receipts.
     private final LinkedHashMap<UUID, ActiveMission> activeMissions = new LinkedHashMap<>();
     private final LinkedHashMap<UUID, RequestReceipt> requestReceipts = new LinkedHashMap<>();
 
@@ -226,10 +234,17 @@ public final class SupportService {
                     ActionResult.failure(ActionResult.Code.INVALID_TARGET,
                             "支援冷却存储已满，请联系服务器管理员"));
         }
-        ActiveMission mission = new ActiveMission(requestId, actor.getUUID(), faction, definition,
-                authoritativeTarget, actor, executeAt, executeAt, 0, definition.stepCount(),
+        // Providers may reuse the call id as an entity UUID, so it must never be client-chosen.
+        UUID callId = UUID.randomUUID();
+        while (activeMissions.containsKey(callId)) {
+            callId = UUID.randomUUID();
+        }
+        ActiveMission mission = new ActiveMission(callId, actor.getUUID(), faction, definition,
+                authoritativeTarget, actor, savedData.readyAt(faction, supportId), executeAt,
+                new MissionCursor(executeAt, 0, definition.stepCount(),
+                        definition.stepIntervalTicks()),
                 validation.startSurfaceY(), validation.endSurfaceY());
-        activeMissions.put(requestId, mission);
+        activeMissions.put(callId, mission);
         ActionResult accepted = definition.inboundTicks() == 0L
                 ? ActionResult.ok("支援呼叫已受理，立即执行")
                 : ActionResult.ok("支援呼叫已受理，预计 "
@@ -288,67 +303,22 @@ public final class SupportService {
         long now = gameTick();
         pruneReceipts(now);
         int executionBudget = MAX_EXECUTION_STEPS_PER_TICK;
-        Iterator<Map.Entry<UUID, ActiveMission>> iterator = activeMissions.entrySet().iterator();
-        while (iterator.hasNext() && executionBudget > 0) {
-            ActiveMission mission = iterator.next().getValue();
-            if (mission.remainingSteps() <= 0) {
-                iterator.remove();
+        // Snapshot: a provider callback may re-enter this monitor (for example a battle reset)
+        // and mutate the live table while one mission is executing.
+        for (ActiveMission mission : List.copyOf(activeMissions.values())) {
+            if (executionBudget <= 0) {
+                break;
+            }
+            if (activeMissions.get(mission.callId()) != mission) {
                 continue;
             }
-            if (now < mission.nextStepAtGameTick()) {
-                continue;
-            }
-            Faction currentFaction = BattleService.get(server)
-                    .flatMap(battle -> battle.factionOf(mission.owner().getUUID()))
-                    .orElse(null);
-            if (currentFaction != mission.faction()) {
-                LOGGER.warn("Support mission {} cancelled because its accepted faction changed",
-                        mission.callId());
-                iterator.remove();
-                continue;
-            }
-            SupportProvider provider = registry.provider(mission.supportId()).orElse(null);
-            ServerLevel level = server.getLevel(ResourceKey.create(Registries.DIMENSION,
-                    mission.target().dimension()));
-            if (provider == null || level == null) {
-                LOGGER.error(
-                        "Support mission {} failed without cooldown refund: provider or dimension vanished",
-                        mission.callId());
-                iterator.remove();
-                continue;
-            }
-            if (!footprintChunksLoaded(level, mission.definition(), mission.target())) {
-                // The request boundary never force-loads chunks. Preserve that guarantee during
-                // the inbound delay too: a player moving away must not make provider height
-                // lookups synchronously load or generate the remote strike corridor.
-                LOGGER.warn(
-                        "Support mission {} cancelled without cooldown refund because its loaded footprint vanished",
-                        mission.callId());
-                iterator.remove();
-                continue;
-            }
-
-            boolean failed = false;
-            while (executionBudget > 0 && mission.remainingSteps() > 0
-                    && now >= mission.nextStepAtGameTick()) {
-                try {
-                    provider.executeStep(new SupportSpawnContext(level,
-                            mission.owner(), mission.callId(), mission.definition(),
-                            mission.target(), mission.nextStepIndex(), mission.faction()));
-                    executionBudget--;
-                    mission.advance();
-                } catch (SupportSpawnException failure) {
-                    // The provider itself logs the first circuit-breaking cause. This mission is
-                    // consumed and the accepted cooldown intentionally remains in force.
-                    LOGGER.error(
-                            "Support mission {} failed without cooldown refund: {}",
-                            mission.callId(), failure.getMessage());
-                    failed = true;
-                    break;
-                }
-            }
-            if (failed || mission.remainingSteps() <= 0) {
-                iterator.remove();
+            try {
+                executionBudget -= tickMission(mission, now, executionBudget);
+            } catch (RuntimeException | LinkageError failure) {
+                // Never let a scheduler or context fault escape into the server tick.
+                LOGGER.error("Support mission {} ({}) crashed outside its provider boundary",
+                        mission.callId(), mission.supportId(), failure);
+                finishMission(mission, MissionEnd.crashed("支援任务执行异常"));
             }
         }
     }
@@ -369,6 +339,140 @@ public final class SupportService {
     /** Stable IDs exposed only for command completion and administrative diagnostics. */
     public synchronized List<ResourceLocation> registeredSupportIds() {
         return registry.definitions().stream().map(SupportDefinition::id).toList();
+    }
+
+    /** Runs one due mission and returns the number of provider callbacks it consumed. */
+    private int tickMission(ActiveMission mission, long now, int budget) {
+        MissionCursor cursor = mission.cursor();
+        if (cursor.remainingSteps() <= 0) {
+            finishMission(mission, MissionEnd.COMPLETED);
+            return 0;
+        }
+        if (now < cursor.nextStepAtGameTick()) {
+            return 0;
+        }
+        SupportProvider provider = registry.provider(mission.supportId()).orElse(null);
+        ServerLevel level = server.getLevel(ResourceKey.create(Registries.DIMENSION,
+                mission.target().dimension()));
+        Faction currentFaction = BattleService.get(server)
+                .flatMap(battle -> battle.factionOf(mission.requesterId()))
+                .orElse(null);
+        if (currentFaction != mission.faction()) {
+            cancelMission(mission, "呼叫者已不在受理阵营", provider, level);
+            return 0;
+        }
+        if (provider == null) {
+            cancelMission(mission, "未实现该支援适配器", null, level);
+            return 0;
+        }
+        if (level == null) {
+            cancelMission(mission, "支援目标维度已不可用", provider, null);
+            return 0;
+        }
+        // The request boundary never force-loads chunks. Preserve that guarantee during the
+        // inbound delay too: a player moving away must not make provider height lookups
+        // synchronously load or generate the remote strike corridor.
+        String footprintProblem = executionFootprintProblem(level, mission.definition(),
+                mission.target());
+        if (footprintProblem != null) {
+            cancelMission(mission, footprintProblem, provider, level);
+            return 0;
+        }
+        ProviderAvailability availability = provider.availability();
+        if (!availability.available()) {
+            cancelMission(mission, availability.reason(), provider, level);
+            return 0;
+        }
+
+        Entity owner = currentOwner(mission);
+        StepRun run = runDueSteps(cursor, now, budget, stepIndex -> {
+            if (activeMissions.get(mission.callId()) != mission) {
+                // Removed by a re-entrant reset during an earlier step of this same pass.
+                throw SupportSpawnException.endMission("支援任务已被撤销");
+            }
+            provider.executeStep(new SupportSpawnContext(level, owner, mission.callId(),
+                    mission.definition(), mission.target(), stepIndex, mission.faction()));
+        });
+        if (run.end() != null) {
+            finishMission(mission, run.end());
+        }
+        return run.callbacks();
+    }
+
+    /**
+     * Core-initiated end of a mission. Once a step has run, the provider (when still resolvable,
+     * even with a tripped circuit) gets one chance to remove what the mission already placed in
+     * the world, so a cancelled strike never leaves an inert or unguided shell behind.
+     */
+    private void cancelMission(ActiveMission mission, String reason,
+                               SupportProvider provider, ServerLevel level) {
+        int nextStepIndex = mission.cursor().nextStepIndex();
+        if (abandonOnCoreCancel(nextStepIndex) && provider != null && level != null
+                && activeMissions.get(mission.callId()) == mission) {
+            try {
+                provider.abandon(new SupportSpawnContext(level, currentOwner(mission),
+                        mission.callId(), mission.definition(), mission.target(),
+                        nextStepIndex, mission.faction()));
+            } catch (RuntimeException | LinkageError failure) {
+                LOGGER.warn("Support mission {} ({}) could not hand its cleanup to the provider",
+                        mission.callId(), mission.supportId(), failure);
+            }
+        }
+        finishMission(mission, MissionEnd.coreCancelled(reason, nextStepIndex));
+    }
+
+    /**
+     * Single exit for every mission: removes it only if it is still this exact entry, applies a
+     * compare-and-set refund when allowed and tells the requester why a mission did not finish.
+     */
+    private void finishMission(ActiveMission mission, MissionEnd end) {
+        if (!activeMissions.remove(mission.callId(), mission) || end.completed()) {
+            return;
+        }
+        boolean refunded = end.refundCooldown() && savedData.restoreIfUnchanged(
+                mission.faction(), mission.supportId(), mission.acceptedReadyAt(), 0L);
+        Throwable cause = end.failure() == null ? null : end.failure().getCause();
+        if (end.providerBroken()) {
+            // The provider guard already logged the first circuit-breaking stack trace.
+            LOGGER.error("Support mission {} ({}) ended by a broken provider: {} (refunded: {})",
+                    mission.callId(), mission.supportId(), end.reason(), refunded);
+        } else if (cause != null) {
+            LOGGER.warn("Support mission {} ({}) ended: {} (refunded: {})",
+                    mission.callId(), mission.supportId(), end.reason(), refunded, cause);
+        } else {
+            LOGGER.warn("Support mission {} ({}) ended: {} (refunded: {})",
+                    mission.callId(), mission.supportId(), end.reason(), refunded);
+        }
+        if (end.refundCooldown() && !refunded) {
+            LOGGER.info("Support mission {} kept the current cooldown of {} for {}: "
+                            + "it was changed after acceptance",
+                    mission.callId(), mission.supportId(), mission.faction().id());
+        }
+        notifyRequester(mission.requesterId(), failureNotice(
+                mission.definition().fallbackName(), end.reason(),
+                end.refundCooldown(), refunded));
+    }
+
+    private void notifyRequester(UUID requesterId, String message) {
+        try {
+            // Look the player up again: the accepted ServerPlayer may belong to a dead session.
+            ServerPlayer requester = server.getPlayerList().getPlayer(requesterId);
+            if (requester != null) {
+                requester.sendSystemMessage(Component.literal(message));
+            }
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Could not notify support requester {}", requesterId, failure);
+        }
+    }
+
+    /**
+     * Prefers the requester's live session; falls back to the accepted entity when offline. That
+     * entity may be a stale pre-respawn instance, so intel publication additionally requires the
+     * owner to be the requester's current session.
+     */
+    private Entity currentOwner(ActiveMission mission) {
+        ServerPlayer online = server.getPlayerList().getPlayer(mission.requesterId());
+        return online != null ? online : mission.owner();
     }
 
     private TargetValidation validateTarget(ServerPlayer actor, SupportDefinition definition,
@@ -396,40 +500,27 @@ public final class SupportService {
         }
 
         ServerLevel level = actor.serverLevel();
-        double minX = Math.min(target.startX(), target.endX()) - definition.radius();
-        double minZ = Math.min(target.startZ(), target.endZ()) - definition.radius();
-        double maxX = Math.max(target.startX(), target.endX()) + definition.radius();
-        double maxZ = Math.max(target.startZ(), target.endZ()) + definition.radius();
-        if (!validCoordinate(minX) || !validCoordinate(minZ)
-                || !validCoordinate(maxX) || !validCoordinate(maxZ)) {
+        Footprint footprint = Footprint.of(definition, target);
+        if (!footprint.coordinatesValid()) {
             return TargetValidation.failure("支援覆盖范围超出可用世界坐标");
         }
-        AABB footprint = new AABB(minX, level.getMinBuildHeight(), minZ,
-                Math.nextUp(maxX), level.getMaxBuildHeight(), Math.nextUp(maxZ));
-        if (!level.getWorldBorder().isWithinBounds(footprint)) {
+        if (!level.getWorldBorder().isWithinBounds(footprint.bounds(level))) {
             return TargetValidation.failure("支援覆盖范围超出世界边界");
         }
-
-        int minChunkX = SectionPos.blockToSectionCoord(Mth.floor(minX));
-        int maxChunkX = SectionPos.blockToSectionCoord(Mth.floor(maxX));
-        int minChunkZ = SectionPos.blockToSectionCoord(Mth.floor(minZ));
-        int maxChunkZ = SectionPos.blockToSectionCoord(Mth.floor(maxZ));
-        long chunkCount = (long) (maxChunkX - minChunkX + 1)
-                * (maxChunkZ - minChunkZ + 1L);
-        if (chunkCount < 1L || chunkCount > MAX_VALIDATED_CHUNKS) {
-            return TargetValidation.failure("支援覆盖范围过大");
-        }
-        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
-            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
-                if (!level.hasChunk(chunkX, chunkZ)) {
-                    return TargetValidation.failure("支援覆盖范围存在未加载区块");
-                }
+        // The chunk-count cap bounds the loaded-chunk scan below. Definitions that opted out of
+        // a loaded footprint never scan chunks, and their radius is already capped by the
+        // definition, so the cap is not applied to them and cannot wrongly reject a large scan.
+        if (definition.requiresLoadedFootprint()) {
+            long chunkCount = footprint.chunkCount();
+            if (chunkCount < 1L || chunkCount > MAX_VALIDATED_CHUNKS) {
+                return TargetValidation.failure("支援覆盖范围过大");
+            }
+            if (!footprint.chunksLoaded(level)) {
+                return TargetValidation.failure("支援覆盖范围存在未加载区块");
             }
         }
-        int startY = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
-                Mth.floor(target.startX()), Mth.floor(target.startZ()));
-        int endY = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
-                Mth.floor(target.endX()), Mth.floor(target.endZ()));
+        int startY = surfaceY(level, target.startX(), target.startZ());
+        int endY = surfaceY(level, target.endX(), target.endZ());
         BlockPos start = BlockPos.containing(target.startX(), startY, target.startZ());
         BlockPos end = BlockPos.containing(target.endX(), endY, target.endZ());
         if (!level.getWorldBorder().isWithinBounds(start)
@@ -439,30 +530,100 @@ public final class SupportService {
         return TargetValidation.success(level, startY, endY);
     }
 
-    private static boolean footprintChunksLoaded(ServerLevel level,
-                                                 SupportDefinition definition,
-                                                 SupportTarget target) {
-        double minX = Math.min(target.startX(), target.endX()) - definition.radius();
-        double minZ = Math.min(target.startZ(), target.endZ()) - definition.radius();
-        double maxX = Math.max(target.startX(), target.endX()) + definition.radius();
-        double maxZ = Math.max(target.startZ(), target.endZ()) + definition.radius();
-        int minChunkX = SectionPos.blockToSectionCoord(Mth.floor(minX));
-        int maxChunkX = SectionPos.blockToSectionCoord(Mth.floor(maxX));
-        int minChunkZ = SectionPos.blockToSectionCoord(Mth.floor(minZ));
-        int maxChunkZ = SectionPos.blockToSectionCoord(Mth.floor(maxZ));
-        long chunkCount = (long) (maxChunkX - minChunkX + 1)
-                * (maxChunkZ - minChunkZ + 1L);
-        if (chunkCount < 1L || chunkCount > MAX_VALIDATED_CHUNKS) {
-            return false;
+    /** Returns a player-visible reason when an accepted mission may no longer execute. */
+    private static String executionFootprintProblem(ServerLevel level,
+                                                    SupportDefinition definition,
+                                                    SupportTarget target) {
+        Footprint footprint = Footprint.of(definition, target);
+        if (!footprint.coordinatesValid()) {
+            return "支援覆盖范围超出可用世界坐标";
         }
-        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
-            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
-                if (!level.hasChunk(chunkX, chunkZ)) {
-                    return false;
-                }
+        if (!level.getWorldBorder().isWithinBounds(footprint.bounds(level))) {
+            return "支援覆盖范围超出世界边界";
+        }
+        if (definition.requiresLoadedFootprint()) {
+            long chunkCount = footprint.chunkCount();
+            if (chunkCount < 1L || chunkCount > MAX_VALIDATED_CHUNKS
+                    || !footprint.chunksLoaded(level)) {
+                return "支援覆盖范围存在未加载区块";
             }
         }
-        return true;
+        return null;
+    }
+
+    private static int surfaceY(ServerLevel level, double x, double z) {
+        int blockX = Mth.floor(x);
+        int blockZ = Mth.floor(z);
+        // Only definitions without a loaded-footprint requirement reach an unloaded column; a
+        // heightmap lookup there would make the main thread wait for the chunk to load.
+        if (!chunkReady(level, SectionPos.blockToSectionCoord(blockX),
+                SectionPos.blockToSectionCoord(blockZ))) {
+            return level.getMinBuildHeight();
+        }
+        return level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockX, blockZ);
+    }
+
+    /**
+     * True only for a chunk that has finished loading. {@code ServerLevel.hasChunk} merely checks
+     * the ticket level, so a block or height lookup after it can still block the main thread
+     * until a ticketed chunk finishes reading or generating; {@code getChunkNow} never waits.
+     */
+    private static boolean chunkReady(ServerLevel level, int chunkX, int chunkZ) {
+        return level.getChunkSource().getChunkNow(chunkX, chunkZ) != null;
+    }
+
+    /**
+     * Executes due steps of one mission within {@code budget} provider callbacks and classifies
+     * the first failure. Pure apart from the supplied cursor and executor.
+     */
+    static StepRun runDueSteps(MissionCursor cursor, long now, int budget,
+                               StepExecutor executor) {
+        int callbacks = 0;
+        while (callbacks < budget && cursor.remainingSteps() > 0
+                && now >= cursor.nextStepAtGameTick()) {
+            int stepIndex = cursor.nextStepIndex();
+            callbacks++;
+            try {
+                executor.execute(stepIndex);
+            } catch (SupportSpawnException failure) {
+                return new StepRun(callbacks, MissionEnd.failed(failure, stepIndex));
+            }
+            cursor.advance();
+        }
+        return new StepRun(callbacks,
+                cursor.remainingSteps() <= 0 ? MissionEnd.COMPLETED : null);
+    }
+
+    /** Core-initiated cancellations refund only while no mission step has completed. */
+    static boolean refundOnCoreCancel(int nextStepIndex) {
+        return nextStepIndex == 0;
+    }
+
+    /** Exactly the cancellations that do not refund ask the provider to clean up the world. */
+    static boolean abandonOnCoreCancel(int nextStepIndex) {
+        return nextStepIndex > 0;
+    }
+
+    /** Provider failures refund only on request and only while nothing has been delivered. */
+    static boolean refundOnFailure(SupportSpawnException failure, int nextStepIndex) {
+        return failure.refundCooldown() && nextStepIndex == 0;
+    }
+
+    /** Requester chat line for a mission that ended without completing. */
+    static String failureNotice(String supportName, String reason,
+                                boolean refundRequested, boolean refunded) {
+        String safeReason = SupportOptionView.sanitizeAvailabilityReason(reason).strip();
+        if (safeReason.isEmpty()) {
+            safeReason = "原因未知";
+        }
+        String prefix = "[支援] " + supportName;
+        if (refunded) {
+            return prefix + " 未能投送：" + safeReason + "，冷却已返还";
+        }
+        if (refundRequested) {
+            return prefix + " 未能投送：" + safeReason;
+        }
+        return prefix + " 任务中止：" + safeReason;
     }
 
     private ActionResult remember(ServerPlayer actor, UUID requestId,
@@ -536,6 +697,124 @@ public final class SupportService {
         return ActionResult.failure(ActionResult.Code.INVALID_TARGET, message);
     }
 
+    /** One provider callback for the given mission step. */
+    @FunctionalInterface
+    interface StepExecutor {
+        void execute(int stepIndex) throws SupportSpawnException;
+    }
+
+    /** Result of one {@link #runDueSteps} pass; {@code end} is null while the mission continues. */
+    record StepRun(int callbacks, MissionEnd end) {
+    }
+
+    /** Terminal classification of a mission: refund, circuit state and player-visible reason. */
+    record MissionEnd(boolean completed, boolean refundCooldown, boolean providerBroken,
+                      String reason, SupportSpawnException failure) {
+        static final MissionEnd COMPLETED = new MissionEnd(true, false, false, "", null);
+
+        static MissionEnd failed(SupportSpawnException failure, int nextStepIndex) {
+            return new MissionEnd(false, refundOnFailure(failure, nextStepIndex),
+                    failure.providerBroken(),
+                    Objects.requireNonNullElse(failure.getMessage(), ""), failure);
+        }
+
+        static MissionEnd coreCancelled(String reason, int nextStepIndex) {
+            return new MissionEnd(false, refundOnCoreCancel(nextStepIndex), false,
+                    reason, null);
+        }
+
+        static MissionEnd crashed(String reason) {
+            return new MissionEnd(false, false, true, reason, null);
+        }
+    }
+
+    /** Mutable step position of one accepted mission. */
+    static final class MissionCursor {
+        private final int stepIntervalTicks;
+        private long nextStepAtGameTick;
+        private int nextStepIndex;
+        private int remainingSteps;
+
+        MissionCursor(long nextStepAtGameTick, int nextStepIndex, int remainingSteps,
+                      int stepIntervalTicks) {
+            this.nextStepAtGameTick = nextStepAtGameTick;
+            this.nextStepIndex = nextStepIndex;
+            this.remainingSteps = remainingSteps;
+            this.stepIntervalTicks = stepIntervalTicks;
+        }
+
+        long nextStepAtGameTick() {
+            return nextStepAtGameTick;
+        }
+
+        int nextStepIndex() {
+            return nextStepIndex;
+        }
+
+        int remainingSteps() {
+            return remainingSteps;
+        }
+
+        void advance() {
+            nextStepIndex++;
+            remainingSteps--;
+            nextStepAtGameTick = saturatingAdd(nextStepAtGameTick, stepIntervalTicks);
+        }
+    }
+
+    /** Support footprint rectangle; computing it never touches chunk storage. */
+    private record Footprint(double minX, double minZ, double maxX, double maxZ) {
+        static Footprint of(SupportDefinition definition, SupportTarget target) {
+            return new Footprint(
+                    Math.min(target.startX(), target.endX()) - definition.radius(),
+                    Math.min(target.startZ(), target.endZ()) - definition.radius(),
+                    Math.max(target.startX(), target.endX()) + definition.radius(),
+                    Math.max(target.startZ(), target.endZ()) + definition.radius());
+        }
+
+        boolean coordinatesValid() {
+            return validCoordinate(minX) && validCoordinate(minZ)
+                    && validCoordinate(maxX) && validCoordinate(maxZ);
+        }
+
+        AABB bounds(ServerLevel level) {
+            return new AABB(minX, level.getMinBuildHeight(), minZ,
+                    Math.nextUp(maxX), level.getMaxBuildHeight(), Math.nextUp(maxZ));
+        }
+
+        long chunkCount() {
+            return (long) (maxChunkX() - minChunkX() + 1)
+                    * (maxChunkZ() - minChunkZ() + 1L);
+        }
+
+        boolean chunksLoaded(ServerLevel level) {
+            for (int chunkX = minChunkX(); chunkX <= maxChunkX(); chunkX++) {
+                for (int chunkZ = minChunkZ(); chunkZ <= maxChunkZ(); chunkZ++) {
+                    if (!chunkReady(level, chunkX, chunkZ)) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        private int minChunkX() {
+            return SectionPos.blockToSectionCoord(Mth.floor(minX));
+        }
+
+        private int maxChunkX() {
+            return SectionPos.blockToSectionCoord(Mth.floor(maxX));
+        }
+
+        private int minChunkZ() {
+            return SectionPos.blockToSectionCoord(Mth.floor(minZ));
+        }
+
+        private int maxChunkZ() {
+            return SectionPos.blockToSectionCoord(Mth.floor(maxZ));
+        }
+    }
+
     private record RequestReceipt(UUID actorId, ResourceLocation supportId,
                                   SupportTarget target,
                                   ActionResult result, long expiresAtGameTick) {
@@ -548,10 +827,9 @@ public final class SupportService {
         private final SupportDefinition definition;
         private final SupportTarget target;
         private final ServerPlayer owner;
+        private final long acceptedReadyAt;
         private final long executeAtGameTick;
-        private long nextStepAtGameTick;
-        private int nextStepIndex;
-        private int remainingSteps;
+        private final MissionCursor cursor;
         @SuppressWarnings("unused")
         private final int startSurfaceY;
         @SuppressWarnings("unused")
@@ -560,8 +838,8 @@ public final class SupportService {
         private ActiveMission(UUID callId, UUID requesterId, Faction faction,
                               SupportDefinition definition,
                               SupportTarget target, ServerPlayer owner,
-                              long executeAtGameTick, long nextStepAtGameTick,
-                              int nextStepIndex, int remainingSteps,
+                              long acceptedReadyAt, long executeAtGameTick,
+                              MissionCursor cursor,
                               int startSurfaceY, int endSurfaceY) {
             this.callId = callId;
             this.requesterId = requesterId;
@@ -569,10 +847,9 @@ public final class SupportService {
             this.definition = definition;
             this.target = target;
             this.owner = owner;
+            this.acceptedReadyAt = acceptedReadyAt;
             this.executeAtGameTick = executeAtGameTick;
-            this.nextStepAtGameTick = nextStepAtGameTick;
-            this.nextStepIndex = nextStepIndex;
-            this.remainingSteps = remainingSteps;
+            this.cursor = cursor;
             this.startSurfaceY = startSurfaceY;
             this.endSurfaceY = endSurfaceY;
         }
@@ -581,7 +858,6 @@ public final class SupportService {
             return callId;
         }
 
-        @SuppressWarnings("unused")
         UUID requesterId() {
             return requesterId;
         }
@@ -602,33 +878,24 @@ public final class SupportService {
             return target;
         }
 
+        /** Entity captured at acceptance; only a fallback when the requester is offline. */
         ServerPlayer owner() {
             return owner;
         }
 
-        long nextStepAtGameTick() {
-            return nextStepAtGameTick;
+        /** Cooldown value written at acceptance; the refund compare-and-set expects it. */
+        long acceptedReadyAt() {
+            return acceptedReadyAt;
         }
 
-        int nextStepIndex() {
-            return nextStepIndex;
-        }
-
-        int remainingSteps() {
-            return remainingSteps;
-        }
-
-        void advance() {
-            nextStepIndex++;
-            remainingSteps--;
-            nextStepAtGameTick = saturatingAdd(nextStepAtGameTick,
-                    definition.stepIntervalTicks());
+        MissionCursor cursor() {
+            return cursor;
         }
 
         SupportMissionView view() {
             return new SupportMissionView(callId, definition.id(), target.dimension(),
                     target.startX(), target.startZ(), target.endX(), target.endZ(),
-                    executeAtGameTick, remainingSteps);
+                    executeAtGameTick, cursor.remainingSteps());
         }
     }
 

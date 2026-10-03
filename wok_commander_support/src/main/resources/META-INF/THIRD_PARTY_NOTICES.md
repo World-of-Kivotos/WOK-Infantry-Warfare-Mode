@@ -6,6 +6,9 @@ Samantha Ducker, 4th Fighter Wing, and published 2012-07-17.
 
 Source: <https://www.dvidshub.net/video/149528/f-15e-and-bomb-range-broll>
 
+The F-16C Paveway sound events reuse the same two F-15E excerpts at pitch 1.1;
+they are not F-16C recordings, and no additional audio is bundled for them.
+
 The source recordings and their adaptation are included without any suggestion
 of official endorsement.
 

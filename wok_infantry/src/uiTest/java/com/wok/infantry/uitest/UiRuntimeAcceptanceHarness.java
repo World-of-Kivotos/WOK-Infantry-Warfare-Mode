@@ -130,6 +130,8 @@ public final class UiRuntimeAcceptanceHarness {
     private static final int GLOBAL_TIMEOUT_TICKS = 2_400;
     private static final int PHASE_TIMEOUT_TICKS = 400;
     private static final int SCREEN_SETTLE_TICKS = 8;
+    private static final double PAVEWAY_FIXTURE_RADIUS = 80.0D;
+    private static final double PAVEWAY_FIXTURE_GUIDANCE_RADIUS = 64.0D;
     private static final String EXPECTED_TERRAIN_PROVIDER = System.getProperty(
             "wok.ui.expectedTerrainProvider", "journeymap").trim()
             .toLowerCase(java.util.Locale.ROOT);
@@ -1277,10 +1279,18 @@ public final class UiRuntimeAcceptanceHarness {
                 fail("Compact tactical map did not render the F-16C Paveway support button");
                 return;
             }
+            if (!pavewayGuidanceFixtureReady(snapshot)) {
+                fail("Compact tactical map has no executing F-16C call with a "
+                        + PAVEWAY_FIXTURE_GUIDANCE_RADIUS + "m designation zone");
+                return;
+            }
             compactSupportModeSelected = true;
             observations.add("compactSupportOptions=3");
             observations.add("compactJdamSupportVisible=true");
             observations.add("compactPavewaySupportVisible=true");
+            observations.add("compactPavewayGuidanceZone=R"
+                    + (int) PAVEWAY_FIXTURE_GUIDANCE_RADIUS + "/R"
+                    + (int) PAVEWAY_FIXTURE_RADIUS);
             return;
         }
 
@@ -1488,8 +1498,16 @@ public final class UiRuntimeAcceptanceHarness {
                 fail("Large tactical map did not render the F-16C Paveway support button");
                 return;
             }
+            if (!pavewayGuidanceFixtureReady(ClientBattleState.snapshot())) {
+                fail("Large tactical map has no executing F-16C call with a "
+                        + PAVEWAY_FIXTURE_GUIDANCE_RADIUS + "m designation zone");
+                return;
+            }
             observations.add("largeJdamSupportVisible=true");
             observations.add("largePavewaySupportVisible=true");
+            observations.add("largePavewayGuidanceZone=R"
+                    + (int) PAVEWAY_FIXTURE_GUIDANCE_RADIUS + "/R"
+                    + (int) PAVEWAY_FIXTURE_RADIUS);
             transition(Phase.CAPTURE_LARGE_MAP);
         }
     }
@@ -1516,7 +1534,14 @@ public final class UiRuntimeAcceptanceHarness {
                 TacticalSupportMapPresentation.OFFENSIVE);
         TacticalSupportMapPresentationRegistry.register(pavewayId,
                 TacticalSupportMapPresentation.OFFENSIVE);
-        if (snapshot.support().options().stream().anyMatch(option -> option.id().equals(jdamId))) {
+        TacticalSupportMapPresentationRegistry.registerGuidanceRadius(pavewayId,
+                PAVEWAY_FIXTURE_GUIDANCE_RADIUS);
+        boolean largeMap = phase == Phase.OPEN_LARGE_MAP || phase == Phase.CAPTURE_LARGE_MAP;
+        if (supportFixtureInstalled(snapshot, jdamId, largeMap)) {
+            return;
+        }
+        FixtureAnchor anchor = fixtureAnchor(minecraft, snapshot);
+        if (anchor == null) {
             return;
         }
         List<SupportOptionView> options = List.of(
@@ -1535,13 +1560,26 @@ public final class UiRuntimeAcceptanceHarness {
                         pavewayId,
                         "support.wok_commander_support.f16c_gbu12_paveway_500lb",
                         "F-16C GBU-12 宝石路 II 500磅精准空袭", "F-16C 宝石路空袭",
-                        SupportTargetMode.POINT, 64.0D,
+                        SupportTargetMode.POINT, PAVEWAY_FIXTURE_RADIUS,
                         true, "", 0L, true));
+        // A 320x240 map cannot hold two mission cards beside an R80 area, so the compact capture
+        // keeps the JDAM call active on another dimension (its button and the active count are
+        // unchanged) and leaves the F-16C zone alone on the map. In each capture the offsets keep
+        // the F-16C rings and labels clear of the JDAM card, the fixed test markers, the scale
+        // bar and the compass.
+        double jdamX = anchor.x() - 20.0D;
+        double jdamZ = anchor.z() - 80.0D;
         SupportMissionView activeJdam = new SupportMissionView(
                 UUID.fromString("a9185f44-0dbd-4b0f-8ba7-d62f4397a14c"),
-                jdamId, Level.OVERWORLD.location(), 80.0D, 80.0D,
-                80.0D, 80.0D, snapshot.support().serverGameTick() + 80L, 5);
-        SupportView support = new SupportView(options, List.of(activeJdam),
+                jdamId, largeMap ? anchor.dimension() : Level.NETHER.location(),
+                jdamX, jdamZ, jdamX, jdamZ, snapshot.support().serverGameTick() + 80L, 5);
+        double pavewayX = anchor.x() + (largeMap ? 0.0D : -48.0D);
+        double pavewayZ = anchor.z() + (largeMap ? 320.0D : -24.0D);
+        SupportMissionView executingPaveway = new SupportMissionView(
+                UUID.fromString("5b0c6f1e-7d42-4f0e-9a51-3c8e2f6d7b19"),
+                pavewayId, anchor.dimension(), pavewayX, pavewayZ, pavewayX, pavewayZ,
+                snapshot.support().serverGameTick(), 40);
+        SupportView support = new SupportView(options, List.of(activeJdam, executingPaveway),
                 snapshot.support().serverGameTick(),
                 snapshot.support().structuralRevision() + 1L, true, "");
         ClientBattleState.update(snapshot.withSupport(support));
@@ -1549,6 +1587,50 @@ public final class UiRuntimeAcceptanceHarness {
             tacticalMapScreen.resize(minecraft, tacticalMapScreen.width,
                     tacticalMapScreen.height);
         }
+    }
+
+    /**
+     * The support fixture matches the current map when the JDAM call sits on the map dimension
+     * for the large capture and off it for the compact one; a server snapshot that replaced the
+     * support view, or a switch between the two map sizes, installs it again.
+     */
+    private static boolean supportFixtureInstalled(BattleSnapshot snapshot,
+                                                   ResourceLocation jdamId, boolean largeMap) {
+        if (snapshot.support().options().stream().noneMatch(option -> option.id().equals(jdamId))) {
+            return false;
+        }
+        return snapshot.support().activeMissions().stream()
+                .filter(mission -> mission.supportId().equals(jdamId))
+                .anyMatch(mission -> mission.dimension().equals(Level.NETHER.location())
+                        != largeMap);
+    }
+
+    /** Both acceptance maps are centred on the commander standing at the deployment base. */
+    private static FixtureAnchor fixtureAnchor(Minecraft minecraft, BattleSnapshot snapshot) {
+        DeploymentPoint point = fixtureDeploymentPoint(snapshot);
+        if (point != null) {
+            return new FixtureAnchor(point.dimension(), point.position().getX() + 0.5D,
+                    point.position().getZ() + 0.5D);
+        }
+        if (minecraft.player != null && minecraft.level != null) {
+            return new FixtureAnchor(minecraft.level.dimension().location(),
+                    minecraft.player.getX(), minecraft.player.getZ());
+        }
+        return null;
+    }
+
+    private static boolean pavewayGuidanceFixtureReady(BattleSnapshot snapshot) {
+        ResourceLocation pavewayId = new ResourceLocation("wok_commander_support",
+                "f16c_gbu12_paveway_500lb");
+        if (snapshot == null || TacticalSupportMapPresentationRegistry.guidanceRadius(pavewayId)
+                .orElse(0.0D) != PAVEWAY_FIXTURE_GUIDANCE_RADIUS) {
+            return false;
+        }
+        boolean outerRadiusMatches = snapshot.support().options().stream()
+                .anyMatch(option -> option.id().equals(pavewayId)
+                        && option.radius() == PAVEWAY_FIXTURE_RADIUS);
+        return outerRadiusMatches && snapshot.support().activeMissions().stream()
+                .anyMatch(mission -> mission.supportId().equals(pavewayId));
     }
 
     private static boolean supportButtonPresent(TacticalMapScreen screen,
@@ -1978,6 +2060,9 @@ public final class UiRuntimeAcceptanceHarness {
         pendingCapture = null;
         renderedCapture = null;
         waitingForCapture = null;
+    }
+
+    private record FixtureAnchor(ResourceLocation dimension, double x, double z) {
     }
 
     private record PendingCapture(String fileName, Screen screen) {

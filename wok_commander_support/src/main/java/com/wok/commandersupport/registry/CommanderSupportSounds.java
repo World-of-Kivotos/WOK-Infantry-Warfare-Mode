@@ -16,6 +16,11 @@ public final class CommanderSupportSounds {
             "jdam_f15_approach", 256.0F);
     public static final RegistryObject<SoundEvent> JDAM_BOMB_TAIL = register(
             "jdam_bomb_tail", 256.0F);
+    /** Reuses the F-15E field recordings at a higher pitch (see sounds.json). */
+    public static final RegistryObject<SoundEvent> PAVEWAY_F16_APPROACH = register(
+            "paveway_f16_approach", 256.0F);
+    public static final RegistryObject<SoundEvent> PAVEWAY_BOMB_TAIL = register(
+            "paveway_bomb_tail", 256.0F);
 
     private CommanderSupportSounds() {
     }

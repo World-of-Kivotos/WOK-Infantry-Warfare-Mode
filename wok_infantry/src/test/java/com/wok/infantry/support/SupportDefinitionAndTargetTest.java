@@ -44,6 +44,25 @@ class SupportDefinitionAndTargetTest {
     }
 
     @Test
+    void legacyConstructorKeepsTheLoadedFootprintRequirement() {
+        SupportDefinition legacy = definition("example", "legacy", SupportTargetMode.POINT);
+        assertTrue(legacy.requiresLoadedFootprint());
+
+        SupportDefinition scan = new SupportDefinition(
+                ResourceLocation.fromNamespaceAndPath("example", "scan"),
+                "support.example.scan", "Scan", "Scan", SupportTargetMode.POINT,
+                12_000L, 0L, 6, 100, 150.0D, false);
+        assertFalse(scan.requiresLoadedFootprint());
+        assertEquals(new SupportDefinition(legacy.id(), legacy.translationKey(),
+                legacy.fallbackName(), legacy.shortName(), legacy.targetMode(),
+                legacy.cooldownTicks(), legacy.inboundTicks(), legacy.stepCount(),
+                legacy.stepIntervalTicks(), legacy.radius(), true), legacy);
+        assertThrows(IllegalArgumentException.class, () -> new SupportDefinition(
+                scan.id(), "key", "Name", "N", SupportTargetMode.POINT,
+                0L, 0L, 1, 0, 0.0D, false));
+    }
+
+    @Test
     void pointAndDirectionalHelpersPreserveFiniteIntent() {
         SupportTarget point = SupportTarget.point(OVERWORLD, 10.25D, -30.5D);
         assertEquals(0.0D, point.length());

@@ -11,6 +11,10 @@
   01:45.800–01:49.300 for `jdam_bomb_tail.ogg`
 - Adaptation: excerpts were trimmed, converted to mono Ogg Vorbis, level
   normalized, filtered and faded for positional game playback.
+- Reuse: the F-16C Paveway sound events `paveway_f16_approach` and
+  `paveway_bomb_tail` play the same two files (`jdam_f15_approach.ogg` and
+  `jdam_bomb_tail.ogg`) at pitch 1.1. They are F-15E recordings, not F-16C
+  recordings, and no additional audio is bundled for them.
 
 The source recordings and their adaptation are included without any suggestion
 of official endorsement.

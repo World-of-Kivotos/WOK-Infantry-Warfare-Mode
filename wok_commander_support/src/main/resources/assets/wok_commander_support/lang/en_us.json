@@ -8,5 +8,7 @@
   "message.wok_commander_support.paveway_guidance_lost": "Paveway guidance lost: retaining the last correction",
   "message.wok_commander_support.paveway_designator_lost": "Paveway guidance link lost",
   "subtitles.wok_commander_support.jdam_f15_approach": "F-15EX roars overhead",
-  "subtitles.wok_commander_support.jdam_bomb_tail": "Heavy bomb blast reverberates"
+  "subtitles.wok_commander_support.jdam_bomb_tail": "Heavy bomb blast reverberates",
+  "subtitles.wok_commander_support.paveway_f16_approach": "F-16C roars overhead",
+  "subtitles.wok_commander_support.paveway_bomb_tail": "Paveway blast reverberates"
 }

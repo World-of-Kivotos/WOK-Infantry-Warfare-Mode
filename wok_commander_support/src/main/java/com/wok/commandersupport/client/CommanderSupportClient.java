@@ -30,5 +30,10 @@ public final class CommanderSupportClient {
         TacticalSupportMapPresentationRegistry.register(
                 WokCommanderSupportMod.F16C_PAVEWAY_ID,
                 TacticalSupportMapPresentation.OFFENSIVE);
+        // The definition radius is the danger area (permit + blast); the map also shows the
+        // smaller zone in which an allied designator must hold the laser spot.
+        TacticalSupportMapPresentationRegistry.registerGuidanceRadius(
+                WokCommanderSupportMod.F16C_PAVEWAY_ID,
+                WokCommanderSupportMod.F16C_PAVEWAY_GUIDANCE_RADIUS);
     }
 }

@@ -5,19 +5,34 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $workspace = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $moduleDirectories = @('.', 'wok_body_health', 'wok_infantry', 'wok_infantry_armor',
     'wok_vehicle_health', 'wok_commander_support', 'wok_capture_points', 'wok_downed')
+# Keep this script ASCII-only: Windows PowerShell 5.1 decodes a BOM-less script with the ANSI
+# code page, so literal Chinese names would be garbled. CHANGELOG product names, \u-escaped:
+# trauma, body health, core, standalone armor, vehicle health, commander support,
+# capture points, downed.
 $productNames = @{
-    wok_trauma = 'WOK步战附属-创伤治疗'
-    wok_body_health = 'WOK步战附属-部位血量'
-    wok_infantry = 'WOK步战核心'
-    wok_infantry_armor = 'WOK步战附属-独立护甲'
-    wok_vehicle_health = 'WOK步战附属-载具部位血量'
-    wok_commander_support = 'WOK步战附属-指挥官支援'
-    wok_capture_points = 'WOK步战附属-占点'
-    wok_downed = 'WOK步战附属-倒地救援'
+    wok_trauma = [regex]::Unescape('WOK\u6b65\u6218\u9644\u5c5e-\u521b\u4f24\u6cbb\u7597')
+    wok_body_health = [regex]::Unescape('WOK\u6b65\u6218\u9644\u5c5e-\u90e8\u4f4d\u8840\u91cf')
+    wok_infantry = [regex]::Unescape('WOK\u6b65\u6218\u6838\u5fc3')
+    wok_infantry_armor = [regex]::Unescape('WOK\u6b65\u6218\u9644\u5c5e-\u72ec\u7acb\u62a4\u7532')
+    wok_vehicle_health = [regex]::Unescape('WOK\u6b65\u6218\u9644\u5c5e-\u8f7d\u5177\u90e8\u4f4d\u8840\u91cf')
+    wok_commander_support = [regex]::Unescape('WOK\u6b65\u6218\u9644\u5c5e-\u6307\u6325\u5b98\u652f\u63f4')
+    wok_capture_points = [regex]::Unescape('WOK\u6b65\u6218\u9644\u5c5e-\u5360\u70b9')
+    wok_downed = [regex]::Unescape('WOK\u6b65\u6218\u9644\u5c5e-\u5012\u5730\u6551\u63f4')
 }
-$readme = Get-Content -Raw -LiteralPath (Join-Path $workspace 'README.md')
-$versioning = Get-Content -Raw -LiteralPath (Join-Path $workspace 'docs/VERSIONING.md')
-$changelog = Get-Content -Raw -LiteralPath (Join-Path $workspace 'CHANGELOG.md')
+# Explicit UTF-8: Windows PowerShell 5.1 would otherwise read BOM-less Markdown as ANSI.
+$readme = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $workspace 'README.md')
+$versioning = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $workspace 'docs/VERSIONING.md')
+$changelog = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $workspace 'CHANGELOG.md')
+
+function Get-WorkspaceRelativePath([string] $Path) {
+    # Windows PowerShell 5.1 runs on .NET Framework, which has no Path.GetRelativePath.
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $root = [System.IO.Path]::GetFullPath($workspace).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $fullPath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Path is outside the workspace: $fullPath"
+    }
+    return $fullPath.Substring($root.Length)
+}
 
 function Read-JarText($Archive, [string] $Name) {
     $entry = $Archive.GetEntry($Name)
@@ -65,15 +80,15 @@ $modules = @(foreach ($directory in $moduleDirectories) {
             throw "Current version table mismatch for $modId $version"
         }
     }
-    $moduleReadme = Get-Content -Raw -LiteralPath (Join-Path $moduleRoot 'README.md')
+    $moduleReadme = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $moduleRoot 'README.md')
     if (-not $moduleReadme.Contains($jarName)) { throw "Module README missing current JAR: $jarName" }
-    $versionHeading = '(?m)^## ' + [regex]::Escape($productNames[$modId]) + ' ' + [regex]::Escape($version) + '(?: — [^\r\n]+)?\r?$'
+    $versionHeading = '(?m)^## ' + [regex]::Escape($productNames[$modId]) + ' ' + [regex]::Escape($version) + '(?: \u2014 [^\r\n]+)?\r?$'
     if ($changelog -notmatch $versionHeading) { throw "CHANGELOG missing current version: $modId $version" }
 
     [pscustomobject]@{
         modId = $modId
         version = $version
-        jar = [System.IO.Path]::GetRelativePath($workspace, $jarPath).Replace('\', '/')
+        jar = (Get-WorkspaceRelativePath $jarPath).Replace('\', '/')
         bytes = (Get-Item -LiteralPath $jarPath).Length
         sha256 = (Get-FileHash -LiteralPath $jarPath -Algorithm SHA256).Hash.ToLowerInvariant()
     }

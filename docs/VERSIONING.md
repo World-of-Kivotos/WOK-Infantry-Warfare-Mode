@@ -7,12 +7,12 @@
 
 | 模块 | 当前版本 | 稳定阶段 |
 | --- | --- | --- |
-| `wok_infantry` | `0.3.0-beta.4` | 基地十五秒补给、兵力值、机枪渐进卧姿；体力条跟随部位血量 HUD；Tactical Mantle 翻越接入体力与断腿限制 |
+| `wok_infantry` | `0.3.0-beta.5` | 基地十五秒补给、兵力值、机枪渐进卧姿；体力条跟随部位血量 HUD；Tactical Mantle 翻越接入体力与断腿限制；支援失败分级与打不出去返还冷却、照射许可内圈；待游戏内验收 |
 | `wok_trauma` | `0.1.0-beta.1` | 黄针共享慢回与延迟副作用；待完整游戏验收 |
 | `wok_body_health` | `0.1.0-beta.9` | 受伤判定修复、数据驱动伤害标签、HUD 重做；人形用原生像素版 M4A1（同 beta.3）；新增断腿查询接口 |
 | `wok_infantry_armor` | `1.2.0-beta.1` | 17 件头部防具按塔科夫原物重做模型；待游戏内外观验收 |
 | `wok_vehicle_health` | `0.1.0-beta.1` | 载具 T 级、方向装甲与反坦克归一化 |
-| `wok_commander_support` | `0.1.0-beta.1` | 侦察卫星、F-15EX 与 F-16C；需核心 0.1.0+ |
+| `wok_commander_support` | `0.1.0-beta.2` | 侦察卫星、F-15EX 与 F-16C；三技能冷却统一 10 分钟，打不出去返还冷却；需核心 0.3.0-beta.5+ |
 | `wok_capture_points` | `0.1.0-alpha.3` | 作战资格过滤；可选核心兵力与新局联动 |
 | `wok_downed` | `0.1.0-alpha.3` | 一血救援、五秒失明与新生命清理；保留姿态/拖行修复 |
 

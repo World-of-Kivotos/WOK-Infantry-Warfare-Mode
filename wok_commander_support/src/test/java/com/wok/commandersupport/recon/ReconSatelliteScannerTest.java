@@ -29,6 +29,8 @@ class ReconSatelliteScannerTest {
         assertEquals(6, definition.stepCount());
         assertEquals(100, definition.stepIntervalTicks());
         assertEquals(150.0D, definition.radius());
+        // The scan reads loaded entities only, so the call is not rejected over unloaded chunks.
+        assertFalse(definition.requiresLoadedFootprint());
     }
 
     @Test

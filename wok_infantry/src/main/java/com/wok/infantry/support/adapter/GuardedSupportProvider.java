@@ -10,6 +10,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Mandatory circuit-breaker wrapper for every registered provider, including direct interface
  * implementations that do not extend {@link AbstractSoftSupportProvider}.
+ *
+ * <p>Only a {@link SupportSpawnException#providerBroken() provider-broken} failure or an
+ * unchecked runtime/linkage fault trips the circuit. Ordinary mission failures (end mission,
+ * not delivered) pass through unchanged and leave the provider usable.</p>
+ *
+ * <p>This wrapper is the only layer that logs a circuit trip, once per provider with the full
+ * stack trace; {@link AbstractSoftSupportProvider} only records its own circuit state.</p>
  */
 public final class GuardedSupportProvider implements SupportProvider {
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -66,16 +73,51 @@ public final class GuardedSupportProvider implements SupportProvider {
     public void executeStep(SupportSpawnContext context) throws SupportSpawnException {
         ProviderAvailability available = availability();
         if (!available.available()) {
-            throw new SupportSpawnException(available.reason());
+            // The delegate was not invoked. Whether an unstarted mission gets its cooldown back
+            // is decided by the scheduler, which checks availability before every step.
+            throw SupportSpawnException.endMission(available.reason());
         }
         try {
             delegate.executeStep(context);
         } catch (SupportSpawnException failure) {
-            String reason = trip("执行失败", failure).reason();
-            throw new SupportSpawnException(reason, failure);
+            if (failure.providerBroken()) {
+                trip(failure);
+            }
+            // Ordinary mission failures keep their message and refund flag untouched.
+            throw failure;
+        } catch (Exception | LinkageError failure) {
+            // Exception also covers checked reflection failures rethrown "sneakily" by a direct
+            // implementation; every such fault is treated as a defective integration.
+            trip("执行异常", failure);
+            throw SupportSpawnException.providerBroken(
+                    SupportSpawnException.PROVIDER_FAULT_MESSAGE, failure, false);
+        }
+    }
+
+    /** Cleanup runs even with a tripped circuit; a failing cleanup is only logged. */
+    @Override
+    public void abandon(SupportSpawnContext context) {
+        try {
+            delegate.abandon(context);
         } catch (RuntimeException | LinkageError failure) {
-            String reason = trip("执行异常", failure).reason();
-            throw new SupportSpawnException(reason, failure);
+            LOGGER.warn("Support provider {} failed to clean up an abandoned mission",
+                    supportId, failure);
+        }
+    }
+
+    private void trip(SupportSpawnException failure) {
+        String message = failure.getMessage();
+        if (failure.getCause() != null
+                && SupportSpawnException.PROVIDER_FAULT_MESSAGE.equals(message)) {
+            // A provider-side conversion of an unchecked fault: show the root fault instead.
+            trip("执行异常", failure.getCause());
+            return;
+        }
+        String summary = message == null || message.isBlank() ? "执行失败" : message;
+        circuitReason = ProviderAvailability.unavailable("适配器已熔断: " + summary).reason();
+        if (failureLogged.compareAndSet(false, true)) {
+            LOGGER.error("Support provider {} tripped its circuit breaker: {}",
+                    supportId, summary, failure);
         }
     }
 
