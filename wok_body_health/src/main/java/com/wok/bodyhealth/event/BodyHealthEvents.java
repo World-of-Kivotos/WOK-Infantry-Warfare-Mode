@@ -9,6 +9,7 @@ import com.wok.bodyhealth.health.BodyPart;
 import com.wok.bodyhealth.health.DamageOutcome;
 import com.wok.bodyhealth.health.HitLocationResolver;
 import com.wok.bodyhealth.health.PendingHitStore;
+import com.wok.bodyhealth.prone.ProneHitService;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.damagesource.DamageSource;
@@ -193,6 +194,12 @@ public final class BodyHealthEvents {
     }
 
     private static BodyPart resolveGenericPart(ServerPlayer player, DamageSource source) {
+        // A prone segment hit this tick by the same projectile (e.g. SBW) already names the part.
+        BodyPart segment = ProneHitService.findPart(
+                player, source.getDirectEntity(), player.level().getGameTime());
+        if (segment != null) {
+            return segment;
+        }
         if (source.is(BodyDamageTags.HEAD_HIT)) {
             return BodyPart.HEAD;
         }

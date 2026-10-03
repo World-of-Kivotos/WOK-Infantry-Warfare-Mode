@@ -6,6 +6,7 @@ import com.tacz.guns.util.HitboxHelper;
 import com.wok.bodyhealth.health.BodyPart;
 import com.wok.bodyhealth.health.HitLocationResolver;
 import com.wok.bodyhealth.health.PendingHitStore;
+import com.wok.bodyhealth.prone.ProneHitService;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.projectile.Projectile;
@@ -27,6 +28,23 @@ public final class TaczCompat {
         }
 
         Entity bulletEntity = event.getBullet();
+        long gameTime = player.level().getGameTime();
+        // A prone segment hit already knows its part; the 0.6 box below would misplace it.
+        BodyPart segment = bulletEntity == null ? null
+                : ProneHitService.findPart(player, bulletEntity, gameTime);
+        if (segment != null) {
+            boolean head = segment == BodyPart.HEAD;
+            if (event.isHeadShot() != head) {
+                // Keeps the flag consistent with the part; the headshot multiplier is untouched.
+                event.setHeadshot(head);
+            }
+            PendingHitStore.record(
+                    player, segment, gameTime, bulletEntity,
+                    event.getDamageSource(GunDamageSourcePart.NON_ARMOR_PIERCING),
+                    event.getDamageSource(GunDamageSourcePart.ARMOR_PIERCING));
+            return;
+        }
+
         AABB taczHitbox;
         Vec3 impact;
         if (bulletEntity instanceof Projectile projectile) {
@@ -45,7 +63,7 @@ public final class TaczCompat {
         BodyPart part = HitLocationResolver.fromHitbox(
                 player, taczHitbox, impact, event.isHeadShot());
         PendingHitStore.record(
-                player, part, player.level().getGameTime(), bulletEntity,
+                player, part, gameTime, bulletEntity,
                 event.getDamageSource(GunDamageSourcePart.NON_ARMOR_PIERCING),
                 event.getDamageSource(GunDamageSourcePart.ARMOR_PIERCING));
     }
