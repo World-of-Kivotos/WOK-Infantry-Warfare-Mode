@@ -1,5 +1,39 @@
 # 更新日志
 
+## WOK步战核心 0.3.0-beta.4 — 2026-10-03
+
+### 新增
+- 可选联动 Tactical Mantle（modId `tacticalmantle`，1.0.2）：翻越改走步战规则。腿部体力低于翻越消耗、疾跑已被体力锁定、处于趴下或爬行姿态（陆地上的游泳姿态），或部位血量判定任一条腿已损毁时，服务端拒绝翻越；翻越成功开始时扣除腿部体力，并重新计算体力恢复延迟。Tactical Mantle 用传送移动玩家，不触发跳跃事件，原先会绕过跳跃体力消耗与断腿限制。
+- 服务端配置 `stamina.legMantleCost`，默认 15（跳跃为 10），范围 0–100。
+### 修改
+- 无。
+### 修复
+- 无。
+### 兼容性
+- 联动通过 mixin 插件按 `tacticalmantle` 是否安装决定是否注入，不装 Tactical Mantle 时不加载相关 mixin；不新增硬依赖。
+- 断腿判定通过反射调用部位血量 0.1.0-beta.5 新增的 `BodyHealthApi.destroyedLegCount`；搭配更早的部位血量版本时只跳过断腿判定，体力与姿态判定照常生效。
+- 已核对与 Tacz-Animation-Additions 1.2.5（modId `locknar_doorkick`）同装：趴下同样使用游泳姿态，因此趴下时不能翻越。
+### 配置/存档影响
+- 服务端配置新增 `stamina.legMantleCost`；旧配置文件会由 Forge 自动补入默认值。存档无影响。
+### 测试结果
+- 生产构建、`reobfJar` 与 313 项 JUnit 通过（`LargeSupplyStationModelContractTest` 在 `core.autocrlf=true` 的新检出中因 `geo.json` 被转为 CRLF 而哈希不符，转回 LF 后通过，与本次改动无关）。
+- 已部署到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`；真实客户端翻越拦截与扣体力尚待游戏内验证。
+
+## WOK步战附属-部位血量 0.1.0-beta.5 — 2026-10-03
+
+### 新增
+- `BodyHealthApi.destroyedLegCount(LivingEntity)`：返回已损毁的腿数（0–2），供绕过跳跃事件的移动方式（如翻越）判定断腿。
+### 修改
+- 无。
+### 修复
+- 无。
+### 兼容性
+- 仅新增接口，原有 API、网络协议与存档键不变；仍可独立安装。
+### 配置/存档影响
+- 无。
+### 测试结果
+- 构建与 JUnit 通过；已部署到步战测试目录，替换 0.1.0-beta.4（旧包已备份为 `.bak`）。
+
 ## WOK步战附属-部位血量 0.1.0-beta.4 — 2026-10-03
 
 ### 新增

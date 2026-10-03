@@ -95,6 +95,15 @@ public final class BodyHealthApi {
         }
     }
 
+    /**
+     * Reflection-friendly bridge for movement gates that bypass the jump
+     * event, such as ledge mantling. Returns 0, 1 or 2.
+     */
+    public static int destroyedLegCount(LivingEntity entity) {
+        return entity instanceof ServerPlayer player
+                ? BodyHealthService.destroyedLegCount(player) : 0;
+    }
+
     public static String lastDamagedPart(LivingEntity entity) {
         if (entity instanceof ServerPlayer player) {
             return BodyHealthData.load(player).lastDamagedPart().name();
