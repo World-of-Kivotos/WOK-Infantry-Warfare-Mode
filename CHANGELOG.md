@@ -19,6 +19,41 @@
 - 生产构建、`reobfJar` 与 313 项 JUnit 通过（`LargeSupplyStationModelContractTest` 在 `core.autocrlf=true` 的新检出中因 `geo.json` 被转为 CRLF 而哈希不符，转回 LF 后通过，与本次改动无关）。
 - 已部署到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`；真实客户端翻越拦截与扣体力尚待游戏内验证。
 
+## WOK步战附属-部位血量 0.1.0-beta.9 — 2026-10-03
+
+### 新增
+- 无（合并版）。
+### 修改
+- 合并两条并行线：包含 0.1.0-beta.5 起的 `BodyHealthApi.destroyedLegCount`（翻越联动用）与 0.1.0-beta.8 的原生像素 M4A1 人形（39×48，1:1 绘制，同 beta.3）。测试端此前的 beta.7 是 256×256 原图人形，本版起改为 beta.8 的人形。
+### 修复
+- 无。
+### 兼容性
+- 公共 API、网络协议与存档键与 beta.7、beta.8 兼容；`body_hud*.png` 为 39×48，与 beta.3、beta.8 相同。
+### 配置/存档影响
+- 无。
+### 测试结果
+- `.\gradlew.bat -p wok_body_health clean build`（TaCZ 1.1.8 仅编译）通过，19 个 JUnit 全部通过；JAR 内 8 张 `body_hud*.png` 与 beta.8 逐字节相同，`BodyHealthApi` 含 `destroyedLegCount`。
+- 已部署到步战测试目录替换 beta.7（旧包备份为 `.bak`）；人形外观以 beta.8 的真实客户端验收 `20261003-m4a1-pixel-beta8` 为准，翻越断腿判定尚待游戏内验证。
+
+## WOK步战附属-部位血量 0.1.0-beta.8 — 2026-10-03
+
+### 新增
+- 无。
+### 修改
+- HUD 人形手上的枪按用户选定恢复为 0.1.0-beta.3 的原生像素版 M4A1：8 张 `body_hud*.png` 恢复为 beta.3 的 39×48 贴图（逐字节相同），以 1:1 绘制；身体仍为改版前持枪姿势。
+- 恢复人形生成脚本 `tools/body_health_hud_icon.ps1` 及其源图（beta.3 版本）。
+### 修复
+- 无。
+### 兼容性
+- `textures/gui/body_hud*.png` 尺寸由 256×256 改为 39×48，与 0.1.0-beta.3 相同；覆盖这些文件的资源包需按新尺寸重做。HUD 布局、读数锚点与体力条位置不变。
+- 版本号跳过 `0.1.0-beta.7`：该号已由并行分支 `claude/翻越联动` 的合并版（Tactical Mantle 联动 + beta.6 原图人形）交付测试端。本版不含 `BodyHealthApi.destroyedLegCount`；与该分支合并后的构建需再升版本。
+### 配置/存档影响
+- 无。
+### 测试结果
+- `.\gradlew.bat -p wok_body_health build`（TaCZ 1.1.8 仅编译）通过，19 个 JUnit 全部通过；JAR 内 8 张 `body_hud*.png` 为 39×48，与 beta.3 逐字节相同。
+- 真实客户端验收 `20261003-m4a1-pixel-beta8`（同装 WOK步战核心 0.3.0-beta.3）PASS：320×240 紧凑、427×240 精简、480×270 与 960×720 完整；与 beta.3 验收 `20261003-m4a1` 的 480×270 截图对比，人形与枪械一致。
+- 未游戏内实测：真实 TaCZ/SBW 枪击部位、PvP 补刀兜底、虚空死亡、重连、断腿跳跃（同 beta.2）。
+
 ## WOK步战附属-部位血量 0.1.0-beta.7 — 2026-10-03
 
 ### 新增

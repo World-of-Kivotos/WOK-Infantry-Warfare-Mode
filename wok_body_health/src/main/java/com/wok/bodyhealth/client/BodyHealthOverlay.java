@@ -20,13 +20,6 @@ import java.util.Map;
 public final class BodyHealthOverlay {
     private static final int FIGURE_WIDTH = BodyHealthHudLayout.FIGURE_WIDTH;
     private static final int FIGURE_HEIGHT = BodyHealthHudLayout.FIGURE_HEIGHT;
-    /**
-     * The figure textures are the original 256x256 art, drawn at its original 3/16 scale:
-     * the 208-texel-wide middle of the texture fills the 39x48 figure box.
-     */
-    private static final int TEXTURE_SIZE = 256;
-    private static final int TEXTURE_REGION_WIDTH = FIGURE_WIDTH * 16 / 3;
-    private static final int TEXTURE_U = (TEXTURE_SIZE - TEXTURE_REGION_WIDTH) / 2;
     // Tactical-board chip colours shared with WOK步战核心's stamina panel.
     private static final int CHIP_FILL = 0xB5121A20;
     private static final int CHIP_BORDER = 0xCC4C5E6B;
@@ -280,8 +273,8 @@ public final class BodyHealthOverlay {
 
     private static void blit(GuiGraphics graphics, ResourceLocation texture, int x, int y) {
         graphics.blit(texture, x, y, FIGURE_WIDTH, FIGURE_HEIGHT,
-                TEXTURE_U, 0.0F, TEXTURE_REGION_WIDTH, TEXTURE_SIZE,
-                TEXTURE_SIZE, TEXTURE_SIZE);
+                0.0F, 0.0F, FIGURE_WIDTH, FIGURE_HEIGHT,
+                FIGURE_WIDTH, FIGURE_HEIGHT);
     }
 
     private static Map<BodyPart, ResourceLocation> createPartTextures() {
@@ -293,8 +286,8 @@ public final class BodyHealthOverlay {
     }
 
     /**
-     * Label rows and leader anchors, in GUI pixels of the 39x48 box, for the
-     * original rifle-holding figure art. It is a front view, so the player's right
+     * Label rows and leader anchors for the 39x48 rifle-holding figure generated
+     * by tools/body_health_hud_icon.ps1. It is a front view, so the player's right
      * arm and leg are on screen left and their labels sit in the left column.
      * Every anchor's 2x2 node lies inside its part's mask.
      */
