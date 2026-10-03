@@ -48,7 +48,11 @@ minecraft {
             }
         }
 
-        client {}
+        // Userdev ignores the JAR manifest. Without TaCZ/SBW the plugin applies nothing; this only proves
+        // the config loads. hudTestClient inherits it from client.
+        client {
+            args '--mixin', 'wok_body_health.mixins.json'
+        }
 
         hudTestClient {
             parent runs.client
@@ -71,7 +75,7 @@ minecraft {
         }
 
         server {
-            args '--nogui'
+            args '--nogui', '--mixin', 'wok_body_health.mixins.json'
         }
     }
 }
@@ -85,6 +89,10 @@ repositories {
 
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    // Prone-hitbox mixins use remap = false with SRG/official member names: no MixinGradle, no refmap.
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    // Compile-only: TaCZ jar-in-jars MixinExtras 0.3.6 at runtime, so only its API may be used.
+    compileOnly(annotationProcessor("io.github.llamalad7:mixinextras-common:0.4.1"))
     testImplementation platform('org.junit:junit-bom:5.10.2')
     testImplementation 'org.junit.jupiter:junit-jupiter'
 
@@ -133,7 +141,8 @@ tasks.named('jar', Jar).configure {
                 'Implementation-Title'    : project.name,
                 'Implementation-Version'  : project.jar.archiveVersion,
                 'Implementation-Vendor'   : mod_authors,
-                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+                'MixinConfigs'            : 'wok_body_health.mixins.json'
         ])
     }
     finalizedBy 'reobfJar'
