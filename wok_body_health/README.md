@@ -2,7 +2,7 @@
 
 面向 Minecraft 1.20.1 / Forge 47.4.22 的七部位血量模组。
 
-当前版本 `0.1.0-beta.5`；产物为 `build/libs/wok_body_health-0.1.0-beta.5.jar`。
+当前版本 `0.1.0-beta.6`；产物为 `build/libs/wok_body_health-0.1.0-beta.6.jar`。
 
 - 头部 35、胸部 85、腹部 70
 - 左右手臂各 60、左右腿各 65
