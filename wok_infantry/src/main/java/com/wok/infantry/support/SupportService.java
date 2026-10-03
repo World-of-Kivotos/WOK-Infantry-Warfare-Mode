@@ -37,6 +37,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.WeakHashMap;
+import java.util.function.Supplier;
 
 /**
  * Server-authoritative commander support scheduler. Optional-mod failures are isolated behind
@@ -115,7 +116,11 @@ public final class SupportService {
         return server;
     }
 
-    /** Atomically validates, consumes cooldown, and enqueues one idempotent support request. */
+    /**
+     * Atomically validates, consumes cooldown, and enqueues one idempotent support request.
+     * A newly accepted mission then gives its provider one
+     * {@link SupportProvider#accepted acceptance cue}; a replayed request id does not.
+     */
     public synchronized ActionResult requestSupport(ServerPlayer actor, UUID requestId,
                                                     ResourceLocation supportId,
                                                     SupportTarget target) {
@@ -249,7 +254,15 @@ public final class SupportService {
                 ? ActionResult.ok("支援呼叫已受理，立即执行")
                 : ActionResult.ok("支援呼叫已受理，预计 "
                 + Math.max(1L, (definition.inboundTicks() + 19L) / 20L) + " 秒后到达");
-        return remember(actor, requestId, supportId, authoritativeTarget, now, accepted);
+        ActionResult result = remember(actor, requestId, supportId, authoritativeTarget, now,
+                accepted);
+        // The cue runs only after the mission is queued and its receipt recorded, so nothing
+        // the provider does here can undo the acceptance, the cooldown or the queued mission.
+        ServerLevel targetLevel = validation.level();
+        UUID acceptedCallId = callId;
+        announceAccepted(provider, supportId, acceptedCallId, () -> new SupportSpawnContext(
+                targetLevel, actor, acceptedCallId, definition, authoritativeTarget, 0, faction));
+        return result;
     }
 
     /** Returns only the viewer's faction cooldowns and missions. */
@@ -592,6 +605,28 @@ public final class SupportService {
         }
         return new StepRun(callbacks,
                 cursor.remainingSteps() <= 0 ? MissionEnd.COMPLETED : null);
+    }
+
+    /**
+     * Gives the provider of a just-accepted mission its single acceptance-time cue. Building the
+     * context and the callback are isolated together: any failure is logged and never revokes
+     * the acceptance, the consumed cooldown or the queued mission. Returns whether the cue ran
+     * without a failure reaching this boundary.
+     */
+    static boolean announceAccepted(SupportProvider provider, ResourceLocation supportId,
+                                    UUID callId, Supplier<SupportSpawnContext> context) {
+        if (provider == null || context == null) {
+            return false;
+        }
+        try {
+            provider.accepted(context.get());
+            return true;
+        } catch (Exception | LinkageError failure) {
+            // Exception also covers a checked failure rethrown "sneakily" by a provider.
+            LOGGER.warn("Support mission {} ({}) could not play its acceptance cue",
+                    callId, supportId, failure);
+            return false;
+        }
     }
 
     /** Core-initiated cancellations refund only while no mission step has completed. */

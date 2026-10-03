@@ -12,6 +12,20 @@ public interface SupportProvider {
     ProviderAvailability availability();
 
     /**
+     * Called exactly once right after a request was accepted: the cooldown is already consumed
+     * and the mission is already queued. {@code context.stepIndex()} is 0, {@code owner} is the
+     * accepting commander and {@code level} is the target dimension.
+     *
+     * <p>This hook is only for acceptance-time cues such as sounds and notices. Implementations
+     * must not place entities, change blocks or read unloaded chunks; the mission itself starts
+     * with {@link #executeStep}. Failures are logged and ignored: they never revoke the
+     * acceptance, return the cooldown, cancel the mission or trip the provider's circuit. A
+     * provider whose circuit has already tripped is not called.</p>
+     */
+    default void accepted(SupportSpawnContext context) {
+    }
+
+    /**
      * Executes one bounded logical step of an accepted mission.
      *
      * <p>Throw {@link SupportSpawnException#endMission} to stop the mission and keep the

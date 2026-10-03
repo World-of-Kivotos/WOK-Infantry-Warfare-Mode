@@ -4,7 +4,19 @@
 
 ## 当前交付范围
 
-核心本身只交付通用支援框架，不内置任何具体支援技能、执行 provider 或第三方 MOD 实体绑定。仅安装核心时，`SupportProviders.createDefault()` 返回冻结的空注册表，因此战术平板显示“支援框架已就绪 / 暂无已注册支援”是正常状态，而不是组件加载失败。安装独立的 `WOK步战附属-指挥官支援` 后，扩展会注册 `wok_commander_support:recon_satellite`、`wok_commander_support:millennium_f15ex_jdam_1000lb` 和 `wok_commander_support:f16c_gbu12_paveway_500lb`；两种空袭的 CBC、卓越前线依赖与执行逻辑完全留在扩展模块内。
+核心本身只交付通用支援框架，不内置任何具体支援技能、执行 provider 或第三方 MOD 实体绑定。仅安装核心时，`SupportProviders.createDefault()` 返回冻结的空注册表，因此战术平板显示“支援框架已就绪 / 暂无已注册支援”是正常状态，而不是组件加载失败。安装独立的 `WOK步战附属-指挥官支援`（0.1.0-beta.3）后，扩展会注册 7 个技能：
+
+| 技能 ID（命名空间 `wok_commander_support`） | 名称 | 地图表现 |
+| --- | --- | --- |
+| `recon_satellite` | 侦察卫星 | 情报 |
+| `recon_drone` | 无人机侦察 | 情报 |
+| `millennium_f15ex_jdam_1000lb` | 千禧年 F-15EX 杰达姆 1000磅空袭 | 攻击 |
+| `f16c_gbu12_paveway_500lb` | F-16C GBU-12 宝石路 II 500磅精准空袭 | 攻击（带照射许可内圈） |
+| `howitzer_3round_barrage` | 三连发榴弹炮击 | 攻击 |
+| `howitzer_105mm_rapid_3round_barrage` | 快速三连发105毫米榴弹炮打击 | 攻击 |
+| `howitzer_105mm_5round_barrage` | 五连发105毫米榴弹炮打击 | 攻击 |
+
+空袭与炮击用到的 CBC、卓越前线依赖，无人机实体，以及全部执行逻辑都留在扩展模块内；各技能的数值、时序和失败处理见该附属的 README。
 
 支援目录由服务端注册表动态生成。安装 `WOK步战核心` 本身不会自动获得炮击、空袭、扫射或其他伤害能力，也不会因发现任意第三方 MOD 而自动注册支援。
 
@@ -21,11 +33,33 @@
 
 重复 ID、定义/provider ID 不一致、游离 provider、越界参数和冻结后的再次写入都会失败关闭。命名空间 ID 最长 128 个字符，是网络包、冷却存档和运行中任务的持久身份；扩展不得依赖列表位置或客户端显示文本作为身份。
 
+`SupportProvider` 的回调一览（除 `supportId`、`availability`、`executeStep` 外都有默认空实现）：
+
+| 回调 | 何时调用 | 用途 |
+| --- | --- | --- |
+| `accepted(context)` | 受理成功后一次（核心 0.3.0-beta.6 起） | 只做受理时的声音和提示，见下文“受理回调” |
+| `executeStep(context)` | 在途时间结束后，每步一次 | 执行任务；失败按下文“失败处理与冷却返还”分类 |
+| `abandon(context)` | 第 0 步执行过之后核心自己取消任务时一次 | 撤回已经放进世界的东西 |
+
 扩展 provider 负责自己的可选依赖、加载顺序、实体构造和实际效果。核心公开边界不得在签名中暴露可选 MOD 的类。所有注册项都会经过核心熔断包装（`GuardedSupportProvider`）；熔断只针对适配器本身损坏，规则见下文“失败处理与冷却返还”。熔断后只关闭对应注册项，并由 `GuardedSupportProvider` 对每个注册项记录一次带完整堆栈的错误（`AbstractSoftSupportProvider` 只记录熔断状态、不另打日志），不生成原版爆炸或其他替代伤害。
 
 无伤害侦察类 provider 可通过 `SupportIntelPublisher` 发布最多 64 个短期接触点。接口会再次校验调用方、支援圆形 footprint、坐标、高度、TTL 和数量；接触点仅合并到调用方阵营快照，不占手工标记额度、不落盘，也不能在客户端手动选择或删除。批次本身不合法（数量、TTL、空目标、超出扫描区或高度）视为适配器缺陷，按不返还的 `providerBroken` 处理；发布者离线、战局服务不可用或发布被拒只结束本次任务。
 
 临时情报属于阵营而不是指挥官本人：`BattleService.publishSupportIntel` 只要求受理阵营没变、目标维度存在且不是 WOK步战等待区或大厅，不要求指挥官当前所在维度等于目标维度。指挥官在侦察期间阵亡进入等待区或换维度，已受理的任务继续刷新目标；不检查发布者是否仍是指挥官，与调度器执行期间只校验阵营一致。`SupportIntelPublisher` 只要求发布者是呼叫者当前在线的会话（玩家列表里该 UUID 对应的那个实例）：停在死亡界面仍算在线（原版在死亡 1 秒后移除尸体实体，所以不能只看 `isRemoved`）；已下线，或调度器拿到的是重生前的旧实体，都按“只结束本次”处理。
+
+## 受理回调 `accepted`
+
+核心 0.3.0-beta.6 起，`SupportProvider` 新增默认空实现的 `accepted(SupportSpawnContext context)`。它让扩展在受理那一刻就给出反馈，而不必等到在途时间结束、第 0 步执行时。例如榴弹炮击在受理时就响第一波炮声，并在这里排好其余各波炮声。
+
+- 调用时机：`SupportService.requestSupport` 在任务放进任务表、受理回执记下之后，返回受理结果之前，调用一次；此时仍持有 `SupportService` 的锁，与调度器调用 `executeStep` 时相同。同一请求 ID 重发（幂等重放）、校验失败、冷却中都不会调用。
+- 上下文：`context.stepIndex()` 为 0；`owner` 是受理时的指挥官；`level` 是目标维度（受理校验已保证与指挥官所在维度相同）；`callId` 与之后 `executeStep` / `abandon` 收到的相同；`faction` 是受理阵营。
+- 只做表现：只用于声音、提示这类受理时的反馈。不得放实体、改方块，也不得读未加载区块（读高度只能用 `getChunkNow` 拿到的已加载区块）；任务本身从 `executeStep` 的第 0 步开始。
+- 异常吞掉：`GuardedSupportProvider.accepted` 在熔断前转发给扩展，`Exception`（含直接实现偷偷抛出的受检异常）和 `LinkageError` 只记 warn，不熔断、不外抛；`SupportService` 自己再兜一层，构造上下文失败同样只记日志。`VirtualMachineError` 照常抛出。
+- 不影响冷却和任务：回调失败不会撤销受理、不返还冷却、不取消任务，也不会让技能停用。
+- 已熔断的 provider 不会收到这个回调。
+- 第 0 步之前核心取消任务（会返还冷却）时不调用 `abandon`，核心目前也没有按 callId 查询任务是否仍在执行的接口。扩展若在 `accepted` 里排了延迟的声音，要自己设过期时间。指挥官支援的炮击给这些炮声加了租约：过了预期的第 0 步时刻 20 tick 还没执行第 0 步，就丢弃剩余炮声；在途期内本该响的炮声仍会照常响。
+
+旧扩展不覆写这个方法时行为不变。
 
 ## 失败处理与冷却返还
 
@@ -123,6 +157,7 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\mods
 - 使用测试扩展注册点目标与方向目标，覆盖注册、排序、权限、目标校验、冷却、幂等、任务预算和存档。
 - 覆盖重复 ID、畸形定义、游离 provider、provider 不可用和执行异常，确认均失败关闭且不产生替代伤害。
 - 分别触发 `endMission`、`notDelivered` 与 `providerBroken`，确认只有后者熔断；第 0 步前返还冷却并收到聊天提示，第 0 步后不返还；管理员中途清除冷却后返还不覆盖管理员结果。
+- 受理回调：受理后立刻有反馈（例如炮击的第一波炮声）；让 `accepted` 抛异常时只有 warn 日志，受理结果、冷却和任务都不受影响，技能也不停用。`SupportService` 中“入表 → 记回执 → `accepted` → 返回”的顺序没有端到端单元测试，需在游戏内确认。
 - 侦察期间让指挥官阵亡进入等待区或换维度，确认红点继续刷新；同时检查红点与手工标记各自至少显示 32 个。
 - 在 320×240 与 960×720 下检查照射许可内圈虚线和标签的清晰度、溢出与重叠。
 - 在完整 MOD 生态中确认 TaCZ 配装和 Superb Warfare 编制载具仍正常，同时确认核心不会自动注册任何支援技能。

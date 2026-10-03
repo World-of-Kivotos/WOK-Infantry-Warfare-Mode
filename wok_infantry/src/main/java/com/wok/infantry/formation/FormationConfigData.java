@@ -239,7 +239,7 @@ public final class FormationConfigData {
         return new FormationDefinition("millennium_seminar_cavalry_corps",
                 "研讨会骑兵军团",
                 "学院军所属的研讨会装甲旅级编制。",
-                FormationCategory.ARMORED, true, 40, defaultCapabilities(),
+                FormationCategory.ARMORED, true, 40, millenniumCavalryCapabilities(),
                 defaultClasses(), defaultSquads(), vehicles);
     }
 
@@ -262,7 +262,20 @@ public final class FormationConfigData {
                 new FormationRespawnPolicy(),
                 new FormationSupportPolicy(FormationSupportPolicy.Mode.ALLOW_LIST,
                         List.of("wok_commander_support:recon_satellite",
+                                "wok_commander_support:recon_drone",
                                 "wok_commander_support:millennium_f15ex_jdam_1000lb",
+                                "wok_commander_support:f16c_gbu12_paveway_500lb")));
+    }
+
+    private static FormationCapabilityProfile millenniumCavalryCapabilities() {
+        return new FormationCapabilityProfile(
+                new FormationDeployablePolicy(),
+                new FormationDeployablePolicy(true, 1, true, true,
+                        100, 480, 480, 480),
+                new FormationRespawnPolicy(),
+                new FormationSupportPolicy(FormationSupportPolicy.Mode.ALLOW_LIST,
+                        List.of("wok_commander_support:recon_satellite",
+                                "wok_commander_support:recon_drone",
                                 "wok_commander_support:f16c_gbu12_paveway_500lb")));
     }
 

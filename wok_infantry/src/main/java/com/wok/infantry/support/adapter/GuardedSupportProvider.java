@@ -69,6 +69,24 @@ public final class GuardedSupportProvider implements SupportProvider {
         }
     }
 
+    /**
+     * Forwards the acceptance cue unless the circuit has tripped. A failing cue is only logged:
+     * it is cosmetic, so it never trips the circuit or reaches the scheduler.
+     */
+    @Override
+    public void accepted(SupportSpawnContext context) {
+        if (circuitReason != null) {
+            return;
+        }
+        try {
+            delegate.accepted(context);
+        } catch (Exception | LinkageError failure) {
+            // Exception also covers checked failures rethrown "sneakily" by a direct
+            // implementation; none of them may escape into an already accepted request.
+            LOGGER.warn("Support provider {} failed its acceptance cue", supportId, failure);
+        }
+    }
+
     @Override
     public void executeStep(SupportSpawnContext context) throws SupportSpawnException {
         ProviderAvailability available = availability();

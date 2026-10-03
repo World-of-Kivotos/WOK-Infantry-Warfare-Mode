@@ -7,8 +7,15 @@ import net.minecraftforge.fml.ModList;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
-/** Optional reflective bridge to Superb Warfare's event-aware custom explosion. */
-final class SuperbWarfareExplosionAdapter {
+/**
+ * Optional reflective bridge to Superb Warfare's event-aware custom explosion.
+ *
+ * <p>Public so the howitzer barrages ({@code com.wok.commandersupport.artillery}) share the same
+ * binding; the signatures only expose vanilla types. Block damage is left to Superb Warfare's own
+ * {@code EXPLOSION_DESTROY} server setting for every caller: the builder default is never
+ * overridden here.</p>
+ */
+public final class SuperbWarfareExplosionAdapter {
     static final String MOD_ID = "superbwarfare";
     static final String BUILDER_CLASS =
             "com.atsuishio.superbwarfare.tools.CustomExplosion$Builder";
@@ -23,7 +30,7 @@ final class SuperbWarfareExplosionAdapter {
     private SuperbWarfareExplosionAdapter() {
     }
 
-    static boolean available() {
+    public static boolean available() {
         if (!ModList.get().isLoaded(MOD_ID)) {
             return false;
         }
@@ -35,14 +42,29 @@ final class SuperbWarfareExplosionAdapter {
         }
     }
 
+    /**
+     * Resolves the binding and the named particle type without exploding anything, so a caller
+     * can find a missing or renamed Superb Warfare API before it delivers any ordnance. A missing
+     * particle constant surfaces as the {@link java.lang.reflect.InvocationTargetException} that
+     * {@link #explode(Entity, Entity, Vec3, float, float, String)} would throw later.
+     */
+    public static void verify(String particleTypeName) throws ReflectiveOperationException {
+        if (particleTypeName == null || particleTypeName.isBlank()) {
+            throw new IllegalArgumentException("Invalid Superb Warfare particle type");
+        }
+        Binding binding = binding();
+        binding.particleType().getMethod("valueOf", String.class)
+                .invoke(null, particleTypeName);
+    }
+
     static void explode(Entity directSource, Entity attacker, Vec3 position)
             throws ReflectiveOperationException {
         explode(directSource, attacker, position, EXPLOSION_DAMAGE,
                 EXPLOSION_RADIUS, PARTICLE_TYPE);
     }
 
-    static void explode(Entity directSource, Entity attacker, Vec3 position,
-                        float damage, float radius, String particleTypeName)
+    public static void explode(Entity directSource, Entity attacker, Vec3 position,
+                               float damage, float radius, String particleTypeName)
             throws ReflectiveOperationException {
         if (!Float.isFinite(damage) || damage <= 0.0F
                 || !Float.isFinite(radius) || radius <= 0.0F

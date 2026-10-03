@@ -42,5 +42,62 @@
         "preload": true
       }
     ]
+  },
+  "howitzer_155_report": {
+    "subtitle": "subtitles.wok_commander_support.howitzer_155_report",
+    "sounds": [
+      {
+        "type": "event",
+        "name": "superbwarfare:plz_05_veryfar",
+        "volume": 20.0
+      }
+    ]
+  },
+  "howitzer_105_report": {
+    "subtitle": "subtitles.wok_commander_support.howitzer_105_report",
+    "sounds": [
+      {
+        "type": "event",
+        "name": "superbwarfare:mk_42_veryfar",
+        "volume": 14.0
+      }
+    ]
+  },
+  "artillery_incoming_cbc": {
+    "subtitle": "subtitles.wok_commander_support.artillery_incoming_cbc",
+    "sounds": [
+      {
+        "type": "event",
+        "name": "createbigcannons:shell_flying"
+      }
+    ]
+  },
+  "artillery_incoming_sbw": {
+    "subtitle": "subtitles.wok_commander_support.artillery_incoming_sbw",
+    "sounds": [
+      {
+        "type": "event",
+        "name": "superbwarfare:shell_fly"
+      }
+    ]
+  },
+  "recon_drone_engine": {
+    "subtitle": "subtitles.wok_commander_support.recon_drone_engine",
+    "sounds": [
+      {
+        "type": "event",
+        "name": "superbwarfare:ju_87_engine"
+      }
+    ]
+  },
+  "recon_drone_destroyed": {
+    "subtitle": "subtitles.wok_commander_support.recon_drone_destroyed",
+    "sounds": [
+      {
+        "type": "event",
+        "name": "superbwarfare:explosion_air",
+        "volume": 16.0
+      }
+    ]
   }
 }

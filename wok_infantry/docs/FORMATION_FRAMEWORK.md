@@ -271,10 +271,14 @@ ID 分为两类：
 | --- | --- | --- |
 | 学院军、凯撒 | `default` | 侦察卫星 `wok_commander_support:recon_satellite`、F-16C `wok_commander_support:f16c_gbu12_paveway_500lb` |
 | 凯撒 | `caesar_234_mechanized` | 侦察卫星、F-16C |
-| 学院军 | `millennium_seminar_cavalry_corps` | 侦察卫星、F-16C |
-| 学院军 | `millennium_seminar_mobile` | 侦察卫星、F-16C，另加专属 F-15EX `wok_commander_support:millennium_f15ex_jdam_1000lb` |
+| 学院军 | `millennium_seminar_cavalry_corps` | 侦察卫星、无人机侦察 `wok_commander_support:recon_drone`、F-16C |
+| 学院军 | `millennium_seminar_mobile` | 侦察卫星、无人机侦察、F-16C，另加专属 F-15EX `wok_commander_support:millennium_f15ex_jdam_1000lb` |
 
-已有 `formations.json` 不会自动补入新 ID。每个支援只有一个全局冷却，编制只决定能否使用，不能按编制改冷却或其他数值。
+核心 0.3.0-beta.6 起，`millennium_seminar_mobile` 的默认白名单加入无人机侦察；`millennium_seminar_cavalry_corps` 不再与 `default` 共用能力配置，改用自己的一份（`outpost`、`rally`、`respawn` 与 `default` 相同，只有支援白名单为上表所列）。两阵营 `default` 与 `caesar_234_mechanized` 不变。
+
+三种榴弹炮击（`howitzer_3round_barrage`、`howitzer_105mm_rapid_3round_barrage`、`howitzer_105mm_5round_barrage`）不在任何默认白名单里：《步战模式公示表》中拥有它们的编制（格赫娜风纪委员、万魔殿、正义实现委员会、圣三一茶话会、凯撒第17装甲作战单元）在代码里都还没有，需要时由管理员加进对应编制的白名单。
+
+已有 `formations.json` 不会自动补入新 ID：老存档要用无人机侦察，需由管理员把 `wok_commander_support:recon_drone` 加进对应编制的 `support.allowList`。每个支援只有一个全局冷却，编制只决定能否使用，不能按编制改冷却或其他数值。
 
 凯撒的 `caesar_234_mechanized` 显示为“234机械化作战单元”，类别为 `mechanized`。其简介为：“凯撒重工是凯撒公司旗下的重型军事生产企业，战争前几乎包揽了整个基沃托斯的军火与军用车辆生产，234机械化作战单元则是其核心作战力量之一。该单元以CV90步兵战车伴随推进，并配备略显过时的豹2A4主战坦克，作战职能偏向机动轻步兵。其装备水平尚可，擅长在复杂战线中进行混战缠斗；但重型载具数量有限、战损补充缓慢，一旦脱离步兵协同或分散投入，便容易失去进攻节奏。”在专属兵种、兵站、重生、支援和徽标另行确认前，该编制沿用源码安全默认能力、四兵种与五小队规则，并配置以下五个独立载具槽位：
 

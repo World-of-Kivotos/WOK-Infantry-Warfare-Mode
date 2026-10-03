@@ -128,6 +128,74 @@ class GuardedSupportProviderTest {
         }
     }
 
+    @Test
+    void acceptedIsForwardedOnceAndDefaultsToANoOp() {
+        AtomicInteger cues = new AtomicInteger();
+        SupportProvider provider = guarded(new CueProvider(cues, null,
+                ProviderAvailability::present, () -> {
+                }));
+
+        provider.accepted(null);
+        assertEquals(1, cues.get());
+
+        SupportProvider silent = guarded(new DirectProvider(
+                ProviderAvailability::present, () -> {
+                }));
+        silent.accepted(null);
+        assertTrue(silent.availability().available());
+    }
+
+    @Test
+    void failingAcceptanceCuesAreOnlyLoggedAndNeverTripTheCircuit()
+            throws SupportSpawnException {
+        for (Throwable failure : new Throwable[]{new IllegalStateException("cue"),
+                new NoClassDefFoundError("optional sound"),
+                new NoSuchFieldException("SOUND")}) {
+            AtomicInteger cues = new AtomicInteger();
+            AtomicInteger executions = new AtomicInteger();
+            SupportProvider provider = guarded(new CueProvider(cues, failure,
+                    ProviderAvailability::present, executions::incrementAndGet));
+
+            provider.accepted(null);
+            provider.accepted(null);
+
+            assertEquals(2, cues.get(), "a failed cue must not disable later cues: " + failure);
+            assertTrue(provider.availability().available(), failure.toString());
+            provider.executeStep(null);
+            assertEquals(1, executions.get(), "the mission must still execute: " + failure);
+        }
+    }
+
+    @Test
+    void trippedProvidersReceiveNoAcceptanceCue() {
+        AtomicInteger brokenStepCues = new AtomicInteger();
+        SupportProvider brokenStep = guarded(new CueProvider(brokenStepCues, null,
+                ProviderAvailability::present, () -> {
+                    throw SupportSpawnException.providerBroken("集成损坏", null, false);
+                }));
+        assertThrows(SupportSpawnException.class, () -> brokenStep.executeStep(null));
+        assertFalse(brokenStep.availability().available());
+        brokenStep.accepted(null);
+        assertEquals(0, brokenStepCues.get());
+
+        AtomicInteger brokenProbeCues = new AtomicInteger();
+        SupportProvider brokenProbe = guarded(new CueProvider(brokenProbeCues, null, () -> {
+            throw new NoClassDefFoundError("optional dependency");
+        }, () -> {
+        }));
+        assertFalse(brokenProbe.availability().available());
+        brokenProbe.accepted(null);
+        assertEquals(0, brokenProbeCues.get());
+    }
+
+    @Test
+    void virtualMachineErrorsFromAcceptanceCuesAreNeverSwallowed() {
+        SupportProvider provider = guarded(new CueProvider(new AtomicInteger(),
+                new SyntheticVmError("synthetic"), ProviderAvailability::present, () -> {
+                }));
+        assertThrows(SyntheticVmError.class, () -> provider.accepted(null));
+    }
+
     private static void assertPassesThrough(SupportSpawnException declared) {
         AtomicInteger executions = new AtomicInteger();
         SupportProvider provider = guarded(new DirectProvider(
@@ -215,6 +283,34 @@ class GuardedSupportProviderTest {
         @Override
         public ProviderAvailability availability() {
             return availabilityAction.run();
+        }
+
+        @Override
+        public void executeStep(SupportSpawnContext context) throws SupportSpawnException {
+            spawnAction.run();
+        }
+    }
+
+    /** Counts acceptance cues and optionally fails them with any throwable. */
+    private record CueProvider(AtomicInteger cues, Throwable cueFailure,
+                               AvailabilityAction availabilityAction,
+                               SpawnAction spawnAction) implements SupportProvider {
+        @Override
+        public ResourceLocation supportId() {
+            return ID;
+        }
+
+        @Override
+        public ProviderAvailability availability() {
+            return availabilityAction.run();
+        }
+
+        @Override
+        public void accepted(SupportSpawnContext context) {
+            cues.incrementAndGet();
+            if (cueFailure != null) {
+                GuardedSupportProviderTest.<RuntimeException>sneakyThrow(cueFailure);
+            }
         }
 
         @Override

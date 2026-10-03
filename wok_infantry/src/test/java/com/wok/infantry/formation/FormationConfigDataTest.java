@@ -75,6 +75,7 @@ class FormationConfigDataTest {
                 + "millennium_seminar_mobile.png", millennium.icon());
         assertEquals(FormationCategory.MECHANIZED, millennium.category());
         assertEquals(List.of("wok_commander_support:recon_satellite",
+                        "wok_commander_support:recon_drone",
                         "wok_commander_support:millennium_f15ex_jdam_1000lb",
                         "wok_commander_support:f16c_gbu12_paveway_500lb"),
                 millennium.capabilities().support().allowList());
@@ -139,6 +140,48 @@ class FormationConfigDataTest {
         assertEquals(2, data.formationsById("default").size());
         assertTrue(data.findFormation("default").isEmpty(),
                 "a formation-only lookup must fail closed when the id is ambiguous");
+    }
+
+    @Test
+    void defaultSupportAllowListsMatchTheCommanderSkillAssignment() {
+        FormationConfigData data = FormationConfigData.defaultConfig();
+        List<String> standard = List.of("wok_commander_support:recon_satellite",
+                "wok_commander_support:f16c_gbu12_paveway_500lb");
+
+        assertSupportAllowList(data, "academy", "default", standard);
+        assertSupportAllowList(data, "caesar", "default", standard);
+        assertSupportAllowList(data, "caesar", "caesar_234_mechanized", standard);
+        assertSupportAllowList(data, "academy", "millennium_seminar_mobile", List.of(
+                "wok_commander_support:recon_satellite",
+                "wok_commander_support:recon_drone",
+                "wok_commander_support:millennium_f15ex_jdam_1000lb",
+                "wok_commander_support:f16c_gbu12_paveway_500lb"));
+        assertSupportAllowList(data, "academy", "millennium_seminar_cavalry_corps", List.of(
+                "wok_commander_support:recon_satellite",
+                "wok_commander_support:recon_drone",
+                "wok_commander_support:f16c_gbu12_paveway_500lb"));
+        assertEquals(5, data.factions().stream()
+                .mapToInt(faction -> faction.formations().size()).sum(),
+                "every default formation must have its allow list asserted above");
+
+        FormationConfigData decoded = GSON.fromJson(GSON.toJson(data),
+                FormationConfigData.class);
+        decoded.normalize();
+        assertTrue(decoded.diagnostics().isEmpty());
+        assertSupportAllowList(decoded, "academy", "millennium_seminar_cavalry_corps",
+                List.of("wok_commander_support:recon_satellite",
+                        "wok_commander_support:recon_drone",
+                        "wok_commander_support:f16c_gbu12_paveway_500lb"));
+    }
+
+    private static void assertSupportAllowList(FormationConfigData data, String factionId,
+                                               String formationId, List<String> expected) {
+        FormationDefinition formation = data.findFormation(factionId, formationId)
+                .orElseThrow();
+        String label = factionId + "/" + formationId;
+        assertEquals(FormationSupportPolicy.Mode.ALLOW_LIST,
+                formation.capabilities().support().mode(), label);
+        assertEquals(expected, formation.capabilities().support().allowList(), label);
     }
 
     @Test
