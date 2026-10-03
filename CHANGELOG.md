@@ -19,6 +19,41 @@
 - 生产构建、`reobfJar` 与 313 项 JUnit 通过（`LargeSupplyStationModelContractTest` 在 `core.autocrlf=true` 的新检出中因 `geo.json` 被转为 CRLF 而哈希不符，转回 LF 后通过，与本次改动无关）。
 - 已部署到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`；真实客户端翻越拦截与扣体力尚待游戏内验证。
 
+## WOK步战附属-部位血量 0.1.0-beta.7 — 2026-10-03
+
+### 新增
+- 无（合并版）。
+### 修改
+- 合并两条并行线：包含 0.1.0-beta.5 的 `BodyHealthApi.destroyedLegCount`（翻越联动用）与 0.1.0-beta.6 的原图人形 HUD。测试端此前装的 beta.5 仍是 4 倍精度 M4A1 人形，本版起改为原图。
+### 修复
+- 无。
+### 兼容性
+- 与 beta.5、beta.6 的公共 API、网络协议与存档键均兼容；`body_hud*.png` 为 256×256 原件。
+### 配置/存档影响
+- 无。
+### 测试结果
+- `.\gradlew.bat -p wok_body_health clean build`（TaCZ 1.1.8 仅编译）通过，19 个 JUnit 全部通过；JAR 内 `body_hud.png` 为 256×256 原件，`BodyHealthApi` 含 `destroyedLegCount`。
+- 已部署到步战测试目录替换 beta.5（旧包备份为 `.bak`）；HUD 与翻越断腿判定尚待真实客户端验收。
+
+## WOK步战附属-部位血量 0.1.0-beta.6 — 2026-10-03
+
+### 新增
+- 无。
+### 修改
+- HUD 人形恢复为改版前的原始持枪方块人贴图（256×256 原件，包括原来的枪和白色部位遮罩），按原来的 3/16 比例、最近邻采样绘制；撤销 beta.3 的原生像素 M4A1 与 beta.4 的 4 倍精度重画。
+- 删除人形生成脚本 `tools/body_health_hud_icon.ps1` 及其源图副本。
+### 修复
+- 无。
+### 兼容性
+- `textures/gui/body_hud*.png` 恢复为 256×256，与 0.1.0-beta.1 及更早版本相同；HUD 布局、读数锚点与体力条位置不变。
+- 版本号跳过 `0.1.0-beta.5`：该号已由并行分支 `claude/翻越联动`（Tactical Mantle 联动，新增 `BodyHealthApi.destroyedLegCount`）交付测试端。本版不含该内容；两条线合并后的构建需再升版本。
+### 配置/存档影响
+- 无。
+### 测试结果
+- `.\gradlew.bat -p wok_body_health clean build`（TaCZ 1.1.8 仅编译）通过，19 个 JUnit 全部通过；JAR 内 8 张 `body_hud*.png` 为 256×256 原件。
+- 真实客户端验收 `20261003-original-figure-beta6`（同装 WOK步战核心 0.3.0-beta.3）PASS：320×240 紧凑、427×240 精简、480×270 与 960×720 完整，人形、读数与体力条无重叠，创造模式隐藏。
+- 未游戏内实测：真实 TaCZ/SBW 枪击部位、PvP 补刀兜底、虚空死亡、重连、断腿跳跃（同 beta.2）。
+
 ## WOK步战附属-部位血量 0.1.0-beta.5 — 2026-10-03
 
 ### 新增

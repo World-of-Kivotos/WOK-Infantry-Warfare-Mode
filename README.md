@@ -11,7 +11,7 @@
 | --- | --- | --- | --- |
 | `wok_infantry` | WOK步战核心 | `0.3.0-beta.4` | `wok_infantry/` |
 | `wok_trauma` | WOK步战附属-创伤治疗 | `0.1.0-beta.1` | 仓库根目录 |
-| `wok_body_health` | WOK步战附属-部位血量 | `0.1.0-beta.5` | `wok_body_health/` |
+| `wok_body_health` | WOK步战附属-部位血量 | `0.1.0-beta.7` | `wok_body_health/` |
 | `wok_infantry_armor` | WOK步战附属-独立护甲 | `1.2.0-beta.1` | `wok_infantry_armor/` |
 | `wok_vehicle_health` | WOK步战附属-载具部位血量 | `0.1.0-beta.1` | `wok_vehicle_health/` |
 | `wok_commander_support` | WOK步战附属-指挥官支援 | `0.1.0-beta.1` | `wok_commander_support/` |
