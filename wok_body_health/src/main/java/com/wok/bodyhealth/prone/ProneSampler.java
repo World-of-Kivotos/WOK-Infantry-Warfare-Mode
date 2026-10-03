@@ -1,6 +1,7 @@
 package com.wok.bodyhealth.prone;
 
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.phys.Vec3;
 
@@ -10,7 +11,7 @@ public final class ProneSampler {
      * @param velocity    TaCZ-style velocity to store with the snapshot
      * @param crawlWeight tracker's crawl weight, 0..1
      * @param bodyYaw     simulated on-screen body yaw
-     * @param prev        the player's previous snapshot, may be null; drives the PRONE heading filter
+     * @param prev        the player's previous snapshot, may be null; drives the heading and aim filters
      */
     public static ProneSample capture(ServerPlayer p, long gameTime, Vec3 velocity, float crawlWeight,
                                       float bodyYaw, ProneSample prev) {
@@ -37,15 +38,19 @@ public final class ProneSampler {
             }
         }
 
-        boolean gun = ProneHitService.isGun(p.getMainHandItem());
+        // NONE snapshots get no layout, so standing players never ask TaCZ about their item.
+        boolean gun = mode != ProneMode.NONE && ProneHitService.isGun(p.getMainHandItem());
         ProneSample draft = new ProneSample(gameTime, p.getX(), p.getY(), p.getZ(),
                 velocity.x, velocity.y, velocity.z, p.getYRot(), p.getXRot(), bodyYaw,
-                mode, taaStart, taaDuration, taaAnchor, taaTarget, bodyYaw, gun, crawlWeight);
+                mode, taaStart, taaDuration, taaAnchor, taaTarget,
+                bodyYaw, Mth.wrapDegrees(p.getYRot() - bodyYaw), gun, crawlWeight);
         if (mode == ProneMode.NONE) {
             return draft;
         }
-        return draft.withTaaHeading(ProneLayouts.heading(
-                draft, prev, ProneHitService.settings(), ProneSegmentTables.shared()));
+        ProneHitSettings cfg = ProneHitService.settings();
+        // The aim is measured against the heading, so the heading goes first.
+        ProneSample headed = draft.withTaaHeading(ProneLayouts.heading(draft, prev, cfg, ProneSegmentTables.shared()));
+        return headed.withTaaAim(ProneLayouts.smoothedAim(headed, prev, cfg));
     }
 
     /** Lying on land: the SWIMMING pose outside water, not riding, gliding or spectating. */

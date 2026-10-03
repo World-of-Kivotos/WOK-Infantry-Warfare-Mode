@@ -6,6 +6,10 @@ import net.minecraft.util.Mth;
 public final class TaaPhaseMath {
     /** Per-tick share of TAA's 0.06 s exponential heading low-pass. */
     public static final double HEADING_ALPHA = 1.0D - Math.exp(-0.05D / 0.06D);
+    /** Per-tick share of {@code Motion.angle}'s 0.1 s exponential aim low-pass. */
+    public static final double AIM_ALPHA = 1.0D - Math.exp(-0.05D / 0.1D);
+    /** {@code Motion.angle} turns at most 540 degrees per second, 27 per tick. */
+    public static final double AIM_MAX_STEP = 540.0D * 0.05D;
 
     public static double smoothstep(double x) {
         double c = Mth.clamp(x, 0.0D, 1.0D);
@@ -46,6 +50,12 @@ public final class TaaPhaseMath {
 
     public static float headingStep(float heading, float anchor) {
         return (float) (heading + Mth.wrapDegrees(anchor - heading) * HEADING_ALPHA);
+    }
+
+    /** One tick of {@code Motion.angle}: chase the target the short way round, capped, then wrap. */
+    public static double aimStep(double aim, double target) {
+        double step = Mth.clamp(Mth.wrapDegrees(target - aim) * AIM_ALPHA, -AIM_MAX_STEP, AIM_MAX_STEP);
+        return Mth.wrapDegrees(aim + step);
     }
 
     private TaaPhaseMath() {

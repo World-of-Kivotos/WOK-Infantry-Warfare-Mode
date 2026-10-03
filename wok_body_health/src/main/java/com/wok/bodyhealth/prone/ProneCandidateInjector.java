@@ -35,7 +35,8 @@ public final class ProneCandidateInjector {
                 return;
             }
             ProneProjectileKind kind = ProneHitService.kindOf(except);
-            if (kind == null) {
+            // A consumer that falls back to its own hitbox keeps its own broad phase as well.
+            if (kind == null || !ProneHitService.segmentedTestLive(kind.consumer())) {
                 return;
             }
             RewindPolicy policy = kind.policy(except);
@@ -43,13 +44,18 @@ public final class ProneCandidateInjector {
                 return;
             }
             ProneHitService.count(ProneHitService.Counter.SCOPED_QUERIES);
+            ProneHitSettings cfg = ProneHitService.settings();
+            if (!cfg.enabled()) {
+                return;
+            }
             Entity shooter = kind.shooter(except);
             List<Entity> list = cir.getReturnValue();
             for (ServerPlayer player : ProneHistoryTracker.activeTargets(serverLevel)) {
-                if (player == except || list.contains(player) || (pred != null && !pred.test(player))) {
+                if (player == except || list.contains(player) || (pred != null && !pred.test(player))
+                        || !ProneHitService.mayReach(player, shooter, policy, cfg, box)) {
                     continue;
                 }
-                AABB reach = ProneHitService.reachBox(player, shooter, policy);
+                AABB reach = ProneHitService.reachBox(player, shooter, policy, cfg);
                 if (reach == null || !reach.intersects(box)) {
                     continue;
                 }

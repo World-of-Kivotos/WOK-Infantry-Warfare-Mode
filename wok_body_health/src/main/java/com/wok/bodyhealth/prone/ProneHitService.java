@@ -53,6 +53,7 @@ public final class ProneHitService {
 
     private static volatile List<ProneProjectileKind> kinds = List.of();
     private static volatile Predicate<ItemStack> gunProbe = stack -> false;
+    private static volatile boolean gunProbeBroken;
     private static volatile boolean bootstrapped;
     private static volatile boolean taczPresent;
     private static volatile boolean sbwPresent;
@@ -129,11 +130,21 @@ public final class ProneHitService {
         gunProbe = probe;
     }
 
-    /** Whether TAA would draw the item as a TaCZ gun; always false without TaCZ. */
+    /**
+     * Whether TAA would draw the item as a TaCZ gun; always false without TaCZ. Asked every tick
+     * for every prone player, so a probe that fails once (e.g. a TaCZ update removed the method)
+     * is replaced for good and the player tick carries on.
+     */
     public static boolean isGun(ItemStack stack) {
         try {
             return stack != null && !stack.isEmpty() && gunProbe.test(stack);
-        } catch (RuntimeException exception) {
+        } catch (RuntimeException | LinkageError exception) {
+            gunProbe = item -> false;
+            if (!gunProbeBroken) {
+                gunProbeBroken = true;
+                LOGGER.warn("Checking for a TaCZ gun failed; prone players are now always laid out "
+                        + "with empty hands.", exception);
+            }
             return false;
         }
     }
@@ -196,7 +207,7 @@ public final class ProneHitService {
         ProneSegmentClip.Selection selection = ProneSegmentClip.select(
                 hits, ProneGeometry.core(s.x(), s.y(), s.z()), occlusion(target.level(), projectile));
         if (selection.occluded() > 0) {
-            COUNTERS.addAndGet(Counter.OCCLUDED_SEGMENTS.ordinal(), selection.occluded());
+            count(Counter.OCCLUDED_SEGMENTS, selection.occluded());
         }
         ProneHitResult result = outcome(c, ProneSegmentClip.toResult(selection));
         debugLog(cfg, c, target, shooter, placed, result);
@@ -219,14 +230,53 @@ public final class ProneHitService {
      * World box containing every point the bullet can hit the target at, computed from the same
      * snapshot and velocity {@link #test} will use; null when the target is not prone there.
      */
-    public static AABB reachBox(ServerPlayer target, Entity shooter, RewindPolicy policy) {
-        ProneHitSettings cfg = settings();
+    public static AABB reachBox(ServerPlayer target, Entity shooter, RewindPolicy policy, ProneHitSettings cfg) {
         if (!cfg.enabled()) {
             return null;
         }
         Placement placed = place(target, shooter, policy, cfg);
         return placed.segments() == null ? null
                 : ProneSegmentClip.reach(placed.segments(), placed.choice().velocity(), policy.shiftFactor());
+    }
+
+    /**
+     * Cheap check before {@link #reachBox}: false only when that box cannot touch {@code query}.
+     * Uses the position and velocity of the snapshot {@link #place} will pick, without sampling or
+     * placing anything, and a radius that holds every layout {@link ProneLayouts#resolve} can build.
+     */
+    static boolean mayReach(ServerPlayer target, Entity shooter, RewindPolicy policy, ProneHitSettings cfg,
+                            AABB query) {
+        ProneHistory history = ProneHistoryTracker.history(target);
+        int index = ProneRewind.index(history, latency(shooter), true, policy);
+        double x;
+        double y;
+        double z;
+        Vec3 velocity;
+        if (index >= 0) {
+            ProneSample s = history.get(index);
+            x = s.x();
+            y = s.y();
+            z = s.z();
+            velocity = s.velocity();
+        } else {
+            // Same as liveSample: the entity position and pos - old.
+            x = target.getX();
+            y = target.getY();
+            z = target.getZ();
+            velocity = new Vec3(x - target.xOld, y - target.yOld, z - target.zOld);
+        }
+        double radius = ProneSegmentClip.reachRadius(ProneLayouts.localReach(cfg, ProneSegmentTables.shared()),
+                cfg.maxMargin(), velocity, policy.shiftFactor());
+        return ProneSegmentClip.mayReach(query, x, y, z, radius);
+    }
+
+    /**
+     * Whether {@code c}'s getHitResult hook can run the segmented test at all. When it cannot
+     * (switched off after repeated failures, HEAD hook missing or disabled by ProneMixinGuard) the
+     * gun mod tests with its own box, so its broad phase must stay unwidened too (spec 13).
+     */
+    static boolean segmentedTestLive(ProneConsumer c) {
+        return !isDisabled(c) && ProneMixinStatus.head(c) && !ProneMixinGuard.off(c.headKey());
     }
 
     /** Part a prone segment test recorded for this bullet this tick, or null. */
@@ -278,6 +328,13 @@ public final class ProneHitService {
         }
     }
 
+    /** Switches every consumer back on; tests only, the game keeps a disabled consumer off until restart. */
+    static void resetFailuresForTests() {
+        for (int i = 0; i < FAILURES.length(); i++) {
+            FAILURES.set(i, 0);
+        }
+    }
+
     /** The rewind choice and the placed segments for it; segments are null when not prone there. */
     record Placement(ProneRewind.Choice choice, ProneLayouts.BodyPose pose, WorldObb[] segments) {
     }
@@ -285,15 +342,19 @@ public final class ProneHitService {
     static Placement place(ServerPlayer target, Entity shooter, RewindPolicy policy, ProneHitSettings cfg) {
         long now = target.level().getGameTime();
         ProneSample live = ProneHistoryTracker.liveSample(target, now);
-        int latency = shooter instanceof ServerPlayer player ? player.latency : -1;
         ProneRewind.Choice choice = ProneRewind.select(ProneHistoryTracker.history(target),
-                live, live.velocity(), latency, true, policy);
+                live, live.velocity(), latency(shooter), true, policy);
         ProneSample s = choice.sample();
         ProneLayouts.BodyPose pose = ProneLayouts.resolve(s, cfg, ProneSegmentTables.shared());
         if (pose == null) {
             return new Placement(choice, null, null);
         }
         return new Placement(choice, pose, ProneGeometry.place(pose, s.x(), s.y(), s.z(), cfg));
+    }
+
+    /** The shooter's ping both gun mods rewind with; -1 (no rewind) unless it is a ServerPlayer. */
+    private static int latency(Entity shooter) {
+        return shooter instanceof ServerPlayer player ? player.latency : -1;
     }
 
     /** A block between a segment hit and the body core hides that segment. */
@@ -350,6 +411,9 @@ public final class ProneHitService {
         String yaw = placed.pose() == null ? "-" : format(placed.pose().yawDeg());
         String turn = s.mode() == ProneMode.TAA_PRONE
                 ? "heading=" + format(s.taaHeading()) : "bodyYaw=" + format(s.bodyYaw());
+        if (s.mode() == ProneMode.TAA_PRONE || s.mode() == ProneMode.TAA_ENTER) {
+            turn += " aim=" + format(s.taaAim());
+        }
         String progress = s.mode().isTaa() && s.mode() != ProneMode.TAA_ASSUMED && s.mode() != ProneMode.TAA_PRONE
                 ? format(ProneLayouts.progress(s, cfg)) : "-";
         LOGGER.info("[prone] {} target={} shooter={} rewind={} mode={} t={} yaw={} {} result={} segment={} part={} "

@@ -10,6 +10,9 @@ public interface ProneProjectileKind {
     /** TaCZ: an {@code EntityKineticBullet}; SBW: a {@code ProjectileEntity}. */
     boolean matches(Entity projectile);
 
+    /** Whose getHitResult hook tests this projectile against prone players. */
+    ProneConsumer consumer();
+
     /** Whose latency the gun mod rewinds with, or null. */
     Entity shooter(Entity projectile);
 

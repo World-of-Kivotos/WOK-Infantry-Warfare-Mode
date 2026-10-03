@@ -30,6 +30,15 @@ public record BodyLayout(LocalObb[] seg) {
         return new BodyLayout(out);
     }
 
+    /** Largest {@link LocalObb#reach} of its boxes. */
+    public double reach() {
+        double reach = 0.0D;
+        for (LocalObb box : seg) {
+            reach = Math.max(reach, box.reach());
+        }
+        return reach;
+    }
+
     /** Copy of this layout moved along the body's forward axis. */
     public BodyLayout shiftF(double df) {
         if (df == 0.0D) {

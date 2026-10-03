@@ -37,6 +37,11 @@ public final class ProneMixinStatus {
         return get("sbw.scope");
     }
 
+    /** The getHitResult HEAD hook of {@code c} is in place. */
+    public static boolean head(ProneConsumer c) {
+        return get(c.headKey());
+    }
+
     public static boolean level() {
         return get("level");
     }

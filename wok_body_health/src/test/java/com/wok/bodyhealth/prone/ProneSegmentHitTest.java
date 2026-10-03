@@ -173,12 +173,15 @@ final class ProneSegmentHitTest {
 
     @Test
     void partsFollowTheSegments() {
-        Vec3 p = Vec3.ZERO;
-        assertEquals(BodyPart.RIGHT_ARM, ProneSegmentClip.partOf(new ProneSegmentClip.SegmentHit(SegmentId.RIGHT_ARM, p, 0, Double.NaN)));
-        assertEquals(BodyPart.LEFT_ARM, ProneSegmentClip.partOf(new ProneSegmentClip.SegmentHit(SegmentId.LEFT_ARM, p, 0, Double.NaN)));
-        assertEquals(BodyPart.RIGHT_LEG, ProneSegmentClip.partOf(new ProneSegmentClip.SegmentHit(SegmentId.RIGHT_LEG, p, 0, Double.NaN)));
-        assertEquals(BodyPart.CHEST, ProneSegmentClip.partOf(new ProneSegmentClip.SegmentHit(SegmentId.TORSO, p, 0, 0.33D)));
-        assertEquals(BodyPart.ABDOMEN, ProneSegmentClip.partOf(new ProneSegmentClip.SegmentHit(SegmentId.TORSO, p, 0, 0.34D)));
+        assertEquals(BodyPart.RIGHT_ARM, partOf(SegmentId.RIGHT_ARM, Double.NaN));
+        assertEquals(BodyPart.LEFT_ARM, partOf(SegmentId.LEFT_ARM, Double.NaN));
+        assertEquals(BodyPart.RIGHT_LEG, partOf(SegmentId.RIGHT_LEG, Double.NaN));
+        assertEquals(BodyPart.CHEST, partOf(SegmentId.TORSO, 0.33D));
+        assertEquals(BodyPart.ABDOMEN, partOf(SegmentId.TORSO, 0.34D));
+    }
+
+    private static BodyPart partOf(SegmentId id, double torsoLambda) {
+        return ProneSegmentClip.partOf(new ProneSegmentClip.SegmentHit(id, Vec3.ZERO, 0, torsoLambda));
     }
 
     private static BodyPart downAt(double f) {

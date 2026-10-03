@@ -24,7 +24,6 @@ final class ProneHitLedgerTest {
 
         assertEquals(BodyPart.LEFT_LEG, ledger.find(A, P, T));
         assertEquals(BodyPart.LEFT_LEG, ledger.find(A, P, T));
-        assertEquals(POINT, ledger.findPoint(A, P, T));
     }
 
     @Test

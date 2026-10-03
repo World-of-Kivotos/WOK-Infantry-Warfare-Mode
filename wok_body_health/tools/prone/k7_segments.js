@@ -1,6 +1,11 @@
-﻿// k7: faithful port of TAA 1.2.5 ProneTacticalAnimationClient (stationary / gait / transition / keepAboveGround)
+// k7: faithful port of TAA 1.2.5 ProneTacticalAnimationClient (stationary / gait / transition / keepAboveGround)
 // to compute hit segments in BODY-LOCAL coords: f = forward along anchor, s = right (+), y = up from feet.
 // Frame: anchor = 0 -> forward = +Z, right = -X.  (MC: forward=(-sin a,0,cos a), right=(-cos a,0,-sin a))
+// Usage, from this directory (TAA_JSON is read in every mode, OUT_JSON only by export):
+//   TAA_JSON=<assets/locknar_doorkick/doorkick_data/prone_tactical_animations.json, unzipped from TAA 1.2.5> \
+//   OUT_JSON=../../src/main/resources/wok_body_health/prone/taa-1.2.5-segments.json node k7_segments.js export
+// Any other mode only prints tables: all (default), steady, pitch, aim, crawl, vanilla, trans, standing, stages,
+// debug.
 'use strict';
 const fs = require('fs');
 const J = JSON.parse(fs.readFileSync(process.env.TAA_JSON, 'utf8'));

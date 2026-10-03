@@ -40,6 +40,7 @@ public final class ProneSegmentTables {
     /** [variant][frame] */
     private final Frame[][] enter;
     private final Frame[][] exit;
+    private final double reachBound;
 
     /** One transition keyframe; {@code prone} is TAA's 0 (upright) to 1 (flat) body blend. */
     public record Frame(double prone, BodyLayout layout) {
@@ -50,6 +51,7 @@ public final class ProneSegmentTables {
         this.crawl = crawl;
         this.enter = enter;
         this.exit = exit;
+        this.reachBound = computeReachBound();
     }
 
     /** Parses and validates a segment table. Every stored box is re-orthogonalised once here. */
@@ -147,6 +149,49 @@ public final class ProneSegmentTables {
     /** EXIT keyframes already carry TAA's (t - 0.24) / 0.76 sample-time remap. */
     public Frame exit(boolean gun, double progress) {
         return interpolate(exit[variant(gun)], progress);
+    }
+
+    /**
+     * Bound on {@link LocalObb#reach} of every box {@link ProneLayouts#resolve} builds from this
+     * table. Blends with weights in [0, 1] that sum to 1 stay within their inputs; a transition adds
+     * at most one whole {@code steady(aim, pitch) - steady(0, 0)} offset to an interpolated keyframe.
+     */
+    public double reachBound() {
+        return reachBound;
+    }
+
+    private double computeReachBound() {
+        double bound = 0.0D;
+        for (boolean gun : new boolean[]{true, false}) {
+            bound = Math.max(bound, crawlEnvelope(gun).reach());
+            BodyLayout neutral = steady(gun, 0.0D, 0.0D);
+            for (SegmentId id : SegmentId.values()) {
+                LocalObb zero = neutral.get(id);
+                double lying = 0.0D;
+                double offset = 0.0D;
+                double growU = 0.0D;
+                double growV = 0.0D;
+                double growW = 0.0D;
+                for (BodyLayout[] row : steady[variant(gun)]) {
+                    for (BodyLayout layout : row) {
+                        LocalObb box = layout.get(id);
+                        lying = Math.max(lying, box.reach());
+                        offset = Math.max(offset, box.c().distanceTo(zero.c()));
+                        growU = Math.max(growU, box.u().length() - zero.u().length());
+                        growV = Math.max(growV, box.v().length() - zero.v().length());
+                        growW = Math.max(growW, box.w().length() - zero.w().length());
+                    }
+                }
+                double keyframe = 0.0D;
+                for (Frame[] frames : new Frame[][]{enter[variant(gun)], exit[variant(gun)]}) {
+                    for (Frame frame : frames) {
+                        keyframe = Math.max(keyframe, frame.layout().get(id).reach());
+                    }
+                }
+                bound = Math.max(bound, Math.max(lying, keyframe + offset + growU + growV + growW));
+            }
+        }
+        return bound;
     }
 
     BodyLayout grid(boolean gun, int aimIndex, int pitchIndex) {

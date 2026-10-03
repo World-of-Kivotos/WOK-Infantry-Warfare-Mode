@@ -40,12 +40,6 @@ public final class ProneHitLedger {
         return entry == null ? null : entry.part();
     }
 
-    /** Recorded entry point, or null; for debug output. */
-    public Vec3 findPoint(UUID target, UUID projectile, long gameTime) {
-        Entry entry = entry(target, projectile, gameTime);
-        return entry == null ? null : entry.point();
-    }
-
     public void clearAll() {
         entries.clear();
         gameTime = Long.MIN_VALUE;

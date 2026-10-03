@@ -1,5 +1,6 @@
 package com.wok.bodyhealth.compat.sbw;
 
+import com.wok.bodyhealth.prone.ProneConsumer;
 import com.wok.bodyhealth.prone.ProneHitService;
 import com.wok.bodyhealth.prone.ProneProjectileKind;
 import com.wok.bodyhealth.prone.RewindPolicy;
@@ -14,6 +15,11 @@ public final class SbwProneKind implements ProneProjectileKind {
     @Override
     public boolean matches(Entity projectile) {
         return SbwAccess.isProjectile(projectile);
+    }
+
+    @Override
+    public ProneConsumer consumer() {
+        return ProneConsumer.SBW;
     }
 
     @Override

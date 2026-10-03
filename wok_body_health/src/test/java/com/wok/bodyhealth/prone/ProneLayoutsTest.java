@@ -17,12 +17,76 @@ final class ProneLayoutsTest {
         b.heading = 30.0F;
         b.anchor = 10.0F;
         b.bodyYaw = -50.0F;
-        b.yRot = 70.0F;
+        b.yRot = 100.0F;
+        b.aim = 40.0F;
         ProneLayouts.BodyPose pose = ProneLayouts.resolve(b.build(), CFG, tables());
 
         assertEquals(30.0F, pose.yawDeg(), 1.0E-6F);
-        // aim = wrap(yRot - heading) = 40, column 22; pitch 0 is row 4.
+        // The smoothed aim 40 has not caught up with the raw 70 yet: column 22; pitch 0 is row 4.
         assertSame(tables().grid(true, 22, 4), pose.layout());
+    }
+
+    @Test
+    void proneAimChasesAViewTurnLikeTaa() {
+        ProneTestSupport.SampleBuilder b = builder(ProneMode.TAA_PRONE);
+        b.yRot = 90.0F;
+        b.aim = 0.0F;
+        // A 90 degree view snap: the first tick is capped at 27, the second closes 1 - e^-0.5 of the rest.
+        float tick1 = ProneLayouts.smoothedAim(b.build(), b.build(), CFG);
+        assertEquals(27.0F, tick1, 1.0E-4F);
+        b.aim = tick1;
+        float tick2 = ProneLayouts.smoothedAim(b.build(), b.build(), CFG);
+        assertEquals(27.0D + 63.0D * (1.0D - Math.exp(-0.5D)), tick2, 1.0E-4D);
+        assertEquals(51.79F, tick2, 0.01F);
+
+        // Smoothed against the heading, not the anchor.
+        b.heading = 30.0F;
+        b.aim = 60.0F;
+        assertEquals(60.0F, ProneLayouts.smoothedAim(b.build(), b.build(), CFG), 1.0E-4F);
+    }
+
+    @Test
+    void aimFilterStartsAtTheTargetWithoutAnEnterOrPronePredecessor() {
+        ProneTestSupport.SampleBuilder draft = builder(ProneMode.TAA_PRONE);
+        draft.yRot = 90.0F;
+        assertEquals(90.0F, ProneLayouts.smoothedAim(draft.build(), null, CFG), 1.0E-4F);
+        for (ProneMode mode : new ProneMode[]{ProneMode.NONE, ProneMode.TAA_REORIENT, ProneMode.TAA_EXIT,
+                ProneMode.TAA_ASSUMED, ProneMode.VANILLA_CRAWL}) {
+            assertEquals(90.0F, ProneLayouts.smoothedAim(draft.build(), builder(mode).build(), CFG), 1.0E-4F,
+                    mode.name());
+        }
+
+        // Entering into lying prone is one continuous filter, as in TAA's shared Motion.
+        ProneTestSupport.SampleBuilder enter = builder(ProneMode.TAA_ENTER);
+        enter.aim = 20.0F;
+        assertEquals(47.0F, ProneLayouts.smoothedAim(draft.build(), enter.build(), CFG), 1.0E-4F);
+
+        // Other modes keep the raw aim against their own heading.
+        ProneTestSupport.SampleBuilder reorient = builder(ProneMode.TAA_REORIENT);
+        reorient.heading = 30.0F;
+        reorient.yRot = 100.0F;
+        assertEquals(70.0F, ProneLayouts.smoothedAim(reorient.build(), draft.build(), CFG), 1.0E-4F);
+    }
+
+    @Test
+    void enterSmoothsTheScaledAim() {
+        ProneTestSupport.SampleBuilder b = builder(ProneMode.TAA_ENTER);
+        b.anchor = 10.0F;
+        b.yRot = 100.0F;
+        b.taaDuration = 20;
+        // t = 0.7: enterAimScale is smoothstep(0.5) = 0.5, so the target is 45.
+        b.gameTime = b.taaStart + 14;
+        assertEquals(45.0F, ProneLayouts.smoothedAim(b.build(), null, CFG), 1.0E-4F);
+        ProneTestSupport.SampleBuilder prev = builder(ProneMode.TAA_ENTER);
+        assertEquals((float) (45.0D * TaaPhaseMath.AIM_ALPHA),
+                ProneLayouts.smoothedAim(b.build(), prev.build(), CFG), 1.0E-4F);
+
+        // The layout takes the stored aim as is.
+        b.xRot = 10.0F;
+        b.aim = 15.0F;
+        b.gameTime = b.taaStart + b.taaDuration;
+        assertLayout(tables().steady(true, 15.0D, 10.0D), ProneLayouts.resolve(b.build(), CFG, tables()).layout(),
+                3.0E-3D);
     }
 
     @Test
@@ -75,6 +139,7 @@ final class ProneLayoutsTest {
         b.yRot = 50.0F;
         b.xRot = 10.0F;
         b.gameTime = b.taaStart + b.taaDuration;
+        b.aim = ProneLayouts.smoothedAim(b.build(), null, CFG);
         ProneLayouts.BodyPose pose = ProneLayouts.resolve(b.build(), CFG, tables());
 
         assertEquals(20.0F, pose.yawDeg(), 1.0E-6F);
@@ -119,12 +184,40 @@ final class ProneLayoutsTest {
         b.bodyYaw = 70.0F;
         b.taaDuration = 15;
         b.gameTime = b.taaStart + 15;
+        b.heading = ProneLayouts.heading(b.build(), null, CFG, tables());
         ProneLayouts.BodyPose end = ProneLayouts.resolve(b.build(), CFG, tables());
         assertEquals(70.0F, end.yawDeg(), 1.0E-4F);
         assertSame(tables().exitFrame(true, 16).layout(), end.layout());
 
         b.gameTime = b.taaStart;
+        b.heading = ProneLayouts.heading(b.build(), null, CFG, tables());
         assertEquals(10.0F, ProneLayouts.resolve(b.build(), CFG, tables()).yawDeg(), 1.0E-4F);
+    }
+
+    @Test
+    void exitHeadingLowPassesLikeTaa() {
+        ProneTestSupport.SampleBuilder draft = builder(ProneMode.TAA_EXIT);
+        draft.anchor = 10.0F;
+        draft.bodyYaw = 70.0F;
+        draft.taaDuration = 15;
+        draft.gameTime = draft.taaStart + 15;
+        draft.heading = 999.0F;
+        ProneTestSupport.SampleBuilder prev = builder(ProneMode.TAA_PRONE);
+        prev.heading = 10.0F;
+
+        float expected = TaaPhaseMath.headingStep(10.0F, 70.0F);
+        assertEquals(expected, ProneLayouts.heading(draft.build(), prev.build(), CFG, tables()), 1.0E-6F);
+        for (ProneMode mode : new ProneMode[]{ProneMode.TAA_ENTER, ProneMode.TAA_EXIT}) {
+            prev.mode = mode;
+            assertEquals(expected, ProneLayouts.heading(draft.build(), prev.build(), CFG, tables()), 1.0E-6F,
+                    mode.name());
+        }
+        // REORIENT leaves TAA's heading clock stale, so the next filter step lands on the target.
+        prev.mode = ProneMode.TAA_REORIENT;
+        assertEquals(70.0F, ProneLayouts.heading(draft.build(), prev.build(), CFG, tables()), 1.0E-4F);
+
+        draft.heading = expected;
+        assertEquals(expected, ProneLayouts.resolve(draft.build(), CFG, tables()).yawDeg(), 1.0E-6F);
     }
 
     @Test
@@ -145,7 +238,7 @@ final class ProneLayoutsTest {
     }
 
     @Test
-    void headingLowPassesOnlyWhileStayingProne() {
+    void proneHeadingLowPassesOnlyWhileStayingProne() {
         ProneTestSupport.SampleBuilder prev = builder(ProneMode.TAA_PRONE);
         prev.heading = 0.0F;
         ProneTestSupport.SampleBuilder draft = builder(ProneMode.TAA_PRONE);

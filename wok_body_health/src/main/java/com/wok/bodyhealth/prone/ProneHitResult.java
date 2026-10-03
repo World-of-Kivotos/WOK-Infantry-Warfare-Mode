@@ -33,10 +33,6 @@ public record ProneHitResult(Kind kind, SegmentId segment, BodyPart part, Vec3 p
         return note == null ? MISS : new ProneHitResult(Kind.MISS, null, null, null, note);
     }
 
-    public static ProneHitResult notApplicable(String note) {
-        return note == null ? NOT_APPLICABLE : new ProneHitResult(Kind.NOT_APPLICABLE, null, null, null, note);
-    }
-
     /** Only the head segment is a headshot. */
     public boolean headshot() {
         return part == BodyPart.HEAD;

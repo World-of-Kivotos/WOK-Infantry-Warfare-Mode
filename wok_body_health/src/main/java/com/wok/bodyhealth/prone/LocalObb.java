@@ -78,6 +78,14 @@ public record LocalObb(Vec3 c, Vec3 u, Vec3 v, Vec3 w) {
         return result != null ? result : this;
     }
 
+    /**
+     * {@code |c| + |u| + |v| + |w|}: no point of the box is further from the origin, even if its
+     * axes end up as unit vectors that are not quite orthogonal.
+     */
+    public double reach() {
+        return c.length() + u.length() + v.length() + w.length();
+    }
+
     /** Moves the box along the body's forward axis. */
     public LocalObb shiftF(double df) {
         return new LocalObb(c.add(df, 0.0D, 0.0D), u, v, w);

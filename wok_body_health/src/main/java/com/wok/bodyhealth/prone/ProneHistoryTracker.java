@@ -39,6 +39,7 @@ public final class ProneHistoryTracker {
     private static final Map<ServerPlayer, TrackerState> STATES = new WeakHashMap<>();
     private static volatile Set<ServerPlayer> active = Set.of();
     private static volatile boolean hasActive;
+    private static boolean recordFailureLogged;
 
     private static final class TrackerState {
         final ProneHistory history = new ProneHistory();
@@ -63,6 +64,19 @@ public final class ProneHistoryTracker {
                 || !(e.player instanceof ServerPlayer p)) {
             return;
         }
+        try {
+            record(p);
+        } catch (Throwable throwable) {
+            // Never fail the player tick: forget this player's snapshots and start afresh next tick.
+            STATES.remove(p);
+            if (!recordFailureLogged) {
+                recordFailureLogged = true;
+                LOGGER.error("Recording a prone snapshot failed; further failures are not logged.", throwable);
+            }
+        }
+    }
+
+    private static void record(ServerPlayer p) {
         if (p.isSpectator()) {
             // TaCZ and SBW drop a spectator's history as well.
             STATES.remove(p);
@@ -80,9 +94,11 @@ public final class ProneHistoryTracker {
         double dx = state.prev1 == null ? 0.0D : pos.x - state.prev1.x;
         double dz = state.prev1 == null ? 0.0D : pos.z - state.prev1.z;
         // Simulated for standing players too: observers see the body turn continuously into prone.
+        // Read the attackAnim field like LivingEntity.tick does; getAttackAnim(1) is still 1.0 on
+        // the tick a swing ends and would pull the body one tick too long.
         state.bodyYaw = Float.isNaN(state.bodyYaw)
                 ? p.getYRot()
-                : BodyYawSim.step(state.bodyYaw, p.getYRot(), dx, dz, p.getAttackAnim(1.0F) > 0.0F);
+                : BodyYawSim.step(state.bodyYaw, p.getYRot(), dx, dz, p.attackAnim > 0.0F);
 
         Vec3 velocity = ProneRewind.velocity2(pos, state.prev1, state.prev2);
         state.prev2 = state.prev1;
@@ -209,7 +225,8 @@ public final class ProneHistoryTracker {
 
     /**
      * Snapshot of the player right now, at hit time. Velocity is {@code pos - (xOld, yOld, zOld)}
-     * like TaCZ and SBW use without a rewind; crawl weight and body yaw come from the tracker.
+     * like TaCZ and SBW use without a rewind; crawl weight and body yaw come from the tracker, and
+     * the heading and aim filters step once more from the newest history entry.
      */
     public static ProneSample liveSample(ServerPlayer p, long gameTime) {
         TrackerState state = STATES.get(p);

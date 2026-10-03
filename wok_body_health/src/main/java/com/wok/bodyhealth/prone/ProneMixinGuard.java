@@ -29,6 +29,12 @@ public final class ProneMixinGuard {
         return anyOff && OFF.contains(key);
     }
 
+    /** Switches every key back on; tests only, the game keeps a failed hook off until restart. */
+    static void resetForTests() {
+        OFF.clear();
+        anyOff = false;
+    }
+
     private ProneMixinGuard() {
     }
 }

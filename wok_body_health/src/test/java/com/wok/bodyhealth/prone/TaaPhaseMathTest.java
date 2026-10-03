@@ -59,6 +59,33 @@ final class TaaPhaseMathTest {
     }
 
     @Test
+    void aimChasesTheTargetAtMostTwentySevenDegreesATick() {
+        double alpha = 1.0D - Math.exp(-0.5D);
+        assertEquals(alpha, TaaPhaseMath.AIM_ALPHA, 1.0E-12D);
+        assertEquals(27.0D, TaaPhaseMath.AIM_MAX_STEP, 1.0E-12D);
+
+        // A 90 degree step: about 27 after one tick (capped), about 52 after two, about 67 after three.
+        double tick1 = TaaPhaseMath.aimStep(0.0D, 90.0D);
+        double tick2 = TaaPhaseMath.aimStep(tick1, 90.0D);
+        double tick3 = TaaPhaseMath.aimStep(tick2, 90.0D);
+        assertEquals(27.0D, tick1, 1.0E-9D);
+        assertEquals(27.0D + 63.0D * alpha, tick2, 1.0E-9D);
+        assertEquals(51.79D, tick2, 0.01D);
+        assertEquals(tick2 + (90.0D - tick2) * alpha, tick3, 1.0E-9D);
+        assertEquals(66.82D, tick3, 0.01D);
+        assertEquals(-27.0D, TaaPhaseMath.aimStep(0.0D, -90.0D), 1.0E-9D);
+
+        // The cap starts at 27 / alpha, about 68.6 degrees of error.
+        assertEquals(68.0D * alpha, TaaPhaseMath.aimStep(0.0D, 68.0D), 1.0E-9D);
+        assertEquals(27.0D, TaaPhaseMath.aimStep(0.0D, 69.0D), 1.0E-9D);
+        assertEquals(40.0D, TaaPhaseMath.aimStep(40.0D, 40.0D), 1.0E-9D);
+
+        // The short way round across the seam, wrapped back into [-180, 180).
+        assertEquals(179.0D + 11.0D * alpha - 360.0D, TaaPhaseMath.aimStep(179.0D, -170.0D), 1.0E-9D);
+        assertEquals(-179.0D - 11.0D * alpha + 360.0D, TaaPhaseMath.aimStep(-179.0D, 170.0D), 1.0E-9D);
+    }
+
+    @Test
     void smoothstepIsClamped() {
         assertEquals(0.0D, TaaPhaseMath.smoothstep(-1.0D), 1.0E-12D);
         assertEquals(0.5D, TaaPhaseMath.smoothstep(0.5D), 1.0E-12D);

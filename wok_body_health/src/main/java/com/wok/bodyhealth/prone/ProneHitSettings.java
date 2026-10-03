@@ -26,4 +26,9 @@ public record ProneHitSettings(boolean enabled, double headMargin, double torsoM
             default -> limbMargin;
         };
     }
+
+    /** Largest of the three margins. */
+    public double maxMargin() {
+        return Math.max(headMargin, Math.max(torsoMargin, limbMargin));
+    }
 }

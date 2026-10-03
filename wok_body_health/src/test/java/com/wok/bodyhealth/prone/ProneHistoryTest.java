@@ -78,6 +78,26 @@ final class ProneHistoryTest {
     }
 
     @Test
+    void indexIsTheSnapshotSelectPicks() {
+        ProneHistory history = new ProneHistory();
+        for (int i = 1; i <= 5; i++) {
+            history.push(sample(i));
+        }
+        RewindPolicy[] policies = {new RewindPolicy(true, 3.0D, 20), new RewindPolicy(true, 3.0D, 3),
+                new RewindPolicy(false, 3.0D, 20)};
+        for (RewindPolicy policy : policies) {
+            for (int latency : new int[]{-1, 0, 24, 25, 120, 1000}) {
+                for (ProneHistory h : new ProneHistory[]{history, new ProneHistory(), null}) {
+                    for (boolean serverPlayer : new boolean[]{true, false}) {
+                        assertEquals(ProneRewind.select(h, LIVE, LIVE_VELOCITY, latency, serverPlayer, policy).index(),
+                                ProneRewind.index(h, latency, serverPlayer, policy));
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     void velocityIsTheTwoTickDisplacement() {
         Vec3 p0 = new Vec3(1.0D, 64.0D, 1.0D);
         Vec3 p1 = new Vec3(1.2D, 64.0D, 1.1D);
@@ -105,6 +125,6 @@ final class ProneHistoryTest {
         b.gameTime = gameTime;
         b.x = gameTime * 0.1D;
         return new ProneSample(b.gameTime, b.x, b.y, b.z, gameTime * 0.01D, 0.0D, 0.0D, b.yRot, b.xRot,
-                b.bodyYaw, b.mode, b.taaStart, b.taaDuration, b.anchor, b.target, b.heading, b.gun, b.crawl);
+                b.bodyYaw, b.mode, b.taaStart, b.taaDuration, b.anchor, b.target, b.heading, b.aim, b.gun, b.crawl);
     }
 }

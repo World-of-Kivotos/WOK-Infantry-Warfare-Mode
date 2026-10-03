@@ -80,12 +80,13 @@ final class ProneTestSupport {
         float anchor;
         float target;
         float heading;
+        float aim;
         boolean gun = true;
         float crawl;
 
         ProneSample build() {
             return new ProneSample(gameTime, x, y, z, 0.0D, 0.0D, 0.0D, yRot, xRot, bodyYaw,
-                    mode, taaStart, taaDuration, anchor, target, heading, gun, crawl);
+                    mode, taaStart, taaDuration, anchor, target, heading, aim, gun, crawl);
         }
     }
 

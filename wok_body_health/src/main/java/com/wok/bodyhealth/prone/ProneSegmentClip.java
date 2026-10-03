@@ -118,15 +118,43 @@ public final class ProneSegmentClip {
         return new AABB(minX, minY, minZ, maxX, maxY, maxZ).inflate(REACH_PADDING);
     }
 
+    /**
+     * Distance from the snapshot position within which {@link #reach} stays, for any layout whose
+     * boxes have {@link LocalObb#reach} at most {@code localReach}. A box axis is a unit world vector,
+     * so a corner lies at most |c| plus its three local offsets away, and each offset is at most the
+     * half length plus {@code margin} plus |v| * max(|k|, |k + 1|) from the sweep and the move.
+     *
+     * @param margin the largest per-segment margin
+     */
+    public static double reachRadius(double localReach, double margin, Vec3 velocity, double shiftFactor) {
+        double sweep = velocity.length() * Math.max(Math.abs(shiftFactor), Math.abs(shiftFactor + 1.0D));
+        return localReach + 3.0D * (Math.max(0.0D, margin) + sweep) + 2.0D * REACH_PADDING;
+    }
+
+    /**
+     * False only when the cube of half size {@code radius} around (x, y, z) misses {@code query},
+     * so no reach box within that radius can intersect it. A NaN anywhere never rules a target out.
+     */
+    public static boolean mayReach(AABB query, double x, double y, double z, double radius) {
+        return !(query.minX - x > radius || x - query.maxX > radius
+                || query.minY - y > radius || y - query.maxY > radius
+                || query.minZ - z > radius || z - query.maxZ > radius);
+    }
+
     public static BodyPart partOf(SegmentHit hit) {
         return switch (hit.id()) {
             case HEAD -> BodyPart.HEAD;
-            case TORSO -> hit.torsoLambda() < CHEST_LIMIT ? BodyPart.CHEST : BodyPart.ABDOMEN;
+            case TORSO -> isChest(hit.torsoLambda()) ? BodyPart.CHEST : BodyPart.ABDOMEN;
             case RIGHT_ARM -> BodyPart.RIGHT_ARM;
             case LEFT_ARM -> BodyPart.LEFT_ARM;
             case RIGHT_LEG -> BodyPart.RIGHT_LEG;
             case LEFT_LEG -> BodyPart.LEFT_LEG;
         };
+    }
+
+    /** Chest/abdomen split of a torso lambda (neck = -1, hips = +1); shared with the debug overlay. */
+    static boolean isChest(double torsoLambda) {
+        return torsoLambda < CHEST_LIMIT;
     }
 
     /** {@code AABB(-h..h).expandTowards(v).move(v * k)} in the segment's own frame. */

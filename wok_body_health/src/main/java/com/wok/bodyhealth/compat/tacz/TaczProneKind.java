@@ -5,6 +5,7 @@ import com.tacz.guns.api.item.IGun;
 import com.tacz.guns.config.common.OtherConfig;
 import com.tacz.guns.entity.EntityKineticBullet;
 import com.tacz.guns.util.HitboxHelper;
+import com.wok.bodyhealth.prone.ProneConsumer;
 import com.wok.bodyhealth.prone.ProneHistory;
 import com.wok.bodyhealth.prone.ProneHitService;
 import com.wok.bodyhealth.prone.ProneProjectileKind;
@@ -46,6 +47,11 @@ public final class TaczProneKind implements ProneProjectileKind {
     @Override
     public boolean matches(Entity projectile) {
         return isBullet(projectile);
+    }
+
+    @Override
+    public ProneConsumer consumer() {
+        return ProneConsumer.TACZ;
     }
 
     @Override

@@ -14,6 +14,7 @@ public final class VanillaCrawlLayout {
             LocalObb.ofExtents(-1.009D, -0.261D, -0.006D, 0.229D, -0.020D, 0.620D), // RIGHT_LEG
             LocalObb.ofExtents(-1.009D, -0.261D, -0.229D, 0.006D, -0.020D, 0.620D)  // LEFT_LEG
     });
+    private static final double REACH = ENVELOPE.reach();
 
     /**
      * @param forwardShift added to every f; -0.4 matches tacz-tweaks' {@code crawl.visualTweak}
@@ -21,6 +22,11 @@ public final class VanillaCrawlLayout {
      */
     public static BodyLayout envelope(double forwardShift) {
         return ENVELOPE.shiftF(forwardShift);
+    }
+
+    /** Bound on {@link BodyLayout#reach} of {@link #envelope}; the shift moves every centre by at most its size. */
+    public static double reach(double forwardShift) {
+        return REACH + Math.abs(forwardShift);
     }
 
     private VanillaCrawlLayout() {

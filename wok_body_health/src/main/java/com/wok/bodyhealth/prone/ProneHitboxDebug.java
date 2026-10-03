@@ -3,8 +3,10 @@ package com.wok.bodyhealth.prone;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.logging.LogUtils;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
@@ -17,6 +19,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import org.joml.Vector3f;
+import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -31,11 +34,11 @@ import java.util.UUID;
  * output, not player UI, so feedback is plain literal text.
  */
 public final class ProneHitboxDebug {
+    private static final Logger LOGGER = LogUtils.getLogger();
     private static final int DEFAULT_SECONDS = 10;
     private static final int DRAW_INTERVAL_TICKS = 2;
     private static final int POINTS_PER_EDGE = 4;
     private static final float DUST_SCALE = 0.4F;
-    private static final double CHEST_LIMIT = 1.0D / 3.0D;
     private static final Vector3f HEAD = new Vector3f(1.0F, 0.1F, 0.1F);
     private static final Vector3f CHEST = new Vector3f(1.0F, 0.55F, 0.0F);
     private static final Vector3f ABDOMEN = new Vector3f(1.0F, 0.95F, 0.1F);
@@ -50,6 +53,7 @@ public final class ProneHitboxDebug {
 
     /** One drawing per viewer; server thread only. */
     private static final Map<UUID, Session> SESSIONS = new HashMap<>();
+    private static boolean drawFailureLogged;
 
     private record Session(UUID target, long untilTick, int rewindTicks) {
     }
@@ -59,20 +63,20 @@ public final class ProneHitboxDebug {
     }
 
     private static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        // show <player> [seconds [rewindTicks]]
+        RequiredArgumentBuilder<CommandSourceStack, Integer> seconds = Commands.argument("seconds",
+                        IntegerArgumentType.integer(1, 120))
+                .executes(context -> show(context, IntegerArgumentType.getInteger(context, "seconds"), -1))
+                .then(Commands.argument("rewindTicks", IntegerArgumentType.integer(0, ProneHistory.CAPACITY - 1))
+                        .executes(context -> show(context, IntegerArgumentType.getInteger(context, "seconds"),
+                                IntegerArgumentType.getInteger(context, "rewindTicks"))));
         dispatcher.register(Commands.literal("wokbodyhealth")
                 .requires(source -> source.hasPermission(2))
                 .then(Commands.literal("prone_hitbox")
                         .then(Commands.literal("show")
                                 .then(Commands.argument("player", EntityArgument.player())
                                         .executes(context -> show(context, DEFAULT_SECONDS, -1))
-                                        .then(Commands.argument("seconds", IntegerArgumentType.integer(1, 120))
-                                                .executes(context -> show(context,
-                                                        IntegerArgumentType.getInteger(context, "seconds"), -1))
-                                                .then(Commands.argument("rewindTicks",
-                                                                IntegerArgumentType.integer(0, ProneHistory.CAPACITY - 1))
-                                                        .executes(context -> show(context,
-                                                                IntegerArgumentType.getInteger(context, "seconds"),
-                                                                IntegerArgumentType.getInteger(context, "rewindTicks")))))))
+                                        .then(seconds)))
                         .then(Commands.literal("log")
                                 .then(Commands.argument("enabled", BoolArgumentType.bool())
                                         .executes(ProneHitboxDebug::log)))
@@ -143,17 +147,32 @@ public final class ProneHitboxDebug {
         Iterator<Map.Entry<UUID, Session>> iterator = SESSIONS.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<UUID, Session> entry = iterator.next();
-            Session session = entry.getValue();
-            ServerPlayer viewer = server.getPlayerList().getPlayer(entry.getKey());
-            ServerPlayer target = server.getPlayerList().getPlayer(session.target());
-            if (viewer == null || target == null || now > session.untilTick()) {
+            try {
+                if (!drawSession(server, now, entry.getKey(), entry.getValue())) {
+                    iterator.remove();
+                }
+            } catch (Throwable throwable) {
+                // A debug drawing must never fail the server tick: end this session only.
                 iterator.remove();
-                continue;
-            }
-            if (viewer.serverLevel() == target.serverLevel()) {
-                draw(viewer, target, session.rewindTicks());
+                if (!drawFailureLogged) {
+                    drawFailureLogged = true;
+                    LOGGER.error("Drawing prone segments failed; the session was ended.", throwable);
+                }
             }
         }
+    }
+
+    /** Draws one session's segments; false once the session has ended. */
+    private static boolean drawSession(MinecraftServer server, long now, UUID viewerId, Session session) {
+        ServerPlayer viewer = server.getPlayerList().getPlayer(viewerId);
+        ServerPlayer target = server.getPlayerList().getPlayer(session.target());
+        if (viewer == null || target == null || now > session.untilTick()) {
+            return false;
+        }
+        if (viewer.serverLevel() == target.serverLevel()) {
+            draw(viewer, target, session.rewindTicks());
+        }
+        return true;
     }
 
     static void reset() {
@@ -192,12 +211,13 @@ public final class ProneHitboxDebug {
         }
     }
 
-    /** Torso points above the chest/abdomen split (a third of the way from neck to hips) are chest. */
+    /** Torso points are coloured by the same chest/abdomen split the hit test uses. */
     private static Vector3f color(WorldObb segment, Vec3 point) {
         return switch (segment.id()) {
             case HEAD -> HEAD;
             case TORSO -> segment.torsoHalfLength() > 0.0D
-                    && segment.toLocal(point).y / segment.torsoHalfLength() < CHEST_LIMIT ? CHEST : ABDOMEN;
+                    && ProneSegmentClip.isChest(segment.toLocal(point).y / segment.torsoHalfLength())
+                    ? CHEST : ABDOMEN;
             case RIGHT_ARM, LEFT_ARM -> ARM;
             case RIGHT_LEG, LEFT_LEG -> LEG;
         };

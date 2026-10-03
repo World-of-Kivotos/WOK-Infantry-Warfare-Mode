@@ -1,11 +1,17 @@
 package com.wok.bodyhealth.prone;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ProneMixinGuardTest {
+    @AfterEach
+    void resetGuard() {
+        ProneMixinGuard.resetForTests();
+    }
+
     @Test
     void aFailureSwitchesOnlyItsOwnKeyOff() {
         String failing = "test.guard.failing";

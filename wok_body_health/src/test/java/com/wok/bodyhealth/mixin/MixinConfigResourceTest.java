@@ -82,7 +82,8 @@ final class MixinConfigResourceTest {
             for (boolean sbw : states) {
                 assertEquals(tacz, WokBodyHealthMixinPlugin.decide(PACKAGE + "tacz.TaczEntityUtilMixin", tacz, sbw));
                 assertEquals(sbw, WokBodyHealthMixinPlugin.decide(PACKAGE + "sbw.SbwProjectileEntityMixin", tacz, sbw));
-                assertEquals(tacz || sbw, WokBodyHealthMixinPlugin.decide(PACKAGE + "LevelGetEntitiesMixin", tacz, sbw));
+                assertEquals(tacz || sbw,
+                        WokBodyHealthMixinPlugin.decide(PACKAGE + "LevelGetEntitiesMixin", tacz, sbw));
                 assertFalse(WokBodyHealthMixinPlugin.decide(PACKAGE + "SomethingElseMixin", tacz, sbw));
             }
         }
@@ -93,7 +94,8 @@ final class MixinConfigResourceTest {
         System.setProperty(WokBodyHealthMixinPlugin.DISABLE_PROPERTY, "true");
         WokBodyHealthMixinPlugin plugin = new WokBodyHealthMixinPlugin();
         assertFalse(plugin.shouldApplyMixin(WokBodyHealthMixinPlugin.LEVEL_TARGET, PACKAGE + "LevelGetEntitiesMixin"));
-        assertFalse(plugin.shouldApplyMixin(WokBodyHealthMixinPlugin.TACZ_TARGET, PACKAGE + "tacz.TaczEntityUtilMixin"));
+        assertFalse(plugin.shouldApplyMixin(WokBodyHealthMixinPlugin.TACZ_TARGET,
+                PACKAGE + "tacz.TaczEntityUtilMixin"));
     }
 
     @Test

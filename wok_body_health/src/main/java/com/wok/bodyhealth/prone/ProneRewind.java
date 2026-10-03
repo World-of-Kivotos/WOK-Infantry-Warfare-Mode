@@ -31,15 +31,23 @@ public final class ProneRewind {
      */
     public static Choice select(ProneHistory h, ProneSample live, Vec3 liveVelocity,
                                 int shooterLatencyMs, boolean targetIsServerPlayer, RewindPolicy p) {
+        int index = index(h, shooterLatencyMs, targetIsServerPlayer, p);
+        if (index < 0) {
+            return new Choice(live, liveVelocity, -1);
+        }
+        ProneSample sample = h.get(index);
+        return new Choice(sample, sample.velocity(), index);
+    }
+
+    /** History index {@link #select} picks, or -1 for the live sample; same parameters. */
+    public static int index(ProneHistory h, int shooterLatencyMs, boolean targetIsServerPlayer, RewindPolicy p) {
         if (h != null && p.latencyCompensation() && targetIsServerPlayer && shooterLatencyMs >= 0) {
             int usable = Math.min(h.size(), p.maxSaveTicks());
             if (usable > 0) {
-                int index = Mth.clamp(rewindTicks(shooterLatencyMs), 0, usable - 1);
-                ProneSample sample = h.get(index);
-                return new Choice(sample, sample.velocity(), index);
+                return Mth.clamp(rewindTicks(shooterLatencyMs), 0, usable - 1);
             }
         }
-        return new Choice(live, liveVelocity, -1);
+        return -1;
     }
 
     private ProneRewind() {

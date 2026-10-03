@@ -1,5 +1,38 @@
 # 更新日志
 
+## WOK步战附属-部位血量 0.1.0-beta.10 — 2026-10-04
+
+### 新增
+- 趴姿分段命中：趴下或爬行（陆地上的游泳姿态）的玩家被 TaCZ 子弹（`EntityUtil.getHitResult`）或卓越前线（SBW）子弹（`ProjectileEntity.getHitResult`）射击时，改按头、躯干、左右臂、左右腿六段模型逐段求交，命中部位直接取自最先打中的段，躯干按位置分胸、腹。只有头段算爆头：TaCZ 的爆头倍率、SBW 的爆头伤害类型与音效都只在头段触发；SBW 打中腿段时默认沿用 SBW 的腿部命中效果。
+- 模型取自 Tacz-Animation-Additions 1.2.5（TAA）的趴姿动画：稳态按视线相对身体的水平角与俯仰角查表插值，持 TaCZ 枪与空手各一套，爬行时四肢改用划动包络。身体朝向读 TAA 的趴姿状态；没有 TAA 状态时（例如一格缝原版爬行），按原版规则在服务端模拟画面上的身体朝向，不读服务端的 `yBodyRot`。视线相对身体的水平角在趴下和趴稳时与 TAA 客户端一样低通平滑（τ = 0.1 s，每 tick 最多转 27°），趴稳和起身时的身体朝向同样按 TAA 的低通跟随。
+- 趴下与起身过渡按 17 帧关键帧插值，过渡初期站着的上半身仍可被打中；趴着转身按 TAA 的转身公式过渡。
+- 延迟补偿：自行保存每名玩家最近 100 tick（5 秒）的趴姿快照；可回溯的条数 TaCZ 取其 `SAVE_TICK`（默认 20，最多 100），SBW 固定 20；回溯下标、速度修正与平移量逐条对齐 TaCZ、SBW 各自的规则。
+- 方块遮挡：命中点与碰撞箱中心之间隔着方块时丢弃该段、继续看下一段，伸出墙、门、栅栏外的模型部分不能被隔墙打中。
+- 同一发子弹对同一目标只命中一次，穿透弹顺着身体打不会重复结算。
+- 粗筛补充：TaCZ、SBW 用目标当前的 0.6 格盒外扩 1 格挑选候选，过渡期和高延迟回溯时会漏掉伸出的头脚。现在只在这两个模组的子弹寻敌方法内、对第一次 `Level.getEntities` 查询补入模型可达范围与搜索范围相交的趴姿玩家；爆炸、测距等其他查询不补。
+- 调试命令 `/wokbodyhealth prone_hitbox show <玩家> [秒数 [回溯tick]]`、`log <true|false>`、`stats`，需要权限等级 2；`show` 用粒子画出各段判定盒，只发给执行者。
+- 说明文档 `wok_body_health/docs/PRONE_HITBOX.md`：判定方式、配置、调试命令、回退方式、待确认默认值与游戏内验收清单。
+### 修改
+- TaCZ 枪伤（`EntityHurtByGunEvent.Pre`）与通用伤害的部位判定先查本 tick 的趴姿命中记录（目标、子弹、游戏刻三者都相同才算匹配），查到就用该部位，并按是否头段校正 TaCZ 的爆头标记；查不到时沿用原逻辑。命中记录与 `PendingHitStore` 的配对方式不变，独立护甲的护甲部位接口不变。
+- 平衡：趴着的玩家比 beta.9 更容易被打中，这是有意的变化；背上方的空气不再算命中。
+- 移动碰撞箱、姿态与 `getBoundingBox()` 均不改动。
+### 修复
+- 趴下的玩家只用 0.6 格高的移动碰撞箱参与子弹判定，而第三人称模型约 1.9 格长：打脚、头和前伸的手臂会穿模打空，打背上方的空气反而命中，命中部位也常与画面不符。
+### 兼容性
+- `mods.toml` 新增可选依赖卓越前线（`superbwarfare`）与 TAA（`locknar_doorkick`），版本不限；TaCZ 仍为可选依赖。仍可单独安装，不新增硬依赖。
+- 新增 mixin 配置 `wok_body_health.mixins.json`，含 `tacz.TaczEntityUtilMixin`、`sbw.SbwProjectileEntityMixin`、`LevelGetEntitiesMixin` 三个 mixin，由插件按 TaCZ、SBW 是否安装决定是否应用；两者都没装时一个也不应用，也不注册趴姿相关的事件和命令。配置为 `required=false`，注入失败只记日志、不崩溃；启动日志逐项输出 `Injected …` 或 `Injection MISSING: …`，开服时再输出一行汇总。
+- MixinExtras 由 TaCZ 自带；SBW 私有成员通过反射访问，失败时只关闭 SBW 部分；TAA 状态读取失败时退化为按稳态模型判定。任一判定出错都退回原判定，同一模组的判定累计出错 20 次后关闭到重启。消费方关闭或命中判定注入缺失、出错被关闭时，该模组的粗筛补充同步停止；TaCZ 枪械识别、快照记录或调试绘制出错只记日志，不中断玩家 tick 和服务端 tick。
+- 紧急开关：JVM 参数 `-Dwok.bodyhealth.disableProneMixins=true` 不应用任何趴姿 mixin；也可在配置中关闭 `enableSegmentedProneHitbox`，关闭后与 beta.9 判定相同。
+- 与已有注入共存：taczexpands 的近炸补判（分段判定打空后照常执行）、SBW 对 OBB 载具实体的命中处理、tacz-tweaks 的逐方块射线、gsl 测距与空爆均保留；TaCZ、SBW 爆炸的受伤名单不变。
+- 已知限制：SBW FastThrowable 系弹（机炮、火箭等）与即时命中的 ray 武器、原版箭及其他弹射物仍按 0.6 格盒判定；服务器给 `minecraft:player` 配置的 TaCZ HeadShotAABB 对趴姿目标不再生效。
+### 配置/存档影响
+- `config/wok_body_health-common.toml` 新增 `[prone_hitbox]` 组：`enableSegmentedProneHitbox = true`、`headMargin = 0.0625`、`torsoMargin = 0.03125`、`limbMargin = 0.015625`（三项范围 0–0.25）、`transitionLagTicks = 0`（0–5）、`vanillaCrawlModel = "AUTO"`（AUTO/VANILLA/TACZ_TWEAKS）、`sbwLegSegmentsAreLegShots = true`、`debugLogging = false`。旧配置文件会由 Forge 自动补入默认值。存档数据键与网络协议不变。
+### 测试结果
+- `.\gradlew.bat -p wok_body_health clean build hudTestClasses`（TaCZ 1.1.8 仅编译）通过，126 个 JUnit 全部通过（0 失败、0 错误、0 跳过；原 19 个 + 趴姿新增 107 个）。
+- `tools/verify_mod_independence.ps1` 检查 `wok_body_health-0.1.0-beta.10.jar` 通过：硬依赖只有 forge、minecraft，不内嵌 TaCZ、SBW、MixinExtras 类；JAR 内含 `wok_body_health.mixins.json` 与 `MixinConfigs` 清单项。
+- `tools/verify_versions.ps1` 在本机 Windows PowerShell 5.1 下无法解析（脚本为无 BOM 的 UTF-8，且用了 .NET Core 的 API，本机没有 PowerShell 7），改用只针对部位血量的等价检查：版本表、模块 README 的 JAR 名、本条标题、JAR 内 modId 与版本一致，通过。
+- 游戏内：未实测（需两台客户端，见 `wok_body_health/docs/PRONE_HITBOX.md` 验收清单）。
+
 ## WOK步战核心 0.3.0-beta.4 — 2026-10-03
 
 ### 新增
