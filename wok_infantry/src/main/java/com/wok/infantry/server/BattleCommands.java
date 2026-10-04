@@ -779,7 +779,8 @@ public final class BattleCommands {
             return 0;
         }
         ServerPlayer administrator = source.getPlayerOrException();
-        ActionResult result = formations.forceAssign(administrator, target, factionId,
+        // vote-02: after the lock only the locked formation, before it only the faction.
+        ActionResult result = formations.adminAssign(administrator, target, factionId,
                 formationId);
         if (result.success() && FormationNetwork.isInitialized()) {
             FormationNetwork.finishSelection(target, result);
@@ -797,8 +798,10 @@ public final class BattleCommands {
         }
         ActionResult result = formations.openVote(source.getPlayerOrException(), factionId,
                 allowVoteChange);
+        sendFormationReceipt(source, result);
         if (result.success()) {
-            broadcastFormationState(source, formations, true);
+            broadcastVoteOpened(source, formations,
+                    formations.battleSideForPublicFaction(factionId).orElse(null));
         }
         return sendResult(source, result);
     }
@@ -813,25 +816,56 @@ public final class BattleCommands {
         }
         ActionResult result = formations.lockVote(source.getPlayerOrException(), factionId,
                 formationId);
+        sendFormationReceipt(source, result);
         if (result.success()) {
-            broadcastFormationState(source, formations, false);
+            broadcastVoteLocked(source, formations,
+                    formations.battleSideForPublicFaction(factionId).orElse(null));
         }
         return sendResult(source, result);
     }
 
-    private static void broadcastFormationState(CommandSourceStack source,
-                                                FormationService formations,
-                                                boolean openScreen) {
+    /** Administrator vote commands also answer in the vote page footer, not only in chat. */
+    private static void sendFormationReceipt(CommandSourceStack source, ActionResult result) {
+        if (FormationNetwork.isInitialized() && source.getEntity() instanceof ServerPlayer player) {
+            FormationNetwork.sendResult(player, result);
+        }
+    }
+
+    /**
+     * A ballot opened: members of that faction and players without a faction see the vote page;
+     * everyone else only refreshes the faction's phase.
+     */
+    private static void broadcastVoteOpened(CommandSourceStack source,
+                                            FormationService formations, Faction side) {
         if (!FormationNetwork.isInitialized()) {
             return;
         }
         source.getServer().getPlayerList().getPlayers().forEach(player -> {
-            FormationNetwork.sendSnapshotToPlayer(player, openScreen);
-            if (!openScreen && BattleNetwork.isInitialized()
+            Faction playerSide = BattleService.get(player)
+                    .flatMap(battle -> battle.factionOf(player.getUUID())).orElse(null);
+            FormationNetwork.sendSnapshotToPlayer(player, playerSide == null
+                    || playerSide == side);
+        });
+    }
+
+    /**
+     * A ballot locked: only the locked faction receives the formation (battle snapshot first,
+     * then the catalog with the lock notice, so its clients open the deployment page or show the
+     * HUD notice); everyone else, including the other faction, only refreshes the catalog.
+     */
+    private static void broadcastVoteLocked(CommandSourceStack source,
+                                            FormationService formations, Faction side) {
+        if (!FormationNetwork.isInitialized()) {
+            return;
+        }
+        source.getServer().getPlayerList().getPlayers().forEach(player -> {
+            Faction playerSide = BattleService.get(player)
+                    .flatMap(battle -> battle.factionOf(player.getUUID())).orElse(null);
+            if (side != null && playerSide == side
                     && formations.selectedFormation(player.getUUID()).isPresent()) {
-                BattleService.get(player).ifPresent(battle ->
-                        BattleNetwork.sendSnapshotToPlayer(battle, player,
-                                com.wok.infantry.network.battle.BattleOpenTarget.DEPLOYMENT));
+                FormationNetwork.sendFormationApplied(player);
+            } else {
+                FormationNetwork.sendSnapshotToPlayer(player, false);
             }
         });
     }
@@ -841,21 +875,18 @@ public final class BattleCommands {
             throws CommandSyntaxException {
         Faction battleSide = Faction.byId(factionId).orElse(null);
         FormationService formations = FormationService.get(source.getServer()).orElse(null);
-        FactionDefinition publicFaction = battleSide == null || formations == null ? null
-                : formations.catalog().findFaction(battleSide).orElse(null);
         if (battleSide == null) {
             source.sendFailure(Component.literal("无效阵营: " + factionId));
             return 0;
         }
-        if (formations == null || publicFaction == null
-                || publicFaction.findFormation("default").isEmpty()) {
-            source.sendFailure(Component.literal(
-                    "该战斗方没有可用的 default 编制；请使用 /battle admin formation assign"));
+        if (formations == null) {
+            source.sendFailure(Component.literal("阵营编制服务尚未启动"));
             return 0;
         }
+        // vote-03: the side's public faction under the vote rules, no hard-coded "default".
         ServerPlayer administrator = source.getPlayerOrException();
-        ActionResult result = formations.forceAssign(administrator, target,
-                publicFaction.id(), "default");
+        ActionResult result = formations.adminAssignBattleSide(administrator, target,
+                battleSide);
         if (result.success() && FormationNetwork.isInitialized()) {
             FormationNetwork.finishSelection(target, result);
         }

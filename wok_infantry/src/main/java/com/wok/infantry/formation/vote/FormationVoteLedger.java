@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 /**
  * Policy-neutral in-memory authority for one independent ballot per battle faction.
@@ -31,6 +32,12 @@ public final class FormationVoteLedger {
         if (faction == null) {
             return FormationVoteResult.failure(FormationVoteResult.Code.INVALID_FACTION,
                     "阵营不存在");
+        }
+        Ballot existing = ballots.get(faction);
+        if (existing != null && existing.phase == FormationVotePhase.LOCKED) {
+            // A locked result is final for the match; only a battle reset (clearAll) reopens it.
+            return FormationVoteResult.failure(FormationVoteResult.Code.RESULT_ALREADY_LOCKED,
+                    "本局该阵营编制已锁定，重置战局后才能重新投票");
         }
         List<String> candidates = normalizedCandidates(candidateFormationIds);
         if (candidates.isEmpty()) {
@@ -148,7 +155,19 @@ public final class FormationVoteLedger {
     }
 
     public synchronized FormationVoteSnapshot snapshot(Faction faction, UUID viewerId) {
+        return snapshot(faction, viewerId, voter -> true);
+    }
+
+    /**
+     * Snapshot whose tally only counts voters accepted by {@code eligibleVoter}, so a player who
+     * left the faction (released, removed or reassigned) no longer counts and "已投 n/人数" never
+     * exceeds the faction. The stored ballots are not changed; the viewer's own vote is reported
+     * as stored.
+     */
+    public synchronized FormationVoteSnapshot snapshot(Faction faction, UUID viewerId,
+                                                       Predicate<UUID> eligibleVoter) {
         Objects.requireNonNull(faction, "faction");
+        Predicate<UUID> eligible = eligibleVoter == null ? voter -> true : eligibleVoter;
         Ballot ballot = ballots.get(faction);
         if (ballot == null) {
             return new FormationVoteSnapshot(faction, revision,
@@ -156,8 +175,11 @@ public final class FormationVoteLedger {
         }
         LinkedHashMap<String, Integer> tally = new LinkedHashMap<>();
         ballot.candidates.forEach(candidate -> tally.put(candidate, 0));
-        ballot.votes.values().forEach(candidate ->
-                tally.computeIfPresent(candidate, (ignored, count) -> count + 1));
+        ballot.votes.forEach((voter, candidate) -> {
+            if (eligible.test(voter)) {
+                tally.computeIfPresent(candidate, (ignored, count) -> count + 1);
+            }
+        });
         return new FormationVoteSnapshot(faction, revision, ballot.phase,
                 ballot.allowVoteChange,
                 ballot.lockedFormationId,

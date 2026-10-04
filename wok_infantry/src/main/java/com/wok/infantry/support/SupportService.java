@@ -416,6 +416,11 @@ public final class SupportService {
         return registry.definitions().stream().map(SupportDefinition::id).toList();
     }
 
+    /** Read-only lookup of one registered support (the formation catalog shows its name). */
+    public synchronized Optional<SupportDefinition> definition(ResourceLocation id) {
+        return registry.definition(id);
+    }
+
     /** Runs one due mission and returns the number of provider callbacks it consumed. */
     private int tickMission(ActiveMission mission, long now, int budget) {
         MissionCursor cursor = mission.cursor();
