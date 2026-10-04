@@ -212,6 +212,12 @@ class ClientTranslationContractTest {
             Map.entry("hud.wok_infantry.vote.locked", 1),
             Map.entry("message.wok_infantry.stamina.admin.status", 2),
             Map.entry("message.wok_infantry.stamina.admin.set", 2),
+            // Server-wide test mode (0.4.0-beta.2): announcements to every player.
+            Map.entry("message.wok_infantry.test_mode.enabled", 1),
+            Map.entry("message.wok_infantry.test_mode.disabled", 1),
+            Map.entry("message.wok_infantry.test_mode.base_created", 3),
+            Map.entry("message.wok_infantry.test_mode.base_failed", 2),
+            Map.entry("message.wok_infantry.test_mode.reminder", 1),
             Map.entry("hud.wok_infantry.squad_count", 2));
     private static final Map<String, String> EXPECTED_ENGLISH_COMPACT_LABELS = Map.ofEntries(
             Map.entry("screen.wok_infantry.tab.map_short", "Map"),

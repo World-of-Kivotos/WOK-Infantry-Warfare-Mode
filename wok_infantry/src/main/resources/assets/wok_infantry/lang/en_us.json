@@ -661,5 +661,11 @@
   "hud.wok_infantry.stamina.legs_short": "L",
   "message.wok_infantry.stamina.admin.status": "Current stamina: arms %1$s / legs %2$s",
   "message.wok_infantry.stamina.admin.set": "Stamina set: arms %1$s / legs %2$s",
-  "item.wok_infantry.base_supply_tool": "Base Supply Area Selector"
+  "item.wok_infantry.base_supply_tool": "Base Supply Area Selector",
+  "message.wok_infantry.test_mode.bossbar": "WOK Infantry test mode is ON · /battle admin test mode off to end it",
+  "message.wok_infantry.test_mode.enabled": "[WOK Infantry] %s turned on the server-wide test mode: no deployment countdown and no respawn wait, every other rule as usual, deployment always in survival. It survives restarts; turn it off with /battle admin test mode off when done.",
+  "message.wok_infantry.test_mode.disabled": "[WOK Infantry] %s turned off the server-wide test mode; the deployment countdown and respawn wait are back. Main bases added by the test mode stay; remove them with /battle deployment clearbase <blue|red> if needed.",
+  "message.wok_infantry.test_mode.base_created": "[WOK Infantry] Test mode added a main base for %1$s: %2$s %3$s",
+  "message.wok_infantry.test_mode.base_failed": "[WOK Infantry] Test mode could not add a main base for %1$s: %2$s",
+  "message.wok_infantry.test_mode.reminder": "[WOK Infantry] The server-wide test mode is on (turned on by %s): no deployment countdown and no respawn wait. Turn it off with /battle admin test mode off when done."
 }

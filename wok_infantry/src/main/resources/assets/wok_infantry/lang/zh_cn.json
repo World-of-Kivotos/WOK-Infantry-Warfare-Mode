@@ -661,5 +661,11 @@
   "hud.wok_infantry.stamina.legs_short": "腿",
   "message.wok_infantry.stamina.admin.status": "当前体力：手部 %1$s / 腿部 %2$s",
   "message.wok_infantry.stamina.admin.set": "已设置体力：手部 %1$s / 腿部 %2$s",
-  "item.wok_infantry.base_supply_tool": "基地圈地工具"
+  "item.wok_infantry.base_supply_tool": "基地圈地工具",
+  "message.wok_infantry.test_mode.bossbar": "WOK步战测试模式已开启 · /battle admin test mode off 关闭",
+  "message.wok_infantry.test_mode.enabled": "[WOK步战] %s 开启了全服测试模式：部署倒计时和重生等待为 0，其余规则照常，部署一律为生存模式。重启后保留，用完请执行 /battle admin test mode off。",
+  "message.wok_infantry.test_mode.disabled": "[WOK步战] %s 关闭了全服测试模式，部署倒计时和重生等待恢复正常。测试模式补出的主基地保留，需要时用 /battle deployment clearbase <blue|red> 清除。",
+  "message.wok_infantry.test_mode.base_created": "[WOK步战] 测试模式为%1$s补设了主基地：%2$s %3$s",
+  "message.wok_infantry.test_mode.base_failed": "[WOK步战] 测试模式无法为%1$s补设主基地：%2$s",
+  "message.wok_infantry.test_mode.reminder": "[WOK步战] 全服测试模式开启中（%s 开启）：部署倒计时和重生等待为 0。用完请执行 /battle admin test mode off。"
 }

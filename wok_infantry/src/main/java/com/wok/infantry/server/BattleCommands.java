@@ -28,6 +28,7 @@ import com.wok.infantry.stamina.StaminaEvents;
 import com.wok.infantry.stamina.StaminaRules;
 import com.wok.infantry.stamina.StaminaState;
 import com.wok.infantry.support.SupportService;
+import com.wok.infantry.testmode.TestModeService;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.AngleArgument;
@@ -413,7 +414,7 @@ public final class BattleCommands {
                         .requires(source -> source.hasPermission(BattleRules.ADMIN_PERMISSION_LEVEL))
                         .then(formationAdminCommand())
                         .then(supportAdminCommand())
-                        .then(vehicleTestCommand())
+                        .then(testCommand())
                         .then(heldWeaponCommand())
                         .then(staminaAdminCommand())
                         .then(Commands.literal("assign")
@@ -459,8 +460,58 @@ public final class BattleCommands {
         return 1;
     }
 
-    private static LiteralArgumentBuilder<CommandSourceStack> vehicleTestCommand() {
+    /**
+     * {@code /battle admin test ...} (the parent {@code admin} node requires permission two):
+     * the per-player vehicle test mode, the server-wide test mode switch and the one-click test
+     * start of 0.4.0-beta.2.
+     */
+    static LiteralArgumentBuilder<CommandSourceStack> testCommand() {
         return Commands.literal("test")
+                .then(Commands.literal("mode")
+                        .then(Commands.literal("on")
+                                .executes(context -> setTestMode(context.getSource(), true)))
+                        .then(Commands.literal("off")
+                                .executes(context -> setTestMode(context.getSource(), false)))
+                        .then(Commands.literal("status")
+                                .executes(context -> testModeStatus(context.getSource()))))
+                .then(Commands.literal("start")
+                        .executes(context -> testStart(context.getSource(), null, null, null))
+                        .then(Commands.argument("faction", StringArgumentType.word())
+                                .suggests((context, builder) -> {
+                                    FormationService.get(context.getSource().getServer())
+                                            .ifPresent(service -> service.catalog().factions()
+                                                    .forEach(faction -> builder.suggest(faction.id())));
+                                    return builder.buildFuture();
+                                })
+                                .executes(context -> testStart(context.getSource(),
+                                        StringArgumentType.getString(context, "faction"), null,
+                                        null))
+                                .then(Commands.argument("formation", StringArgumentType.word())
+                                        .suggests((context, builder) -> {
+                                            String factionId = StringArgumentType.getString(
+                                                    context, "faction");
+                                            FormationService.get(context.getSource().getServer())
+                                                    .flatMap(service -> service.catalog()
+                                                            .findFaction(factionId))
+                                                    .ifPresent(faction -> faction.formations()
+                                                            .forEach(formation -> builder.suggest(
+                                                                    formation.id())));
+                                            return builder.buildFuture();
+                                        })
+                                        .executes(context -> testStart(context.getSource(),
+                                                StringArgumentType.getString(context, "faction"),
+                                                StringArgumentType.getString(context, "formation"),
+                                                null))
+                                        .then(Commands.argument("player",
+                                                        EntityArgument.player())
+                                                .executes(context -> testStart(
+                                                        context.getSource(),
+                                                        StringArgumentType.getString(
+                                                                context, "faction"),
+                                                        StringArgumentType.getString(
+                                                                context, "formation"),
+                                                        EntityArgument.getPlayer(
+                                                                context, "player")))))))
                 .then(Commands.literal("vehicle")
                         .then(Commands.literal("on")
                                 .executes(context -> setVehicleTestMode(
@@ -946,6 +997,58 @@ public final class BattleCommands {
                                           boolean enabled) {
         return withDeploymentService(source, service -> sendResult(source,
                 service.setVehicleTestMode(source, target, enabled)));
+    }
+
+    private static int setTestMode(CommandSourceStack source, boolean enabled) {
+        TestModeService service = TestModeService.get(source.getServer()).orElse(null);
+        if (service == null) {
+            source.sendFailure(Component.literal("测试模式服务尚未启动"));
+            return 0;
+        }
+        String actor = source.getEntity() instanceof ServerPlayer player
+                ? player.getGameProfile().getName() : TestModeService.CONSOLE_NAME;
+        TestModeService.Report report = service.setEnabled(enabled, actor);
+        // The switch itself is announced to every player; the lines go to the administrator.
+        report.lines().forEach(line -> source.sendSuccess(() -> Component.literal(line), false));
+        return 1;
+    }
+
+    private static int testModeStatus(CommandSourceStack source) {
+        TestModeService service = TestModeService.get(source.getServer()).orElse(null);
+        if (service == null) {
+            source.sendFailure(Component.literal("测试模式服务尚未启动"));
+            return 0;
+        }
+        service.status().forEach(line -> source.sendSuccess(() -> Component.literal(line), false));
+        return service.enabled() ? 1 : 0;
+    }
+
+    /**
+     * {@code /battle admin test start [faction] [formation] [player]}: an in-game administrator
+     * only (the vote and assignment steps run as that administrator); the player argument puts
+     * a second player (LAN test) through the same steps.
+     */
+    private static int testStart(CommandSourceStack source, String factionId, String formationId,
+                                 ServerPlayer target) throws CommandSyntaxException {
+        ServerPlayer administrator = source.getPlayerOrException();
+        TestModeService service = TestModeService.get(source.getServer()).orElse(null);
+        if (service == null) {
+            source.sendFailure(Component.literal("测试模式服务尚未启动"));
+            return 0;
+        }
+        TestModeService.Report report = service.testStart(administrator, target, factionId,
+                formationId);
+        List<String> lines = report.lines();
+        for (int index = 0; index < lines.size(); index++) {
+            String line = lines.get(index);
+            if (index == report.failureLine()) {
+                source.sendFailure(Component.literal("[" + report.result().code().name() + "] "
+                        + line));
+            } else {
+                source.sendSuccess(() -> Component.literal(line), false);
+            }
+        }
+        return report.success() ? 1 : 0;
     }
 
     private static int vehicleTestStatus(CommandSourceStack source, ServerPlayer target) {
