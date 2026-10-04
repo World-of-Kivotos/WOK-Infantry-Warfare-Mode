@@ -5,7 +5,7 @@
   "key.wok_infantry.open_admin_loadout": "Open Admin Loadout Terminal",
   "key.wok_infantry.open_squad": "Open Squads and Roles",
   "key.wok_infantry.open_tactical_map": "Open Tactical Map",
-  "key.wok_infantry.cap.grave": "~`",
+  "key.wok_infantry.cap.grave": "～",
   "screen.wok_infantry.admin_loadout.class_settings.no_formation": "No formation selected: roles cannot be managed",
   "screen.wok_infantry.admin_loadout.class_settings.no_rules": "This formation has no role rules yet: roles cannot be managed",
   "screen.wok_infantry.admin_loadout.class_settings.no_rule": "This formation has no rule for \"%s\": roles cannot be managed",

@@ -5,7 +5,7 @@
   "key.wok_infantry.open_admin_loadout": "打开管理员配装终端",
   "key.wok_infantry.open_squad": "打开小队与兵种界面",
   "key.wok_infantry.open_tactical_map": "打开战术地图",
-  "key.wok_infantry.cap.grave": "~`",
+  "key.wok_infantry.cap.grave": "～",
   "screen.wok_infantry.admin_loadout.class_settings.no_formation": "未选择编制，无法管理职业",
   "screen.wok_infantry.admin_loadout.class_settings.no_rules": "当前编制还没有任何职业规则，无法管理职业",
   "screen.wok_infantry.admin_loadout.class_settings.no_rule": "当前编制没有“%s”的职业规则，无法管理职业",

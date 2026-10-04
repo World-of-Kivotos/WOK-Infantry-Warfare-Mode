@@ -232,8 +232,9 @@ public final class KeyBindingDefaults {
     /**
      * Language key of a readable key-cap name for a key whose own name is a glyph too thin to be
      * recognised in a key cap or a hint, or {@code null} to keep the name. The grave accent, the
-     * default terminal key, is one or two pixels wide in the vanilla font; the cap then names the
-     * key as printed on it ({@code ~`}).
+     * default terminal key, is one or two pixels wide in the vanilla font, and the ASCII tilde
+     * printed on the same key sits in the top two pixel rows as well; the cap then shows the
+     * full-width tilde {@code ～} (U+FF5E), a full-height glyph like the CJK text around it.
      *
      * @param keyName the key's display name ({@code KeyMapping.getTranslatedKeyMessage()})
      */
