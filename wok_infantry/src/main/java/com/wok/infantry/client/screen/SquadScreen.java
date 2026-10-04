@@ -599,7 +599,7 @@ public final class SquadScreen extends Screen {
         TacticalBoardTheme.sectionHeader(graphics, font,
                 Component.translatable("screen.wok_infantry.squad_list"),
                 leftX + 4, contentTop + 4, leftX + leftWidth - 4,
-                TacticalBoardTheme.SELECTED);
+                TacticalBoardTheme.SECTION);
 
         SquadView selected = ClientBattleState.squad(selectedSquad);
         MutableComponent heading = selectedSquad == null
@@ -666,7 +666,7 @@ public final class SquadScreen extends Screen {
             TacticalBoardTheme.sectionHeader(graphics, font,
                     Component.translatable("screen.wok_infantry.deployment_status"),
                     leftX + 4, contentTop + 4, leftX + leftWidth - 4,
-                    TacticalBoardTheme.SELECTED);
+                    TacticalBoardTheme.SECTION);
             int y = contentTop + 32;
             MutableComponent squad = snapshot.ownSquad() == null
                     ? Component.translatable("screen.wok_infantry.status.none")

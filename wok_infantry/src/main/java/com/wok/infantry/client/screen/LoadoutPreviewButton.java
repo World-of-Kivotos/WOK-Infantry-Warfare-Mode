@@ -7,11 +7,16 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
 
-/** Tactical loadout card with the TaCZ HUD silhouette or a normal item fallback. */
+/**
+ * Tactical loadout card with the TaCZ HUD silhouette or a normal item fallback. The card
+ * background comes from {@link TacticalButtonStyle#renderCard}: hover darkens the outline,
+ * selection is blue with a light left stripe.
+ */
 final class LoadoutPreviewButton extends Button {
     private final LoadoutEntry entry;
     private final boolean selected;
     private final LoadoutEntryPreview.Preview preview;
+    private final TruncationTooltip truncationTooltip = new TruncationTooltip();
 
     LoadoutPreviewButton(int x, int y, int width, int height,
                          LoadoutEntry entry, boolean selected, OnPress onPress) {
@@ -22,6 +27,18 @@ final class LoadoutPreviewButton extends Button {
         this.preview = LoadoutEntryPreview.resolve(entry);
     }
 
+    static TacticalButtonStyle.CardState cardState(boolean selected, boolean active,
+                                                   boolean hovered) {
+        if (selected) {
+            return TacticalButtonStyle.CardState.SELECTED;
+        }
+        if (!active) {
+            return TacticalButtonStyle.CardState.DISABLED;
+        }
+        return hovered ? TacticalButtonStyle.CardState.HOVER
+                : TacticalButtonStyle.CardState.NORMAL;
+    }
+
     @Override
     protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY,
                                 float partialTick) {
@@ -29,29 +46,14 @@ final class LoadoutPreviewButton extends Button {
         int top = getY();
         int right = left + width;
         int bottom = top + height;
-        int fillColor;
-        if (selected) {
-            fillColor = isHoveredOrFocused()
-                    ? TacticalBoardTheme.SELECTED_HOVER : TacticalBoardTheme.SELECTED;
-        } else if (!active) {
-            fillColor = TacticalBoardTheme.CARD_DISABLED;
-        } else if (isHoveredOrFocused()) {
-            fillColor = TacticalBoardTheme.CARD_HOVER;
-        } else {
-            fillColor = TacticalBoardTheme.CARD;
-        }
-        graphics.fill(left, top, right, bottom, fillColor);
-        BattleUiTheme.outline(graphics, left, top, right, bottom,
-                selected ? TacticalBoardTheme.SELECTED
-                        : isHoveredOrFocused() ? TacticalBoardTheme.ACCENT
-                        : TacticalBoardTheme.BORDER);
-        if (selected) {
-            graphics.fill(left + 1, top + 1, left + 4, bottom - 1,
-                    TacticalBoardTheme.ACCENT);
+        TacticalButtonStyle.renderCard(graphics, left, top, right, bottom,
+                cardState(selected, active, TacticalButtonStyle.hovered(this)));
+        if (TacticalButtonStyle.keyboardFocused(this)) {
+            TacticalButtonStyle.focusRing(graphics, left, top, right, bottom);
         }
 
         Font font = Minecraft.getInstance().font;
-        int innerLeft = left + (selected ? 6 : 3);
+        int innerLeft = left + 4;
         int innerRight = right - 3;
         int innerWidth = Math.max(1, innerRight - innerLeft);
         int previewWidth = preview.available()
@@ -60,20 +62,19 @@ final class LoadoutPreviewButton extends Button {
         previewWidth = Math.min(previewWidth, Math.max(0, innerWidth - 24));
         if (previewWidth > 0) {
             graphics.fill(innerLeft, top + 2, innerLeft + previewWidth, bottom - 2,
-                    TacticalBoardTheme.DEVICE_FRAME);
-            BattleUiTheme.outline(graphics, innerLeft, top + 2,
-                    innerLeft + previewWidth, bottom - 2, TacticalBoardTheme.BORDER);
+                    selected ? TacticalBoardTheme.SELECT_WELL : TacticalBoardTheme.WELL);
             LoadoutEntryPreview.render(graphics, preview,
                     innerLeft + 2, top + 3, Math.max(1, previewWidth - 4),
                     Math.max(1, height - 6));
         }
 
-        int textLeft = innerLeft + (previewWidth > 0 ? previewWidth + 3 : 0);
+        int textLeft = innerLeft + (previewWidth > 0 ? previewWidth + 4 : 0);
         int textWidth = Math.max(1, innerRight - textLeft);
-        String label = font.plainSubstrByWidth(entry.displayName(), textWidth);
-        int textColor = selected ? TacticalBoardTheme.LIGHT_TEXT
-                : active ? TacticalBoardTheme.TEXT : TacticalBoardTheme.MUTED_TEXT;
-        int textY = top + Math.max(0, (height - font.lineHeight) / 2) + 1;
-        graphics.drawString(font, label, textLeft, textY, textColor, false);
+        int textColor = selected ? TacticalBoardTheme.ON_SELECT
+                : active ? TacticalBoardTheme.TEXT : TacticalBoardTheme.DISABLED_TEXT;
+        int textY = top + Math.max(0, (height - 8) / 2);
+        boolean truncated = TextFit.draw(graphics, font, entry.displayName(), textLeft, textY,
+                textWidth, textColor, TextFit.Align.LEFT).truncated();
+        truncationTooltip.sync(this, getMessage(), truncated);
     }
 }

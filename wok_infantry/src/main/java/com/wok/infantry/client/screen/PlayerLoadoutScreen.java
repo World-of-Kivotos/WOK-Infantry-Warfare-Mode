@@ -382,7 +382,7 @@ public final class PlayerLoadoutScreen extends Screen {
         TacticalBoardTheme.sectionHeader(graphics, font,
                 Component.translatable("screen.wok_infantry.loadout.slots"),
                 slotX + 4, panelsTop + 4, slotX + slotWidth - 4,
-                TacticalBoardTheme.SELECTED);
+                TacticalBoardTheme.SECTION);
         TacticalBoardTheme.sectionHeader(graphics, font,
                 Component.translatable("screen.wok_infantry.loadout.choices",
                         selectedSlot() == null ? Component.literal("未配置槽位")
@@ -428,7 +428,7 @@ public final class PlayerLoadoutScreen extends Screen {
         TacticalBoardTheme.sectionHeader(graphics, font,
                 Component.translatable("screen.wok_infantry.loadout.current"),
                 detailX + 4, panelsTop + 4, detailX + detailWidth - 4,
-                TacticalBoardTheme.SELECTED);
+                TacticalBoardTheme.SECTION);
 
         int y = panelsTop + 24;
         LoadoutClassDefinition definition = selectedClass();

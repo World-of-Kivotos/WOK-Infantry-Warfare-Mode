@@ -1,19 +1,17 @@
 package com.wok.infantry.client.screen;
 
-import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
-import net.minecraft.util.Mth;
 
 /**
- * Tactical-tablet button with a crisp, shadowless label. Input, focus, tooltip,
- * scrolling and narration behavior remain inherited from the vanilla button.
+ * Tactical-tablet key drawn from the shared {@link TacticalButtonStyle} state table. Labels that
+ * do not fit end in "…" and, unless the screen set its own tooltip, show the full text as a
+ * tooltip. Input, keyboard focus, tooltip and narration behaviour remain the vanilla button's.
  */
 final class BattleUiButton extends Button {
-    private static final int TEXT_MARGIN = 2;
     enum Kind {
         NORMAL,
         CONTROL,
@@ -22,99 +20,102 @@ final class BattleUiButton extends Button {
     }
 
     private final boolean selected;
+    private final boolean current;
+    private final boolean armed;
     private final Kind kind;
-    private final int accentColor;
+    private final Component badge;
+    private final int badgeColor;
+    private final TextFit.Align align;
+    private final TruncationTooltip truncationTooltip = new TruncationTooltip();
+    private boolean labelTruncated;
 
-    private BattleUiButton(Button.Builder builder, boolean selected,
-                           Kind kind, int accentColor) {
+    private BattleUiButton(Button.Builder builder, Builder options) {
         super(builder);
-        this.selected = selected;
-        this.kind = kind;
-        this.accentColor = accentColor;
+        this.selected = options.selected;
+        this.current = options.current;
+        this.armed = options.armed;
+        this.kind = options.kind;
+        this.badge = options.badge;
+        this.badgeColor = options.badgeColor;
+        this.align = options.align;
     }
 
     public static Builder builder(Component message, OnPress onPress) {
         return new Builder(message, onPress);
     }
 
-    @Override
-    protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY,
-                                float partialTick) {
-        int left = getX();
-        int top = getY();
-        int right = left + width;
-        int bottom = top + height;
-        int fillColor;
-        if (selected) {
-            fillColor = isHoveredOrFocused()
-                    ? TacticalBoardTheme.SELECTED_HOVER : TacticalBoardTheme.SELECTED;
-        } else if (!active) {
-            fillColor = TacticalBoardTheme.CARD_DISABLED;
-        } else if (isHoveredOrFocused()) {
-            fillColor = TacticalBoardTheme.CARD_HOVER;
-        } else {
-            fillColor = TacticalBoardTheme.CARD;
-        }
-        graphics.fill(left, top, right, bottom, fillColor);
+    /**
+     * Look of a battle key. A selected key that is not clickable (current tab, current class,
+     * current deployment point) is drawn as "current" instead of disabled.
+     */
+    static TacticalButtonStyle.Look look(Kind kind, boolean selected, boolean current,
+                                         boolean active, boolean hovered, boolean armed) {
+        return TacticalButtonStyle.resolve(active, selected, current || selected && !active,
+                variant(kind), hovered, armed);
+    }
 
-        int borderColor = selected ? accentColor : !active
-                ? TacticalBoardTheme.BORDER
-                : switch (kind) {
-                    case DANGER -> TacticalBoardTheme.DANGER;
-                    case SUCCESS -> TacticalBoardTheme.SUCCESS;
-                    default -> isHoveredOrFocused()
-                            ? TacticalBoardTheme.SELECTED : TacticalBoardTheme.BORDER;
-                };
-        BattleUiTheme.outline(graphics, left, top, right, bottom, borderColor);
-        if (selected) {
-            graphics.fill(left + 1, top + 1, left + 4, bottom - 1, accentColor);
-        } else if (kind == Kind.CONTROL && active) {
-            graphics.fill(left + 2, bottom - 3, right - 2, bottom - 2,
-                    TacticalBoardTheme.ACCENT);
+    static TacticalButtonStyle.Variant variant(Kind kind) {
+        if (kind == null) {
+            return TacticalButtonStyle.Variant.NORMAL;
         }
+        return switch (kind) {
+            case NORMAL -> TacticalButtonStyle.Variant.NORMAL;
+            case CONTROL -> TacticalButtonStyle.Variant.CONTROL;
+            case DANGER -> TacticalButtonStyle.Variant.DANGER;
+            case SUCCESS -> TacticalButtonStyle.Variant.SUCCESS;
+        };
+    }
 
-        int textColor = selected ? TacticalBoardTheme.LIGHT_TEXT
-                : active ? TacticalBoardTheme.TEXT : TacticalBoardTheme.MUTED_TEXT;
-        renderString(graphics, Minecraft.getInstance().font, textColor);
+    /** True when the last drawn label was shortened with an ellipsis. */
+    boolean labelTruncated() {
+        return labelTruncated;
     }
 
     @Override
+    protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY,
+                                float partialTick) {
+        TacticalButtonStyle.Look look = look(kind, selected, current, active,
+                TacticalButtonStyle.hovered(this), armed);
+        TacticalButtonStyle.Options options = new TacticalButtonStyle.Options(align, badge,
+                badgeColor, TacticalButtonStyle.keyboardFocused(this));
+        TextFit.Fitted fitted = TacticalButtonStyle.render(graphics, Minecraft.getInstance().font,
+                getX(), getY(), getX() + width, getY() + height, getMessage(), look, options);
+        labelTruncated = fitted.truncated();
+        truncationTooltip.sync(this, getMessage(), labelTruncated);
+    }
+
+    /** Draws the label centred, shadowless and ellipsized; no scrolling marquee. */
+    @Override
     public void renderString(GuiGraphics graphics, Font font, int color) {
-        int left = getX() + TEXT_MARGIN;
-        int right = getX() + getWidth() - TEXT_MARGIN;
-        int textY = (getY() + getY() + getHeight() - 9) / 2 + 1;
-        Component message = getMessage();
-        int textWidth = font.width(message);
-        int availableWidth = right - left;
-
-        if (textWidth > availableWidth) {
-            int overflow = textWidth - availableWidth;
-            double seconds = Util.getMillis() / 1000.0D;
-            double period = Math.max(overflow * 0.5D, 3.0D);
-            double phase = Math.sin((Math.PI / 2.0D)
-                    * Math.cos((Math.PI * 2.0D) * seconds / period)) / 2.0D + 0.5D;
-            int scrollOffset = (int) Mth.lerp(phase, 0.0D, overflow);
-            graphics.enableScissor(left, getY(), right, getY() + getHeight());
-            graphics.drawString(font, message, left - scrollOffset, textY, color, false);
-            graphics.disableScissor();
-            return;
-        }
-
-        BattleUiTheme.drawCenteredText(graphics, font, message,
-                (left + right) / 2, textY, color);
+        int left = getX() + 3;
+        int room = Math.max(0, getWidth() - 6);
+        int textY = getY() + Math.max(0, (getHeight() - 8) / 2);
+        labelTruncated = TextFit.draw(graphics, font, getMessage(), left, textY, room, color,
+                TextFit.Align.CENTER).truncated();
     }
 
     static final class Builder extends Button.Builder {
         private boolean selected;
+        private boolean current;
+        private boolean armed;
         private Kind kind = Kind.NORMAL;
-        private int accentColor = TacticalBoardTheme.SELECTED;
+        private Component badge;
+        private int badgeColor = TacticalBoardTheme.MUTED;
+        private TextFit.Align align = TextFit.Align.CENTER;
 
         private Builder(Component message, OnPress onPress) {
             super(message, onPress);
         }
 
+        /** Shows the current selection (blue). Selected but inactive keys draw as "current". */
         Builder selected(boolean selected) {
             this.selected = selected;
+            return this;
+        }
+
+        /** Selected entry that is deliberately not clickable; never reacts to hover. */
+        Builder current(boolean current) {
+            this.current = current;
             return this;
         }
 
@@ -123,15 +124,36 @@ final class BattleUiButton extends Button {
             return this;
         }
 
+        /** Danger key in its confirmation step: whole key red with light text. */
+        Builder armed(boolean armed) {
+            this.armed = armed;
+            return this;
+        }
+
+        /** Small right-aligned tag such as a count; drawn on a faint wash. */
+        Builder badge(Component badge, int color) {
+            this.badge = badge;
+            this.badgeColor = color;
+            return this;
+        }
+
+        Builder align(TextFit.Align align) {
+            this.align = align == null ? TextFit.Align.CENTER : align;
+            return this;
+        }
+
+        /**
+         * @deprecated the selected stripe is always {@link TacticalBoardTheme#SELECT_BAR} now;
+         * the colour passed here is ignored.
+         */
+        @Deprecated
         Builder accentColor(int accentColor) {
-            this.accentColor = accentColor;
             return this;
         }
 
         @Override
         public BattleUiButton build() {
-            return (BattleUiButton) super.build(builder -> new BattleUiButton(
-                    builder, selected, kind, accentColor));
+            return (BattleUiButton) super.build(builder -> new BattleUiButton(builder, this));
         }
     }
 }

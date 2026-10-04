@@ -5,7 +5,6 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.util.FormattedCharSequence;
 
 /** Shared physical-tablet shell used by the tactical map, squad and loadout surfaces. */
 final class TacticalBoardChrome {
@@ -14,19 +13,19 @@ final class TacticalBoardChrome {
 
     static void renderShell(GuiGraphics graphics, int width, int height,
                             TacticalMapLayout.Layout layout) {
-        graphics.fill(0, 0, width, height, TacticalBoardTheme.WORLD_SHADE);
-        graphics.fill(2, 3, width, height, TacticalBoardTheme.DEVICE_SHADOW);
-        graphics.fill(0, 0, width, height, TacticalBoardTheme.DEVICE_FRAME);
+        // The device frame is opaque and covers the whole screen, so no world shade or
+        // drop shadow is drawn underneath it.
+        graphics.fill(0, 0, width, height, TacticalBoardTheme.FRAME);
         BattleUiTheme.outline(graphics, 1, 1, width - 1, height - 1,
                 TacticalBoardTheme.DEVICE_EDGE);
-        graphics.fill(4, 4, width - 4, height - 4, TacticalBoardTheme.DEVICE_MID);
+        graphics.fill(4, 4, width - 4, height - 4, TacticalBoardTheme.FRAME_MID);
 
         TacticalMapLayout.Rect header = layout.header();
         TacticalMapLayout.Rect footer = layout.footer();
         graphics.fill(header.left(), header.top(), footer.right(), footer.bottom(),
                 TacticalBoardTheme.BOARD);
         TacticalBoardTheme.raisedPanel(graphics, header.left(), header.top(),
-                header.right(), header.bottom(), TacticalBoardTheme.DEVICE_FRAME);
+                header.right(), header.bottom(), TacticalBoardTheme.FRAME);
         TacticalBoardTheme.raisedPanel(graphics, footer.left(), footer.top(),
                 footer.right(), footer.bottom(), TacticalBoardTheme.BOARD_ALT);
         TacticalBoardTheme.rivet(graphics, 6, 6);
@@ -43,15 +42,16 @@ final class TacticalBoardChrome {
         int identityWidth = Math.min(header.width() / 2, font.width(identity));
         int titleWidth = Math.max(32, header.width() - identityWidth - 32);
         int titleY = header.top() + 4;
+        // Bright variants: the header strip is the dark device frame.
         int statusColor = connected
-                ? TacticalBoardTheme.SUCCESS : TacticalBoardTheme.ACCENT;
+                ? TacticalBoardTheme.SUCCESS_B : TacticalBoardTheme.ACCENT_B;
         graphics.fill(header.left() + 5, titleY + 1,
                 header.left() + 8, titleY + 8, statusColor);
-        graphics.drawString(font, fitted(font, title, titleWidth),
-                header.left() + 12, titleY, TacticalBoardTheme.LIGHT_TEXT, false);
-        graphics.drawString(font, fitted(font, identity, header.width() / 2),
-                header.right() - identityWidth - 8, titleY,
-                connected ? 0xFF9DD8F4 : TacticalBoardTheme.ACCENT, false);
+        TextFit.draw(graphics, font, title, header.left() + 12, titleY, titleWidth,
+                TacticalBoardTheme.LIGHT, TextFit.Align.LEFT);
+        TextFit.draw(graphics, font, identity, header.right() - identityWidth - 8, titleY,
+                identityWidth, connected ? TacticalBoardTheme.SELECT_B
+                        : TacticalBoardTheme.ACCENT_B, TextFit.Align.LEFT);
     }
 
     static Component battleIdentity(BattleSnapshot snapshot) {
@@ -76,16 +76,5 @@ final class TacticalBoardChrome {
                     "screen.wok_infantry.map.authority.member"));
         }
         return identity;
-    }
-
-    private static FormattedCharSequence fitted(Font font, Component text, int maxWidth) {
-        int safeWidth = Math.max(1, maxWidth);
-        if (font.width(text) <= safeWidth) {
-            return text.getVisualOrderText();
-        }
-        String ellipsis = "…";
-        int bodyWidth = Math.max(1, safeWidth - font.width(ellipsis));
-        return Component.literal(font.plainSubstrByWidth(text.getString(), bodyWidth)
-                + ellipsis).getVisualOrderText();
     }
 }

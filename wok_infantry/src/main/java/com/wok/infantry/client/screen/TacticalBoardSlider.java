@@ -16,6 +16,7 @@ final class TacticalBoardSlider extends AbstractSliderButton {
     private final double maximum;
     private final double step;
     private final DoubleConsumer onChanged;
+    private final TruncationTooltip truncationTooltip = new TruncationTooltip();
 
     TacticalBoardSlider(int x, int y, int width, int height, Component label,
                         double minimum, double maximum, double step,
@@ -78,37 +79,38 @@ final class TacticalBoardSlider extends AbstractSliderButton {
         int top = getY();
         int right = left + width;
         int bottom = top + height;
-        int fill = active
-                ? isHoveredOrFocused() ? TacticalBoardTheme.CARD_HOVER
-                : TacticalBoardTheme.CARD
-                : TacticalBoardTheme.CARD_DISABLED;
+        // Orange = adjustable; hover follows the mouse only, disabled is gray throughout.
+        boolean hovered = TacticalButtonStyle.hovered(this);
+        int fill = !active ? TacticalBoardTheme.CARD_DISABLED
+                : hovered ? TacticalBoardTheme.CARD_HOVER : TacticalBoardTheme.CARD;
         graphics.fill(left, top, right, bottom, fill);
         BattleUiTheme.outline(graphics, left, top, right, bottom,
-                isHoveredOrFocused() ? TacticalBoardTheme.SELECTED
-                        : TacticalBoardTheme.BORDER);
+                !active ? TacticalBoardTheme.DISABLED_EDGE
+                        : hovered ? TacticalBoardTheme.BORDER_DARK : TacticalBoardTheme.BORDER);
+        if (TacticalButtonStyle.keyboardFocused(this)) {
+            TacticalButtonStyle.focusRing(graphics, left, top, right, bottom);
+        }
 
         Font font = Minecraft.getInstance().font;
-        String text = font.plainSubstrByWidth(getMessage().getString(),
-                Math.max(1, width - 10));
-        BattleUiTheme.drawCenteredText(graphics, font, text,
-                left + width / 2, top + 2,
-                active ? TacticalBoardTheme.TEXT : TacticalBoardTheme.MUTED_TEXT);
+        boolean truncated = TextFit.draw(graphics, font, getMessage(), left + 5, top + 2,
+                Math.max(1, width - 10),
+                active ? TacticalBoardTheme.TEXT : TacticalBoardTheme.DISABLED_TEXT,
+                TextFit.Align.CENTER).truncated();
+        truncationTooltip.sync(this, getMessage(), truncated);
 
         // AbstractSliderButton maps mouse input across x + 4 .. right - 4.
         // Keep the custom track on the exact same range so both endpoints are reachable.
         int trackLeft = left + 4;
         int trackRight = right - 4;
         int trackY = bottom - 5;
-        graphics.fill(trackLeft, trackY, trackRight, trackY + 2,
-                TacticalBoardTheme.INSET);
+        graphics.fill(trackLeft, trackY, trackRight, trackY + 2, TacticalBoardTheme.WELL);
         int knobX = trackLeft + (int) Math.round(value * (trackRight - trackLeft));
         graphics.fill(trackLeft, trackY, knobX + 1, trackY + 2,
-                TacticalBoardTheme.SELECTED);
-        graphics.fill(knobX - 2, trackY - 3, knobX + 3, trackY + 5,
-                TacticalBoardTheme.DEVICE_FRAME);
+                active ? TacticalBoardTheme.ADJUST : TacticalBoardTheme.FAINT);
+        graphics.fill(knobX - 2, trackY - 3, knobX + 3, trackY + 5, TacticalBoardTheme.FRAME);
         graphics.fill(knobX - 1, trackY - 2, knobX + 2, trackY + 4,
-                isHoveredOrFocused() ? TacticalBoardTheme.ACCENT
-                        : TacticalBoardTheme.SELECTED);
+                !active ? TacticalBoardTheme.FAINT
+                        : hovered ? TacticalBoardTheme.ADJUST_SOFT : TacticalBoardTheme.ADJUST);
     }
 
     private void snapValue() {
