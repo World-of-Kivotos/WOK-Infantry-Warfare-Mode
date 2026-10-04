@@ -61,6 +61,30 @@ String uiLanguage = (project.findProperty('uiLang') ?: 'zh_cn').toString().trim(
 if (!(uiLanguage ==~ /[a-z]{2,8}(_[a-z]{2,8})?/)) {
     throw new GradleException("uiLang must be a Minecraft language code such as zh_cn or en_us: ${uiLanguage}")
 }
+// UI acceptance case selection (see UiRuntimeAcceptanceHarness): -PuiCases=kit,legacy picks groups,
+// surfaces or case ids (empty: all; without "legacy" the live flow is skipped), -PuiTiers=320x240,...
+// limits the tiers and -PuiLayoutStrict=false only reports layout violations of migrated screens.
+String uiCases = (project.findProperty('uiCases') ?: '').toString().trim()
+String uiTiers = (project.findProperty('uiTiers') ?: '').toString().trim()
+String uiLayoutStrict = (project.findProperty('uiLayoutStrict') ?: 'true').toString().trim()
+if (!(uiCases ==~ /[A-Za-z0-9_.,-]*/) || !(uiTiers ==~ /[0-9x,]*/)) {
+    throw new GradleException("uiCases/uiTiers contain unexpected characters: ${uiCases} / ${uiTiers}")
+}
+if (!(uiLayoutStrict in ['true', 'false'])) {
+    throw new GradleException("uiLayoutStrict must be true or false: ${uiLayoutStrict}")
+}
+// The layout preview's PNGs (ui-preview/shots next to the repository) for the side-by-side
+// index.html of the acceptance results; -PuiPreviewShots overrides the lookup.
+String uiPreviewShots = (project.findProperty('uiPreviewShots') ?: '').toString().trim()
+if (uiPreviewShots.isEmpty()) {
+    for (File probe = project.projectDir.canonicalFile; probe != null; probe = probe.parentFile) {
+        File candidate = new File(probe, 'ui-preview/shots')
+        if (candidate.isDirectory()) {
+            uiPreviewShots = candidate.absolutePath
+            break
+        }
+    }
+}
 if (!networkTestRoot.toPath().startsWith(layout.projectDirectory.asFile.canonicalFile.toPath())
         || !networkTestResultsDir.toPath().startsWith(networkTestRoot.toPath())
         || !networkSelectorFallbackDir.toPath().startsWith(networkTestRoot.toPath())) {
@@ -93,7 +117,9 @@ sourceSets {
     }
     uiTest {
         java.srcDir 'src/uiTest/java'
-        resources.srcDir 'src/uiTest/resources'
+        // Set, not added: src/uiTest/resources is already the convention directory, and adding it
+        // twice makes processUiTestResources fail on the duplicate uiTest language files.
+        resources.srcDirs = ['src/uiTest/resources']
         compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
         runtimeClasspath += output + sourceSets.main.runtimeClasspath
     }
@@ -197,6 +223,10 @@ minecraft {
             args '--mixin', 'wok_infantry.mixins.json',
                     '--quickPlaySingleplayer', 'wok_ui_test', '--width', '960', '--height', '720'
             property 'wok.ui.expectedLanguage', uiLanguage
+            property 'wok.ui.cases', uiCases
+            property 'wok.ui.tiers', uiTiers
+            property 'wok.ui.layoutStrict', uiLayoutStrict
+            property 'wok.ui.previewShots', uiPreviewShots
             property 'wok.ui.expectedTerrainProvider',
                     (project.findProperty('uiExpectedTerrainProvider') ?: 'journeymap').toString()
             property 'wok.ui.expectedJourneyMapLoaded',
@@ -654,6 +684,13 @@ tasks.matching { it.name == 'runUiTestClient' }.configureEach {
         if (uiTestProgressFile.exists() && !uiTestProgressFile.delete()) {
             throw new GradleException("Could not remove stale UI acceptance progress: ${uiTestProgressFile}")
         }
+        // Layout report of the previous run (written by UiResultWriter next to the result file).
+        ['wok_ui_layout.json', 'wok_ui_manifest.json', 'index.html'].each { name ->
+            File stale = new File(uiTestResultFile.parentFile, name)
+            if (stale.exists() && !stale.delete()) {
+                throw new GradleException("Could not remove stale UI layout report: ${stale}")
+            }
+        }
     }
     doLast {
         if (!uiTestResultFile.isFile()) {
@@ -670,6 +707,12 @@ tasks.matching { it.name == 'runUiTestClient' }.configureEach {
         }
         List<String> resultLines = uiTestResultFile.readLines('UTF-8')
         String status = resultLines.find { it.startsWith('status=') }
+        String captures = resultLines.find { it.startsWith('captures=') }
+        File layoutIndex = new File(uiTestResultFile.parentFile, 'index.html')
+        logger.lifecycle("UI acceptance ${status ?: 'status=?'} ${captures ?: ''}")
+        if (layoutIndex.isFile()) {
+            logger.lifecycle("UI layout report: ${layoutIndex}")
+        }
         if (status != 'status=PASS') {
             String failure = resultLines.find { it.startsWith('failure=') }
             throw new GradleException("UI acceptance failed: ${failure ?: status ?: 'missing status'}")
