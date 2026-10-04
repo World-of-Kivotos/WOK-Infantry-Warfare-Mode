@@ -32,8 +32,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>Nothing the server words is re-written here: the structured detail, the candidate
  * availability and its reason, and the protocol-4 vehicle and capability lines all come from the
- * server's own builders in {@link FormationService} (called reflectively, they are not public).
- * The protocol-4 class list carries the real class ids, as the server sends it, so a page that
+ * server's own builders in {@link FormationService} (called reflectively, they are not public);
+ * when one of them is renamed or changes its signature the fixture throws, so the case fails
+ * instead of running on stand-in values. The protocol-4 class list carries the real class ids, as the server sends it, so a page that
  * showed internal ids instead of profession names (player-09) would show them here too. Faction,
  * formation and support names are catalog data, as on a real server.
  */
@@ -288,8 +289,7 @@ public final class FormationFixtures {
             return new Availability((Boolean) available.invoke(result),
                     (String) reason.invoke(result));
         } catch (ReflectiveOperationException | RuntimeException exception) {
-            warn("availability", exception);
-            return new Availability(formation.enabled(), "");
+            throw unavailable("availability", exception);
         }
     }
 
@@ -301,8 +301,7 @@ public final class FormationFixtures {
             method.setAccessible(true);
             return (FormationDetailView) method.invoke(null, formation, supports);
         } catch (ReflectiveOperationException | RuntimeException exception) {
-            warn("detailView", exception);
-            return FormationDetailView.EMPTY;
+            throw unavailable("detailView", exception);
         }
     }
 
@@ -318,15 +317,20 @@ public final class FormationFixtures {
             summaries.setAccessible(true);
             return (List<String>) summaries.invoke(null, formation);
         } catch (ReflectiveOperationException | RuntimeException exception) {
-            warn(method, exception);
-            return List.of();
+            throw unavailable(method, exception);
         }
     }
 
-    private static void warn(String method, Exception exception) {
+    /**
+     * A server builder the fixture relies on is gone or changed its signature: the case must fail
+     * (its catalog would no longer show the server's wording), not run on stand-in values.
+     */
+    private static IllegalStateException unavailable(String method, Exception exception) {
         if (SERVER_WARNINGS.add(method)) {
-            WokInfantryMod.LOGGER.warn("[UI ACCEPTANCE] FormationService.{} unavailable", method,
+            WokInfantryMod.LOGGER.error("[UI ACCEPTANCE] FormationService.{} unavailable", method,
                     exception);
         }
+        return new IllegalStateException("FormationService." + method
+                + " is unavailable to the formation fixture: " + exception, exception);
     }
 }

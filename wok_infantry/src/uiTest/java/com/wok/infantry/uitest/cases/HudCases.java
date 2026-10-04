@@ -80,13 +80,18 @@ public final class HudCases {
                 .build();
     }
 
-    /** The preview's chat lines (uiTest language keys; four with the chat open). */
+    /**
+     * The preview's chat lines (uiTest language keys): two in battle, four with the chat open,
+     * none during the ballot. The chat is cleared for every state, so lines of an earlier case
+     * (still shown for ten seconds) never reach another state's screenshot.
+     */
     private static void chatLines(UiCaseContext context, HudFixtures.Mode mode) {
-        if (mode != HudFixtures.Mode.BATTLE && mode != HudFixtures.Mode.CHAT) {
-            return;
-        }
         ChatComponent chat = context.minecraft().gui.getChat();
         chat.clearMessages(false);
+        if (mode == HudFixtures.Mode.VOTE_WAIT || mode == HudFixtures.Mode.VOTE
+                || mode == HudFixtures.Mode.VOTED || mode == HudFixtures.Mode.LOCKED) {
+            return;
+        }
         if (mode == HudFixtures.Mode.CHAT) {
             chat.addMessage(Component.translatable("uitest.wok_infantry.hud.chat.squad"));
             chat.addMessage(Component.translatable("uitest.wok_infantry.hud.chat.faction"));

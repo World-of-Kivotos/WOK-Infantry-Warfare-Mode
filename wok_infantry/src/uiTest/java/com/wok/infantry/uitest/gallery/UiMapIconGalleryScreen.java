@@ -106,7 +106,10 @@ public final class UiMapIconGalleryScreen extends TacticalScreen implements UiSu
         }
     }
 
-    /** Ten markers with their names, laid out in as many columns as every name allows. */
+    /**
+     * Ten markers with their names: as few rows as the widest name allows, the markers spread
+     * evenly over them.
+     */
     private void renderSheet(GuiGraphics graphics) {
         UiLayoutProbe.begin(graphics, "mapicons.sheet", sheet.left(), sheet.top(), sheet.right(),
                 sheet.bottom(), true);
@@ -120,6 +123,8 @@ public final class UiMapIconGalleryScreen extends TacticalScreen implements UiSu
         int columns = Math.max(1, Math.min(metrics.tight() ? 5 : 10,
                 c.width() / (widest + 2 * LABEL_PAD + 4)));
         int rows = (icons.length + columns - 1) / columns;
+        // Spread the markers evenly over those rows (5 + 5 rather than 9 + 1).
+        columns = (icons.length + rows - 1) / rows;
         int cellWidth = c.width() / columns;
         int cellHeight = c.height() / rows;
         int artPx = TacticalMapIcons.physicalPerArt(1.0D);
