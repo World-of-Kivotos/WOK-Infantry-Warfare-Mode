@@ -10,7 +10,7 @@ import java.util.function.Supplier;
 
 public record RequestFormationCatalogPacket() {
     /**
-     * Whether the reply asks the client to open the vote page. Since 0.3.0-beta.8 the client opens
+     * Whether the reply asks the client to open the vote page. Since 0.4.0-beta.1 the client opens
      * the page itself before asking (terminal key, map key, terminal tab, retry key), so the reply
      * only refreshes the catalog: a reply that arrives after the player already closed the page
      * (high latency, low TPS) must not bring it back.

@@ -1,8 +1,8 @@
 # 更新日志
 
-## WOK步战核心 0.3.0-beta.8 — 2026-10-05
+## WOK步战核心 0.4.0-beta.1 — 2026-10-05
 
-> 新版界面档 1：共享界面组件与 GUI 1 最低 2× 缩放、编制选择与投票页重写、新战斗 HUD、键位调整，并修掉此前仍在的 P1 问题（map-render-01 可能崩服、弹药箱标题压住点数）和管理员“职业管理”NPE。小队、地图、配装、管理员、补给等旧界面本版只换配色，布局留给档 2/档 3。三个网络协议升级，客户端和服务端必须同为本版（见“兼容性”）。
+> 新版界面档 1：共享界面组件与 GUI 1 最低 2× 缩放、编制选择与投票页重写、新战斗 HUD、键位调整，并修掉此前仍在的 P1 问题（map-render-01 可能崩服、弹药箱标题压住点数）和管理员“职业管理”NPE。小队、地图、配装、管理员、补给等旧界面本版只换配色，布局留给档 2/档 3。三个网络协议升级，客户端和服务端必须同为本版（见“兼容性”）。本版原计划编号 0.3.0-beta.8，因网络协议与 0.3.x 不兼容改为 0.4.0-beta.1；测试端曾以 0.3.0-beta.8 文件名部署过同一内容（当时界面标题前缀仍为“WOK //”，其余功能相同）。
 
 ### 新增
 - 编制页：编制投票页重写（`FormationSelectionScreen` 改为继承新基类 `TacticalScreen`）。宽屏分三区：阵营条、按类别分组的编制列表、编制详情；窄屏（如 320×240、427×240）分为列表页和详情页，用“列表”返回键和 `‹ n/m ›` 翻页。
@@ -62,8 +62,9 @@
 - 旧界面：现有滑杆（战术地图“情报图标”、武器调校四项）改用新画法：标签在左，橙色数值在右，填充和旋钮为橙色；高度不足 18 时排成一行，太窄时先收起标签、再收起数值（悬停仍能看到）。鼠标按画出的轨道换算，两端都能拖到底；新增 Home/End 跳到两端、Shift+←/→ 一次五步，数值没有变化时不再重复回调。原构造器签名、百分比读数和吸附不变。
 - 旧界面：弹药补给板面的剩余点数与点数条、模式页签（仅大型站）、分区标题和列表改为从上到下排列，点数条从点数文字之后开始，空间不够时换行；过长的分区标题按面板宽度裁切。480×270 下小型、中型箱的枪械列表少一行（原第 5 行是靠标题压住点数才放下的），仍可滚动。
 - 旧界面：管理员配装终端在编制没有当前职业的规则时禁用“职业管理”键，悬停写明原因；槽位页签的箭头只改变可见的页签，不再移动选中的槽位；槽位 ID 输入框只接受 a-z、0-9、`_`、`.`、`-`。
+- 界面标题：前缀由“WOK //”改为“WOK步战 //”（英文“WOK INFANTRY //”），不再与 WOK 本体混称。涉及编制投票、小队指挥、作战配装、战术拼板、弹药补给、单把武器属性编辑六个终端的标题（开发用组件陈列页、地图标点陈列页同步）。编制投票页、陈列页的新外壳在空间不够时仍按“先收起身份、再换页签短名、最后给标题加省略号”让位；旧外壳的标题按“页头宽 − 身份宽 − 32”裁切，与右侧身份之间固定留 12px，不会重叠。
 - 旧界面：本编制没有开放、但本阵营正在执行的支援，在队友的支援列表里显示为只读的不可用行（“不可用 · 当前编制未开放”），危险区照常画出。
-- 文档：`wok_infantry/README.md` 当前版本与产物路径改为 0.3.0-beta.8，按新版编制投票页重写阵营与编制段，新增“客户端配置”小节（`config/wok_infantry-client.toml` 六项）；测试环境、编制框架和导入导出文档里的旧默认键 `K/L/O/U` 改为新键位说明；编制框架文档补投票准入顺序、编制协议 5、晚加入继承与同阵营分配规则，编制原型设计文档把“锁定后加入直接继承锁定编制”记为已确认；测试环境文档补记本测试端 JourneyMap 6.0.2 已启用、战术地图状态栏应显示“JourneyMap 地形”；`STAMINA_SYSTEM.md` 的 HUD 段改为“手/腿”体力条；`SUPPORT_SYSTEM.md` 补本阵营在途支援的只读可见规则；`THIRD_PARTY_NOTICES.md` 新增“原创素材”一节；占点 README 补一段与核心的 HUD 避让约定（纯文档，不升占点版本）；控制设置分类名统一写“WOK步战核心”。
+- 文档：`wok_infantry/README.md` 当前版本与产物路径改为 0.4.0-beta.1，按新版编制投票页重写阵营与编制段，新增“客户端配置”小节（`config/wok_infantry-client.toml` 六项）；测试环境、编制框架和导入导出文档里的旧默认键 `K/L/O/U` 改为新键位说明；编制框架文档补投票准入顺序、编制协议 5、晚加入继承与同阵营分配规则，编制原型设计文档把“锁定后加入直接继承锁定编制”记为已确认；测试环境文档补记本测试端 JourneyMap 6.0.2 已启用、战术地图状态栏应显示“JourneyMap 地形”；`STAMINA_SYSTEM.md` 的 HUD 段改为“手/腿”体力条；`SUPPORT_SYSTEM.md` 补本阵营在途支援的只读可见规则；`THIRD_PARTY_NOTICES.md` 新增“原创素材”一节；占点 README 补一段与核心的 HUD 避让约定（纯文档，不升占点版本）；控制设置分类名统一写“WOK步战核心”。
 - 开发用 UI 验收：`runUiTestClient` 加载核心 Mixin（`--mixin wok_infantry.mixins.json`）；小队键和地图键改按映射名查找实际绑定的键（小队映射没绑键时用战斗终端映射）；14 张旧截图名字和顺序不变，实时流程截 01–09，`legacy` 用例组补 10–14；编制投票页和管理员区按 uiId 找键，不再依赖中文字面量；编制夹具改用编制协议 5 的记录，详情、可用性和原因都调用服务端方法生成；按钮文字宽度检查改由探针按实际绘制判断；全局超时按各用例预算累加。
 ### 修复
 - 用户 10-04 实测：未加入阵营时首个阵营按钮是实心蓝，看起来像已经加入；现为浏览样式（见“修改”）。
@@ -115,7 +116,7 @@
 - 组件：滑杆最大值不在步长网格上时，拖到最右端或按 End 取不到最大值（旧算法退回最后一个网格值；现有地图和武器滑杆的范围都在网格上，不受影响）。
 - 开发用 UI 验收：此前的 PASS 实际没有加载核心 Mixin；编制投票页为显示管理员控件临时授予的 OP 不收回；`wok_ui_01_deployment` 截的是小队页（与 02 相同），现在截到部署页；uiTest 资源目录被重复登记，一有资源文件 `processUiTestResources` 就失败；传 `-PuiTiers` 时旧截图 10–14 被档位过滤，导致等到全局超时。
 ### 兼容性
-- 网络协议：战局协议 18→19（`BattleNetwork.PROTOCOL_VERSION`，每个小队成员末尾追加状态 id 和血量比例），编制协议 4→5（`FormationNetwork.PROTOCOL_VERSION`，各阵营的投票阶段与锁定编制、结构化编制详情、支援名称表、目录包的锁定标记），兵力协议 1→2（`TicketNetwork.PROTOCOL_VERSION`，快照多一个满条值）。三个频道都要求版本严格相等，客户端和服务端必须都是 0.3.0-beta.8；0.3.0-beta.7 与本版混用时，连接在握手阶段就会被 Forge 拒绝。体力协议 `2`、配装协议 `11` 不变。包编号、generation 校验和原有限流值不变。
+- 网络协议：战局协议 18→19（`BattleNetwork.PROTOCOL_VERSION`，每个小队成员末尾追加状态 id 和血量比例），编制协议 4→5（`FormationNetwork.PROTOCOL_VERSION`，各阵营的投票阶段与锁定编制、结构化编制详情、支援名称表、目录包的锁定标记），兵力协议 1→2（`TicketNetwork.PROTOCOL_VERSION`，快照多一个满条值）。三个频道都要求版本严格相等，客户端和服务端必须都是 0.4.0-beta.1；0.3.0-beta.7 与本版混用时，连接在握手阶段就会被 Forge 拒绝。网络协议不兼容，所以本版按 `docs/VERSIONING.md` 提升次版本号（原计划的 0.3.0-beta.8 改为 0.4.0-beta.1）；测试端以 0.3.0-beta.8 文件名部署过的预交付包协议号与本版相同，部署本版时替换掉它，不要两个并存。体力协议 `2`、配装协议 `11` 不变。包编号、generation 校验和原有限流值不变。
 - 战局快照编解码现在接受“进行中但不可用”的只读支援选项（线格式不变），并在两端检查成员状态与在线/存活一致、血量比例在 [0,1] 或正好为 -1；beta.7 客户端收到只读选项会拒收快照，靠上面的协议升级保证两者不会混连。
 - 服务端行为变化（服主与管理员注意）：已锁定的阵营投票本局不能再开，需要 `/battle admin reset`；`/battle admin formation vote open` 在投票进行中仍可重开（会清空选票，与以前相同）。`/battle admin assign <玩家> <blue|red>` 不再写死 `default` 编制；锁定前两个分配命令都只分配阵营。命令格式不变。
 - 扩展 API 与公共签名保持：`MemberView` 10 参、`BattleSnapshot` 16/17 参、`FactionSelectionView` 7 参、`FormationSelectionView` 14/13/10 参、`FormationSelectionSnapshot` 10/5 参、`FormationCatalogPacket` 2 参构造器，`FormationSelectionScreen(snapshot, returnScreen)`，`TicketNetwork.Snapshot(blue, red, visible)`，`TicketService.finished(MinecraftServer)`（占点反射调用），`TacticalBoardButton`/`TacticalBoardSlider` 构造器，`BattleUiButton.builder()`，`BattleUiTheme` 全部公共常量都保留；`BattleService` 只新增方法；按键映射名 `key.wok_infantry.*` 与 overlay id `squad_roster`、`stamina`、`tickets` 不变。行为差异：`BattleUiTheme` 常量标为 `@Deprecated` 并改指新令牌（数值随之改变，已编译的外部代码仍内联旧值）；`BattleUiButton.Builder.accentColor()` 和 `TacticalBoardButton` 的 `accentColor` 参数不再生效。
@@ -128,7 +129,7 @@
 - HUD 层级：核心 HUD 由 `registerAboveAll` 改为 `registerBelow(DEBUG_TEXT)`，占点面板、倒地面板等以 aboveAll 注册的附属 HUD 固定画在核心 HUD 之上；部位血量（`registerAbove(PLAYER_HEALTH)`）在核心之下，核心名单和体力会避开它。Boss 条靠在 `BOSS_EVENT_PROGRESS` 前后平移姿态来下移、右移，替换 Boss 条绘制的 MOD 可能受影响。
 - 新增客户端 Mixin `EditBoxShadowMixin`（`wok_infantry.mixins.json` 的 client 段）：对原版 `EditBox.renderWidget` 中的绘制调用做 `@Redirect`，只对 `TacticalTextField` 生效；各注入点 `require = 0`，以后失效时只会退回原版外观。其他 MOD 如果也 `@Redirect` 同一处调用，可能冲突。
 - 已知限制：`CaptureHudBridge` 按占点 alpha.3 的面板坐标避让，没有版本门控（compat-03 未修）。占点以后改面板位置或改用 `top_center_next` 时，必须同时提供 `CaptureHudApi.panelRect`（放进核心槽位时返回 null），否则核心会按旧位置避让；装的占点不是 alpha.3 又没有 `panelRect` 时，核心记一条 info 日志。
-- 已知限制：小队、地图、配装、管理员、补给等旧界面本版只换了配色，布局、2× 缩放和新组件要等档 2/档 3；`ui.minimumScale2x` 目前只作用于编制投票页和战斗 HUD，旧界面在 GUI 1 下仍是 1× 中文。英文客户端下编制页摘要与管理员区、320 档详情的载具和能力行、HUD 投票条第二行等共 41 处英文被省略号截断，留给 i18n 收尾。终端标题前缀沿用“WOK //”，是否改为“WOK步战 //”待定。
+- 已知限制：小队、地图、配装、管理员、补给等旧界面本版只换了配色，布局、2× 缩放和新组件要等档 2/档 3；`ui.minimumScale2x` 目前只作用于编制投票页和战斗 HUD，旧界面在 GUI 1 下仍是 1× 中文。英文客户端下编制页摘要与管理员区、320 档详情的载具和能力行、HUD 投票条第二行等共 41 处英文被省略号截断，留给 i18n 收尾。
 - 已知限制：名单被截短时按服务端顺序保留前 N 行，本人行可能被省掉；2× HUD 与 1× 原版快捷栏同屏时大小反差明显（按 `ui.minimumScale2x` 的既定设计）。
 ### 配置/存档影响
 - 客户端配置 `config/wok_infantry-client.toml` 新增 5 项：`[tacticalMap] redirectXaeroWorldMap = true`；`[ui] minimumScale2x = true`；`[keys] defaultsRevision = 0`（由模组写成 `1`，不要手改）；`[hud] rosterMode = "AUTO"`（可选 `AUTO`、`FULL`、`COLLAPSED`、`HIDDEN`）、`[hud] showBattleStrip = true`。旧文件缺的项由 Forge 按默认值自动补上，原有 `tacticalMap.intelMarkerScale` 不变。

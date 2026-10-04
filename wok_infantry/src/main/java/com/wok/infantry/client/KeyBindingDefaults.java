@@ -14,7 +14,7 @@ import java.util.function.IntPredicate;
 import java.util.function.Predicate;
 
 /**
- * Key table and pure key routing of WOK步战核心 (decided 2026-10-04 for 0.3.0-beta.8).
+ * Key table and pure key routing of WOK步战核心 (decided 2026-10-04 for 0.4.0-beta.1).
  *
  * <p>{@link ClientBootstrap} builds every {@code KeyMapping} from this table, so the defaults,
  * the conflict context and the routing rules can be unit tested without a game client.</p>
@@ -161,8 +161,8 @@ public final class KeyBindingDefaults {
     }
 
     /**
-     * One-time move of a mapping that still sits exactly on its pre-0.3.0-beta.8 default key
-     * (K, L, U, O, and M while Xaero's redirected open-map key is on M too) to the new default.
+     * One-time move of a mapping that still sits exactly on its pre-0.4.0-beta.1 default key
+     * (0.3.0-beta.7 and earlier: K, L, U, O, and M while Xaero's redirected open-map key is on M too) to the new default.
      * options.txt stores every key, so without this an upgraded client would keep the old,
      * conflicting keys and the red marks in the controls screen. Anything the player chose is
      * kept: another key, a mouse button, or the old key with a modifier.

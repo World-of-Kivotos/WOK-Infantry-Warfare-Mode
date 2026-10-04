@@ -1,6 +1,6 @@
 # WOK步战核心
 
-Minecraft 1.20.1 / Forge 47.4.22 的独立步战大战场核心，modId 为 `wok_infantry`，当前版本为 `0.3.0-beta.8`（新版界面档 1：编制投票页重写、新战斗 HUD、键位调整；待游戏内验收）。战术地图可软联动 JourneyMap 6 或 Xaero's Minimap 24.2；两者都不是核心加载所需的硬依赖，专用服务端也不需安装地图 MOD。
+Minecraft 1.20.1 / Forge 47.4.22 的独立步战大战场核心，modId 为 `wok_infantry`，当前版本为 `0.4.0-beta.1`（新版界面档 1：编制投票页重写、新战斗 HUD、键位调整；待游戏内验收）。战术地图可软联动 JourneyMap 6 或 Xaero's Minimap 24.2；两者都不是核心加载所需的硬依赖，专用服务端也不需安装地图 MOD。
 阵营、小队、兵种名额、部署、配装发放和战术标记均由服务端裁决。
 
 本轮基地圈地、兵力值和机枪卧姿规则见[玩法调整说明](docs/GAMEPLAY_0.3.0.md)。
@@ -12,7 +12,7 @@ Minecraft 1.20.1 / Forge 47.4.22 的独立步战大战场核心，modId 为 `wok
 - 不复制两者的代码、资源、图标、界面素材、商标或网络协议
 - 不宣称与原作品兼容、获得授权或存在官方关系
 - 界面、服务端状态机、Minecraft 交互和数据格式均为 WOK步战自己的实现
-- 0.3.0-beta.8 新增的界面图标图集 `textures/gui/ui_icons.png`、斜纹 `ui_hatch.png` 和战术地图标点图集 `map_icons.png` 是本项目原创像素图，不含第三方素材。代码注释里的“Squad 风格标点”只指信息组织方式（底板形状表示类别、白色剪影表示种类），图形本身没有复制《Squad》的图标。来源与再生成方式见 [第三方素材说明](THIRD_PARTY_NOTICES.md) 的“原创素材”一节
+- 0.4.0-beta.1 新增的界面图标图集 `textures/gui/ui_icons.png`、斜纹 `ui_hatch.png` 和战术地图标点图集 `map_icons.png` 是本项目原创像素图，不含第三方素材。代码注释里的“Squad 风格标点”只指信息组织方式（底板形状表示类别、白色剪影表示种类），图形本身没有复制《Squad》的图标。来源与再生成方式见 [第三方素材说明](THIRD_PARTY_NOTICES.md) 的“原创素材”一节
 - 每方有一个管理员配置的主基地、最多 15 个实体部署信标和一个独立的实体载具部署箭头；地图上的集结标记仍只是战术信息，不是出生点
 
 ## 已实现
@@ -37,7 +37,7 @@ Minecraft 1.20.1 / Forge 47.4.22 的独立步战大战场核心，modId 为 `wok
 - 玩家进入战局后在编制投票页先浏览并加入公开阵营（默认骨架为学院军或凯撒，加入须二次确认，本轮不能再换阵营）；管理员开启本阵营的编制投票后，成员为具体编制投票，管理员锁定一个结果后全阵营共用。锁定后才加入的玩家直接拿到锁定编制并进入部署。页脚常驻“第一步 → 完成”的分步说明，禁用的按键旁写明原因
 - 编制投票页随时可按 `Esc` 关闭；未加入阵营时关闭后动作栏会提示用战斗终端键（默认 `` ` ``）重新打开。旧小队页的“编制”键也能回到这一页，锁定后仍可查看结果
 - 参战玩家登录时服务端会顺带下发一次编制目录（不打开界面）；目录还没送到时页面停在等待态，页头身份显示中性的“正在读取编制信息”（不再按“未加入阵营”猜测），3 秒没有回应会提示点“重新请求目录”或按 `R` 重试（目录请求有独立的 1 秒限流，不再和打开界面的请求共用）
-- 0.3.0-beta.8 起编制协议为 `5`（同次交付的战局协议为 `19`、兵力协议为 `2`），客户端和服务端必须都是 0.3.0-beta.8，版本不一致时 Forge 在连接阶段拒绝
+- 0.4.0-beta.1 起编制协议为 `5`（同次交付的战局协议为 `19`、兵力协议为 `2`），客户端和服务端必须都是 0.4.0-beta.1，版本不一致时 Forge 在连接阶段拒绝。本版原计划编号 0.3.0-beta.8，因网络协议与 0.3.x 不兼容改为 0.4.0-beta.1（规则见 [版本规范](../docs/VERSIONING.md)）；测试端曾以 `wok_infantry-0.3.0-beta.8.jar` 文件名部署过同一功能的预交付构建
 - 学院军现有首个正式编制“千禧年研讨会机动部队”：3 辆 M1296 龙骑兵、2 辆 M1128 MGS、2 辆悍马 M2 与 1 架机枪版小鸟；编制选择页显示千禧年徽标
 - 凯撒现有首个正式编制“234机械化作战单元”：1 辆豹2A4、2 辆 CV90 与 2 辆装甲无武装 HMMWV；豹2A4、CV90 战损后 15 分钟补充，HMMWV 战损后 5 分钟补充
 - 编制目录由服务端 `config/wok_infantry/formations.json` 驱动，分别约束人数、小队呼号与容量、兵种配额、TaCZ 配装条目白名单和卓越前线载具清单
@@ -289,4 +289,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run_network_test.ps1
 .\gradlew.bat runUiTestClient "-PuiJourneyMapJar=run/compat-cache/journeymap-forge-1.20.1-6.0.2.jar" -PuiExpectedTerrainProvider=journeymap -PuiExpectedJourneyMapLoaded=true --no-daemon --console=plain
 ```
 
-产物位于 `build/libs/wok_infantry-0.3.0-beta.8.jar`。
+产物位于 `build/libs/wok_infantry-0.4.0-beta.1.jar`。
