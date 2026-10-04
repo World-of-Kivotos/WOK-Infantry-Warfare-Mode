@@ -288,6 +288,23 @@ public final class TacticalHud {
         return (Math.max(0, Math.min(255, alpha)) << 24) | (argb & 0xFFFFFF);
     }
 
+    /**
+     * Channel-wise mix of two ARGB colours (preview {@code mixColor}), alpha included:
+     * {@code t} 0 gives {@code from}, 1 gives {@code to} (clamped; NaN = {@code from}). The roster
+     * draws a dead member's name as {@code mix(LIGHT_MUTED, DANGER_B, 0.3)}. {@code t} is a
+     * double so literals such as 0.3 round exactly like the preview.
+     */
+    public static int mix(int from, int to, double t) {
+        double k = t > 0.0D ? Math.min(1.0D, t) : 0.0D;
+        int result = 0;
+        for (int shift = 0; shift <= 24; shift += 8) {
+            int a = (from >>> shift) & 0xFF;
+            int b = (to >>> shift) & 0xFF;
+            result |= (int) Math.round(a + (b - a) * k) << shift;
+        }
+        return result;
+    }
+
     // ---- small parts -------------------------------------------------------------------------
 
     /**

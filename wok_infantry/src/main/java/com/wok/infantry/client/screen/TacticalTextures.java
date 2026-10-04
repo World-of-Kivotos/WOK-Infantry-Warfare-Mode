@@ -39,7 +39,12 @@ public final class TacticalTextures {
 
     /**
      * Draws a texture region into [x, x + width) × [y, y + height), multiplied by {@code argb}
-     * (white texels take exactly that colour; its alpha fades the whole region).
+     * (white texels take exactly that colour; its alpha fades the whole region, and alpha 0 draws
+     * nothing, so pass {@code 0xFFRRGGBB} for an opaque tint).
+     *
+     * <p>Like every helper here it flushes pending batched fills and text first and leaves blending
+     * disabled and the shader colour white afterwards; a caller that relies on blending staying on
+     * must enable it again.
      */
     public static void blitTinted(GuiGraphics graphics, ResourceLocation texture, int x, int y,
                                   int width, int height, float u, float v, int regionWidth,

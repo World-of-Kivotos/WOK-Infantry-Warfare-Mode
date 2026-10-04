@@ -20,7 +20,10 @@ import java.util.Locale;
  * <p>Every marker is four blits from {@link TacticalTextures#MAP_ICONS}: the hover / selection
  * ring (only when hovered or selected), the edge layer (outline plus drop shadow) tinted
  * {@link #OUTLINE}, the plate fill tinted with the marker colour, and the white silhouette.
- * Together they reproduce the preview's {@code drawMapIcon} pixel for pixel.
+ * Together they reproduce the preview's {@code drawMapIcon} pixel for pixel when opaque; a faded
+ * marker ({@link #EXPIRING_ALPHA}) differs only where the drop shadow lies under the outline.
+ * Each call flushes pending batched fills and text and issues its own blits: it is safe inside
+ * {@code drawManaged}, but it ends the batch there, so markers are not batched with fills.
  *
  * <p>Markers keep a stable physical size: one art pixel is {@link #physicalPerArt} physical
  * pixels whatever the GUI scale, the 2× tactical screen scale or the map zoom. The icon is drawn
@@ -258,8 +261,10 @@ public final class TacticalMapIcons {
 
     /**
      * Places a marker whose anchor is at the given physical position. The anchor is rounded to
-     * a whole physical pixel first; a half-pixel anchor offset (odd art pixel sizes on a 15-wide
-     * plate) rounds towards the top-left.
+     * a whole physical pixel first. With an odd art pixel size the anchor's offset inside a
+     * 15-wide plate (7.5 art pixels) is a half physical pixel; it is rounded down, so the plate
+     * sits half a physical pixel right of (circles and squares also below) the exact centre and
+     * every edge stays on a whole physical pixel.
      */
     public static Placement place(MapIcon icon, double anchorPhysicalX, double anchorPhysicalY,
                                   int artPx) {

@@ -138,4 +138,18 @@ class TacticalHudTest {
         assertEquals(0x00123456, TacticalHud.withAlpha(0xFF123456, -5));
         assertEquals(9, TacticalHud.keyCapWidth(5));
     }
+
+    @Test
+    void mixMatchesThePreviewMixColor() {
+        // Reference values from kit/mcgui.js mixColor (JS Math.round, half up).
+        assertEquals(0xFFB49792, TacticalHud.mix(TacticalBoardTheme.LIGHT_MUTED,
+                TacticalBoardTheme.DANGER_B, 0.3D), "dead member name in the roster");
+        assertEquals(0x80808080, TacticalHud.mix(0x00000000, 0xFFFFFFFF, 0.5D),
+                "alpha is mixed too, halves round up");
+        assertEquals(0xFFA1A6A3, TacticalHud.mix(0xFFD6DDD9, 0xFF000000, 0.25D));
+        assertEquals(0x12345678, TacticalHud.mix(0x12345678, 0xFFFFFFFF, 0.0D));
+        assertEquals(0xFFFFFFFF, TacticalHud.mix(0x12345678, 0xFFFFFFFF, 1.0D));
+        assertEquals(0xFFFFFFFF, TacticalHud.mix(0x12345678, 0xFFFFFFFF, 2.0D), "t is clamped");
+        assertEquals(0x12345678, TacticalHud.mix(0x12345678, 0xFFFFFFFF, Double.NaN));
+    }
 }

@@ -98,7 +98,11 @@ public enum TacticalIcon {
         return Optional.empty();
     }
 
-    /** Draws the icon with its top-left corner at (x, y), tinted with {@code argb}. */
+    /**
+     * Draws the icon with its top-left corner at (x, y), tinted with {@code argb}. The colour must
+     * carry its alpha: unlike {@code drawString}, which treats {@code 0x00RRGGBB} as opaque, an
+     * icon tinted {@code 0xRRGGBB} without alpha is not drawn at all.
+     */
     public void draw(GuiGraphics graphics, int x, int y, int argb) {
         TacticalTextures.blitTinted(graphics, TacticalTextures.UI_ICONS, x, y, SIZE, SIZE,
                 u(), v(), SIZE, SIZE, TacticalTextures.UI_ICONS_WIDTH,

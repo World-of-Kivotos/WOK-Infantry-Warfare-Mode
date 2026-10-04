@@ -260,7 +260,8 @@ class TacticalMapIconsAtlasTest {
         assertEquals(48, even.cellSize());
 
         Placement odd = TacticalMapIcons.place(MapIcon.DEFEND, 100.0D, 100.0D, 3);
-        assertEquals(78, odd.plateLeft(), "half-pixel offset rounds towards the top-left");
+        assertEquals(78, odd.plateLeft(),
+                "the 22.5 px offset rounds down: the plate sits half a pixel right of centre");
         assertEquals(123, odd.plateRight());
         assertEquals(45, odd.plateRight() - odd.plateLeft());
         assertEquals(78 - 9, odd.cellLeft());
