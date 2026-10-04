@@ -1,8 +1,11 @@
 package com.wok.infantry.client.screen;
 
 import com.wok.infantry.battle.TacticalMarkerType;
+import com.wok.infantry.client.ui.UiTierMatrix;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
+import org.opentest4j.AssertionFailedError;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -11,11 +14,13 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TacticalMapScreenLayoutTest {
@@ -23,6 +28,8 @@ class TacticalMapScreenLayoutTest {
     void responsiveBoardRegionsStayInsideTheScreenAndDoNotOverlap() {
         for (int[] size : List.of(
                 new int[] {320, 240},
+                new int[] {640, 360},
+                new int[] {960, 540},
                 new int[] {960, 720},
                 new int[] {2560, 1351})) {
             TacticalMapLayout.Layout layout = TacticalMapLayout.compute(size[0], size[1]);
@@ -74,6 +81,41 @@ class TacticalMapScreenLayoutTest {
                 assertFalse(layout.compactDrawer().intersects(layout.footer()));
             }
         }
+    }
+
+    /**
+     * Known defects ui-kit-14 / map-render-04 / map-interact-11, kept as expected failures until
+     * the map batch (B7) replaces this geometry: on the standard tier (640×360, 960×540) the map
+     * frame and the sidebar end 4px inside the footer, and on 320×240 the compact drawer starts
+     * 2px inside the map frame. When this test fails, the defect is fixed: turn the expectations
+     * into plain {@code UiTierMatrix.assertNoSolidOverlap} assertions.
+     */
+    @Test
+    void knownDefectBoardFramesStillReachIntoTheFooterAndDrawer() {
+        for (int[] size : List.of(new int[] {640, 360}, new int[] {960, 540})) {
+            TacticalMapLayout.Layout layout = TacticalMapLayout.compute(size[0], size[1]);
+            String context = size[0] + "x" + size[1];
+            expectKnownDefect("ui-kit-14 map frame/footer " + context,
+                    () -> UiTierMatrix.assertNoSolidOverlap(context, Map.of(
+                            "mapFrame", ui(layout.mapFrame()), "footer", ui(layout.footer()))));
+            expectKnownDefect("map-render-04 sidebar/footer " + context,
+                    () -> UiTierMatrix.assertNoSolidOverlap(context, Map.of(
+                            "sidebar", ui(layout.sidebar()), "footer", ui(layout.footer()))));
+        }
+        TacticalMapLayout.Layout compact = TacticalMapLayout.compute(320, 240);
+        expectKnownDefect("ui-kit-14 compact drawer/map frame 320x240",
+                () -> UiTierMatrix.assertNoSolidOverlap("320x240", Map.of(
+                        "compactDrawer", ui(compact.compactDrawer()),
+                        "mapFrame", ui(compact.mapFrame()))));
+    }
+
+    private static void expectKnownDefect(String defect, Executable assertion) {
+        assertThrows(AssertionFailedError.class, assertion, defect
+                + " no longer reproduces: the layout was fixed, make this a plain assertion");
+    }
+
+    private static UiRect ui(TacticalMapLayout.Rect rect) {
+        return new UiRect(rect.left(), rect.top(), rect.right(), rect.bottom());
     }
 
     @Test
