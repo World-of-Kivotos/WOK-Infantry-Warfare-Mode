@@ -94,9 +94,18 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<版本>\<标�
 | `run/ui-test/ui-test-results/wok_ui_progress.txt` | 进度；客户端没写结果就退出时，Gradle 报出最后到达的阶段 |
 | `run/ui-test/screenshots/` | 截图 |
 
-### 0.4.0-beta.2 最终验收（2026-10-05，测试模式与测试开局）
+### 0.4.0-beta.2 最终验收（2026-10-05，final2：审查修正后）
 
-- 代码：分支 `claude/新版界面` 的 `c40e4d9`（本版最后一个源码提交）。核心先用限流脚本 `clean build`（连同六个附加测试源集的编译）：JUnit 905 项，0 失败、0 跳过；`runGameTestServer`：21 项必需 GameTest 全部通过（含本版新增 2 项）。产物 `wok_infantry-0.4.0-beta.2.jar`，2,062,775 字节，SHA-256 `1230DE869343EED83C3D83920662639A78C5F78FBA21468396890153A53AD324`（两轮跑完后重新核对，不变）。
+本版的自动验收以本节的 `zh_cn-final2`、`en_us-final2` 两份归档为准；下一节首轮 `final`（`c40e4d9`，产物已作废）保留为对照，两轮的 180 行用例结果在中英两种语言下都逐行相同。
+
+- 代码：分支 `claude/新版界面` 的 `19d2114`（本版最后一个源码提交）。它在 `c40e4d9` 之上做了审查修正：测试开局在任何改动之前先核对阵营、编制和阵营空位；锁定或开票之后某一步失败也照常推送；发出过测试开局的编制页在部署成功的战局快照到达时关闭（不论它是怎么打开的）；补主基地跳过地面是树叶的落脚处，红方退到出生点 -64 X 时朝东。编制页的布局、按键和文字都没有变。核心先用限流脚本 `clean build`（连同六个附加测试源集的编译）：JUnit 907 项，0 失败、0 跳过；`runGameTestServer`：22 项必需 GameTest 全部通过（含本版新增 3 项）。产物 `wok_infantry-0.4.0-beta.2.jar`，2,066,819 字节，SHA-256 `60829BC47C86F4AF894CA32C1A210B5CA5E2D824B52A495892003BC6BAF50582`（两轮跑完后重新核对，不变）。
+- zh_cn 严格轮（`runUiTestClient`）：`status=PASS`，4358 tick，40 个用例、189 张截图，`strictLayoutViolations=0`，`layoutViolations=169`；用例结果与首轮 `zh_cn-final` 逐行相同，“测试开局”键尺寸与 `finalActiveMarkers=1` 也相同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.2\zh_cn-final2\`。
+- en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`，4335 tick，189 张截图，`layoutViolations=172`、`strictLayoutViolations=0`；用例结果与首轮 `en_us-final` 逐行相同（比 0.4.0-beta.1 多的 4 条见下一节）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.2\en_us-final2\`。
+- 仍未做：真实客户端（测试端 PCL）里点“测试开局”的游戏内验收（含部署成功后编制页按服务端推出、战斗终端键、终端“编制”页签三种打开方式都自动关闭），以及局域网双人用 `/battle admin test start <阵营> <编制> <玩家>` 送第二个号。
+
+### 0.4.0-beta.2 首轮验收（2026-10-05，final，已被 final2 取代）
+
+- 代码：分支 `claude/新版界面` 的 `c40e4d9`（首轮最后一个源码提交，产物已作废）。核心先用限流脚本 `clean build`（连同六个附加测试源集的编译）：JUnit 905 项，0 失败、0 跳过；`runGameTestServer`：21 项必需 GameTest 全部通过（含本版新增 2 项）。产物 `wok_infantry-0.4.0-beta.2.jar`，2,062,775 字节，SHA-256 `1230DE869343EED83C3D83920662639A78C5F78FBA21468396890153A53AD324`（两轮跑完后重新核对，不变）。
 - zh_cn 严格轮（`runUiTestClient`）：`status=PASS`，4336 tick，40 个用例、189 张截图，`strictLayoutViolations=0`。新增的 `formation.testmode`、`formation.testconfirm` 在 5 个档位（含 427×240）都是 0 违规；`layoutViolations=169` 与 0.4.0-beta.1 的 `zh_cn-final2` 逐条相同（都是旧界面），原有 179 张截图各档结果不变。“测试开局”键尺寸（屏幕像素）：320×240 为 303×14，427×240 为 820×28（2× 排版），480×270 为 170×14，640×336 为 200×18，960×720 为 332×36（2× 排版）。Boss 条位移与页头身份记录与 `zh_cn-final2` 相同。实时流程末尾的 `finalActiveMarkers` 由 3 变为 1：标记按存活时间过期，本轮多了 10 张截图、整轮长约 180 tick，与测试模式无关。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.2\zh_cn-final\`。
 - en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`，4339 tick，189 张截图，`layoutViolations=172`、`strictLayoutViolations=0`。比 `en_us-final2`（168）多 4 条，都在新增截图里：testmode、testconfirm 两个状态的 960、480 档左侧阵营概况里的“3 (the faction picks one)”被省略号截断——与原有 join、confirm 状态同一行文字、同一位置的已知英文截断（留给 i18n 收尾），不是新按键造成的；其余 168 条与 `en_us-final2` 逐条相同。英文“Test start”键在 320 档与“Open formation vote”同一行完整显示。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.2\en_us-final\`。
 - 仍未做：真实客户端（测试端 PCL）里点“测试开局”的游戏内验收，以及局域网双人用 `/battle admin test start <阵营> <编制> <玩家>` 送第二个号。
