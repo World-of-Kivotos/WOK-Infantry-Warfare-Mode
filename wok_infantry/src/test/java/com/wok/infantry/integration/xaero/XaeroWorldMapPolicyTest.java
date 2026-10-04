@@ -64,6 +64,8 @@ class XaeroWorldMapPolicyTest {
         assertTrue(InfantryClientConfig.redirectXaeroWorldMap(),
                 "an unloaded client config reads the default");
         assertFalse(XaeroWorldMapPolicy.isModLoaded(), "no Xaero in unit tests");
+        assertFalse(XaeroWorldMapPolicy.redirectAvailable(),
+                "without Xaero the WOK map key keeps its M default");
         XaeroWorldMapPolicy.install();
         assertFalse(XaeroWorldMapPolicy.redirectActive(), "install() is a no-op without Xaero");
         assertNull(XaeroWorldMapPolicy.openMapKey(), "no Xaero key to show or to defer to");

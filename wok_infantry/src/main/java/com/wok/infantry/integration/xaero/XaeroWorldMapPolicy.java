@@ -20,8 +20,9 @@ import net.minecraftforge.fml.ModList;
  *
  * <p>Xaero is an optional soft dependency: its map screen and its open-map key are recognised by
  * class name and mapping name only, never through a compile-time reference. If the expected
- * screen class is missing (another Xaero build), the redirect stays off, one warning is logged
- * and Xaero keeps its own behaviour.</p>
+ * screen class is missing (another Xaero build), the redirect stays off, one warning is logged,
+ * Xaero keeps its own behaviour and the WOK tactical-map key keeps its {@code M} default
+ * ({@link #redirectAvailable()}).</p>
  *
  * <ul>
  *   <li>In a battle (the cached battle snapshot has a faction, see
@@ -57,6 +58,8 @@ public final class XaeroWorldMapPolicy {
     }
 
     private static volatile boolean installed;
+    /** Cached {@link #redirectAvailable()}: {@code null} until first checked. */
+    private static Boolean available;
     private static KeyMapping openMapKey;
     /** The key-mapping array {@link #openMapKey} was looked up in (Forge replaces it on load). */
     private static KeyMapping[] openMapKeyScanned;
@@ -70,17 +73,34 @@ public final class XaeroWorldMapPolicy {
         return mods != null && mods.isLoaded(MOD_ID);
     }
 
-    /** Hooks the redirect when Xaero's World Map is installed; safe to call more than once. */
-    public static synchronized void install() {
-        if (installed || !isModLoaded()) {
-            return;
+    /**
+     * Whether the redirect can work at all: Xaero's World Map is installed and its map screen
+     * class exists. Only then does the WOK tactical-map key start unbound (Xaero's own key reaches
+     * the tactical map instead); with an unknown Xaero build WOK keeps {@code M}. The class is
+     * looked up once; a miss is logged once.
+     */
+    public static synchronized boolean redirectAvailable() {
+        if (available == null) {
+            available = isModLoaded() && worldMapScreenClassPresent();
         }
+        return available;
+    }
+
+    private static boolean worldMapScreenClassPresent() {
         try {
             Class.forName(WORLD_MAP_SCREEN_CLASS, false, XaeroWorldMapPolicy.class.getClassLoader());
+            return true;
         } catch (ClassNotFoundException | LinkageError exception) {
             WokInfantryMod.LOGGER.warn("Xaero's World Map is installed but {} was not found; its "
                     + "world map is not redirected to the WOK tactical map", WORLD_MAP_SCREEN_CLASS,
                     exception);
+            return false;
+        }
+    }
+
+    /** Hooks the redirect when Xaero's World Map is installed; safe to call more than once. */
+    public static synchronized void install() {
+        if (installed || !redirectAvailable()) {
             return;
         }
         installed = true;

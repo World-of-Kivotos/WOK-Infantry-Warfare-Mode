@@ -41,9 +41,10 @@ import java.util.OptionalInt;
 
 public final class ClientBootstrap {
     // Default keys, conflict context and routing live in KeyBindingDefaults (unit tested).
-    // The tactical map has no WOK default with Xaero's World Map installed: Xaero's own M is
-    // redirected to the tactical map instead (XaeroWorldMapPolicy).
-    private static final boolean XAERO_WORLD_MAP_INSTALLED = XaeroWorldMapPolicy.isModLoaded();
+    // The tactical map has no WOK default when Xaero's World Map can be redirected: Xaero's own M
+    // opens the tactical map instead (XaeroWorldMapPolicy). An unknown Xaero build without the
+    // map screen class counts as not installed here, so WOK keeps its M.
+    private static final boolean XAERO_WORLD_MAP_INSTALLED = XaeroWorldMapPolicy.redirectAvailable();
     private static final KeyMapping OPEN_TERMINAL = mapping(Binding.TERMINAL);
     private static final KeyMapping OPEN_LOADOUT = mapping(Binding.LOADOUT);
     private static final KeyMapping OPEN_ADMIN_LOADOUT = mapping(Binding.ADMIN_LOADOUT);

@@ -183,7 +183,7 @@ WOK步战核心现在按软依赖接入两种客户端地形后端：JourneyMap 
 
 Xaero 联动通过反射读取其已经缓存的 4×4 地形瓦片，并用客户端当前已加载区块补齐近处空白。它不链接、shade 或重新发布 Xaero class；Xaero API/内部结构变化时会安全退回坐标网格而不是阻止游戏加载。WOK 战术地图打开期间会持续关闭 Xaero 原生小地图显示，但不会改写或保存玩家的 Xaero 配置文件。Xaero 没有为本集成提供等同 JourneyMap 区域导出的公开接口，因此未探索和未加载区域不会被伪造成完整地形。
 
-安装 Xaero 世界地图（`xaeroworldmap`）时，玩家处于战局（已加入阵营）期间，任何打开 Xaero 世界地图的操作（默认是它自己的 `M` 键）都会在界面打开前被换成 WOK 战术地图，不会先闪出 Xaero 地图，Esc 也不会退回 Xaero 地图；未加入阵营时 Xaero 地图照常打开。WOK 只按类名 `xaero.map.gui.GuiMap` 和键名 `gui.xaero_open_map` 识别 Xaero，不链接其 class；找不到该类时只记一条日志并保持 Xaero 原样。此时 WOK 自己的“打开战术地图”键默认不绑定，避免和 Xaero 的 `M` 重复而在控制设置里标红；如果玩家仍把两者绑在同一个键上，WOK 让出这次按键，由重定向统一处理。客户端配置 `tacticalMap.redirectXaeroWorldMap = false` 可关闭重定向（之后请在控制设置里给 WOK 战术地图另绑一个键）。
+安装 Xaero 世界地图（`xaeroworldmap`）时，玩家处于战局（已加入阵营）期间，任何打开 Xaero 世界地图的操作（默认是它自己的 `M` 键）都会在界面打开前被换成 WOK 战术地图，不会先闪出 Xaero 地图，Esc 也不会退回 Xaero 地图；未加入阵营时 Xaero 地图照常打开。WOK 只按类名 `xaero.map.gui.GuiMap` 和键名 `gui.xaero_open_map` 识别 Xaero，不链接其 class；找不到该类时只记一条日志，Xaero 保持原样，WOK 地图键也照旧默认 `M`。能重定向时，WOK 自己的“打开战术地图”键默认不绑定，避免和 Xaero 的 `M` 重复而在控制设置里标红；如果玩家仍把两者绑在同一个键上，WOK 让出这次按键，由重定向统一处理。客户端配置 `tacticalMap.redirectXaeroWorldMap = false` 可关闭重定向（之后请在控制设置里给 WOK 战术地图另绑一个键）。
 
 JourneyMap 6 仍是受支持的可选后端，不是玩家可直接使用的第二套地图 UI。安装兼容版本后，JourneyMap API 2.0 插件为 WOK 战术地图异步提供真实地形瓦片；未安装、使用 JourneyMap 5.x 或未来未验收的 7.x 时，不再阻止 WOK步战核心加载。
 
