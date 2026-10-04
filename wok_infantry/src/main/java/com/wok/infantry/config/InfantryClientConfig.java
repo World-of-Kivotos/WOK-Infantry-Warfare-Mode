@@ -42,9 +42,10 @@ public final class InfantryClientConfig {
                 .defineInRange("intelMarkerScale", DEFAULT_MAP_MARKER_SCALE,
                         MIN_MAP_MARKER_SCALE, MAX_MAP_MARKER_SCALE);
         REDIRECT_XAERO_WORLD_MAP = builder
-                .comment("With Xaero's World Map installed: while you are in a battle (have a "
-                        + "faction), opening Xaero's world map (its key, M by default) opens the "
-                        + "WOK tactical map instead. Outside a battle Xaero's map opens as usual. "
+                .comment("With Xaero's World Map installed: once you are in a battle (have a "
+                        + "faction and its formation is locked), opening Xaero's world map (its key, "
+                        + "M by default) opens the WOK tactical map instead. Before that Xaero's map "
+                        + "opens as usual. "
                         + "Set to false to always open Xaero's map; then bind the WOK tactical "
                         + "map key to a different key in the controls screen.")
                 .define("redirectXaeroWorldMap", DEFAULT_REDIRECT_XAERO_WORLD_MAP);

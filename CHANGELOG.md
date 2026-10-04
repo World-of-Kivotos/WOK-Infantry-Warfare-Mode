@@ -145,7 +145,7 @@
 - 其他模块在同一工作区 clean build：部位血量 0.1.0-beta.10 JUnit 126 项、指挥官支援 0.1.0-beta.3 JUnit 163 项、占点 0.1.0-alpha.3 JUnit 9 项、倒地救援 0.1.0-alpha.3 JUnit 3 项、载具部位血量 0.1.0-beta.1 JUnit 18 项，均 0 失败；独立护甲 1.2.0-beta.1（JAR 名带 `1.20.1-` 前缀）与创伤治疗 0.1.0-beta.1 构建通过（没有单测）。
 - 独立安装检查：`tools/verify_mod_independence.ps1` 对 8 个 JAR 全部 PASS，核心强制依赖只有 `forge`、`minecraft`。
 - `tools/verify_versions.ps1`（Windows PowerShell 5.1）：不带参数完整核对 8 个模块 PASS（源码版本、README/VERSIONING 版本表、模块 README、CHANGELOG 标题、JAR 名、modId 与内部版本一致）；`-Modules wok_infantry -Release` PASS（本条目已去掉“进行中”、六栏不空，JAR 晚于核心源码最后一次提交）。不限模块加 `-Release` 时停在创伤治疗 0.1.0-beta.1 的旧格式条目（缺“### 新增”栏），与本版无关。
-- 已部署到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods\wok_infantry-0.3.0-beta.8.jar`（SHA-256 前缀 `61624BC3818F6ADA`，与构建产物一致）；0.3.0-beta.7 备份为 `wok_infantry-0.3.0-beta.7.jar.backup-20261005-005952-before-0.3.0-beta.8.bak`。
+- 已部署到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods\wok_infantry-0.3.0-beta.8.jar`（SHA-256 前缀 `B5CA2792B984E55C`，与构建产物一致；这是改正客户端配置文件里 `redirectXaeroWorldMap` 注释后的重新构建，代码行为与验收时的 0306a7b 相同，重新构建后 JUnit 仍为 875 项 0 失败）；0.3.0-beta.7 备份为 `wok_infantry-0.3.0-beta.7.jar.backup-20261005-005952-before-0.3.0-beta.8.bak`。
 - 未做：测试端真实客户端（PCL）游戏内验收，待用户。重点见 `wok_infantry/docs/UI_ACCEPTANCE.md` 第 7 节：640×336（1920×1008 GUI 3）与 960×720 GUI 1 的清晰度和点击热区；Xaero 重定向、Esc 回游戏和旧键迁移日志；`～` 键帽能否认出；HUD 与部位血量“手/腿”伴随槽、真实据点面板、真实倒地面板、Boss 条、状态效果图标、副手物品、F1/F3/按住 Tab 的叠放，以及夜间头顶标记亮度。
 - 双人项目待验证：多人在线的真实计票，锁定后本阵营自动进部署页、对方不弹页；锁定后用第二个号加入直接拿到编制；PvP 下名单的倒地、阵亡状态。
 
