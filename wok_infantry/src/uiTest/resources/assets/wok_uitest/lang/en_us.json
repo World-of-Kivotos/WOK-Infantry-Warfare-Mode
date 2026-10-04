@@ -1,5 +1,5 @@
 {
-  "uitest.wok_infantry.kit.title": "WOK INFANTRY //UI kit",
+  "uitest.wok_infantry.kit.title": "WOK INFANTRY // UI kit",
   "uitest.wok_infantry.kit.identity": "Academy · Alpha · Leader",
   "uitest.wok_infantry.kit.page.controls": "Keys",
   "uitest.wok_infantry.kit.page.inputs": "Inputs",
@@ -75,7 +75,7 @@
   "uitest.wok_infantry.kit.icons.meta": "%s icons",
   "uitest.wok_infantry.kit.mapicons.dark": "Dark terrain",
   "uitest.wok_infantry.kit.mapicons.paper": "Paper map",
-  "uitest.wok_infantry.mapicons.title": "WOK INFANTRY //Map markers",
+  "uitest.wok_infantry.mapicons.title": "WOK INFANTRY // Map markers",
   "uitest.wok_infantry.mapicons.identity": "Squad-style silhouettes",
   "uitest.wok_infantry.mapicons.sheet.dark": "Markers (dark terrain)",
   "uitest.wok_infantry.mapicons.sheet.paper": "Markers (paper map)",
