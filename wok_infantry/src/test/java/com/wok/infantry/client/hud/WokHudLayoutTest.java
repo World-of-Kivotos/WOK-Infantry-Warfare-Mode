@@ -55,8 +55,47 @@ class WokHudLayoutTest {
         assertEquals(360, layout.height());
         assertEquals(UiRect.of(4, 4, 176, 115), layout.roster());
         assertEquals(UiRect.of(184, 4, 476, 21), layout.strip(), "too narrow to centre: docked");
-        assertEquals(UiRect.of(4, 329, 114, 356), layout.staminaPlate());
-        assertEquals(UiRect.of(8, 658, 228, 712), layout.toGui(layout.staminaPlate()));
+        assertTrue(layout.staminaRow(), "only one row fits under the 1x chat");
+        assertEquals(UiRect.of(4, 341, 114, 356), layout.staminaPlate());
+        assertEquals(UiRect.of(8, 682, 228, 712), layout.toGui(layout.staminaPlate()),
+                "2 GUI pixels under the chat's last line at 680");
+    }
+
+    @Test
+    void vitalsNeverReachIntoTheVanillaChat() {
+        for (int[] tier : TIERS) {
+            Layout layout = WokHudLayout.compute(Input.screen(tier[0], tier[1], tier[2])
+                    .withStamina(true));
+            String where = tier[0] + "x" + tier[1] + "@" + tier[2];
+            assertTrue(layout.toGui(layout.vitals()).top() >= tier[1] - 40 + 2, where);
+            assertEquals(tier[2] == 2, layout.staminaRow(), where + ": stacked plate at 1x");
+            assertEquals(layout.staminaRow() ? 15 : 27, layout.staminaPlate().height(), where);
+        }
+        Layout scaled = WokHudLayout.compute(Input.screen(1920, 1080, 2).withStamina(true));
+        assertTrue(scaled.staminaRow());
+        assertEquals(UiRect.of(8, 1042, 228, 1072), scaled.toGui(scaled.staminaPlate()));
+    }
+
+    @Test
+    void stripMovesBelowEffectIconsThatAnotherModShiftedIntoIt() {
+        // JourneyMap moves the effect icons 75px left, clear of its minimap
+        Input shifted = Input.screen(320, 240, 1).withRoster(8, false).withStrip(true)
+                .withToasts(List.of(100)).withEffects(3, 2).withEffectOffset(-75, 0);
+        Layout layout = WokHudLayout.compute(shifted);
+        List<UiRect> rows = WokHudLayout.effectRects(shifted);
+        assertEquals(UiRect.of(170, 1, 244, 25), rows.get(0));
+        assertTrue(layout.strip().top() >= 51 + layout.gap(), "below both icon rows: "
+                + layout.strip());
+        assertEquals(195, layout.strip().width(), "keeps its full width");
+        assertSound(shifted, layout, "shifted icons");
+
+        Input wide = Input.screen(960, 720, 2).withStrip(true).withEffects(3, 2)
+                .withEffectOffset(-75, 0);
+        Layout scaled = WokHudLayout.compute(wide);
+        assertSound(wide, scaled, "shifted icons at 2x");
+        Input hidden = Input.screen(320, 240, 1).withStrip(true).withEffects(0, 0)
+                .withEffectOffset(-75, 0);
+        assertEquals(2, WokHudLayout.compute(hidden).strip().top(), "no icons, nothing moves");
     }
 
     @Test
@@ -253,8 +292,7 @@ class WokHudLayoutTest {
                 assertTrue(separated(plate, layout.capturePanel(), layout.gap()),
                         where + ": clear of the capture panel " + plate);
             }
-            for (UiRect row : WokHudLayout.effectRects(input.guiWidth(),
-                    input.beneficialEffects(), input.harmfulEffects(), input.factor())) {
+            for (UiRect row : WokHudLayout.effectRects(input)) {
                 assertTrue(separated(plate, row, layout.gap() - 1),
                         where + ": clear of the effect icons " + plate);
             }

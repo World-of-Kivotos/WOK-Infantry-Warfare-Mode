@@ -48,6 +48,19 @@ final class StaminaHudOverlayTest {
     }
 
     @Test
+    void oneRowPlateSplitsTheWidthIntoTwoLabelledBars() {
+        UiRect plate = WokHudLayout.compute(WokHudLayout.Input.screen(960, 720, 2)
+                .withStamina(true)).staminaPlate();
+        int x = plate.left() + StaminaHudOverlay.STACK_LEFT_INSET;
+        int right = plate.right() - StaminaHudOverlay.STACK_RIGHT_INSET;
+        int pair = StaminaHudOverlay.rowPairWidth(x, right);
+        assertEquals(48, pair);
+        assertTrue(pair - HudTestSupport.width("手") - StaminaHudOverlay.LABEL_GAP >= 10,
+                "each half keeps a readable bar");
+        assertEquals(0, StaminaHudOverlay.rowPairWidth(10, 12));
+    }
+
+    @Test
     void companionRowFitsLabelledBarsInTheBodyHealthStrip() {
         // body-health companion strip: 52×11, centred under the figure at h − 13
         StaminaHudOverlay.CompanionRow row = StaminaHudOverlay.companionRow(43, 227, 52, 11,

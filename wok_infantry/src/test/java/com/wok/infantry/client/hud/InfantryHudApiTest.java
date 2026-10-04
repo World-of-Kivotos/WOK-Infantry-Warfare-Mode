@@ -27,7 +27,7 @@ class InfantryHudApiTest {
         int[] next = InfantryHudApi.slot(scaled, InfantryHudApi.TOP_CENTER_NEXT);
         assertEquals((21 + 5 + 12 + 4) * 2, next[1], "doubled at the 2x HUD");
         assertEquals(38 * 2, InfantryHudApi.topCenterBottom(scaled));
-        assertArrayEquals(new int[]{8, 646, 220, 66},
+        assertArrayEquals(new int[]{8, 682, 220, 30},
                 InfantryHudApi.slot(scaled, InfantryHudApi.VITALS));
     }
 

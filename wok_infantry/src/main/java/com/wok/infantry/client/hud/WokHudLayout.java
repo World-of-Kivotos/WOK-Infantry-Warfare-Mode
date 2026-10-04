@@ -42,6 +42,13 @@ public final class WokHudLayout {
     public static final int STRIP_MAX_WIDTH = 300;
     public static final int STRIP_MIN_CENTRED_TIGHT = 150;
     public static final int STRIP_MIN_CENTRED = 200;
+    /**
+     * Narrowest strip still worth drawing beside the status-effect icons; when giving way to the
+     * icons would leave less, the strip moves below them instead.
+     */
+    public static final int STRIP_MIN_WIDTH_TIGHT = 100;
+    public static final int STRIP_MIN_WIDTH = 120;
+    public static final int TOAST_MIN_WIDTH = 60;
     public static final int TOAST_HEIGHT = 12;
     /** Notice width beyond its text: 6px before, 6px after. */
     public static final int TOAST_PADDING = 12;
@@ -55,6 +62,12 @@ public final class WokHudLayout {
     public static final int VITALS_MAX_WIDTH = 110;
     /** Standalone stamina plate: two labelled rows (手 over 腿). */
     public static final int STAMINA_PLATE_HEIGHT = 27;
+    /** One-row stamina plate ("手 ▬ 腿 ▬") where the stacked plate would reach into the chat. */
+    public static final int STAMINA_ROW_HEIGHT = 15;
+    /** Vanilla chat lines end this far above the bottom, GUI pixels (ChatComponent). */
+    public static final int CHAT_BOTTOM_FROM_BOTTOM = 40;
+    /** GUI pixels kept between the chat's last line and the vitals slot. */
+    public static final int CHAT_CLEARANCE = 2;
     /** Room kept between a HUD part and a vanilla obstacle. */
     public static final int OBSTACLE_CLEARANCE = 4;
     public static final int CENTER_LOW_MAX_WIDTH = 200;
@@ -102,6 +115,8 @@ public final class WokHudLayout {
      * @param attackIndicatorLeft the hotbar attack indicator is drawn left of the hotbar
      * @param beneficialEffects status-effect icons in the top row
      * @param harmfulEffects    status-effect icons in the second row
+     * @param effectOffsetX     x translation (GUI pixels) applied to the effect icons by another MOD
+     * @param effectOffsetY     y translation (GUI pixels) applied to the effect icons by another MOD
      * @param capturePanel      WOK步战附属-占点 panel in GUI pixels, or null while it is hidden
      */
     public record Input(int guiWidth, int guiHeight, int factor,
@@ -111,6 +126,7 @@ public final class WokHudLayout {
                         boolean stamina,
                         boolean offhandLeft, boolean attackIndicatorLeft,
                         int beneficialEffects, int harmfulEffects,
+                        int effectOffsetX, int effectOffsetY,
                         UiRect capturePanel) {
         public Input {
             factor = Math.max(1, factor);
@@ -124,55 +140,72 @@ public final class WokHudLayout {
         /** Empty HUD on a {@code guiWidth}×{@code guiHeight} screen drawn at {@code factor}. */
         public static Input screen(int guiWidth, int guiHeight, int factor) {
             return new Input(guiWidth, guiHeight, factor, 0, false, false, List.of(), 0, false,
-                    false, false, false, 0, 0, null);
+                    false, false, false, 0, 0, 0, 0, null);
         }
 
         public Input withRoster(int rows, boolean collapsed) {
             return new Input(guiWidth, guiHeight, factor, rows, collapsed, strip, toastTextWidths,
                     voteContentWidth, voteMeter, stamina, offhandLeft, attackIndicatorLeft,
-                    beneficialEffects, harmfulEffects, capturePanel);
+                    beneficialEffects, harmfulEffects, effectOffsetX, effectOffsetY, capturePanel);
         }
 
         public Input withStrip(boolean shown) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, shown,
                     toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
-                    attackIndicatorLeft, beneficialEffects, harmfulEffects, capturePanel);
+                    attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
+                    effectOffsetY, capturePanel);
         }
 
         public Input withToasts(List<Integer> textWidths) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
                     textWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
-                    attackIndicatorLeft, beneficialEffects, harmfulEffects, capturePanel);
+                    attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
+                    effectOffsetY, capturePanel);
         }
 
         public Input withVote(int contentWidth, boolean meter) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
                     toastTextWidths, contentWidth, meter, stamina, offhandLeft,
-                    attackIndicatorLeft, beneficialEffects, harmfulEffects, capturePanel);
+                    attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
+                    effectOffsetY, capturePanel);
         }
 
         public Input withStamina(boolean shown) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
                     toastTextWidths, voteContentWidth, voteMeter, shown, offhandLeft,
-                    attackIndicatorLeft, beneficialEffects, harmfulEffects, capturePanel);
+                    attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
+                    effectOffsetY, capturePanel);
         }
 
         public Input withHotbarNeighbours(boolean offhandOnLeft, boolean indicatorOnLeft) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
                     toastTextWidths, voteContentWidth, voteMeter, stamina, offhandOnLeft,
-                    indicatorOnLeft, beneficialEffects, harmfulEffects, capturePanel);
+                    indicatorOnLeft, beneficialEffects, harmfulEffects, effectOffsetX,
+                    effectOffsetY, capturePanel);
         }
 
         public Input withEffects(int beneficial, int harmful) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
                     toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
-                    attackIndicatorLeft, beneficial, harmful, capturePanel);
+                    attackIndicatorLeft, beneficial, harmful, effectOffsetX, effectOffsetY,
+                    capturePanel);
+        }
+
+        /**
+         * Translation (GUI pixels) another MOD applies to the vanilla effect icons, e.g.
+         * JourneyMap moving them clear of its minimap; measured from the pose at render time.
+         */
+        public Input withEffectOffset(int dx, int dy) {
+            return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
+                    toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
+                    attackIndicatorLeft, beneficialEffects, harmfulEffects, dx, dy, capturePanel);
         }
 
         public Input withCapturePanel(UiRect guiRect) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
                     toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
-                    attackIndicatorLeft, beneficialEffects, harmfulEffects, guiRect);
+                    attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
+                    effectOffsetY, guiRect);
         }
     }
 
@@ -181,8 +214,11 @@ public final class WokHudLayout {
      *
      * @param band            the top-centre column: where the strip sits (or would sit) and
      *                        what notices centre in
-     * @param vitals          bottom-left vitals slot (always present)
-     * @param staminaPlate    standalone stamina plate: the bottom 27px of {@code vitals}
+     * @param vitals          bottom-left vitals slot (always present); it starts under the
+     *                        vanilla chat, so at the 2× HUD it is only one row tall
+     * @param staminaPlate    standalone stamina plate: the bottom of {@code vitals}, 27px
+     *                        stacked or 15px in one row
+     * @param staminaRow      the stamina plate is the one-row form
      * @param centerLow       slot for a centre-low panel such as the downed panel
      * @param topCenterNext   first free slot under the top-centre plates, for an add-on panel
      * @param topCenterBottom bottom of the lowest top-centre plate, or 0 when none is shown
@@ -192,9 +228,9 @@ public final class WokHudLayout {
     public record Layout(int width, int height, int factor, boolean tight, boolean narrow,
                          int edge, int gap,
                          UiRect roster, UiRect strip, List<UiRect> toasts, UiRect vote,
-                         UiRect band, UiRect vitals, UiRect staminaPlate, UiRect centerLow,
-                         UiRect topCenterNext, int topCenterBottom, int bossShift,
-                         UiRect capturePanel) {
+                         UiRect band, UiRect vitals, UiRect staminaPlate, boolean staminaRow,
+                         UiRect centerLow, UiRect topCenterNext, int topCenterBottom,
+                         int bossShift, UiRect capturePanel) {
         public Layout {
             toasts = List.copyOf(toasts);
         }
@@ -279,8 +315,7 @@ public final class WokHudLayout {
         int toastGap = tight ? 3 : 5;
         int dockGap = tight ? 5 : 8;
         UiRect capture = toLayout(in.capturePanel(), factor);
-        List<UiRect> effects = effectRects(in.guiWidth(), in.beneficialEffects(),
-                in.harmfulEffects(), factor);
+        List<UiRect> effects = effectRects(in);
         int rosterWidth = rosterWidth(narrow);
 
         UiRect roster = null;
@@ -304,8 +339,10 @@ public final class WokHudLayout {
             bandLeft = dockLeft;
             bandWidth = Math.max(0, Math.min(maxStrip, width - edge - dockLeft));
         }
-        UiRect band = clearOfEffects(UiRect.ofSize(bandLeft, edge, bandWidth, STRIP_HEIGHT),
-                effects, gap, Math.min(bandLeft, dockLeft));
+        int bandMinLeft = Math.min(bandLeft, dockLeft);
+        int stripMinWidth = tight ? STRIP_MIN_WIDTH_TIGHT : STRIP_MIN_WIDTH;
+        UiRect band = place(UiRect.ofSize(bandLeft, edge, bandWidth, STRIP_HEIGHT), null,
+                effects, gap, bandMinLeft, stripMinWidth);
 
         boolean voteShown = in.voteContentWidth() > 0;
         UiRect strip = null;
@@ -325,22 +362,21 @@ public final class WokHudLayout {
                 voteLeft = minLeft;
                 voteWidth = Math.max(0, Math.min(voteWidth, width - edge - minLeft));
             }
-            vote = UiRect.ofSize(voteLeft, edge, voteWidth, voteHeight);
-            vote = clearOfEffects(belowCapture(vote, capture, gap), effects, gap, minLeft);
+            vote = place(UiRect.ofSize(voteLeft, edge, voteWidth, voteHeight), capture, effects,
+                    gap, minLeft, Math.min(voteWidth, minCentred));
         } else {
             int cursor = edge;
             if (in.strip()) {
-                strip = clearOfEffects(belowCapture(band, capture, gap), effects, gap,
-                        Math.min(band.left(), dockLeft));
+                strip = place(band, capture, effects, gap, bandMinLeft, stripMinWidth);
                 cursor = strip.bottom() + toastGap;
             }
             for (int textWidth : in.toastTextWidths()) {
                 int toastWidth = Math.max(0, Math.min(Math.max(0, textWidth) + TOAST_PADDING,
                         band.width()));
                 int left = band.left() + (band.width() - toastWidth) / 2;
-                UiRect toast = UiRect.ofSize(left, cursor, toastWidth, TOAST_HEIGHT);
-                toast = clearOfEffects(belowCapture(toast, capture, gap), effects, gap,
-                        band.left());
+                UiRect toast = place(UiRect.ofSize(left, cursor, toastWidth, TOAST_HEIGHT),
+                        capture, effects, gap, band.left(),
+                        Math.min(toastWidth, TOAST_MIN_WIDTH));
                 toasts.add(toast);
                 cursor = toast.bottom() + toastGap;
             }
@@ -365,10 +401,17 @@ public final class WokHudLayout {
         int vitalsRight = Math.max(edge, Math.min(
                 Math.floorDiv(hotbarObstacleLeft(in), factor) - OBSTACLE_CLEARANCE,
                 edge + (tight ? VITALS_MAX_WIDTH_TIGHT : VITALS_MAX_WIDTH)));
-        UiRect vitals = UiRect.of(edge, height - VITALS_TOP_FROM_BOTTOM, vitalsRight,
-                height - edge);
+        // Under the vanilla chat, whose last line ends 40 GUI pixels above the bottom: at the
+        // 2x HUD that leaves room for one row only.
+        int chatClearTop = -Math.floorDiv(-(in.guiHeight() - CHAT_BOTTOM_FROM_BOTTOM
+                + CHAT_CLEARANCE), factor);
+        int vitalsTop = Math.min(Math.max(height - VITALS_TOP_FROM_BOTTOM, chatClearTop),
+                height - edge - STAMINA_ROW_HEIGHT);
+        UiRect vitals = UiRect.of(edge, vitalsTop, vitalsRight, height - edge);
+        boolean staminaRow = vitals.height() < STAMINA_PLATE_HEIGHT;
         UiRect staminaPlate = in.stamina()
-                ? UiRect.of(edge, height - edge - STAMINA_PLATE_HEIGHT, vitalsRight, height - edge)
+                ? UiRect.of(edge, height - edge - (staminaRow ? STAMINA_ROW_HEIGHT
+                : STAMINA_PLATE_HEIGHT), vitalsRight, height - edge)
                 : null;
 
         int lowWidth = Math.max(0, Math.min(CENTER_LOW_MAX_WIDTH, width - 2 * edge - 20));
@@ -377,8 +420,8 @@ public final class WokHudLayout {
                 width / 2 + (lowWidth + 1) / 2, lowTop + CENTER_LOW_HEIGHT);
 
         return new Layout(width, height, factor, tight, narrow, edge, gap, roster, strip, toasts,
-                vote, band, vitals, staminaPlate, centerLow, topCenterNext, topCenterBottom,
-                bossShift, capture);
+                vote, band, vitals, staminaPlate, staminaRow, centerLow, topCenterNext,
+                topCenterBottom, bossShift, capture);
     }
 
     /**
@@ -398,18 +441,28 @@ public final class WokHudLayout {
         return left;
     }
 
-    /** Status-effect icon rows in layout pixels (vanilla Gui.renderEffects, demo offset ignored). */
-    public static List<UiRect> effectRects(int guiWidth, int beneficial, int harmful, int factor) {
+    /** Status-effect icon rows of {@code in} in layout pixels, offset included. */
+    public static List<UiRect> effectRects(Input in) {
+        return effectRects(in.guiWidth(), in.beneficialEffects(), in.harmfulEffects(),
+                in.effectOffsetX(), in.effectOffsetY(), in.factor());
+    }
+
+    /**
+     * Status-effect icon rows in layout pixels (vanilla Gui.renderEffects, demo offset ignored),
+     * moved by the translation another MOD applies to them.
+     */
+    public static List<UiRect> effectRects(int guiWidth, int beneficial, int harmful,
+                                           int offsetX, int offsetY, int factor) {
         List<UiRect> rows = new ArrayList<>(2);
         if (beneficial > 0) {
             rows.add(toLayout(UiRect.of(guiWidth - EFFECT_ICON_PITCH * beneficial,
                     EFFECT_BENEFICIAL_TOP, guiWidth - EFFECT_ICON_PITCH + EFFECT_ICON_SIZE,
-                    EFFECT_BENEFICIAL_TOP + EFFECT_ICON_SIZE), factor));
+                    EFFECT_BENEFICIAL_TOP + EFFECT_ICON_SIZE).offset(offsetX, offsetY), factor));
         }
         if (harmful > 0) {
             rows.add(toLayout(UiRect.of(guiWidth - EFFECT_ICON_PITCH * harmful,
                     EFFECT_HARMFUL_TOP, guiWidth - EFFECT_ICON_PITCH + EFFECT_ICON_SIZE,
-                    EFFECT_HARMFUL_TOP + EFFECT_ICON_SIZE), factor));
+                    EFFECT_HARMFUL_TOP + EFFECT_ICON_SIZE).offset(offsetX, offsetY), factor));
         }
         return rows;
     }
@@ -433,13 +486,47 @@ public final class WokHudLayout {
     }
 
     /**
-     * Keeps {@code rect} {@code gap} left of every status-effect row it shares a pixel row with:
-     * first slides it left (never past {@code minLeft}), then narrows it.
+     * Places a top-centre plate: under the capture panel when it would touch it, then clear of
+     * the status-effect icons (slid left and narrowed, or, when that would leave it narrower than
+     * {@code minWidth}, moved below the icon rows), then under the capture panel again.
+     */
+    static UiRect place(UiRect rect, UiRect capture, List<UiRect> effects, int gap, int minLeft,
+                        int minWidth) {
+        UiRect placed = belowCapture(rect, capture, gap);
+        UiRect cleared = clearOfEffects(placed, effects, gap, minLeft);
+        if (cleared.width() < Math.min(minWidth, placed.width())) {
+            cleared = belowEffects(placed, effects, gap);
+        }
+        return belowCapture(cleared, capture, gap);
+    }
+
+    /** Moves {@code rect} down below every effect row it would touch (gap included). */
+    static UiRect belowEffects(UiRect rect, List<UiRect> effects, int gap) {
+        UiRect moved = rect;
+        for (int pass = 0; pass <= effects.size(); pass++) {
+            boolean changed = false;
+            for (UiRect row : effects) {
+                if (moved.intersects(row.inset(-gap))) {
+                    moved = moved.offset(0, row.bottom() + gap - moved.top());
+                    changed = true;
+                }
+            }
+            if (!changed) {
+                break;
+            }
+        }
+        return moved;
+    }
+
+    /**
+     * Keeps {@code rect} {@code gap} left of every status-effect row it shares a pixel row with
+     * and reaches into: first slides it left (never past {@code minLeft}), then narrows it.
      */
     static UiRect clearOfEffects(UiRect rect, List<UiRect> effects, int gap, int minLeft) {
         int limit = Integer.MAX_VALUE;
         for (UiRect row : effects) {
-            if (row.top() < rect.bottom() && row.bottom() > rect.top()) {
+            if (row.top() < rect.bottom() && row.bottom() > rect.top()
+                    && row.right() + gap > rect.left()) {
                 limit = Math.min(limit, row.left() - gap);
             }
         }

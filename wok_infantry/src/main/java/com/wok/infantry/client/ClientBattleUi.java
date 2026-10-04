@@ -32,6 +32,10 @@ public final class ClientBattleUi {
         MinecraftForge.EVENT_BUS.addListener(SquadWorldMarkerRenderer::onRenderPlayer);
         MinecraftForge.EVENT_BUS.addListener(EventPriority.HIGHEST, true,
                 RenderGuiEvent.Pre.class, HudFrame::onRenderGuiPre);
+        MinecraftForge.EVENT_BUS.addListener(EventPriority.LOWEST, true,
+                RenderGuiOverlayEvent.Pre.class, HudFrame::onOverlayPre);
+        MinecraftForge.EVENT_BUS.addListener(EventPriority.HIGHEST, false,
+                RenderGuiOverlayEvent.Post.class, HudFrame::onOverlayPost);
         MinecraftForge.EVENT_BUS.addListener(EventPriority.LOWEST, false,
                 RenderGuiOverlayEvent.Pre.class, BattleStripOverlay::onOverlayPre);
         MinecraftForge.EVENT_BUS.addListener(EventPriority.NORMAL, false,

@@ -20,7 +20,8 @@ import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
  * drawn without the core HUD scale; at GUI scale 1 with the 2× HUD the labels would be 1×
  * unreadable glyphs, so the row falls back to two unlabelled bars, as it does when the labels do
  * not fit. Without the add-on it draws its own plate, "手" over "腿", in the vitals slot, whose
- * right edge stays clear of the hotbar, the off-hand slot and the attack indicator.
+ * right edge stays clear of the hotbar, the off-hand slot and the attack indicator; where the
+ * slot under the vanilla chat has room for one row only (the 2× HUD), both share one row.
  *
  * <p>Hidden in creative and spectator mode, with F1, and whenever the server has stamina off
  * (the visibility the body-health HUD test checks through
@@ -44,6 +45,7 @@ public final class StaminaHudOverlay {
     static final int STACK_RIGHT_INSET = 4;
     static final int STACK_FIRST_ROW = 3;
     static final int STACK_SECOND_ROW = 13;
+    static final int ROW_PAIR_GAP = 4;
 
     public static final IGuiOverlay INSTANCE =
             (gui, graphics, partialTick, width, height) -> render(graphics, width, height);
@@ -105,10 +107,34 @@ public final class StaminaHudOverlay {
         }
         HudPaint.begin(graphics, frame.factor());
         try {
-            drawStack(graphics, font, plate, stamina);
+            if (frame.layout().staminaRow()) {
+                drawRow(graphics, font, plate, stamina);
+            } else {
+                drawStack(graphics, font, plate, stamina);
+            }
         } finally {
             HudPaint.end(graphics);
         }
+    }
+
+    /** Pair widths of the one-row plate: arms bar from x, 4px gap, legs bar to {@code right}. */
+    static int rowPairWidth(int x, int right) {
+        return Math.max(0, (right - x - ROW_PAIR_GAP) / 2);
+    }
+
+    /** One-row plate under the chat at the 2× HUD: "手 ▬  腿 ▬". */
+    static void drawRow(GuiGraphics graphics, Font font, UiRect plate, StaminaSnapshot stamina) {
+        TacticalHud.plate(graphics, plate.left(), plate.top(), plate.right(), plate.bottom(),
+                TacticalHud.Edge.LEFT, TacticalBoardTheme.NEUTRAL_B, false);
+        int x = plate.left() + STACK_LEFT_INSET;
+        int right = plate.right() - STACK_RIGHT_INSET;
+        int pair = rowPairWidth(x, right);
+        int y = plate.top() + STACK_FIRST_ROW;
+        TacticalHud.labelledBar(graphics, font, Component.translatable(ARMS_SHORT_KEY),
+                stamina.armRatio(), TacticalHud.staminaColor(stamina.arms()), x, y, x + pair);
+        TacticalHud.labelledBar(graphics, font, Component.translatable(LEGS_SHORT_KEY),
+                stamina.legRatio(), TacticalHud.staminaColor(stamina.legs()),
+                x + pair + ROW_PAIR_GAP, y, right);
     }
 
     static void drawCompanion(GuiGraphics graphics, Font font, int[] slot,

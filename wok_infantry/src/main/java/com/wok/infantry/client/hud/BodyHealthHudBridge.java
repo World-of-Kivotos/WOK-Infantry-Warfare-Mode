@@ -35,11 +35,6 @@ final class BodyHealthHudBridge {
         }
     }
 
-    /** Whether the body-health HUD is on screen this frame (it then hosts the stamina row). */
-    static boolean visible(int screenWidth, int screenHeight) {
-        return companionSlot(screenWidth, screenHeight) != null;
-    }
-
     private static Method resolve() {
         if (!resolved) {
             resolved = true;

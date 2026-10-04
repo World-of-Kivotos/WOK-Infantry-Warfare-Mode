@@ -41,6 +41,19 @@ class HudOverlayContractTest {
     }
 
     @Test
+    void effectIconOffsetIsTakenFromWhicheverMeasurementSawTheTranslation() {
+        // registered before the translating MOD: pre sees nothing, post sees the shift
+        assertEquals(List.of(-75, 0), List.of(box(HudFrame.effectOffset(0, 0, -75, 0))));
+        // registered after it: pre sees the shift, post sees the popped pose
+        assertEquals(List.of(-75, 3), List.of(box(HudFrame.effectOffset(-75, 3, 0, 0))));
+        assertEquals(List.of(0, 0), List.of(box(HudFrame.effectOffset(0, 0, 0, 0))));
+    }
+
+    private static Integer[] box(int[] values) {
+        return new Integer[]{values[0], values[1]};
+    }
+
+    @Test
     void manpowerStripAndSupplyNoticeStayInTheCoreHud() {
         // hud-stack-01: the D: copy's manpower banner and supply panel must never regress.
         WokHudLayout.Layout layout = WokHudLayout.compute(WokHudLayout.Input.screen(320, 240, 1)

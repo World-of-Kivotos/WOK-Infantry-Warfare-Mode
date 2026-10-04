@@ -23,7 +23,10 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraftforge.client.event.RenderGuiEvent;
+import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.extensions.common.IClientMobEffectExtensions;
+import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
+import org.joml.Matrix4f;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -60,6 +63,11 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
 
     private static long frameCounter;
     private static HudFrame cached;
+    private static boolean effectIconsDrawn = true;
+    private static int preOffsetX;
+    private static int preOffsetY;
+    private static int effectOffsetX;
+    private static int effectOffsetY;
     private static BattleSnapshot rosterSnapshot;
     private static boolean rosterNarrow;
     private static String rosterLanguage;
@@ -72,6 +80,48 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
     /** Starts a new GUI frame (Forge bus, {@link RenderGuiEvent.Pre}). */
     public static void onRenderGuiPre(RenderGuiEvent.Pre event) {
         frameCounter++;
+    }
+
+    /**
+     * Forge bus, lowest priority, cancelled events included: records whether the vanilla effect
+     * icons are drawn and the pose they are drawn with. Other MODs may move them (JourneyMap
+     * pushes a translation at its own lowest-priority listener and pops it at the highest-priority
+     * post listener) or hide them (cancel); the next frames' layout uses what was measured.
+     */
+    public static void onOverlayPre(RenderGuiOverlayEvent.Pre event) {
+        if (!isEffectOverlay(event)) {
+            return;
+        }
+        effectIconsDrawn = !event.isCanceled();
+        Matrix4f pose = event.getGuiGraphics().pose().last().pose();
+        preOffsetX = Math.round(pose.m30());
+        preOffsetY = Math.round(pose.m31());
+    }
+
+    /**
+     * Forge bus, highest priority: the other half of the effect icon measurement. A listener
+     * registered before the translating MOD's sees the translation here, one registered after
+     * it sees it in {@link #onOverlayPre}; either way one of the two holds it.
+     */
+    public static void onOverlayPost(RenderGuiOverlayEvent.Post event) {
+        if (!isEffectOverlay(event)) {
+            return;
+        }
+        Matrix4f pose = event.getGuiGraphics().pose().last().pose();
+        int[] offset = effectOffset(preOffsetX, preOffsetY, Math.round(pose.m30()),
+                Math.round(pose.m31()));
+        effectOffsetX = offset[0];
+        effectOffsetY = offset[1];
+    }
+
+    /** The translated one of the two measurements (pre wins), or 0, 0 when neither moved. */
+    static int[] effectOffset(int preX, int preY, int postX, int postY) {
+        return preX != 0 || preY != 0 ? new int[]{preX, preY} : new int[]{postX, postY};
+    }
+
+    private static boolean isEffectOverlay(RenderGuiOverlayEvent event) {
+        return event.getOverlay() != null
+                && VanillaGuiOverlay.POTION_ICONS.id().equals(event.getOverlay().id());
     }
 
     /**
@@ -156,7 +206,8 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
                 && minecraft.options.attackIndicator().get() == AttackIndicatorStatus.HOTBAR;
         int beneficial = 0;
         int harmful = 0;
-        for (MobEffectInstance effect : player.getActiveEffects()) {
+        for (MobEffectInstance effect : effectIconsDrawn ? player.getActiveEffects()
+                : List.<MobEffectInstance>of()) {
             if (!effect.showIcon()
                     || !IClientMobEffectExtensions.of(effect).isVisibleInGui(effect)) {
                 continue;
@@ -184,6 +235,7 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
                 .withStamina(staminaShown)
                 .withHotbarNeighbours(offhandLeft, indicatorLeft)
                 .withEffects(beneficial, harmful)
+                .withEffectOffset(effectOffsetX, effectOffsetY)
                 .withCapturePanel(capture);
         return new HudFrame(frameCounter, guiWidth, guiHeight, factor, hidden, chatOpen,
                 debugScreen, playerListHeld, spectator, creative, presence, roster, tickets,
