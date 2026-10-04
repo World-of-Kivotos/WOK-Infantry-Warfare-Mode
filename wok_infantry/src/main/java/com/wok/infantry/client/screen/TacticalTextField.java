@@ -1,5 +1,6 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
@@ -89,6 +90,11 @@ public class TacticalTextField extends EditBox {
                 edgeColor());
         // Text, cursor, selection and placeholder: vanilla, without its frame and shadow.
         super.renderWidget(graphics, mouseX, mouseY, partialTick);
+        if (UiLayoutProbe.recording()) {
+            UiLayoutProbe.widget(graphics, this, "text-field", error != null ? "ERROR"
+                    : !editable ? "READONLY" : isFocused() ? "FOCUSED" : "NORMAL", false,
+                    isFocused());
+        }
     }
 
     @Override

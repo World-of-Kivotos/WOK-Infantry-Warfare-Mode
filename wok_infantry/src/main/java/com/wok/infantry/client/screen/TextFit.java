@@ -1,5 +1,6 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.locale.Language;
@@ -176,20 +177,35 @@ public final class TextFit {
     /** Draws {@code text} fitted into [x, x + maxWidth) without a shadow. */
     public static Fitted draw(GuiGraphics graphics, Font font, Component text, int x, int y,
                               int maxWidth, int color, Align align) {
-        return drawFitted(graphics, font, fit(font, text, maxWidth), x, y, maxWidth, color, align);
+        return drawProbed(graphics, font, fit(font, text, maxWidth), text, x, y, maxWidth, color,
+                align);
     }
 
     public static Fitted draw(GuiGraphics graphics, Font font, String text, int x, int y,
                               int maxWidth, int color, Align align) {
-        return drawFitted(graphics, font, fit(font, text, maxWidth), x, y, maxWidth, color, align);
+        return drawProbed(graphics, font, fit(font, text, maxWidth), text, x, y, maxWidth, color,
+                align);
     }
 
     /** Draws an already fitted text without a shadow. */
     public static Fitted drawFitted(GuiGraphics graphics, Font font, Fitted fitted, int x, int y,
                                     int maxWidth, int color, Align align) {
+        return drawProbed(graphics, font, fitted, null, x, y, maxWidth, color, align);
+    }
+
+    /**
+     * Draws and reports the text to the layout probe ({@code full} is the unfitted text when the
+     * caller has it); the report is a no-op unless the uiTest probe is recording.
+     */
+    private static Fitted drawProbed(GuiGraphics graphics, Font font, Fitted fitted, Object full,
+                                     int x, int y, int maxWidth, int color, Align align) {
+        int drawX = alignedX(x, maxWidth, fitted.width(), align);
         if (fitted.width() > 0) {
-            graphics.drawString(font, fitted.text(),
-                    alignedX(x, maxWidth, fitted.width(), align), y, color, false);
+            graphics.drawString(font, fitted.text(), drawX, y, color, false);
+        }
+        if (UiLayoutProbe.recording()) {
+            UiLayoutProbe.fittedText(graphics, fitted.text(), full, drawX, y, fitted.width(),
+                    fitted.truncated());
         }
         return fitted;
     }

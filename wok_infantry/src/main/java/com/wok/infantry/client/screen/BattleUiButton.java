@@ -1,5 +1,6 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -86,6 +87,8 @@ final class BattleUiButton extends Button {
                 getX(), getY(), getX() + width, getY() + height, getMessage(), look, options);
         labelTruncated = fitted.truncated();
         truncationTooltip.sync(this, getMessage(), labelTruncated);
+        UiLayoutProbe.widget(graphics, this, "button", look.state().name(), labelTruncated,
+                options.focusRing());
     }
 
     /** Draws the label centred, shadowless and ellipsized; no scrolling marquee. */

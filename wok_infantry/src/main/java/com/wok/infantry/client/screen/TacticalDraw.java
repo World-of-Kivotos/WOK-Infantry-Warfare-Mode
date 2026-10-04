@@ -1,5 +1,6 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import com.wok.infantry.client.hud.TacticalHud;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -114,6 +115,8 @@ public final class TacticalDraw {
                                TacticalShellLayout.Metrics metrics, PanelStyle style) {
         PanelStyle safe = style == null ? PanelStyle.plain() : style;
         if (!bounds.isEmpty()) {
+            UiLayoutProbe.box(graphics, "panel", safe.title(), bounds.left(), bounds.top(),
+                    bounds.right(), bounds.bottom());
             TacticalBoardTheme.raisedPanel(graphics, bounds.left(), bounds.top(), bounds.right(),
                     bounds.bottom(), safe.fill());
             if (safe.hasTitle()) {
@@ -579,6 +582,7 @@ public final class TacticalDraw {
         BattleUiTheme.outline(graphics, x, y, x + width, y + CHIP_HEIGHT, color);
         graphics.drawString(font, text, x + 3, y + 2,
                 onDark ? color : TacticalHud.mix(color, 0xFF000000, 0.25D), false);
+        UiLayoutProbe.rawText(graphics, font, text, x + 3, y + 2);
         return x + width;
     }
 
@@ -627,6 +631,7 @@ public final class TacticalDraw {
         List<String> lines = TextFit.wrap(font, text, width, maxLines);
         for (int index = 0; index < lines.size(); index++) {
             graphics.drawString(font, lines.get(index), x, y + index * LINE_HEIGHT, color, false);
+            UiLayoutProbe.rawText(graphics, font, lines.get(index), x, y + index * LINE_HEIGHT);
         }
         return lines.size();
     }
@@ -674,6 +679,10 @@ public final class TacticalDraw {
             graphics.pose().translate(0.0F, 0.0F, 200.0F);
             graphics.drawString(font, text, x + size - font.width(text), y + size - 8,
                     TacticalBoardTheme.LIGHT, false);
+            if (UiLayoutProbe.recording()) {
+                UiLayoutProbe.rawText(graphics, font, text, x + size - font.width(text),
+                        y + size - 8);
+            }
             graphics.pose().popPose();
         }
     }

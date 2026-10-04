@@ -1,5 +1,6 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -75,5 +76,7 @@ final class TacticalBoardButton extends Button {
                 getX(), getY(), getX() + width, getY() + height, getMessage(), look, options);
         labelTruncated = fitted.truncated();
         truncationTooltip.sync(this, getMessage(), labelTruncated);
+        UiLayoutProbe.widget(graphics, this, "board-button", look.state().name(), labelTruncated,
+                options.focusRing());
     }
 }

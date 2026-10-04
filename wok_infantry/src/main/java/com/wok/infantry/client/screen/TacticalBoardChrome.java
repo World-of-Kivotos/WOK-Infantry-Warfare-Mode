@@ -3,6 +3,7 @@ package com.wok.infantry.client.screen;
 import com.wok.infantry.battle.BattleSnapshot;
 import com.wok.infantry.client.ClientBattleState;
 import com.wok.infantry.client.ClientFormationState;
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -411,6 +412,8 @@ public final class TacticalBoardChrome {
         graphics.fill(3, 3, width - 3, height - 3, TacticalBoardTheme.FRAME_MID);
 
         UiRect head = layout.header();
+        UiLayoutProbe.begin(graphics, "shell.header", head.left(), head.top(), head.right(),
+                head.bottom(), true);
         graphics.fill(head.left(), head.top(), head.right(), head.bottom(), TacticalBoardTheme.FRAME);
         graphics.fill(head.left(), head.bottom() - 1, head.right(), head.bottom(),
                 TacticalBoardTheme.BORDER_DARK);
@@ -426,6 +429,7 @@ public final class TacticalBoardChrome {
             TextFit.draw(graphics, font, safe.identity(), identityBox.left(), header.textY(),
                     identityBox.width(), safe.link().identityColor(), TextFit.Align.RIGHT);
         }
+        UiLayoutProbe.end(graphics);
 
         UiRect body = layout.body();
         if (!body.isEmpty()) {
@@ -435,6 +439,8 @@ public final class TacticalBoardChrome {
         }
 
         UiRect foot = layout.footer();
+        UiLayoutProbe.begin(graphics, "shell.footer", foot.left(), foot.top(), foot.right(),
+                foot.bottom(), true);
         graphics.fill(foot.left(), foot.top(), foot.right(), foot.bottom(), TacticalBoardTheme.FRAME);
         List<HintSlot> slots = footer.hints();
         for (int index = 0; index < slots.size(); index++) {
@@ -443,6 +449,7 @@ public final class TacticalBoardChrome {
         if (safe.feedback() != null && !footer.feedback().isEmpty()) {
             drawFeedback(graphics, font, footer.feedback(), footer.textY(), safe.feedback());
         }
+        UiLayoutProbe.end(graphics);
 
         TacticalBoardTheme.rivet(graphics, 2, 2);
         TacticalBoardTheme.rivet(graphics, width - 3, 2);
@@ -471,9 +478,11 @@ public final class TacticalBoardChrome {
                 TacticalBoardTheme.KEYCAP_EDGE);
         graphics.drawString(font, hint.key(), cap.left() + 2, cap.top() + 1,
                 TacticalBoardTheme.LIGHT, false);
+        UiLayoutProbe.rawText(graphics, font, hint.key(), cap.left() + 2, cap.top() + 1);
         if (!hint.action().getString().isEmpty()) {
             graphics.drawString(font, hint.action(), slot.labelX(), cap.top() + 1,
                     TacticalBoardTheme.LIGHT_MUTED, false);
+            UiLayoutProbe.rawText(graphics, font, hint.action(), slot.labelX(), cap.top() + 1);
         }
     }
 

@@ -1,5 +1,6 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -402,11 +403,13 @@ public final class TacticalBoardSlider extends AbstractSliderButton {
             return;
         }
         boolean enabled = active && !scale.empty();
+        boolean focusRing = TacticalButtonStyle.keyboardFocused(this);
         boolean truncated = draw(graphics, font, UiRect.ofSize(getX(), getY(), width, height),
                 label, formatter.apply(current), valueColumnWidth(font), value, tickPositions(),
-                enabled && TacticalButtonStyle.hovered(this), enabled,
-                TacticalButtonStyle.keyboardFocused(this));
+                enabled && TacticalButtonStyle.hovered(this), enabled, focusRing);
         truncationTooltip.sync(this, getMessage(), truncated);
+        UiLayoutProbe.widget(graphics, this, "slider", enabled ? "CONTROL" : "DISABLED",
+                truncated, focusRing);
     }
 
     private static Font font() {
