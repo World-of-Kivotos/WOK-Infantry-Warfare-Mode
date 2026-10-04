@@ -213,7 +213,7 @@ JourneyMap `6.0.2` 的公开区域合并器不能安全裁切任意未对齐的�
 
 代码中的人数上限、名额与网络过滤按 40v40 设计，并提供 Forge GameTest：使用真实 `MinecraftServer`、`ServerLevel` 与 `ServerPlayer` 对象验证阵营/编制容量、同名小队的跨编制隔离、8 人小队边界、兵种名额、四类必需战术标记、敌方过滤、纯小队长/纯指挥官/普通成员的发布与删除权限矩阵，以及离队/踢出/解散后的队长、指挥官和兵种占位清理。客户端单元测试另行锁定同队头顶识别的单快照门禁、部署点分页几何、中英文键值/格式参数一致性：本人、其他友军小队、旧观察者、离线/非存活、隐形与 96 格外目标均不显示，协议允许的 16 个部署点在 320×240 最小视口仍可逐页到达。
 
-`src/uiTest` 还提供一次真实 Forge 客户端验收：从隔离存档登录，通过共享投票夹具完成“开启投票→选阵营→投票→锁定共享结果”，再验证部署页。它按映射名 `key.wok_infantry.open_squad` / `key.wok_infantry.open_tactical_map` 找到实际绑定的键（不写死 `K` / `M`，默认键改了也不用改验收器），经 C2S/S2C 回路开屏，真实鼠标点击兵种页，创建 Alpha 小队、申请指挥官、在稳定安全平台设置本轮专用基地，再通过生产客户端动作发送选择和部署包。验收必须等到服务端确认 `ACTIVE`、客户端进入生存模式并收到六个带 provenance 的配装槽；随后临时授予管理员权限，把部署信标和阵营染料放入非配装槽并跨越多个服务端校验周期，最后逐个等待服务器确认步兵/坦克/步战车/进攻方向标记。部署点选择与部署在当前验收器中是直接调用同一客户端动作桥，不是鼠标点击按钮。纯布局单测固定覆盖 320×240、960×720 与 2560×1351，验证地图、右侧命令板、工具抽屉和状态栏互不重叠；真实客户端验收则分别检查 320×240 与 960×720 逻辑界面，并输出部署、小队、兵种、配装、指挥官、地图、编制投票、管理员配装和职业管理共 14 张截图（320×240 九张：`wok_ui_01/02/03/04/07/08/10/12/14`；960×720 五张：`wok_ui_05/06/09/11/13`）。验收中临时授予的管理员权限在收尾时全部收回（结果文件记 `temporaryOperatorCleanup`）。结果写入 `run/ui-test/ui-test-results/wok_ui_acceptance.txt`（首行 `status=PASS/FAIL`），每次阶段切换另写 `run/ui-test/ui-test-results/wok_ui_progress.txt`，客户端没写结果就退出时 Gradle 会报出最后到达的阶段；截图写入 `run/ui-test/screenshots/wok_ui_*.png`；该 source set 不进入生产 JAR。
+`src/uiTest` 还提供一次真实 Forge 客户端验收：从隔离存档登录，通过共享投票夹具完成“开启投票→选阵营→投票→锁定共享结果”，再验证部署页。它按映射名 `key.wok_infantry.open_squad` / `key.wok_infantry.open_tactical_map` 找到实际绑定的键（不写死 `K` / `M`，默认键改了也不用改验收器；小队映射没有绑键时，改按已绑键的战斗终端映射 `key.wok_infantry.*terminal*`），经 C2S/S2C 回路开屏，真实鼠标点击兵种页，创建 Alpha 小队、申请指挥官、在稳定安全平台设置本轮专用基地，再通过生产客户端动作发送选择和部署包。验收必须等到服务端确认 `ACTIVE`、客户端进入生存模式并收到六个带 provenance 的配装槽；随后临时授予管理员权限，把部署信标和阵营染料放入非配装槽并跨越多个服务端校验周期，最后逐个等待服务器确认步兵/坦克/步战车/进攻方向标记。部署点选择与部署在当前验收器中是直接调用同一客户端动作桥，不是鼠标点击按钮。纯布局单测固定覆盖 320×240、960×720 与 2560×1351，验证地图、右侧命令板、工具抽屉和状态栏互不重叠；真实客户端验收则分别检查 320×240 与 960×720 逻辑界面，并输出部署、小队、兵种、配装、指挥官、地图、编制投票、管理员配装和职业管理共 14 张截图（320×240 九张：`wok_ui_01/02/03/04/07/08/10/12/14`；960×720 五张：`wok_ui_05/06/09/11/13`）。验收中临时授予的管理员权限在收尾时全部收回（结果文件记 `temporaryOperatorCleanup`）。结果写入 `run/ui-test/ui-test-results/wok_ui_acceptance.txt`（首行 `status=PASS/FAIL`），每次阶段切换另写 `run/ui-test/ui-test-results/wok_ui_progress.txt`，客户端没写结果就退出时 Gradle 会报出最后到达的阶段；截图写入 `run/ui-test/screenshots/wok_ui_*.png`；该 source set 不进入生产 JAR。
 
 单元测试另有可重复的满载心跳容量工作负载：以蓝红双方各 40 人、五个满员 8 人小队和协议允许的完整战术标记构造 80 份观察者专属快照，连续运行 600 轮，共完成 48,000 次 `BattleSnapshot` DTO 到 `FriendlyByteBuf` 的编码。首尾轮会完整解码并再次检查敌方 UUID 不可见；本次基准单包为 13,308–13,416 字节，每轮 80 包合计 1,068,936 字节原始编码数据。该数值不含 Forge `SimpleChannel`、压缩、socket/TCP、服务器快照构建或真实客户端渲染，不得当作 80 个真实连接的性能结论。
 
@@ -237,7 +237,7 @@ JourneyMap `6.0.2` 的公开区域合并器不能安全裁切任意未对齐的�
 
 开发用真实客户端 UI 验收会重建自己的隔离存档并自动退出。运行前要准备两样东西：
 
-- JourneyMap `6.0.2`（必需，验收器只接受 JourneyMap 地形后端，没有它任务直接失败，不能退回坐标网格）：默认读取 `run/compat-cache/journeymap-forge-1.20.1-6.0.2.jar`，可从步战测试端的 `mods` 目录复制一份过来，也可用 `-PuiJourneyMapJar=<路径>` 显式指定。
+- JourneyMap `6.0.2`（必需，验收器只接受 JourneyMap 地形后端，没有它任务直接失败，不能退回坐标网格）：默认读取 `run/compat-cache/journeymap-forge-1.20.1-6.0.2.jar`，可从步战测试端 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods\journeymap-forge-1.20.1-6.0.2.jar` 复制一份过来（只复制，不改测试端），也可用 `-PuiJourneyMapJar=<路径>` 显式指定。
 - 种子存档 `run/world/level.dat`：先跑一次 `runGameTestServer` 生成，或从其他工作区的 `run/world` 复制（不要带 `session.lock`）。
 
 它不需要 TaCZ。客户端会加载核心 Mixin（`--mixin wok_infantry.mixins.json`）。界面语言默认 `zh_cn`，可用 `-PuiLang=en_us` 换成英文；每次运行都会改写 `run/ui-test/options.txt` 的 `lang`，并删掉其中 WOK 按键行，让按键回到 MOD 当前的默认值。占点附属的 `runUiTestClient` 共用 `run/ui-test`，会沿用这里最后写下的语言。它不会接受 EULA，且验收器不会进入生产 JAR：

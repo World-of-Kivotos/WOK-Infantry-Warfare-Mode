@@ -145,8 +145,9 @@ public final class UiRuntimeAcceptanceHarness {
     /** Set by build.gradle from -PuiLang; empty means "do not assert the language". */
     private static final String EXPECTED_LANGUAGE = System.getProperty(
             "wok.ui.expectedLanguage", "").trim().toLowerCase(java.util.Locale.ROOT);
-    private static final String SQUAD_KEY_MAPPING = "key.wok_infantry.open_squad";
-    private static final String MAP_KEY_MAPPING = "key.wok_infantry.open_tactical_map";
+    private static final String WOK_KEY_PREFIX = "key.wok_infantry.";
+    private static final String SQUAD_KEY_MAPPING = WOK_KEY_PREFIX + "open_squad";
+    private static final String MAP_KEY_MAPPING = WOK_KEY_PREFIX + "open_tactical_map";
     private static final String RESULT_DIRECTORY = "ui-test-results";
     private static final String PROGRESS_FILE = "wok_ui_progress.txt";
     private static final int PROGRESS_HISTORY_LIMIT = 200;
@@ -389,8 +390,9 @@ public final class UiRuntimeAcceptanceHarness {
             fail("JourneyMap loaded state mismatch: expected "
                     + EXPECTED_JOURNEYMAP_LOADED + ", got " + journeyMapLoaded);
         }
-        // The selected code falls back to en_us when the requested language is unknown, so this
-        // also catches a mistyped -PuiLang.
+        // options.txt is read before the first tick, so this is the code prepareUiTestOptions
+        // wrote. Whether a resource pack actually provides it is checked after login, once the
+        // resource reload has finished (see languageAvailable in waitForLogin).
         String language = minecraft.getLanguageManager().getSelected();
         observations.add("languageCode=" + language + " expected="
                 + (EXPECTED_LANGUAGE.isEmpty() ? "any" : EXPECTED_LANGUAGE));
@@ -470,6 +472,15 @@ public final class UiRuntimeAcceptanceHarness {
         if (stableDeploymentScreenTicks < 20) {
             return;
         }
+        // Minecraft keeps an unknown lang code selected but silently renders English, so a
+        // mistyped -PuiLang would otherwise produce English captures labelled as another language.
+        String language = minecraft.getLanguageManager().getSelected();
+        if (minecraft.getLanguageManager().getLanguage(language) == null) {
+            fail("UI acceptance language " + language
+                    + " is not provided by any loaded resource pack");
+            return;
+        }
+        observations.add("languageAvailable=" + language);
         autoDeploymentObserved = true;
         minecraft.getTutorial().setStep(TutorialSteps.NONE);
         minecraft.getToasts().clear();
@@ -559,7 +570,7 @@ public final class UiRuntimeAcceptanceHarness {
             minecraft.setScreen(null);
         }
         if (!compactSquadKeySent && phaseTicks >= 2 && minecraft.screen == null) {
-            if (!clickMappedKey(minecraft, SQUAD_KEY_MAPPING, "squad")) {
+            if (!clickMappedKey(minecraft, SQUAD_KEY_MAPPING, "squad", true)) {
                 return;
             }
             compactSquadKeySent = true;
@@ -1211,7 +1222,7 @@ public final class UiRuntimeAcceptanceHarness {
             minecraft.setScreen(null);
         }
         if (!compactMapKeySent && phaseTicks >= 2 && minecraft.screen == null) {
-            if (!clickMappedKey(minecraft, MAP_KEY_MAPPING, "map")) {
+            if (!clickMappedKey(minecraft, MAP_KEY_MAPPING, "map", false)) {
                 return;
             }
             compactMapKeySent = true;
@@ -2073,16 +2084,27 @@ public final class UiRuntimeAcceptanceHarness {
     }
 
     /**
-     * Presses the key a WOK mapping is currently bound to, found by its stable mapping name. The
-     * click still goes through Forge's key lookup, so a conflicting binding that would swallow
-     * the key in a real client also makes this run fail.
+     * Presses the key a WOK mapping is currently bound to, found by its stable mapping name.
+     *
+     * <p>With {@code terminalFallback}, a mapping that has no key is replaced by the first bound
+     * WOK battle-terminal mapping ({@code key.wok_infantry.*terminal*}): once the default keys
+     * move the squad page behind the terminal key, the old squad mapping stays registered but
+     * unbound, and a player who rebound it still reaches the page directly.</p>
+     *
+     * <p>The click still goes through Forge's key lookup, so a conflicting binding that would
+     * swallow the key in a real client also makes this run fail; the observations list every
+     * conflict so such a timeout can be traced to the key.</p>
      */
-    private static boolean clickMappedKey(Minecraft minecraft, String mappingName, String label) {
-        KeyMapping mapping = null;
-        for (KeyMapping candidate : minecraft.options.keyMappings) {
-            if (candidate.getName().equals(mappingName)) {
-                mapping = candidate;
-                break;
+    private static boolean clickMappedKey(Minecraft minecraft, String mappingName, String label,
+                                          boolean terminalFallback) {
+        KeyMapping mapping = findKeyMapping(minecraft, mappingName);
+        if (terminalFallback && (mapping == null || mapping.isUnbound())) {
+            for (KeyMapping candidate : minecraft.options.keyMappings) {
+                if (candidate.getName().startsWith(WOK_KEY_PREFIX)
+                        && candidate.getName().contains("terminal") && !candidate.isUnbound()) {
+                    mapping = candidate;
+                    break;
+                }
             }
         }
         if (mapping == null) {
@@ -2095,7 +2117,7 @@ public final class UiRuntimeAcceptanceHarness {
             return false;
         }
         if (mapping.getKeyModifier() != KeyModifier.NONE) {
-            fail("Key mapping " + mappingName + " needs the " + mapping.getKeyModifier()
+            fail("Key mapping " + mapping.getName() + " needs the " + mapping.getKeyModifier()
                     + " modifier, which the harness cannot hold down");
             return false;
         }
@@ -2105,11 +2127,20 @@ public final class UiRuntimeAcceptanceHarness {
                 conflicts.add(other.getName());
             }
         }
-        observations.add(label + "KeyMapping=" + mappingName + "@"
+        observations.add(label + "KeyMapping=" + mapping.getName() + "@"
                 + mapping.getKey().getName() + " conflicts="
                 + (conflicts.isEmpty() ? "none" : String.join(",", conflicts)));
         KeyMapping.click(mapping.getKey());
         return true;
+    }
+
+    private static KeyMapping findKeyMapping(Minecraft minecraft, String mappingName) {
+        for (KeyMapping candidate : minecraft.options.keyMappings) {
+            if (candidate.getName().equals(mappingName)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private static String logicalSize(Minecraft minecraft) {
