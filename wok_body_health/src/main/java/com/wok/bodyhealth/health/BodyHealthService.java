@@ -262,6 +262,10 @@ public final class BodyHealthService {
         };
     }
 
+    public static int destroyedLegCount(ServerPlayer player) {
+        return destroyedCount(BodyHealthData.load(player), BodyPart.LEFT_LEG, BodyPart.RIGHT_LEG);
+    }
+
     public static boolean hasDestroyedCriticalPart(ServerPlayer player) {
         BodyHealthData data = BodyHealthData.load(player);
         for (BodyPart part : BodyPart.values()) {

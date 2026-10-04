@@ -85,9 +85,33 @@ public final class StaminaEvents {
         send(player, runtime, after, true);
     }
 
+    /** Tactical Mantle teleports the player upward without posting a jump event. */
+    public static boolean canAffordMantle(ServerPlayer player) {
+        if (!isEnabled(player)) {
+            return true;
+        }
+        StaminaState state = StaminaState.load(player);
+        return !state.sprintBlocked() && state.legs() >= InfantryServerConfig.legMantleCost();
+    }
+
+    public static void onMantleStarted(ServerPlayer player) {
+        if (!isEnabled(player)) {
+            return;
+        }
+        RuntimeState runtime = RUNTIME.computeIfAbsent(player.getUUID(), ignored ->
+                new RuntimeState(player.level().getGameTime()));
+        StaminaState after = consumeLegs(player, InfantryServerConfig.legMantleCost());
+        runtime.lastLegExertionTick = player.level().getGameTime();
+        send(player, runtime, after, true);
+    }
+
     static StaminaState consumeJump(ServerPlayer player) {
+        return consumeLegs(player, InfantryServerConfig.legJumpCost());
+    }
+
+    private static StaminaState consumeLegs(ServerPlayer player, float cost) {
         StaminaState before = StaminaState.load(player);
-        float legs = StaminaMath.drain(before.legs(), InfantryServerConfig.legJumpCost());
+        float legs = StaminaMath.drain(before.legs(), cost);
         StaminaState after = new StaminaState(before.arms(), legs,
                 StaminaMath.shouldBlockSprint(legs, before.sprintBlocked(),
                         InfantryServerConfig.legExhaustedResumeThreshold()));
