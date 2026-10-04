@@ -230,6 +230,9 @@ class ClientTranslationContractTest {
     private static Set<String> requiredDynamicKeys() {
         Map<String, Boolean> keys = new LinkedHashMap<>();
         keys.put("key.categories.wok_infantry", true);
+        for (KeyBindingDefaults.Binding binding : KeyBindingDefaults.Binding.values()) {
+            keys.put(binding.mappingName(), true);
+        }
         keys.put("key.wok_infantry.open_loadout", true);
         keys.put("key.wok_infantry.open_squad", true);
         keys.put("key.wok_infantry.open_tactical_map", true);

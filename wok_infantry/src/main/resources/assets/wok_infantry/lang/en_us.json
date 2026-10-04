@@ -1,5 +1,6 @@
 {
   "key.categories.wok_infantry": "WOK Infantry",
+  "key.wok_infantry.open_terminal": "Open Battle Terminal (Squads)",
   "key.wok_infantry.open_loadout": "Open Loadout",
   "key.wok_infantry.open_admin_loadout": "Open Admin Loadout Terminal",
   "key.wok_infantry.open_squad": "Open Squads and Roles",
