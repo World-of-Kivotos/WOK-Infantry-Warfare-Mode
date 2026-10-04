@@ -5,6 +5,7 @@ import com.wok.infantry.battle.BattleSnapshot;
 import com.wok.infantry.battle.ClassQuotaView;
 import com.wok.infantry.battle.Faction;
 import com.wok.infantry.battle.MemberPosition;
+import com.wok.infantry.battle.MemberState;
 import com.wok.infantry.battle.MemberView;
 import com.wok.infantry.battle.PermissionView;
 import com.wok.infantry.battle.SquadCallsign;
@@ -266,7 +267,7 @@ class BattleSnapshotCodecTest {
 
     @Test
     void dynamicSupportCatalogUsesCurrentProtocolAndItsExactWireLimit() {
-        assertEquals("18", BattleNetwork.PROTOCOL_VERSION);
+        assertEquals("19", BattleNetwork.PROTOCOL_VERSION);
         assertEquals(32, BattleNetworkLimits.MAX_SUPPORT_OPTIONS);
 
         List<SupportOptionView> options = new ArrayList<>();
@@ -409,6 +410,90 @@ class BattleSnapshotCodecTest {
     }
 
     @Test
+    void protocolNineteenRoundTripsEveryMemberStateAndHealthRatio() {
+        assertEquals("19", BattleNetwork.PROTOCOL_VERSION);
+        SquadView squad = new SquadView(SquadCallsign.ALPHA, playerId(1), List.of(
+                stateMember(1, true, MemberState.DEPLOYED, 0.75F),
+                stateMember(2, false, MemberState.DOWNED, 0.05F),
+                stateMember(3, false, MemberState.DEAD, MemberView.UNKNOWN_HEALTH_RATIO),
+                stateMember(4, false, MemberState.WAITING, MemberView.UNKNOWN_HEALTH_RATIO),
+                stateMember(5, false, MemberState.OFFLINE, MemberView.UNKNOWN_HEALTH_RATIO),
+                stateMember(6, false, MemberState.DEPLOYED, MemberView.UNKNOWN_HEALTH_RATIO),
+                stateMember(7, false, MemberState.DEPLOYED, 0.0F),
+                stateMember(8, false, MemberState.DEPLOYED, 1.0F)),
+                BattleRules.SQUAD_CAPACITY);
+        BattleSnapshot original = snapshot(List.of(squad), List.of(), List.of(),
+                LEADER_PERMISSIONS, emptyDeployment(), 8, 0);
+
+        BattleSnapshot decoded = decodeBytes(encodeBytes(original));
+
+        assertEquals(original, decoded);
+        List<MemberView> members = decoded.squads().get(0).members();
+        assertEquals(List.of(MemberState.DEPLOYED, MemberState.DOWNED, MemberState.DEAD,
+                        MemberState.WAITING, MemberState.OFFLINE, MemberState.DEPLOYED,
+                        MemberState.DEPLOYED, MemberState.DEPLOYED),
+                members.stream().map(MemberView::state).toList());
+        assertEquals(0.75F, members.get(0).healthRatio());
+        assertEquals(0.05F, members.get(1).healthRatio());
+        assertEquals(MemberView.UNKNOWN_HEALTH_RATIO, members.get(5).healthRatio());
+        assertEquals(false, members.get(5).hasHealthRatio());
+    }
+
+    @Test
+    void encoderRejectsMemberStateThatContradictsLegacyFlags() {
+        MemberView offlineButMarkedOnline = new MemberView(playerId(2), "Ghost", true, false,
+                0.0F, 20.0F, false, false, SquadCallsign.ALPHA, "assault",
+                MemberState.OFFLINE, MemberView.UNKNOWN_HEALTH_RATIO);
+        MemberView deployedButNotAlive = new MemberView(playerId(2), "Ghost", true, false,
+                0.0F, 20.0F, false, false, SquadCallsign.ALPHA, "assault",
+                MemberState.DEPLOYED, 0.5F);
+        MemberView waitingButAlive = new MemberView(playerId(2), "Ghost", true, true,
+                20.0F, 20.0F, false, false, SquadCallsign.ALPHA, "assault",
+                MemberState.WAITING, MemberView.UNKNOWN_HEALTH_RATIO);
+        for (MemberView contradictory : List.of(offlineButMarkedOnline, deployedButNotAlive,
+                waitingButAlive)) {
+            SquadView squad = new SquadView(SquadCallsign.ALPHA, playerId(1), List.of(
+                    stateMember(1, true, MemberState.DEPLOYED, 1.0F), contradictory),
+                    BattleRules.SQUAD_CAPACITY);
+            assertEncodeRejected(snapshot(List.of(squad), List.of(), List.of(),
+                    LEADER_PERMISSIONS, emptyDeployment(), 2, 0));
+        }
+    }
+
+    @Test
+    void decoderRejectsOutOfBoundsHealthRatioAndMemberState() {
+        float marker = 0.123F;
+        byte[] valid = encodeBytes(singleMemberSnapshot(MemberState.DEPLOYED, marker));
+        byte[] markerBits = floatBytes(marker);
+
+        for (float invalid : new float[]{1.0001F, 1.5F, -0.5F, -1.0001F, Float.NaN,
+                Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY}) {
+            byte[] malformed = replaceOnce(valid, markerBits, floatBytes(invalid));
+            assertThrows(IllegalArgumentException.class, () -> decodeBytes(malformed),
+                    "ratio " + invalid + " must be rejected");
+        }
+        assertEquals(1.0F, decodeBytes(replaceOnce(valid, markerBits, floatBytes(1.0F)))
+                .squads().get(0).members().get(0).healthRatio());
+        assertEquals(MemberView.UNKNOWN_HEALTH_RATIO, decodeBytes(replaceOnce(valid,
+                markerBits, floatBytes(MemberView.UNKNOWN_HEALTH_RATIO)))
+                .squads().get(0).members().get(0).healthRatio());
+
+        byte[] stateField = utfBytes(MemberState.DEPLOYED.id());
+        byte[] unknownState = replaceOnce(valid, stateField, utfBytes("deployex"));
+        assertThrows(IllegalArgumentException.class, () -> decodeBytes(unknownState));
+
+        byte[] contradictoryState = replaceOnce(valid, stateField,
+                utfBytes(MemberState.DEAD.id()));
+        assertThrows(IllegalArgumentException.class, () -> decodeBytes(contradictoryState),
+                "an online, alive member cannot be reported dead");
+
+        byte[] overlongState = replaceOnce(valid, stateField,
+                utfBytes("x".repeat(BattleNetworkLimits.MAX_ENUM_ID_LENGTH + 1)));
+        assertThrows(RuntimeException.class, () -> decodeBytes(overlongState),
+                "state ids longer than the enum limit must not be read");
+    }
+
+    @Test
     void completeSnapshotPacketRejectsTrailingPayload() {
         BattleSnapshotPacket packet = new BattleSnapshotPacket(
                 snapshot(List.of(), List.of(), List.of(), LEADER_PERMISSIONS,
@@ -454,6 +539,85 @@ class BattleSnapshotCodecTest {
                                      boolean leader, boolean commander) {
         return new MemberView(playerId, name, true, true, 20.0F, 20.0F,
                 leader, commander, callsign, leader ? "support" : "assault");
+    }
+
+    /** A member whose legacy flags agree with {@code state}. */
+    private static MemberView stateMember(int index, boolean leader, MemberState state,
+                                          float ratio) {
+        boolean online = state != MemberState.OFFLINE;
+        boolean alive = state.hasVitals();
+        return new MemberView(playerId(index), "Player" + index, online, alive,
+                alive ? 10.0F : 0.0F, 20.0F, leader, false, SquadCallsign.ALPHA,
+                leader ? "support" : "assault", state, ratio);
+    }
+
+    private static BattleSnapshot singleMemberSnapshot(MemberState state, float ratio) {
+        SquadView squad = new SquadView(SquadCallsign.ALPHA, playerId(1),
+                List.of(stateMember(1, true, state, ratio)), BattleRules.SQUAD_CAPACITY);
+        return snapshot(List.of(squad), List.of(), List.of(), LEADER_PERMISSIONS,
+                emptyDeployment(), 1, 0);
+    }
+
+    private static byte[] encodeBytes(BattleSnapshot snapshot) {
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            BattleSnapshotCodec.encode(buffer, snapshot);
+            byte[] bytes = new byte[buffer.readableBytes()];
+            buffer.readBytes(bytes);
+            return bytes;
+        } finally {
+            buffer.release();
+        }
+    }
+
+    private static BattleSnapshot decodeBytes(byte[] bytes) {
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(bytes));
+        try {
+            BattleSnapshot decoded = BattleSnapshotCodec.decode(buffer);
+            assertEquals(0, buffer.readableBytes());
+            return decoded;
+        } finally {
+            buffer.release();
+        }
+    }
+
+    private static byte[] floatBytes(float value) {
+        return java.nio.ByteBuffer.allocate(Float.BYTES).putFloat(value).array();
+    }
+
+    private static byte[] utfBytes(String value) {
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            buffer.writeUtf(value);
+            byte[] bytes = new byte[buffer.readableBytes()];
+            buffer.readBytes(bytes);
+            return bytes;
+        } finally {
+            buffer.release();
+        }
+    }
+
+    /** Replaces the single occurrence of {@code pattern}; fails if it is absent or ambiguous. */
+    private static byte[] replaceOnce(byte[] source, byte[] pattern, byte[] replacement) {
+        int found = -1;
+        for (int start = 0; start + pattern.length <= source.length; start++) {
+            if (Arrays.equals(source, start, start + pattern.length,
+                    pattern, 0, pattern.length)) {
+                if (found >= 0) {
+                    throw new AssertionError("Byte pattern is not unique in the fixture");
+                }
+                found = start;
+            }
+        }
+        if (found < 0) {
+            throw new AssertionError("Byte pattern is absent from the fixture");
+        }
+        byte[] result = new byte[source.length - pattern.length + replacement.length];
+        System.arraycopy(source, 0, result, 0, found);
+        System.arraycopy(replacement, 0, result, found, replacement.length);
+        System.arraycopy(source, found + pattern.length, result, found + replacement.length,
+                source.length - found - pattern.length);
+        return result;
     }
 
     private static BattleSnapshot snapshot(List<SquadView> squads,

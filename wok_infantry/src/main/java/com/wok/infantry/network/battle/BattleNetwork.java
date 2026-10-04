@@ -50,7 +50,8 @@ import java.util.Map;
 public final class BattleNetwork {
     public static final ResourceLocation CHANNEL_NAME =
             ResourceLocation.fromNamespaceAndPath(WokInfantryMod.MOD_ID, "battle");
-    public static final String PROTOCOL_VERSION = "18";
+    /** 19: squad members carry a {@code MemberState} and a trusted health ratio. */
+    public static final String PROTOCOL_VERSION = "19";
 
     public static final int C2S_OPEN_ID = 0;
     public static final int C2S_SNAPSHOT_REQUEST_ID = 1;

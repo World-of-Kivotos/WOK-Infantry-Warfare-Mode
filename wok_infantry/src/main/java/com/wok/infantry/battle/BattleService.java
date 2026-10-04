@@ -2,6 +2,8 @@ package com.wok.infantry.battle;
 
 import com.wok.infantry.WokInfantryMod;
 import com.wok.infantry.deployment.DeploymentService;
+import com.wok.infantry.integration.bodyhealth.BodyHealthServerBridge;
+import com.wok.infantry.integration.downed.DownedStateBridge;
 import com.wok.infantry.server.FormationService;
 import com.wok.infantry.support.SupportService;
 import com.wok.infantry.support.SupportView;
@@ -1278,14 +1280,20 @@ public final class BattleService {
                     boolean online = onlinePlayer != null;
                     boolean deployed = deployments == null
                             || deployments.isActive(member.playerId);
-                    boolean alive = online && deployed && onlinePlayer.isAlive();
+                    boolean entityAlive = online && onlinePlayer.isAlive();
+                    boolean alive = entityAlive && deployed;
+                    MemberState state = MemberState.resolve(online, entityAlive, deployed,
+                            alive && DownedStateBridge.isDowned(onlinePlayer));
                     float health = alive ? onlinePlayer.getHealth() : 0.0F;
                     float maxHealth = online ? onlinePlayer.getMaxHealth() : 20.0F;
+                    float healthRatio = state.hasVitals()
+                            ? BodyHealthServerBridge.ratio(onlinePlayer)
+                            : MemberView.UNKNOWN_HEALTH_RATIO;
                     memberViews.add(new MemberView(member.playerId, member.lastKnownName,
                             online, alive, health, maxHealth,
                             member.playerId.equals(data.leader(faction, formationId, callsign)),
                             member.playerId.equals(data.commander(faction)), callsign,
-                            member.assignedClassId));
+                            member.assignedClassId, state, healthRatio));
                 }
                 squads.add(new SquadView(callsign, data.leader(faction, formationId, callsign),
                         memberViews, configuredCapacity));
@@ -1326,9 +1334,10 @@ public final class BattleService {
         SupportView support = SupportService.get(server)
                 .map(service -> service.viewFor(viewer))
                 .orElseGet(SupportView::unavailable);
-        long visibleRevision = Integer.toUnsignedLong(Objects.hash(faction, formationId, ownSquad, leader,
-                commander, factionCount, enemyCount, squads, markers, permissions, quotas,
-                support.structuralRevision()));
+        // Structural projection only: per-heartbeat health changes must not rebuild client UIs.
+        long visibleRevision = BattleSnapshotRevision.visible(faction, formationId, ownSquad,
+                leader, commander, factionCount, enemyCount, squads, markers, permissions,
+                quotas, support.structuralRevision());
         return new BattleSnapshot(viewer.getUUID(), faction, ownSquad, leader, commander,
                 factionCount, enemyCount, BattleRules.FACTION_CAPACITY,
                 Math.max(1, formationSquadCapacity),

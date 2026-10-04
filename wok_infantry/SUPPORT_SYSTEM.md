@@ -129,7 +129,7 @@
 
 ## 网络、存档与阵营隔离
 
-- 战局网络协议为 `18`（`BattleNetwork.PROTOCOL_VERSION`），版本严格匹配；旧协议客户端不会错解支援定义、任务或临时侦察接触点。
+- 战局网络协议为 `19`（`BattleNetwork.PROTOCOL_VERSION`；0.3.0-beta.8 起小队成员带状态与血量比例，支援字段不变），版本严格匹配；旧协议客户端不会错解支援定义、任务或临时侦察接触点。
 - C2S 支援请求使用独立意图包，不复用战术标记包，并对长度、枚举、坐标和尾随数据执行有界解码。
 - 卫星红点（`TacticalMarkerType.RECON_CONTACT`）只能由侦察支援生成：`BattleService.createMarker` 拒绝该类型，`CreateMarkerPacket` 构造与解码时同样拒绝；`wok_infantry_battle.dat` 读档时丢弃该类型的标记。
 - `BattleSnapshot` 只向观察者发送己方可见的注册定义、己方冷却和己方在途任务，不向敌方泄漏目标或调用者身份。
