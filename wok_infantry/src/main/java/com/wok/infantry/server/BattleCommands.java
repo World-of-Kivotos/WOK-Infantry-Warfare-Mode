@@ -1020,7 +1020,7 @@ public final class BattleCommands {
             return 0;
         }
         service.status().forEach(line -> source.sendSuccess(() -> Component.literal(line), false));
-        return service.enabled() ? 1 : 0;
+        return 1;
     }
 
     /**
