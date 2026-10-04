@@ -8,9 +8,11 @@ public final class InfantryClientConfig {
     public static final double MAX_MAP_MARKER_SCALE = 1.75D;
     public static final double DEFAULT_MAP_MARKER_SCALE = 1.0D;
     public static final boolean DEFAULT_MINIMUM_SCALE_2X = true;
+    public static final boolean DEFAULT_REDIRECT_XAERO_WORLD_MAP = true;
 
     public static final ForgeConfigSpec SPEC;
     private static final ForgeConfigSpec.DoubleValue MAP_MARKER_SCALE;
+    private static final ForgeConfigSpec.BooleanValue REDIRECT_XAERO_WORLD_MAP;
     private static final ForgeConfigSpec.BooleanValue MINIMUM_SCALE_2X;
 
     static {
@@ -21,6 +23,13 @@ public final class InfantryClientConfig {
                 .comment("Scale for infantry, tank, and IFV tactical-map markers")
                 .defineInRange("intelMarkerScale", DEFAULT_MAP_MARKER_SCALE,
                         MIN_MAP_MARKER_SCALE, MAX_MAP_MARKER_SCALE);
+        REDIRECT_XAERO_WORLD_MAP = builder
+                .comment("With Xaero's World Map installed: while you are in a battle (have a "
+                        + "faction), opening Xaero's world map (its key, M by default) opens the "
+                        + "WOK tactical map instead. Outside a battle Xaero's map opens as usual. "
+                        + "Set to false to always open Xaero's map; then bind the WOK tactical "
+                        + "map key to a different key in the controls screen.")
+                .define("redirectXaeroWorldMap", DEFAULT_REDIRECT_XAERO_WORLD_MAP);
         builder.pop();
         builder.comment("Screen and HUD presentation settings")
                 .push("ui");
@@ -51,6 +60,17 @@ public final class InfantryClientConfig {
         if (Double.compare(MAP_MARKER_SCALE.get(), clamped) != 0) {
             MAP_MARKER_SCALE.set(clamped);
         }
+    }
+
+    /**
+     * {@code tacticalMap.redirectXaeroWorldMap}: whether Xaero's world map screen is replaced by
+     * the tactical map while the player is in a battle.
+     */
+    public static boolean redirectXaeroWorldMap() {
+        if (!SPEC.isLoaded()) {
+            return DEFAULT_REDIRECT_XAERO_WORLD_MAP;
+        }
+        return REDIRECT_XAERO_WORLD_MAP.get();
     }
 
     /** {@code ui.minimumScale2x}: whether GUI scale 1 draws WOK screens and HUD at 2x. */

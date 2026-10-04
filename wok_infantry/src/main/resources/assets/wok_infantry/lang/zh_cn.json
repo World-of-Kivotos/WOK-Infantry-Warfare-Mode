@@ -1,5 +1,6 @@
 {
   "key.categories.wok_infantry": "WOK步战核心",
+  "key.wok_infantry.open_terminal": "打开战斗终端（小队页）",
   "key.wok_infantry.open_loadout": "打开配装界面",
   "key.wok_infantry.open_admin_loadout": "打开管理员配装终端",
   "key.wok_infantry.open_squad": "打开小队与兵种界面",
