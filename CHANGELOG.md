@@ -1,6 +1,6 @@
 # 更新日志
 
-## WOK步战核心 0.4.0-beta.2 — 2026-10-05（进行中）
+## WOK步战核心 0.4.0-beta.2 — 2026-10-05
 
 > 用户需求（2026-10-05）：“加一个功能 测试模式，因为现在我需要部署点 没法测试功能”。选阵营/编制时人在黑色等待空间里，超平坦测试世界两方都没有主基地，没法测试部署后的功能。本版新增全服测试模式与一键测试开局（命令和编制页按钮），不改任何网络协议号，可与 0.4.0-beta.1 互连。
 
@@ -33,7 +33,14 @@
 - 服务端配置、客户端配置、`formations.json`、`loadouts.json` 都不新增项、不被改写。
 
 ### 测试结果
-- （进行中）
+- `wok_infantry` 在 `c40e4d9`（本版最后一个源码提交）：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 905 项全部通过，0 失败、0 跳过（比 0.4.0-beta.1 多 29 项：`TestModeRulesTest` 14 项——开关状态机、存档往返与字段钳制、阵营与编制选择规则、首个空闲呼号、两方基地候选列与外扩、朝向、世界边界；`FormationTestStartTest` 13 项——按键可见性与阵营/编制取值、锁定时沿用锁定编制、禁用原因、`testconfirm` 状态、发送的命令、6 个尺寸下的按键布局；`BattleCommandsRegistrationTest` 2 项——`test mode on|off|status` 与 `test start [阵营] [编制] [玩家]` 命令树和解析）。产物 `wok_infantry-0.4.0-beta.2.jar`，2,062,775 字节，SHA-256 `1230DE869343EED83C3D83920662639A78C5F78FBA21468396890153A53AD324`；GameTest 与两轮 UI 验收跑完后重新核对，SHA-256 不变。
+- `runGameTestServer`（同一提交）：21 项必需 GameTest 全部通过，含本版新增 2 项：`testModeAddsBothMainBasesAndShowsItsBossBarUntilTurnedOff`（清掉两方主基地后开启：两方都补出主基地，在主世界、世界边界内、蓝方在出生点附近、红方在出生点 +64 X 附近，开关写进存档，Boss 条显示；重复开启不动已有基地；关闭后 Boss 条移除且没有观看者、两方基地保留、回执说明“保留”）和 `testStartDeploysAWaitingAdministratorAndOffRestoresTheCountdown`（黑色等待空间 lobby 里的管理员执行测试开局：阵营投票被锁定为 `default`，管理员加入该阵营、当上新建 Alpha 小队的队长，以生存模式从本方主基地部署到主世界；测试模式下新一条生命的等待为 0，关闭后倒计时恢复，再开启立即结束倒计时）。GameTest 世界的出生点 (0, 63, 0) 在水里，补设走了外扩：蓝方落在 (-16, 64, 16)，红方落在 (48, 66, 16)，正好覆盖“出生点落水”的退路。两项测试结束时还原测试模式开关、两方主基地、阵营投票和内存配装目录（GameTest 世界 `run/world` 也是 UI 验收种子，UI 轮的客户端日志里没有测试模式开启的记录）。
+- `runUiTestClient` zh_cn 严格轮：`status=PASS`，4336 tick，40 个用例、189 张截图（新增 `formation.testmode`、`formation.testconfirm` 各 5 档），`strictLayoutViolations=0`；新增 10 张在 5 个档位（含 427×240）都是 0 违规。`layoutViolations=169` 与 0.4.0-beta.1 的 `zh_cn-final2` 逐条相同（全是旧界面），原有 179 张截图各档结果不变，Boss 条位移与页头身份记录也相同；实时流程末尾的 `finalActiveMarkers` 由 3 变为 1，是整轮多跑约 180 tick、标记按存活时间过期所致。“测试开局”键（屏幕像素）：320×240 303×14、427×240 820×28（2× 排版）、480×270 170×14、640×336 200×18、960×720 332×36（2× 排版）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.2\zh_cn-final\`。
+- `runUiTestClient -PuiLang=en_us -PuiLayoutStrict=false` 报告轮：`status=PASS`（语义检查全部通过），4339 tick，189 张截图，`layoutViolations=172`、`strictLayoutViolations=0`。比 `en_us-final2`（168）多 4 条，都在新增截图里：testmode、testconfirm 两个状态 960、480 档阵营概况里的“3 (the faction picks one)”被省略号截断，与原有 join、confirm 状态同一行、同一位置的已知英文截断相同（留给 i18n 收尾）；其余 168 条与 `en_us-final2` 逐条相同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.2\en_us-final\`。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_infantry-0.4.0-beta.2.jar` PASS，强制依赖只有 `forge`、`minecraft`；连同工作区里其余 7 个附属 JAR（均为此前构建、版本未变）一起核对，8 个全部 PASS。
+- `tools/verify_versions.ps1 -Modules wok_infantry -Release`（Windows PowerShell 5.1）：PASS（源码版本、根 README 与 VERSIONING 版本表、模块 README 产物名、CHANGELOG 标题、JAR 名、modId 与内部版本一致；本条目已去掉“进行中”、六栏不空，JAR 晚于核心源码最后一次提交 `c40e4d9` 且源码没有未提交改动）。不带参数完整核对 8 个模块也 PASS。
+- 本版没有部署到测试端（测试端 `mods` 里仍是 0.4.0-beta.1，`config`、`mods`、`saves` 只读）；部署时用上面 SHA-256 的 JAR 替换 `wok_infantry-0.4.0-beta.1.jar`，两者不要并存。
+- 未做：测试端真实客户端（PCL）里点“测试开局”的游戏内验收、重启后测试模式与 Boss 条恢复、局域网双人用 `/battle admin test start <阵营> <编制> <玩家>` 送第二个号；测试端 `loadouts.json` 的配装是否完整决定部署能否一次成功（不完整时会停在部署页并说明）。
 
 ## WOK步战核心 0.4.0-beta.1 — 2026-10-05
 
