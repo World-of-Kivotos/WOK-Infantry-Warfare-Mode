@@ -40,11 +40,17 @@ public final class AdminLoadoutScreen extends Screen {
     private PageMode mode = PageMode.LIST;
     private int page;
     private int slotPage;
+    /** The next list build pages the slot tabs to the selected slot (admin-07). */
+    private boolean slotPageFollowsSelection = true;
+    private int lastSlotsPerPage = -1;
     private String originalEntryId = "";
     private boolean creatingClass;
     private boolean creatingSlot;
     private boolean reopenClassSettingsAfterRefresh;
     private int pendingPastedClassIndex = -1;
+    /** Created ids that become selected only once a refresh confirms them (admin-04). */
+    private String pendingSlotId;
+    private String pendingClassId;
     private LoadoutInventoryTarget editedTarget = LoadoutInventoryTarget.HOTBAR_1;
     private boolean editedRequired = true;
 
@@ -58,6 +64,15 @@ public final class AdminLoadoutScreen extends Screen {
     private EditBox snbtField;
     private EditBox slotIdField;
     private EditBox slotNameField;
+
+    /**
+     * Forgets the copied class loadout and the remembered edit context. Called when the client
+     * leaves a server so neither can leak into the next server's catalog (admin-21).
+     */
+    public static void clearSessionMemory() {
+        classLoadoutClipboard = null;
+        AdminLoadoutSessionState.clear();
+    }
 
     public AdminLoadoutScreen(LoadoutSnapshot snapshot) {
         super(Component.translatable("screen.wok_infantry.admin"));
@@ -87,12 +102,20 @@ public final class AdminLoadoutScreen extends Screen {
             }
             pendingPastedClassIndex = -1;
         }
+        selectedClassId = AdminLoadoutSelection.confirmedSelection(pendingClassId,
+                classId -> replacement.config().findClass(classId).isPresent(), selectedClassId);
         if (replacement.config().findClass(selectedClassId).isEmpty()) {
             selectedClassId = replacement.config().classes().stream()
                     .findFirst().map(LoadoutClassDefinition::id).orElse("assault");
         }
         reconcileSelectedClass();
+        selectedSlotId = AdminLoadoutSelection.confirmedSelection(pendingSlotId,
+                slotId -> selectedClass() != null
+                        && selectedClass().findSlot(slotId).isPresent(), selectedSlotId);
         reconcileSelectedSlot();
+        pendingClassId = null;
+        pendingSlotId = null;
+        slotPageFollowsSelection = true;
         originalEntryId = "";
         creatingClass = false;
         creatingSlot = false;
@@ -103,6 +126,9 @@ public final class AdminLoadoutScreen extends Screen {
 
     @Override
     protected void init() {
+        // Fields belong to the page that created them; a stale field from an earlier page must
+        // never feed another page's request (admin-05).
+        clearPageFields();
         switch (mode) {
             case LIST -> initListPage();
             case ENTRY_EDITOR -> initEntryEditorPage();
@@ -190,17 +216,24 @@ public final class AdminLoadoutScreen extends Screen {
         int tabAreaWidth = Math.max(44, nextX - tabX - 4);
         int slotsPerPage = Math.max(1, tabAreaWidth / 52);
         int slotPageCount = Math.max(1, (slots.size() + slotsPerPage - 1) / slotsPerPage);
-        slotPage = Math.max(0, Math.min(slotPage, slotPageCount - 1));
+        int selectedSlotIndex = -1;
+        for (int index = 0; index < slots.size(); index++) {
+            if (slots.get(index).id().equals(selectedSlotId)) {
+                selectedSlotIndex = index;
+                break;
+            }
+        }
+        slotPage = AdminLoadoutSelection.slotPage(selectedSlotIndex, slotsPerPage, slots.size(),
+                slotPage, slotPageFollowsSelection || slotsPerPage != lastSlotsPerPage);
+        slotPageFollowsSelection = false;
+        lastSlotsPerPage = slotsPerPage;
         int slotStart = slotPage * slotsPerPage;
         int slotEnd = Math.min(slots.size(), slotStart + slotsPerPage);
         int visibleSlots = Math.max(1, slotEnd - slotStart);
         int slotWidth = Math.max(40, Math.min(96, tabAreaWidth / visibleSlots));
+        // Paging only flips the visible tabs; the selected slot and its entry list stay.
         Button previousSlotPage = BattleUiButton.builder(Component.literal("‹"), ignored -> {
             slotPage--;
-            if (!slots.isEmpty()) {
-                selectedSlotId = slots.get(Math.max(0, slotPage * slotsPerPage)).id();
-                page = 0;
-            }
             rebuildAll();
         }).bounds(previousX, 74, 24, 20).build();
         previousSlotPage.active = slotPage > 0;
@@ -221,11 +254,6 @@ public final class AdminLoadoutScreen extends Screen {
         }
         Button nextSlotPage = BattleUiButton.builder(Component.literal("›"), ignored -> {
             slotPage++;
-            if (!slots.isEmpty()) {
-                selectedSlotId = slots.get(Math.min(slots.size() - 1,
-                        slotPage * slotsPerPage)).id();
-                page = 0;
-            }
             rebuildAll();
         }).bounds(nextX, 74, 24, 20).build();
         nextSlotPage.active = slotPage + 1 < slotPageCount;
@@ -306,9 +334,11 @@ public final class AdminLoadoutScreen extends Screen {
                 .bounds(90, bottomY, actionWidth, 20).build();
         newEntry.active = selectedSlot != null;
         addRenderableWidget(newEntry);
+        // A new entry starts from the default reserve limit, never from an earlier edit page.
         Button capture = BattleUiButton.builder(
                         fittedButtonLabel(Component.literal("读取主手"), actionWidth),
-                        ignored -> captureMainHand("", "", ""))
+                        ignored -> captureMainHand("", "", "",
+                                LoadoutEntry.DEFAULT_AMMO_RESERVE_LIMIT))
                 .bounds(94 + actionWidth, bottomY, actionWidth, 20).build();
         capture.setTooltip(Tooltip.create(Component.literal(
                 "将主手物品及 TaCZ 配件数据新增到当前槽位，\n并加入当前编制的严格白名单")));
@@ -324,12 +354,26 @@ public final class AdminLoadoutScreen extends Screen {
                 "取消当前编制对此槽位的限制，允许全局装备池中的全部条目")));
         addRenderableWidget(allowAll);
         int classSettingsX = 102 + actionWidth * 3;
-        addRenderableWidget(BattleUiButton.builder(
+        Button classSettings = BattleUiButton.builder(
                         fittedButtonLabel(Component.literal("职业管理"),
                                 Math.max(48, width - classSettingsX - 10)),
                         ignored -> openClassSettings())
                 .bounds(classSettingsX, bottomY,
-                        Math.max(48, width - classSettingsX - 10), 20).build());
+                        Math.max(48, width - classSettingsX - 10), 20).build();
+        String classSettingsBlocked = classSettingsBlockedReason();
+        classSettings.active = classSettingsBlocked.isEmpty();
+        if (!classSettings.active) {
+            classSettings.setTooltip(Tooltip.create(Component.literal(classSettingsBlocked)));
+        }
+        addRenderableWidget(classSettings);
+    }
+
+    /** Empty when the class settings page can open for the current selection (admin-01). */
+    private String classSettingsBlockedReason() {
+        FormationDefinition formation = selectedFormation();
+        return AdminLoadoutSelection.classSettingsBlockedReason(formation != null,
+                formation == null ? 0 : formation.classes().size(),
+                selectedFormationRule() != null, selectedClassName());
     }
 
     private void initClassSelector(List<LoadoutClassDefinition> classes) {
@@ -372,6 +416,7 @@ public final class AdminLoadoutScreen extends Screen {
         selectedSlotId = "";
         reconcileSelectedSlot();
         slotPage = 0;
+        slotPageFollowsSelection = true;
         page = 0;
         rebuildAll();
     }
@@ -424,7 +469,7 @@ public final class AdminLoadoutScreen extends Screen {
         Button capture = BattleUiButton.builder(Component.literal("读取主手"),
                         ignored -> captureMainHand(originalEntryId,
                                 entryIdField.getValue().trim(),
-                                displayNameField.getValue().trim()))
+                                displayNameField.getValue().trim(), parsedEntryAmmoLimit()))
                 .bounds(10, bottomY, buttonWidth, 20).build();
         capture.setTooltip(Tooltip.create(Component.literal(
                 "使用当前主手物品覆盖物品、数量与 TaCZ 配件数据并保存")));
@@ -443,6 +488,7 @@ public final class AdminLoadoutScreen extends Screen {
     private void initSlotEditorPage() {
         LoadoutSlotDefinition selected = selectedSlot();
         if (!creatingSlot && selected == null) {
+            fallBackToList();
             return;
         }
         int fieldWidth = Math.min(320, width - 40);
@@ -451,6 +497,7 @@ public final class AdminLoadoutScreen extends Screen {
                 + UUID.randomUUID().toString().replace("-", "").substring(0, 12)
                 : selected.id();
         slotIdField = editBox(fieldX, 72, fieldWidth, "槽位内部 ID", 64, proposedId);
+        slotIdField.setFilter(AdminLoadoutSelection::slotIdDraft);
         slotIdField.active = creatingSlot;
         slotNameField = editBox(fieldX, 102, fieldWidth, "槽位显示名称", 40,
                 creatingSlot ? "新装备槽位" : selected.displayName());
@@ -512,7 +559,9 @@ public final class AdminLoadoutScreen extends Screen {
     private void initClassSettingsPage() {
         LoadoutClassDefinition definition = selectedClass();
         FormationClassRule rule = selectedFormationRule();
-        if (!creatingClass && (definition == null || rule == null)) {
+        if (creatingClass ? selectedFormation() == null
+                : (definition == null || rule == null)) {
+            fallBackToList();
             return;
         }
         int fieldWidth = Math.min(300, width - 40);
@@ -631,12 +680,17 @@ public final class AdminLoadoutScreen extends Screen {
         graphics.drawString(font, "显示名称", fieldX, 65, 0xA8C7E8, false);
         graphics.drawString(font, "物品注册名", fieldX, 93, 0xA8C7E8, false);
         graphics.drawString(font, "数量", fieldX, 121, 0xA8C7E8, false);
-        graphics.drawString(font, "该枪械携带/补给弹药上限（1–4096 发）",
-                entryAmmoLimitField.getX(), 121, 0xA8C7E8, false);
+        if (entryAmmoLimitField != null) {
+            graphics.drawString(font, "该枪械携带/补给弹药上限（1–4096 发）",
+                    entryAmmoLimitField.getX(), 121, 0xA8C7E8, false);
+        }
         graphics.drawString(font, "可选 SNBT / TaCZ 数据", fieldX, 149, 0xA8C7E8, false);
     }
 
     private void renderSlotEditorPage(GuiGraphics graphics) {
+        if (slotIdField == null || slotNameField == null) {
+            return;
+        }
         BattleUiTheme.drawCenteredText(graphics, font,
                 creatingSlot ? selectedClassName() + " / 新建装备槽位"
                         : selectedClassName() + " / 编辑装备槽位",
@@ -651,6 +705,9 @@ public final class AdminLoadoutScreen extends Screen {
     }
 
     private void renderClassSettingsPage(GuiGraphics graphics) {
+        if (classNameField == null || classLimitField == null) {
+            return;
+        }
         BattleUiTheme.drawCenteredText(graphics, font, creatingClass
                         ? "新建编制职业" : selectedClassName() + " / 职业设置",
                 width / 2, 28, 0xFFD66B);
@@ -731,6 +788,9 @@ public final class AdminLoadoutScreen extends Screen {
     }
 
     private void openClassSettings() {
+        if (!classSettingsBlockedReason().isEmpty()) {
+            return;
+        }
         creatingClass = false;
         mode = PageMode.CLASS_SETTINGS;
         rebuildAll();
@@ -745,7 +805,40 @@ public final class AdminLoadoutScreen extends Screen {
         mode = PageMode.LIST;
         originalEntryId = "";
         creatingSlot = false;
+        creatingClass = false;
+        pendingSlotId = null;
+        pendingClassId = null;
+        reconcileSelectedClass();
+        reconcileSelectedSlot();
+        slotPageFollowsSelection = true;
         rebuildAll();
+    }
+
+    /**
+     * Called from inside {@link #init()} when the requested page cannot be built for the
+     * current selection: shows the list page instead of an empty page whose renderer would
+     * dereference fields that were never created (admin-01).
+     */
+    private void fallBackToList() {
+        mode = PageMode.LIST;
+        originalEntryId = "";
+        creatingSlot = false;
+        creatingClass = false;
+        slotPageFollowsSelection = true;
+        initListPage();
+    }
+
+    private void clearPageFields() {
+        classNameField = null;
+        classLimitField = null;
+        entryAmmoLimitField = null;
+        entryIdField = null;
+        displayNameField = null;
+        itemIdField = null;
+        countField = null;
+        snbtField = null;
+        slotIdField = null;
+        slotNameField = null;
     }
 
     private void saveEntry() {
@@ -772,11 +865,11 @@ public final class AdminLoadoutScreen extends Screen {
     }
 
     private void captureMainHand(String originalId, String requestedId,
-                                 String requestedDisplayName) {
+                                 String requestedDisplayName, int ammoReserveLimit) {
         LoadoutNetwork.sendToServer(AdminEntryPacket.captureMainHand(
                 selectedClassId, selectedSlotId, originalId,
                 requestedId, requestedDisplayName,
-                selectedFactionId, selectedFormationId, parsedEntryAmmoLimit()));
+                selectedFactionId, selectedFormationId, ammoReserveLimit));
     }
 
     private int parsedEntryAmmoLimit() {
@@ -801,7 +894,9 @@ public final class AdminLoadoutScreen extends Screen {
 
     private void saveSlot() {
         String slotId = slotIdField.getValue().trim();
-        selectedSlotId = slotId;
+        // The selection moves to a new slot only after the refresh confirms it exists; a
+        // rejected id (duplicate, invalid, full) must not leave the list pointing at nothing.
+        pendingSlotId = creatingSlot ? slotId : null;
         LoadoutNetwork.sendToServer(new AdminSlotPacket(
                 creatingSlot ? AdminSlotPacket.Action.CREATE : AdminSlotPacket.Action.UPDATE,
                 selectedClassId, slotId, slotNameField.getValue().trim(),
@@ -848,7 +943,7 @@ public final class AdminLoadoutScreen extends Screen {
                 ? "custom_" + UUID.randomUUID().toString().replace("-", "")
                 .substring(0, 12)
                 : selectedClassId;
-        selectedClassId = classId;
+        pendingClassId = creatingClass ? classId : null;
         LoadoutNetwork.sendToServer(new AdminClassPacket(
                 creatingClass ? FormationClassEditAction.CREATE
                         : FormationClassEditAction.UPDATE,
@@ -967,6 +1062,7 @@ public final class AdminLoadoutScreen extends Screen {
         selectedSlotId = "";
         reconcileSelectedSlot();
         slotPage = 0;
+        slotPageFollowsSelection = true;
         page = 0;
         rebuildAll();
     }
@@ -989,6 +1085,7 @@ public final class AdminLoadoutScreen extends Screen {
         selectedSlotId = "";
         reconcileSelectedSlot();
         slotPage = 0;
+        slotPageFollowsSelection = true;
         page = 0;
         rebuildAll();
     }

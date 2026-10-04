@@ -4,13 +4,19 @@ import java.util.Objects;
 
 /** Client-session memory so closing the administrator terminal does not lose edit context. */
 final class AdminLoadoutSessionState {
-    private static Selection remembered = new Selection("", "", "", "primary");
+    private static final Selection DEFAULT = new Selection("", "", "", "primary");
+    private static Selection remembered = DEFAULT;
 
     private AdminLoadoutSessionState() {
     }
 
     static synchronized Selection load() {
         return remembered;
+    }
+
+    /** Forgets the edit context, e.g. when leaving a server (admin-21). */
+    static synchronized void clear() {
+        remembered = DEFAULT;
     }
 
     static synchronized void remember(String factionId, String formationId,

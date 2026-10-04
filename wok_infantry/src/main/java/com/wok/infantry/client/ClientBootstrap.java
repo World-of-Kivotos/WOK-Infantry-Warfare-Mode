@@ -132,6 +132,7 @@ public final class ClientBootstrap {
         ClientBattleState.clear();
         ClientFormationState.clear();
         ClientLoadoutState.update(null);
+        AdminLoadoutScreen.clearSessionMemory();
         TaczAdsSpeedAdapter.resetClientTracking();
         ClientStaminaController.reset();
         ClientStaminaState.clear();
