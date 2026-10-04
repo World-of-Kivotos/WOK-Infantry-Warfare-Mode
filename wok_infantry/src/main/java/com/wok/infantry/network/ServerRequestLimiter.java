@@ -70,6 +70,9 @@ public final class ServerRequestLimiter {
         // All action/silent-refresh responses share one actor-side rebuild per second; the fixed
         // heartbeat still supplies fresh state to every participant without request amplification.
         SNAPSHOT_RESPONSE(1_000),
+        // Formation catalog requests have their own budget, so opening the squad page (OPEN_UI)
+        // and pressing its "编制" key within a second no longer drops the catalog request.
+        FORMATION_CATALOG(1_000),
         FORMATION_SELECTION(500),
         SQUAD_ACTION(250),
         CLASS_SELECTION(500),

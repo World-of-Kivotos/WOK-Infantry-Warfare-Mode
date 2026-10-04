@@ -136,6 +136,7 @@ class ClientTranslationContractTest {
             Map.entry("screen.wok_infantry.formation.confirm.join_title", 1),
             Map.entry("screen.wok_infantry.formation.confirm.join_body", 4),
             Map.entry("screen.wok_infantry.formation.confirm.join_body_locked", 4),
+            Map.entry("screen.wok_infantry.formation.confirm.join_body_about", 1),
             Map.entry("screen.wok_infantry.formation.confirm.lock_title", 1),
             Map.entry("screen.wok_infantry.formation.confirm.lock_body", 4),
             Map.entry("screen.wok_infantry.formation.confirm.lock_warn_tie_in", 2),

@@ -23,7 +23,7 @@ public record RequestFormationCatalogPacket() {
                               Supplier<NetworkEvent.Context> contextSupplier) {
         ServerPlayer sender = contextSupplier.get().getSender();
         if (sender != null && ServerRequestLimiter.allow(sender,
-                ServerRequestLimiter.Kind.OPEN_UI)) {
+                ServerRequestLimiter.Kind.FORMATION_CATALOG)) {
             FormationNetwork.sendSnapshotToPlayer(sender, true);
         }
     }

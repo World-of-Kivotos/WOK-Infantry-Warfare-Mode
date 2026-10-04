@@ -38,7 +38,12 @@ public final class FormationClientNetworkBridge {
         installed = true;
     }
 
+    /**
+     * Asks the server for the catalog. The waiting page counts from here: without an answer
+     * after {@link ClientFormationState#CATALOG_TIMEOUT_NANOS} it offers a retry.
+     */
     public static void requestCatalog() {
+        ClientFormationState.catalogRequested();
         FormationNetwork.sendToServer(new RequestFormationCatalogPacket());
     }
 

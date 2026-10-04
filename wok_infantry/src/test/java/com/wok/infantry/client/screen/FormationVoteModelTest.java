@@ -112,6 +112,9 @@ class FormationVoteModelTest {
                 Map.of()), "", "", false).step());
         assertEquals(Step.VOTE, model(joined(FormationVotePhase.OPEN, true, "",
                 tally(0, 0, 0)), "", "", false).step());
+        // B11a: an administrator who has not voted may vote or lock straight away (vote-09).
+        assertEquals(Step.ADMIN_VOTE, model(joined(FormationVotePhase.OPEN, true, "",
+                tally(0, 0, 0)), "", "", true).step());
         assertEquals(Step.WAIT_LOCK, model(joined(FormationVotePhase.OPEN, true, MOBILE,
                 tally(0, 1, 0)), "", "", false).step());
         assertEquals(Step.ADMIN_LOCK, model(joined(FormationVotePhase.OPEN, true, MOBILE,

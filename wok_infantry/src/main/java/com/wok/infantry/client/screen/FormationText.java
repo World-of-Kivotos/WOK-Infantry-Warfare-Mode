@@ -1,6 +1,7 @@
 package com.wok.infantry.client.screen;
 
 import com.wok.infantry.battle.BattleSnapshot;
+import com.wok.infantry.client.ClientFormationState;
 import com.wok.infantry.formation.FormationCategory;
 import com.wok.infantry.formation.selection.FactionSelectionView;
 import com.wok.infantry.formation.selection.FormationDetailView;
@@ -39,14 +40,16 @@ public final class FormationText {
 
     /**
      * Header identity: "未加入阵营", or the public faction · squad · role. While the catalog is
-     * still on its way nothing is claimed when the battle snapshot says the player has a faction
-     * (a participant opening the page from the squad terminal has no cached catalog).
+     * still on its way the header stays neutral ("正在读取编制信息"): neither the battle snapshot
+     * (cleared for members still voting) nor anything else tells whether the viewer has joined.
      */
     public static Component identity(FormationVoteModel model, BattleSnapshot battle) {
+        if (model.waiting()) {
+            return key("identity.loading");
+        }
         FactionSelectionView faction = model.joinedFaction();
         if (faction == null) {
-            return model.waiting() && battle != null && battle.faction() != null
-                    ? Component.empty() : key("identity.unjoined");
+            return key("identity.unjoined");
         }
         MutableComponent identity = Component.literal(faction.displayName());
         if (battle != null && battle.ownSquad() != null) {
@@ -72,7 +75,9 @@ public final class FormationText {
         FactionSelectionView browsing = model.browsing();
         String faction = browsing == null ? "" : browsing.displayName();
         return switch (model.step()) {
-            case SYNC -> List.of(key("step.sync"));
+            case SYNC -> ClientFormationState.catalogOverdue()
+                    ? List.of(key("step.sync_overdue"), key("step.sync_overdue_short"))
+                    : List.of(key("step.sync"));
             case EMPTY -> List.of(key("step.empty"), key("step.empty_short"));
             case JOIN -> List.of(key("step.join", faction), key("step.join_short"));
             case JOIN_LOCKED -> List.of(key("step.join_locked", faction),
@@ -83,6 +88,7 @@ public final class FormationText {
             case WAIT_OPEN -> List.of(key("step.wait_open"), key("step.wait_open_short"));
             case ADMIN_OPEN -> List.of(key("step.admin_open"), key("step.admin_open_short"));
             case VOTE -> List.of(key("step.vote"), key("step.vote_short"));
+            case ADMIN_VOTE -> List.of(key("step.admin_vote"), key("step.admin_vote_short"));
             case WAIT_LOCK -> List.of(key("step.wait_lock"), key("step.wait_lock_short"));
             case ADMIN_LOCK -> List.of(key("step.admin_lock"), key("step.admin_lock_short"));
             case DEPLOY -> List.of(key("step.deploy", lockedName(model)),
@@ -704,17 +710,27 @@ public final class FormationText {
         return key("confirm.join_title", faction.displayName());
     }
 
+    /**
+     * Join confirmation: the faction name and its population lead, then what joining means; the
+     * faction description follows as its own last paragraph (the first to give way on a small
+     * screen) instead of opening the sentence.
+     */
     public static Component joinConfirmBody(FormationVoteModel model, FactionSelectionView faction) {
         int capacity = model.effectiveCapacity(faction);
+        MutableComponent body;
         if (model.phase(faction) == FormationVotePhase.LOCKED) {
-            return key("confirm.join_body_locked", faction.displayName(), lockedName(model),
+            body = key("confirm.join_body_locked", faction.displayName(), lockedName(model),
                     faction.population(), capacity);
+        } else {
+            long candidates = faction.formations().stream()
+                    .filter(FormationSelectionView::available).count();
+            body = key("confirm.join_body", faction.displayName(), faction.population(),
+                    capacity, candidates);
         }
-        long candidates = faction.formations().stream()
-                .filter(FormationSelectionView::available).count();
-        String description = faction.description().isBlank() ? faction.displayName()
-                : faction.description();
-        return key("confirm.join_body", description, faction.population(), capacity, candidates);
+        if (!faction.description().isBlank()) {
+            body.append(key("confirm.join_body_about", faction.description()));
+        }
+        return body;
     }
 
     public static Component joinConfirmOk() {
@@ -826,16 +842,29 @@ public final class FormationText {
         return key("waiting.title");
     }
 
+    /** "同步中", or "无响应" once the catalog request went unanswered (see {@link #waitingHint}). */
     public static Component waitingMeta() {
-        return key("waiting.meta");
+        return key(ClientFormationState.catalogOverdue() ? "waiting.meta_overdue"
+                : "waiting.meta");
     }
 
     public static Component waitingHeading() {
-        return key("waiting.heading");
+        return key(ClientFormationState.catalogOverdue() ? "waiting.heading_overdue"
+                : "waiting.heading");
     }
 
+    /**
+     * Waiting-state hint: what is happening, or, once the request is
+     * {@link ClientFormationState#catalogOverdue() overdue} (the server drops requests over its
+     * rate limit silently), how to request the catalog again.
+     */
     public static Component waitingHint() {
-        return key("waiting.hint");
+        return waitingHint(ClientFormationState.catalogOverdue());
+    }
+
+    /** Waiting-state hint of the given kind (the page reserves room for the longer one). */
+    public static Component waitingHint(boolean overdue) {
+        return key(overdue ? "waiting.hint_overdue" : "waiting.hint");
     }
 
     public static Component retryKey() {
