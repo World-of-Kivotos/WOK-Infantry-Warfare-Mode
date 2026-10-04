@@ -48,7 +48,7 @@ class UiLayoutReportTest {
     void textInsideItsBoxAndTheScreenPasses() {
         UiLayoutFrame frame = frame();
         frame.beginBox("header", rect(3, 3, 317, 19), true);
-        text(frame, "WOK // 组件规范", 14, 6, 90);
+        text(frame, "WOK步战 // 组件规范", 14, 6, 108);
         frame.endBox();
         assertEquals(List.of(), rules(frame, ZH));
     }

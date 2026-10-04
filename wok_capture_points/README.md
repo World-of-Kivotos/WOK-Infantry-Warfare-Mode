@@ -25,7 +25,7 @@ Minecraft 1.20.1 / Forge 47.4.22 的独立占点附属，modId 为 `wok_capture_
 
 玩家进入据点后，屏幕顶部显示战术拼板风格的据点名、蓝红人数比、连续控制条、争夺/锁定/占领状态和人数速度倍率。安装 `WOK步战核心` 时，据点区域、名称、归属颜色和进度会显示在 WOK 战术地图中；未安装核心时占点与 HUD 仍可独立工作。
 
-与核心 `0.3.0-beta.8` 或更新版本同装时，核心 HUD（小队名单、战况条、通知、投票条）在玩家站进据点后会按本附属 `0.1.0-alpha.3` 的面板位置自动让开（核心反射 `ClientCaptureState.insidePoint()`，并照抄面板坐标）。以后改动面板位置或尺寸，或改为向核心 `InfantryHudApi.slot("top_center_next", 宽, 高)` 取位置时，必须同时提供 `com.wok.capturepoints.api.CaptureHudApi.panelRect(int, int)`，返回 `{left, top, width, height}`（GUI 像素，面板不显示时返回 `null`；面板已放进核心给的槽位时也返回 `null`，表示核心不用再避让），否则核心会继续避让 alpha.3 的旧位置。
+与核心 `0.4.0-beta.1` 或更新版本同装时，核心 HUD（小队名单、战况条、通知、投票条）在玩家站进据点后会按本附属 `0.1.0-alpha.3` 的面板位置自动让开（核心反射 `ClientCaptureState.insidePoint()`，并照抄面板坐标）。以后改动面板位置或尺寸，或改为向核心 `InfantryHudApi.slot("top_center_next", 宽, 高)` 取位置时，必须同时提供 `com.wok.capturepoints.api.CaptureHudApi.panelRect(int, int)`，返回 `{left, top, width, height}`（GUI 像素，面板不显示时返回 `null`；面板已放进核心给的槽位时也返回 `null`，表示核心不用再避让），否则核心会继续避让 alpha.3 的旧位置。
 
 ## 主要指令
 

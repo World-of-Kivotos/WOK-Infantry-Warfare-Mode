@@ -24,6 +24,21 @@ class FormationTextTest {
     }
 
     @Test
+    void narrowPagesUpTo427WideUseTheShortTitleSoTheIdentityFits() {
+        // 320×240 and 427×240 (854×480 at GUI 1) both get "编制投票"; the full
+        // "WOK步战 // 编制投票" would make the shell hide "学院军 · 阿尔法小队 · 指挥官" at 427.
+        for (int width : new int[] {320, 400, 427, FormationText.SHORT_TITLE_BELOW - 1}) {
+            assertEquals(FormationText.PREFIX + "title_short", keyOf(FormationText.title(width)),
+                    "width " + width);
+        }
+        // 480×270, 480×360 (960×720 at the minimum 2×), 640×336 and wider keep the full title.
+        for (int width : new int[] {FormationText.SHORT_TITLE_BELOW, 480, 640, 960}) {
+            assertEquals(FormationText.PREFIX + "title", keyOf(FormationText.title(width)),
+                    "width " + width);
+        }
+    }
+
+    @Test
     void anAdministratorIsNeverToldToWaitForAnAdministrator() {
         // Review fix UI-10: the administrator's own "open the vote" key is right on the page.
         FormationSelectionSnapshot pending = joined(FormationVotePhase.NOT_STARTED, true, "",

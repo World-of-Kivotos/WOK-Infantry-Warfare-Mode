@@ -7,6 +7,7 @@ import com.wok.infantry.client.screen.FormationVoteModel;
 import com.wok.infantry.client.screen.TacticalConfirmDialog;
 import com.wok.infantry.client.screen.TacticalList;
 import com.wok.infantry.client.screen.UiRect;
+import com.wok.infantry.client.screen.UiTestWidgets;
 import com.wok.infantry.client.ui.probe.UiLayoutFrame;
 import com.wok.infantry.formation.selection.FormationSelectionSnapshot;
 import com.wok.infantry.formation.vote.FormationVotePhase;
@@ -376,6 +377,31 @@ public final class FormationCases {
         }
         context.observe("formationState[" + context.uiCase().stateId() + "@"
                 + context.tier().id() + "]=" + screen.uiStateId());
+        checkHeaderIdentity(context, capture, screen);
+    }
+
+    /**
+     * A joined page's header identity ("学院军 · 阿尔法小队 · 指挥官"), which the shell hides first
+     * when title, tabs and identity do not fit. The "WOK步战 //" prefix made the full title too
+     * long for it at 427×240, so the page uses the short title below 440 wide; on that tier the
+     * Chinese page must show the identity again (427×240 is report-only, so a miss is reported,
+     * not fatal). Every joined state and tier records whether it was shown.
+     */
+    private static void checkHeaderIdentity(UiCaseContext context, UiCapture.Result capture,
+                                            FormationSelectionScreen screen) {
+        if (!UiTestWidgets.formationJoined(screen)) {
+            return;
+        }
+        String identity = UiTestWidgets.formationIdentity(screen);
+        boolean shown = capture.frame().texts().stream().anyMatch(text ->
+                text.text().equals(identity) || text.truncated() && text.fullText().equals(identity));
+        context.observe("formationHeaderIdentity[" + context.uiCase().stateId() + "@"
+                + context.tier().id() + "]=" + (shown ? "shown" : "hidden"));
+        if (context.tier() == UiTier.T427
+                && "zh_cn".equals(context.minecraft().options.languageCode)) {
+            context.require(shown, "the joined page hides its header identity '" + identity
+                    + "' at 427x240");
+        }
     }
 
     private static boolean insideBox(List<UiLayoutFrame.Box> boxes, int index, String id) {

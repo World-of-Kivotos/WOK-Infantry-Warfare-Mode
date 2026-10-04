@@ -34,8 +34,16 @@ public final class FormationText {
 
     // ---- shell ----------------------------------------------------------------------------------
 
+    /**
+     * Below this layout width the page uses the short title. The full "WOK步战 // 编制投票" plus the
+     * tab strip leaves no room for a long identity ("学院军 · 阿尔法小队 · 指挥官") at 427×240
+     * (854×480, GUI 1), and the shell would hide the identity first; 480 wide and up keep the full
+     * title.
+     */
+    static final int SHORT_TITLE_BELOW = 440;
+
     public static Component title(int width) {
-        return key(width < 400 ? "title_short" : "title");
+        return key(width < SHORT_TITLE_BELOW ? "title_short" : "title");
     }
 
     /**

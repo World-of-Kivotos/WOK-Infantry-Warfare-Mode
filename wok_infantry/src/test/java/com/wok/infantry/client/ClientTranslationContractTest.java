@@ -50,7 +50,7 @@ class ClientTranslationContractTest {
             Map.entry("screen.wok_infantry.list.more_above", 1),
             Map.entry("screen.wok_infantry.list.unavailable", 1),
             Map.entry("screen.wok_infantry.list.position", 3),
-            // Formation vote page (0.3.0-beta.8 B5).
+            // Formation vote page (0.4.0-beta.1 B5).
             Map.entry("screen.wok_infantry.formation.step.join", 1),
             Map.entry("screen.wok_infantry.formation.step.join_locked", 1),
             Map.entry("screen.wok_infantry.formation.step.browse_other", 1),

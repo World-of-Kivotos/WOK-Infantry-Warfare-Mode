@@ -66,6 +66,20 @@ public final class UiTestWidgets {
         return geometry;
     }
 
+    /** Whether the viewer of the formation page has joined a faction (the page then has tabs). */
+    public static boolean formationJoined(FormationSelectionScreen screen) {
+        return screen.snapshot() != null && screen.model().joined();
+    }
+
+    /**
+     * The header identity the formation page hands to its shell this frame, e.g.
+     * "学院军 · 阿尔法小队 · 指挥官" (the shell may still hide it when the header is full).
+     */
+    public static String formationIdentity(FormationSelectionScreen screen) {
+        return FormationText.identity(screen.model(),
+                com.wok.infantry.client.ClientBattleState.snapshot()).getString();
+    }
+
     private static int[] rect(TacticalMapLayout.Rect rect) {
         return new int[]{rect.left(), rect.top(), rect.right(), rect.bottom()};
     }

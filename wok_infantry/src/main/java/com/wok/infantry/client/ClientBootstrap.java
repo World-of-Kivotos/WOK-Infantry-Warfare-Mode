@@ -263,7 +263,8 @@ public final class ClientBootstrap {
     }
 
     /**
-     * Moves WOK mappings still exactly on their pre-0.3.0-beta.8 default key to the new default,
+     * Moves WOK mappings still exactly on their pre-0.4.0-beta.1 default key (0.3.0-beta.7 and
+     * earlier) to the new default,
      * once per client (recorded in {@code keys.defaultsRevision} of the client config). Runs on
      * the first client tick with both options.txt and the client config loaded, normally on the
      * title screen.
@@ -305,7 +306,7 @@ public final class ClientBootstrap {
             KeyMapping.resetMapping();
             minecraft.options.save();
             WokInfantryMod.LOGGER.info("Moved WOK key mappings still on their old default key to "
-                    + "the 0.3.0-beta.8 defaults: {}", moved);
+                    + "the 0.4.0-beta.1 defaults: {}", moved);
         }
         InfantryClientConfig.setKeyDefaultsRevision(KeyBindingDefaults.DEFAULTS_REVISION);
     }

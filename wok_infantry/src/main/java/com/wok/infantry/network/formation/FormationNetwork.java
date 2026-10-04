@@ -35,9 +35,9 @@ public final class FormationNetwork {
     public static final ResourceLocation CHANNEL_NAME = ResourceLocation.fromNamespaceAndPath(
             WokInfantryMod.MOD_ID, "formation");
     /**
-     * 5 (core 0.3.0-beta.8): every viewer receives each faction's ballot phase and locked
+     * 5 (core 0.4.0-beta.1): every viewer receives each faction's ballot phase and locked
      * formation, formations carry a structured detail with public names, the catalog has a
-     * support name table and a lock-notice flag. Client and server must both be beta.8.
+     * support name table and a lock-notice flag. Client and server must both be 0.4.0-beta.1.
      */
     public static final String PROTOCOL_VERSION = "5";
 

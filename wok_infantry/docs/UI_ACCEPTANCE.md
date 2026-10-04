@@ -1,4 +1,4 @@
-# WOK步战核心 UI 自动验收（0.3.0-beta.8 档 1）
+# WOK步战核心 UI 自动验收（0.4.0-beta.1 档 1）
 
 `runUiTestClient` 启动一个开发用真实客户端，进入隔离存档，先走一遍实时流程（部署页、终端键、地图键、队长/指挥官、部署、标记、JourneyMap 地形），截下旧截图 01–09；再由用例运行器 `UiCaseRunner` 先跑 `legacy` 组补齐旧截图 10–14（编制 2 张、管理员 3 张，保留原名和顺序），然后把 `src/uiTest/.../cases/` 里登记的其余用例逐个档位截图、检查，最后写结果并自动退出。验收代码全部在 `src/uiTest`，不会进入生产 JAR。
 
@@ -76,7 +76,7 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<版本>\<标�
 | admin.legacy_*（旧图 12–14） | 列表 320、职业管理 320、列表 960 | 320、960 | 否 | “+槽位”“设置”“职业管理”存在 |
 | kit（组件陈列页） | default、confirm、inputs、cards、hud、icons | 全部 5 档 | 是 | 按钮七态 + 焦点；超长键省略号带完整提示；危险确认默认焦点在“取消”、Enter 不确认、Esc 取消；45 个界面图标；10 种标点物理尺寸 |
 | mapicons（地图标点陈列） | dark（深色地形）、paper（浅色纸图） | 全部 5 档 | 是 | 10 种标点 + 名称；普通/悬停/选中/即将过期；宽屏另有 0.75×/1.25×/1.75× 旋钮；每个标点物理尺寸 = 15×15（定位针 15×18）美术像素 × 旋钮对应的整物理像素，不随 GUI 档变化 |
-| formation（编制页，预览 45-formation） | join、confirm、facfull、vote、detail、locked、latejoin、lateconfirm、waiting、waitover（目录请求 3 秒没有回应）、longcaps（玩家视角）；pending、full、admintie、admin（管理员视角） | 全部 5 档 | 是 | 页面自报预览状态；waitover 写出“编制目录没有送达”并保留重试键；夹具未被服务端目录替换；详情区没有内部 ID（player-09）；裁剪区内没有半行；浏览中的阵营是描边而非实心蓝；未加入时 Esc 能关页；加入为普通确认、锁定为危险确认且默认“取消”；阵营满员/容量不足时按键禁用并写原因；锁定后加入仍可加入；5 个白名单支援全部按名称显示 |
+| formation（编制页，预览 45-formation） | join、confirm、facfull、vote、detail、locked、latejoin、lateconfirm、waiting、waitover（目录请求 3 秒没有回应）、longcaps（玩家视角）；pending、full、admintie、admin（管理员视角） | 全部 5 档 | 是 | 页面自报预览状态；waitover 写出“编制目录没有送达”并保留重试键；夹具未被服务端目录替换；详情区没有内部 ID（player-09）；裁剪区内没有半行；浏览中的阵营是描边而非实心蓝；未加入时 Esc 能关页；加入为普通确认、锁定为危险确认且默认“取消”；阵营满员/容量不足时按键禁用并写原因；锁定后加入仍可加入；5 个白名单支援全部按名称显示；已加入阵营时逐档记录页头身份是否显示（`formationHeaderIdentity[...]`），中文 427×240 档必须显示（页面在不足 440 宽时用短标题“编制投票”；427 档只出报告，不显示记为 REPORT） |
 | admin.noclass（admin-01 回归） | 编制没有任何职业规则 | 320、960、640 | 否 | “职业管理”禁用并写原因；真实点击和强行 onPress 都不崩溃、不离开列表页 |
 | ammo.small320（player-01 回归） | 小型弹药箱 | 320（480 报告） | 否 | 剩余点数和点数条不在分区标题下面，位于面板顶和分区标题之间 |
 | hud（战斗 HUD，预览 10-hud） | battle、chat、downed、roster8、votewait、vote、voted、locked、boss（8 人名单 + 客户端放入的原版 Boss 条） | 全部 5 档 | 是 | 不碰快捷栏和状态行；boss 状态下移、右移后的 Boss 条区域不碰名单、不出屏；体征组右缘 ≤ 快捷栏左缘 − 4；320 档名单底边 ≤ y95；窄屏开聊天时名单收成一行；投票阶段投票条占战况条槽位、没有名单、写出终端键；锁定通知 3 秒内截到；倒地时本人行写“倒地”，替身附属面板拿到 `center_low` 槽位 |
@@ -94,7 +94,40 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<版本>\<标�
 | `run/ui-test/ui-test-results/wok_ui_progress.txt` | 进度；客户端没写结果就退出时，Gradle 报出最后到达的阶段 |
 | `run/ui-test/screenshots/` | 截图 |
 
-### 本轮结果（2026-10-04，核心 0.3.0-beta.8）
+### 0.4.0-beta.1 最终验收（2026-10-05，final2）
+
+本版的自动验收以本节的 `zh_cn-final2`、`en_us-final2` 两份归档为准；下一节的 `final` 一轮保留为历史。
+
+- 代码：分支 `claude/新版界面` 的 `883fcd6`。它在 `final` 一轮的 `3a24aec` 之上改了两件事：素材声明改正（`b102e43`：仓库与 JAR 内两份 `THIRD_PARTY_NOTICES.md` 开头加非官方同人作品声明，千禧年研讨会编制徽标改写为本项目成员参照《蔚蓝档案》（Blue Archive）中“千禧年研讨会”的标志自行像素化重绘的非官方二次创作，三张界面图集仍为原创；根 README 加“声明”一节），以及编制投票页在布局宽度不足 440 时用短标题“编制投票”（`883fcd6`，原为不足 400），让 427×240 下页头身份恢复显示；同一提交给编制页用例加了页头身份记录 `formationHeaderIdentity[...]`（见第 5 节）。核心先用限流脚本 `clean build`（连同六个附加测试源集的编译）：JUnit 876 项，0 失败、0 跳过；再跑 `runGameTestServer`：19 项必需 GameTest 全部通过；然后在同一工作区跑下面两轮。产物 `wok_infantry-0.4.0-beta.1.jar`，2,009,894 字节，SHA-256 `8324F63A34AAAB59A5A39444FC4DD0D10C1AB653DF8CC9F5FEED43C0EB178C73`（两轮跑完后重新核对，不变）；JAR 内 `META-INF/THIRD_PARTY_NOTICES.md` 与仓库内两份逐字节相同，是改正后的新版。
+- zh_cn 严格轮（`runUiTestClient`，JourneyMap 6.0.2，不需要 TaCZ）：`status=PASS`，4158 tick，38 个用例、179 张截图，`strictLayoutViolations=0`。已迁移界面（kit、mapicons、formation、hud）在 5 个档位都没有违规；`layoutViolations=169` 全部来自未迁移的旧界面，只出报告（管理员终端 64、小队终端 49、配装 30、战术地图 26；按规则分为 GUI 1 下 1× 中文 114、禁用键没写原因 51、截断没有完整提示 3、“READY”占位 1），与 `final` 一轮逐条相同，各用例各档的结果也相同。Boss 条位移（GUI 像素）：320×240 右 53 下 35、427×240 右 16 下 69、480×270 右 29 下 35、640×336 下 39、960×720 下 77，与 `final` 一轮相同。页头身份：已加入阵营的 8 个编制页状态（vote、detail、locked、longcaps、pending、full、admin、admintie）在 427×240、480×270、640×336、960×720 四档都显示“学院军 · 阿尔法小队 · 指挥官”，320×240 照旧收起（40 条 `formationHeaderIdentity`）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.1\zh_cn-final2\`。
+- en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`（语义检查全部通过），4155 tick，179 张截图，`layoutViolations=168`、`strictLayoutViolations=0`，与 `final` 一轮逐条相同（构成见下一节），各用例各档的结果也相同。427 档编制页 15 个状态改用短标题“FORMATION VOTE”，页签因此放得下全名（`final` 一轮是“SQD / Role / DEP / Kit / Map / FMN”短名）；英文页签较长，页头身份在 5 个档位都仍收起（40 条 `formationHeaderIdentity` 全为 hidden；427 以外各档的编制页截图与 `final` 一轮逐字节相同）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.1\en_us-final2\`。
+- 427×240 修正前后（zh_cn，同名截图 `wok_ui_formation_vote_427x240.png`）：
+  - 修正前 `...\20261005-0.4.0-beta.1\zh_cn-final\screenshots\wok_ui_formation_vote_427x240.png`：页头是“WOK步战 // 编制投票”加六个页签，右侧没有身份。
+  - 修正后 `...\20261005-0.4.0-beta.1\zh_cn-final2\screenshots\wok_ui_formation_vote_427x240.png`：页头是“编制投票”加六个页签，右侧显示“学院军 · 阿尔法小队 · 指挥官”。管理员锁定确认 `wok_ui_formation_admin_427x240.png` 等其余 7 个已加入状态相同。
+  - 与 `final` 一轮逐张比对 179 张：111 张逐字节相同；427 档编制页 15 个状态都不同，像素差异只在页头（标题改为短标题，已加入的 8 个状态多出身份）；其余 53 张（HUD 45 张、实时流程 01/03、管理员 12/13/14 与 `admin.noclass` 3 张）透出实时世界背景，水面、云等每轮不同，布局报告逐条相同。
+- 标题前缀检查（在 `final` 一轮逐张核对的基础上，只看本轮变了的截图）：
+  - 新外壳（编制投票页、组件陈列页、地图标点陈列页）：zh_cn 下五档的标题都完整显示、没有省略号，也不与页签、身份重叠；编制页 320、427 档用短标题“编制投票”，480 档起用完整标题“WOK步战 // 编制投票”。
+  - 旧外壳（小队、配装、战术地图、弹药补给、武器调校）与英文其余各处的标题情况同 `final` 一轮（见下一节），本轮没有改动。
+- 仍未做：第 7 节的真实客户端人工验收（测试端 PCL）和需要两个号的多人项目。部署到测试端由部署方完成（应部署上面 SHA-256 的 JAR）。
+
+### 历史：0.4.0-beta.1 第一轮最终验收 final（2026-10-05，`3a24aec`）
+
+本节的 JAR（SHA-256 `2BB57175…`）早于素材声明改正和 427×240 标题修正，已作废、没有部署；结论以上一节为准。下文的“改号前”指本版仍编号 0.3.0-beta.8 时。
+
+- 代码：分支 `claude/新版界面` 的 `3a24aec`。它在本版仍编号 0.3.0-beta.8 时的最终提交 `8aaa570` 之上只改了四件事：界面标题前缀“WOK //”改为“WOK步战 //”（英文“WOK INFANTRY //”），版本号改为 0.4.0-beta.1，版本规范补 0.x 不兼容升次版本号的规则，两份素材声明统一。核心先用限流脚本 clean build（JUnit 875 项，0 失败、0 跳过）并跑 `runGameTestServer`（19 项全部通过），再在同一工作区跑下面两轮。产物 `wok_infantry-0.4.0-beta.1.jar`，SHA-256 `2BB571757469A689B7526BAAC7E6D07D018A9AC84EDFDF7129BC93FEB39B9106`。
+- zh_cn 严格轮（`runUiTestClient`，JourneyMap 6.0.2，不需要 TaCZ）：`status=PASS`，4143 tick，38 个用例、179 张截图，`strictLayoutViolations=0`。已迁移界面（kit、mapicons、formation、hud）在 5 个档位都没有违规；`layoutViolations=169` 全部来自未迁移的旧界面，只出报告（管理员终端 64、小队终端 49、配装 30、战术地图 26），与改号前的 `zh_cn-final` 逐条相同，只有 960 档小队页、配装页两条“GUI 1 下 1× 中文”报告里的标题文字变了。Boss 条位移（GUI 像素）：320×240 右 53 下 35、427×240 右 16 下 69、480×270 右 29 下 35、640×336 下 39、960×720 下 77，与改号前相同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.1\zh_cn-final\`。
+- en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`（语义检查全部通过），4160 tick，179 张截图，`layoutViolations=168`、`strictLayoutViolations=0`。比改号前（161）多 7 条，都是“WOK INFANTRY //”前缀变长后 320 档标题被省略号截断且没有完整提示（`text-truncated-no-tip`）：组件陈列页 6 个状态、配装终端 1 张；小队终端 4 张和弹药补给 1 张的标题改号前就被截断，只是文字变了。已迁移界面合计 47 条（编制页 33、HUD 4、陈列页 8、标点陈列 2）；其余 121 条中 118 条是旧界面（管理员 64、小队 24、配装 22、地图 6、补给 2），3 条是只出报告的旧图 11（编制页 960 档）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.1\en_us-final\`。
+- 标题前缀检查（逐张看截图，并把新外壳 115 张截图页头右侧的身份区与改号前的归档逐张比对）：
+  - 新外壳（编制投票页、组件陈列页、地图标点陈列页）：zh_cn 下 320×240、427×240、480×270、640×336、960×720 五档的标题都完整显示、没有省略号，也不与页签、身份重叠；编制页 320 档照旧用短标题“编制投票”。
+  - 427×240 档已加入阵营、页头有页签的 8 个编制页状态（vote、detail、locked、longcaps、pending、full、admin、admintie）放不下“学院军 · 阿尔法小队 · 指挥官”这类长身份，身份按外壳规则收起（改号前这 8 张都显示）；其余 107 张的身份显示与改号前相同。示例：`zh_cn-final\screenshots\wok_ui_formation_vote_427x240.png`（收起）、`wok_ui_formation_vote_640x336.png`、`wok_ui_formation_vote_960x720.png`（都显示）。
+  - 旧外壳（小队、配装、战术地图、弹药补给、武器调校）：标题宽度按“页头宽 − 身份宽 − 32”裁切，与身份之间固定留 12px，任何宽度都不会重叠；zh_cn 下 320 宽也放得下完整标题（`wok_ui_02_squads_320x240.png`、`wok_ui_04_map_320x240.png`、`wok_ui_08_loadout_320x240.png`、`wok_ui_ammo_small320_320x240.png`；武器调校没有自动截图，按公式核对）。427、640 档时旧界面按 1× 的 854×480、640×336 排版，比 320 宽松。没有改代码。
+  - en_us：编制页 427 档起用完整标题“WOK INFANTRY // FORMATION VOTE”，页签用短名、身份收起，与改号前相同（改号前英文 427 档也不显示身份）；320 档组件陈列页标题带省略号，页签收成“‹ Keys 1/5 ›”翻页条（改号前是完整标题和五个完整页签；即 en_us 轮多出的报告）。组件陈列页 427×240、960×720 两档（6 个状态共 12 张）的页头身份“Academy · Alpha · Leader”也因标题变长收起（改号前显示；外壳规则，不算违规）。旧外壳在 320 档：配装终端标题新带省略号（报告多出的 1 条）；战术地图标题由完整变为“WOK INFANTRY // TACTI…”，它用 `drawString` 直接绘制、不经布局探针，所以不在报告数里（`wok_ui_04_map_320x240.png` 可见）；小队、补给改号前就带省略号。
+- 改号前的归档（`20261004-0.3.0-beta.8\`、`20261005-0.3.0-beta.8\`）保留原目录名，只作参考。
+- 仍未做：第 7 节的真实客户端人工验收（测试端 PCL）和需要两个号的多人项目。
+
+以下三节是本版仍编号 0.3.0-beta.8 时的验收记录，保留作历史：其中的“本版”指当时的编号，归档目录名也保留 `0.3.0-beta.8`。本版结论以“0.4.0-beta.1 最终验收（2026-10-05，final2）”一节为准。
+
+### 历史：本轮结果（2026-10-04，当时编号 0.3.0-beta.8）
 
 **来源说明**：本节下面三轮（`zh_cn`、`en_us`、`zh_cn-review`）都跑在 B11b 分支上（`zh_cn-review` 跑的是其末端 `e5efe49` 的代码，之后的 `cbd2c46` 只改文档；另两轮更早），不含并行的 B11a 改动（编制页等待态与目录超时、Boss 条右移、服务端 `voteBlock` 与管理员第三步 `ADMIN_VOTE` 文案、登录推送目录、`FORMATION_CATALOG` 限流等，主源码 17 个文件）。两条分支在 `8ad1b74`/`41c03a4` 合并，合并后的代码没有用这三轮验收过；`en_us` 轮还早于审查修正提交 `e5efe49`。在最终提交上重新构建、重跑并用新标签归档这一步已经完成，见本节末尾“最终提交 0306a7b 的验收”，本版以那两份归档为准，CHANGELOG 的测试结果也已按它更新。
 
@@ -103,18 +136,18 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<版本>\<标�
 - 旧界面只出报告的违规共 169 条：管理员终端 64（GUI 1 下 1× 中文 44、禁用键没写原因 20）、小队终端 49（1× 中文 26、禁用键没写原因 23：部署/重新部署/补给、退出/移交/踢出、创建）、配装 30（1× 中文 22、翻页键没写原因 8）、战术地图 26（1× 中文 22、支援键截断没有完整提示 3、“READY”占位 1）。它们分别留给地图（B7）、小队（B8）、配装/补给（B9）、管理员（B10）批次。
 - en_us 报告轮（`-PuiLayoutStrict=false`，跑在审查修正 `e5efe49` 之前）：`status=PASS`（语义检查全部通过），139 张截图，共报告 157 条违规，归档在同一日期目录的 `en_us\`。其中已迁移界面 40 条，全部是英文文案比中文长而被省略号截断、没有完整提示：编制页投票摘要（“Administrator lock (no timer)”“3 (the faction picks one)”、领先编制名 + 票数）、管理员区说明、320 档详情的载具/能力行；HUD 投票条第二行在 960/640 档（“→ Formation to change”“to pick a squad and deploy”）；标点陈列页页头身份。其余 117 条是旧界面。英文措辞缩短或改成可换行留给后续的 i18n 收尾。
 
-### 整体审查后的重跑（2026-10-05，合并结果 41c03a4 + 整体审查修正）
+### 历史：整体审查后的重跑（2026-10-05，合并结果 41c03a4 + 整体审查修正）
 
 - 新增 427×240 报告档（854×480 GUI 1）和两个用例：`formation.waitover`（B11a 的目录超时态）、`hud.boss`（B11a 的 Boss 条下移和右移）。
 - zh_cn：`status=PASS`，179 张截图，严格违规 0，报告 169 条（全是旧界面，与上一轮相同）；38 个用例中已迁移界面在 5 个档位全部 PASS，427×240 档没有任何违规。Boss 条位移（GUI 像素）：320×240 右 53 下 35、427×240 右 16 下 69、480×270 右 29 下 35、640×336 与 960×720 不右移，名单与 Boss 条区域都不重叠。
 - 这一轮在审查工作区 `ui-rv2` 的 `run/ui-test` 里跑，审查期间测试端只读，没有归档。合并后的重跑与归档已完成，见下一节。
 
-### 最终提交 0306a7b 的验收（2026-10-05）
+### 历史：编号 0.3.0-beta.8 时最终提交 0306a7b 的验收（2026-10-05）
 
-- 代码：分支 `claude/新版界面` 的 `0306a7b`（B11a/B11b 合并结果，再并入整体审查修正 rv1–rv4）。核心先在这个提交上用限流脚本 clean build，再在同一工作区跑开发客户端验收；部署到测试端的 `wok_infantry-0.3.0-beta.8.jar`（SHA-256 前缀 `61624BC3818F6ADA`）是同一提交的构建产物。
+- 代码：分支 `claude/新版界面` 的 `0306a7b`（B11a/B11b 合并结果，再并入整体审查修正 rv1–rv4）。核心先在这个提交上用限流脚本 clean build，再在同一工作区跑开发客户端验收；部署到测试端的 `wok_infantry-0.3.0-beta.8.jar`（SHA-256 前缀 `61624BC3818F6ADA`）是同一提交的构建产物（后来在 `8aaa570` 改正客户端配置注释后重新构建并替换，测试端现存的这个文件 SHA-256 前缀为 `B5CA2792B984E55C`，代码行为不变，见 CHANGELOG）。
 - zh_cn 严格轮（`runUiTestClient`，JourneyMap 6.0.2，不需要 TaCZ）：`status=PASS`，4163 tick，38 个用例、179 张截图。已迁移界面（kit、mapicons、formation、hud）在 5 个档位都没有违规，`strictLayoutViolations=0`；`layoutViolations=169` 全部来自未迁移的旧界面，只出报告（管理员终端 64、小队终端 49、配装 30、战术地图 26；按规则分为 GUI 1 下 1× 中文 114、禁用键没写原因 51、截断没有完整提示 3、“READY”占位 1），与上一轮相同。Boss 条位移（GUI 像素）：320×240 右 53 下 35、427×240 右 16 下 69、480×270 右 29 下 35、640×336 下 39、960×720 下 77，后两档不右移。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.3.0-beta.8\zh_cn-final\`。
 - en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`（语义检查全部通过），4160 tick，179 张截图，`layoutViolations=161`、`strictLayoutViolations=0`。已迁移界面 41 条（编制页 33、HUD 4、陈列页 2、标点陈列 2），全部是英文文案较长被省略号截断且没有完整提示（`text-truncated-no-tip`）；其余 120 条中 117 条是旧界面，3 条是只出报告的旧图 11（编制页 960 档，`formation.legacy`）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.3.0-beta.8\en_us-final\`。
-- 本版的自动验收以这两份归档为准；`20261004-0.3.0-beta.8\` 下的 `zh_cn`、`en_us`、`zh_cn-review` 三份早于合并，只作参考。
+- 编号 0.3.0-beta.8 时的自动验收以这两份归档为准（0.4.0-beta.1 以上面“0.4.0-beta.1 最终验收（2026-10-05，final2）”一节的 `zh_cn-final2`、`en_us-final2` 为准）；`20261004-0.3.0-beta.8\` 下的 `zh_cn`、`en_us`、`zh_cn-review` 三份早于合并，只作参考。
 - 仍未做：第 7 节的真实客户端人工验收（测试端 PCL），以及需要两个号的多人项目（真实计票与锁定后进部署页、锁定后第二个号加入、PvP 下名单的倒地/阵亡状态）。
 
 ## 7. 只能真人看的
