@@ -120,7 +120,6 @@
   "screen.wok_infantry.formation.row.not_chosen": "本局编制：%s",
   "screen.wok_infantry.formation.row.shortfall": "上限 %1$s < 本阵营 %2$s 人",
   "screen.wok_infantry.formation.row.mine": "我的票",
-  "screen.wok_infantry.formation.row.narration": "编制 %1$s，%2$s 票，%3$s",
   "screen.wok_infantry.formation.list_empty": "本阵营暂无编制",
   "screen.wok_infantry.formation.summary.faction": "阵营概况",
   "screen.wok_infantry.formation.summary.vote": "编制投票",

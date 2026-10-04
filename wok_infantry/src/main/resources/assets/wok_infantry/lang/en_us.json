@@ -120,7 +120,6 @@
   "screen.wok_infantry.formation.row.not_chosen": "Formation: %s",
   "screen.wok_infantry.formation.row.shortfall": "Max %1$s < faction %2$s",
   "screen.wok_infantry.formation.row.mine": "My vote",
-  "screen.wok_infantry.formation.row.narration": "Formation %1$s, %2$s votes, %3$s",
   "screen.wok_infantry.formation.list_empty": "No formations",
   "screen.wok_infantry.formation.summary.faction": "Faction",
   "screen.wok_infantry.formation.summary.vote": "Formation vote",

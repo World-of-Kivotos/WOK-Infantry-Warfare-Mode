@@ -80,7 +80,6 @@ class ClientTranslationContractTest {
             Map.entry("screen.wok_infantry.formation.row.locked_votes", 2),
             Map.entry("screen.wok_infantry.formation.row.not_chosen", 1),
             Map.entry("screen.wok_infantry.formation.row.shortfall", 2),
-            Map.entry("screen.wok_infantry.formation.row.narration", 3),
             Map.entry("screen.wok_infantry.formation.summary.population_value", 2),
             Map.entry("screen.wok_infantry.formation.summary.population_full", 2),
             Map.entry("screen.wok_infantry.formation.summary.candidates_value", 1),

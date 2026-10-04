@@ -267,14 +267,6 @@ public final class FormationText {
         return key("row.mine");
     }
 
-    /** Narration of a row: "编制 X，N 票，状态". */
-    public static Component rowNarration(FormationSelectionView formation,
-                                         FormationVoteModel.RowStatus status) {
-        Component mark = rowMark(status, true);
-        return key("row.narration", formation.displayName(), status.votes(),
-                mark == null ? Component.empty() : mark);
-    }
-
     // ---- summary ---------------------------------------------------------------------------------
 
     /** One line of the summary: key/value (null key = muted paragraph, "" key = full line). */
