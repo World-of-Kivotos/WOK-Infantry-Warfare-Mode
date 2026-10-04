@@ -207,12 +207,41 @@ public final class KeyBindingDefaults {
     }
 
     /**
-     * Whether the cached battle snapshot puts the player in a battle, i.e. on a faction. The
-     * server also answers players without a faction with a snapshot whose faction is
-     * {@code null}; those are not in a battle.
+     * Whether the cached battle snapshot puts the player on a faction. The server also answers
+     * players without a faction with a snapshot whose faction is {@code null}. A faction alone
+     * does not mean the player entered the battle: while the faction still votes there is no
+     * formation yet (see {@link #battleEntered}).
      */
     public static boolean inBattle(BattleSnapshot snapshot) {
         return snapshot != null && snapshot.faction() != null;
+    }
+
+    /**
+     * Whether the player has entered the battle, i.e. has a formation (faction joined and its
+     * formation locked). The cached formation snapshot decides: its {@code selectionRequired} is
+     * {@code false} once the formation is set. Before any formation snapshot arrived, a faction in
+     * the battle snapshot is the best guess. The terminal key, the map key and Xaero's redirected
+     * map key all use this one rule, matching the terminal's tabs, which open only after the lock.
+     *
+     * @param inBattle {@link #inBattle} of the cached battle snapshot (has a faction)
+     * @param formationRequired the cached formation snapshot's {@code selectionRequired}, or
+     *                          {@code null} when no formation snapshot was received yet
+     */
+    public static boolean battleEntered(boolean inBattle, Boolean formationRequired) {
+        return formationRequired != null ? !formationRequired : inBattle;
+    }
+
+    /**
+     * Language key of a readable key-cap name for a key whose own name is a glyph too thin to be
+     * recognised in a key cap or a hint, or {@code null} to keep the name. The grave accent, the
+     * default terminal key, is one or two pixels wide in the vanilla font, and the ASCII tilde
+     * printed on the same key sits in the top two pixel rows as well; the cap then shows the
+     * full-width tilde {@code ～} (U+FF5E), a full-height glyph like the CJK text around it.
+     *
+     * @param keyName the key's display name ({@code KeyMapping.getTranslatedKeyMessage()})
+     */
+    public static String readableKeyNameKey(String keyName) {
+        return "`".equals(keyName) ? "key.wok_infantry.cap.grave" : null;
     }
 
     /**
@@ -236,28 +265,28 @@ public final class KeyBindingDefaults {
      *                          {@code null} when no formation snapshot was received yet
      */
     public static TerminalRoute terminalRoute(boolean inBattle, Boolean formationRequired) {
-        if (formationRequired != null) {
-            return formationRequired ? TerminalRoute.FORMATION : TerminalRoute.SQUAD;
-        }
-        return inBattle ? TerminalRoute.SQUAD : TerminalRoute.FORMATION;
+        return battleEntered(inBattle, formationRequired)
+                ? TerminalRoute.SQUAD : TerminalRoute.FORMATION;
     }
 
     /**
-     * Tactical-map key routing.
+     * Tactical-map key routing: the tactical map once the player {@link #battleEntered entered the
+     * battle}, otherwise the formation page (also while the faction still votes, when the
+     * terminal's map tab is still locked).
      *
      * @param xaeroHandlesPress whether Xaero's open-map key fires on the same press and is
-     *                          redirected (see {@code XaeroWorldMapPolicy.handlesSamePress})
+     *                          redirected (see {@code XaeroWorldMapPolicy.handlesSamePress}); the
+     *                          redirect then decides by the same {@link #battleEntered} rule
      * @param inBattle {@link #inBattle} of the cached battle snapshot (has a faction)
+     * @param formationRequired the cached formation snapshot's {@code selectionRequired}, or
+     *                          {@code null} when no formation snapshot was received yet
      */
     public static MapRoute mapRoute(boolean xaeroHandlesPress, boolean inBattle,
                                     Boolean formationRequired) {
         if (xaeroHandlesPress) {
             return MapRoute.LEAVE_TO_XAERO;
         }
-        if (inBattle || Boolean.FALSE.equals(formationRequired)) {
-            return MapRoute.MAP;
-        }
-        return MapRoute.FORMATION;
+        return battleEntered(inBattle, formationRequired) ? MapRoute.MAP : MapRoute.FORMATION;
     }
 
     /**

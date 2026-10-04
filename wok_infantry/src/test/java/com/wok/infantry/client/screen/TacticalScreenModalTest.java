@@ -41,6 +41,10 @@ class TacticalScreenModalTest {
             init();
         }
 
+        void rebuild() {
+            rebuildWidgets();
+        }
+
         @Override
         protected void initTactical() {
             initCount++;
@@ -145,6 +149,20 @@ class TacticalScreenModalTest {
     }
 
     @Test
+    void movingTheFocusNamesTheKeyAndWarnsThatTheDangerousOneNeedsTheMouse() {
+        // Review fix UI-08: the dialog's keys are no screen children, so it narrates itself.
+        Component lock = Component.literal("锁定");
+        assertEquals("锁定", TacticalConfirmDialog.focusNarration(lock, true, false).getString());
+        assertEquals("取消", TacticalConfirmDialog.focusNarration(Component.literal("取消"), false,
+                true).getString(), "the cancel key of a dangerous dialog is pressed by Enter");
+        String danger = TacticalConfirmDialog.focusNarration(lock, true, true).getString();
+        assertTrue(danger.startsWith("锁定. "), danger);
+        assertTrue(danger.contains("screen.wok_infantry.confirm.mouse_only")
+                || !danger.endsWith(". "), danger);
+        assertEquals("", TacticalConfirmDialog.focusNarration(null, false, false).getString());
+    }
+
+    @Test
     void cardFitsEveryTier() {
         assertEquals(240, TacticalConfirmDialog.cardWidth(320, true));
         assertEquals(300, TacticalConfirmDialog.cardWidth(640, false));
@@ -203,6 +221,47 @@ class TacticalScreenModalTest {
         assertTrue(dialog.closed());
         dialog.confirm();
         assertEquals(1, log.size(), "a closed dialog never fires twice");
+    }
+
+    @Test
+    void aDialogCanBeRewrittenOrDismissedWithoutRunningItsCallbacks() {
+        // Review fix UI-05: a newer catalog rewrites an open confirmation or closes it.
+        TestScreen screen = screen();
+        List<String> log = new ArrayList<>();
+        TacticalConfirmDialog dialog = dialog(true, log);
+        screen.openModal(dialog);
+        screen.keyPressed(GLFW.GLFW_KEY_TAB, 0, 0);
+        dialog.updateBody(Component.literal("目标已是唯一领先项。"));
+        assertEquals("目标已是唯一领先项。", dialog.body().getString());
+        assertTrue(dialog.confirmFocused(), "rewriting keeps the keyboard focus");
+        assertTrue(screen.hasModal());
+
+        dialog.dismiss();
+        assertFalse(screen.hasModal());
+        assertTrue(dialog.closed());
+        assertTrue(log.isEmpty(), "dismissing runs neither confirm nor cancel");
+        dialog.updateBody(Component.literal("late"));
+        assertEquals("目标已是唯一领先项。", dialog.body().getString(), "a closed dialog stays");
+        dialog.confirm();
+        assertTrue(log.isEmpty());
+    }
+
+    @Test
+    void aRebuildUnderAModalHandsTheNewOpenerTheParkedFocus() {
+        TestScreen screen = screen();
+        TacticalTabStrip opener = screen.strip;
+        screen.setFocused(opener);
+        screen.openModal(dialog(false, new ArrayList<>()));
+        assertSame(opener, screen.parkedFocus());
+
+        screen.rebuild();
+        assertFalse(screen.children().contains(opener), "the rebuild replaced the widgets");
+        assertTrue(screen.hasModal(), "the modal survives the rebuild");
+        screen.reparkFocus(screen.strip);
+        screen.closeModal();
+        assertSame(screen.strip, screen.getFocused(), "the new opener gets the focus back");
+        screen.reparkFocus(opener);
+        assertSame(null, screen.parkedFocus(), "nothing is parked without a modal");
     }
 
     @Test

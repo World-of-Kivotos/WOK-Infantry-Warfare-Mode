@@ -23,6 +23,9 @@ class UiTierMatrixTest {
                 "960×720 at GUI 1 lays out as 480×360 under the minimum 2x");
         assertEquals(2, UiTierMatrix.T960.factor());
         assertEquals(1, UiTierMatrix.T320.factor());
+        assertEquals("427x240", size(UiTierMatrix.T427),
+                "the default 854×480 window at GUI 1 lays out as 427×240 under the minimum 2x");
+        assertEquals(2, UiTierMatrix.T427.factor());
     }
 
     @Test

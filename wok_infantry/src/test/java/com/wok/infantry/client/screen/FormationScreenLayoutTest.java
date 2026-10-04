@@ -17,12 +17,14 @@ class FormationScreenLayoutTest {
     private static final int JOIN_WIDTH = 150;
 
     /**
-     * The acceptance sizes: 320×240, 480×270, the user's 1920×1008 at GUI 3 (640×336), 640×360,
-     * 960×540, the 960×720 GUI-1 window laid out at 2x (480×360) and a raw 960×720.
+     * The acceptance sizes: 320×240, 427×240 (854×480 at GUI 1, laid out at 2x; narrow), 480×270,
+     * the user's 1920×1008 at GUI 3 (640×336), 640×360, 960×540, the 960×720 GUI-1 window laid out
+     * at 2x (480×360) and a raw 960×720.
      */
     @ParameterizedTest(name = "{0}x{1} -> {2}")
     @CsvSource({
             "320, 240, NARROW_LIST",
+            "427, 240, NARROW_LIST",
             "480, 270, WIDE",
             "640, 336, WIDE",
             "640, 360, WIDE",

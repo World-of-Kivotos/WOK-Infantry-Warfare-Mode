@@ -1,6 +1,7 @@
 package com.wok.infantry.uitest.cases;
 
 import com.wok.infantry.battle.BattleRules;
+import com.wok.infantry.client.ClientFormationState;
 import com.wok.infantry.client.screen.FormationSelectionScreen;
 import com.wok.infantry.client.screen.FormationVoteModel;
 import com.wok.infantry.client.screen.TacticalConfirmDialog;
@@ -20,6 +21,7 @@ import com.wok.infantry.uitest.fixtures.FormationFixtures;
 import com.wok.infantry.uitest.fixtures.MockData;
 import com.wok.infantry.uitest.fixtures.ServerFixtures;
 import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.resources.language.I18n;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -102,6 +104,16 @@ public final class FormationCases {
                 .check(FormationCases::checkJoinConfirm).build());
         cases.add(player("waiting", () -> null)
                 .check(FormationCases::checkWaiting).build());
+        // B11a: the catalog request went unanswered for 3 seconds (the server drops requests over
+        // its rate limit silently): the waiting page says so and offers the retry. Only the
+        // client's request clock is set; no request is sent, so no catalog can answer it.
+        cases.add(player("waitover", () -> null, "waiting")
+                .steps(UiStep.action(context -> ClientFormationState.catalogRequested()),
+                        UiStep.until("the catalog request overdue",
+                                context -> ClientFormationState.catalogOverdue()))
+                .check(FormationCases::checkWaitingOverdue)
+                .cleanup(context -> ClientFormationState.update(ClientFormationState.snapshot()))
+                .build());
         // The viewer's vote moved from the mobile formation to the long-capability one.
         cases.add(player("longcaps", () -> FormationFixtures.Scenario
                 .joined(FormationVotePhase.OPEN).own(FormationFixtures.LONG_CAPS_ID)
@@ -456,6 +468,20 @@ public final class FormationCases {
         control(context, capture, FormationSelectionScreen.RETRY_UI_ID);
         context.require(capture.frame().box(FormationSelectionScreen.WAITING_BOX) != null,
                 "the waiting panel was not drawn");
+    }
+
+    /** B11a timeout state: the overdue heading or step is on screen, with the retry key. */
+    private static void checkWaitingOverdue(UiCaseContext context, UiCapture.Result capture) {
+        checkWaiting(context, capture);
+        List<String> overdue = List.of(
+                I18n.get("screen.wok_infantry.formation.waiting.heading_overdue"),
+                I18n.get("screen.wok_infantry.formation.step.sync_overdue"),
+                I18n.get("screen.wok_infantry.formation.step.sync_overdue_short"));
+        context.require(capture.frame().texts().stream().anyMatch(text ->
+                        overdue.contains(text.text()) || text.truncated()
+                                && overdue.contains(text.fullText())),
+                "the waiting page does not say that the catalog did not arrive");
+        context.observe("formationCatalogOverdue[" + context.tier().id() + "]=shown");
     }
 
     /** beta.7: the five allow-listed supports are named, never shown as ids. */

@@ -93,5 +93,6 @@
   "uitest.wok_infantry.hud.chat.supply": "你位于己方主基地，可立即补给",
   "uitest.wok_infantry.hud.downed.title": "倒地 · 等待队友救援",
   "uitest.wok_infantry.hud.downed.hint": "按住 Shift 放弃救援",
-  "uitest.wok_infantry.hud.downed.seconds": "%s 秒"
+  "uitest.wok_infantry.hud.downed.seconds": "%s 秒",
+  "uitest.wok_infantry.hud.boss": "凋灵"
 }

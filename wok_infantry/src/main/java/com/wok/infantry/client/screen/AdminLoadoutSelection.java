@@ -14,25 +14,48 @@ final class AdminLoadoutSelection {
     private AdminLoadoutSelection() {
     }
 
+    /** Why "职业管理" cannot open ({@link #NONE}: it can). */
+    enum ClassSettingsBlock {
+        NONE,
+        NO_FORMATION,
+        NO_RULES,
+        NO_RULE;
+
+        boolean blocked() {
+            return this != NONE;
+        }
+    }
+
+    static final String CLASS_SETTINGS_PREFIX = "screen.wok_infantry.admin_loadout.class_settings.";
+
     /**
-     * Why "职业管理" cannot open, or an empty string when it can. The class settings page edits
-     * the selected formation's rule for the selected profession, so both must exist.
+     * Why "职业管理" cannot open. The class settings page edits the selected formation's rule for
+     * the selected profession, so both must exist.
      */
-    static String classSettingsBlockedReason(boolean formationSelected,
-                                             int formationClassCount,
-                                             boolean ruleFound, String className) {
+    static ClassSettingsBlock classSettingsBlock(boolean formationSelected,
+                                                 int formationClassCount, boolean ruleFound) {
         if (!formationSelected) {
-            return "未选择编制，无法管理职业";
+            return ClassSettingsBlock.NO_FORMATION;
         }
         if (formationClassCount <= 0) {
-            return "当前编制还没有任何职业规则，无法管理职业";
+            return ClassSettingsBlock.NO_RULES;
         }
-        if (!ruleFound) {
-            String name = className == null || className.isBlank()
-                    ? "当前职业" : "“" + className + "”";
-            return "当前编制没有" + name + "的职业规则，无法管理职业";
-        }
-        return "";
+        return ruleFound ? ClassSettingsBlock.NONE : ClassSettingsBlock.NO_RULE;
+    }
+
+    /**
+     * Language key of the disabled reason of {@code block} ({@code null} for {@link
+     * ClassSettingsBlock#NONE}); {@code no_rule} takes the class name as its argument, a blank
+     * name uses {@code no_rule_unnamed}.
+     */
+    static String classSettingsReasonKey(ClassSettingsBlock block, String className) {
+        return switch (block) {
+            case NONE -> null;
+            case NO_FORMATION -> CLASS_SETTINGS_PREFIX + "no_formation";
+            case NO_RULES -> CLASS_SETTINGS_PREFIX + "no_rules";
+            case NO_RULE -> className == null || className.isBlank()
+                    ? CLASS_SETTINGS_PREFIX + "no_rule_unnamed" : CLASS_SETTINGS_PREFIX + "no_rule";
+        };
     }
 
     /**

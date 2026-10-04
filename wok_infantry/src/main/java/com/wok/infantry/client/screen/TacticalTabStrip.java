@@ -171,6 +171,14 @@ public final class TacticalTabStrip extends AbstractWidget {
         return true;
     }
 
+    /**
+     * Whether Ctrl+Tab can reach another tab: at least one tab besides the current one is
+     * enabled. A footer only offers the {@code Ctrl+Tab} hint when this holds.
+     */
+    public boolean canCycle() {
+        return nextEnabled(enabledFlags(), current, 1, true) >= 0;
+    }
+
     /** Selects the next ({@code delta > 0}) or previous enabled tab, wrapping around. */
     public boolean cycle(int delta) {
         int target = nextEnabled(enabledFlags(), current, delta, true);

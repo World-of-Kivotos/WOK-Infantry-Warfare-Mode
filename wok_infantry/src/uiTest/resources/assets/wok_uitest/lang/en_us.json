@@ -93,5 +93,6 @@
   "uitest.wok_infantry.hud.chat.supply": "At your main base: resupply now",
   "uitest.wok_infantry.hud.downed.title": "Down · waiting for a medic",
   "uitest.wok_infantry.hud.downed.hint": "Hold Shift to give up",
-  "uitest.wok_infantry.hud.downed.seconds": "%ss"
+  "uitest.wok_infantry.hud.downed.seconds": "%ss",
+  "uitest.wok_infantry.hud.boss": "Wither"
 }

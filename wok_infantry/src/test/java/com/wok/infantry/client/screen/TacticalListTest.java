@@ -192,6 +192,22 @@ class TacticalListTest {
     }
 
     @Test
+    void cachedFittingFollowsNewItemsAndPitches() {
+        // Review fix UI-14: pitches are cached between frames; every change must still show.
+        TacticalList<String> list = list(10);
+        assertEquals(4, list.currentWindow().count());
+        list.rowHeight(ROW * 2);
+        assertEquals(2, list.currentWindow().count(), "a taller pitch fits fewer rows");
+        list.rowHeight(ROW);
+        assertEquals(4, list.currentWindow().count());
+        list.setItems(List.of("a", "b"));
+        assertFalse(list.currentWindow().overflow(), "fewer items: everything fits");
+        list.setItems(IntStream.range(0, 12).mapToObj(index -> "x" + index).toList());
+        assertTrue(list.currentWindow().overflow());
+        assertEquals(8, list.currentWindow().hiddenBelow());
+    }
+
+    @Test
     void widgetWithoutOverflowHasNoMoreLineAndFullWidthRows() {
         TacticalList<String> list = list(3);
 

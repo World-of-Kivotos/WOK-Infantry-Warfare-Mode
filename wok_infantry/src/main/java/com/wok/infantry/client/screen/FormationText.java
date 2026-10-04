@@ -486,7 +486,10 @@ public final class FormationText {
                     key("reason.late_use_this_short"));
             case LATE_NOT_CHOSEN -> List.of(key("reason.late_not_chosen", lockedName),
                     key("reason.late_not_chosen_short", lockedName));
-            case WAIT_OPEN -> List.of(key("reason.wait_open"));
+            // The administrator opens the vote; never tell them to wait for an administrator.
+            case WAIT_OPEN -> model.admin().opening()
+                    ? List.of(key("reason.admin_open"), key("reason.admin_open_short"))
+                    : List.of(key("reason.wait_open"));
             case UNAVAILABLE -> List.of(formation == null
                     || formation.unavailableReason().isBlank() ? key("reason.unavailable")
                     : Component.literal(formation.unavailableReason()), key("reason.unavailable"));
@@ -796,6 +799,16 @@ public final class FormationText {
 
     public static String cannotLock() {
         return I18n.get(PREFIX + "feedback.cannot_lock");
+    }
+
+    /** Receipt when a newer catalog closed the join confirmation (the faction filled up). */
+    public static String joinDialogClosed() {
+        return I18n.get(PREFIX + "feedback.join_closed");
+    }
+
+    /** Receipt when a newer catalog closed the lock confirmation (the target cannot be locked). */
+    public static String lockDialogClosed() {
+        return I18n.get(PREFIX + "feedback.lock_closed");
     }
 
     /** Footer Esc action: "关闭（` 键可重开）" while not joined, else "暂时关闭". */

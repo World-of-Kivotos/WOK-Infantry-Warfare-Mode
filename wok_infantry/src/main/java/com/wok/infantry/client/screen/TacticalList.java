@@ -111,6 +111,9 @@ public final class TacticalList<T> extends AbstractWidget {
     private Component emptyHint;
     private int selected = -1;
     private int first;
+    /** Cached fitting input of {@link #heights()} / {@link #headerFlags()}; null = stale. */
+    private int[] heightsCache;
+    private boolean[] headerFlagsCache;
     private boolean draggingScrollbar;
     private Tooltip ownTooltip;
     private Tooltip rowTooltip;
@@ -138,11 +141,13 @@ public final class TacticalList<T> extends AbstractWidget {
     /** Row pitch in pixels (each row is drawn 1px shorter, leaving a dark seam). */
     public TacticalList<T> rowHeight(int pitch) {
         this.rowHeight = Math.max(9, pitch);
+        invalidateFitting();
         return this;
     }
 
     public TacticalList<T> headerHeight(int pitch) {
         this.headerHeight = Math.max(9, pitch);
+        invalidateFitting();
         return this;
     }
 
@@ -368,20 +373,38 @@ public final class TacticalList<T> extends AbstractWidget {
         return entry.isHeader() ? headerHeight : rowHeight;
     }
 
+    /**
+     * Pitch of every entry; cached until the entries or a pitch change (the fitting runs several
+     * times per frame). Read-only for callers.
+     */
     private int[] heights() {
-        int[] heights = new int[entries.size()];
-        for (int index = 0; index < heights.length; index++) {
-            heights[index] = heightOf(entries.get(index));
+        int[] heights = heightsCache;
+        if (heights == null) {
+            heights = new int[entries.size()];
+            for (int index = 0; index < heights.length; index++) {
+                heights[index] = heightOf(entries.get(index));
+            }
+            heightsCache = heights;
         }
         return heights;
     }
 
+    /** Whether each entry is a group title; cached like {@link #heights()}. Read-only. */
     private boolean[] headerFlags() {
-        boolean[] flags = new boolean[entries.size()];
-        for (int index = 0; index < flags.length; index++) {
-            flags[index] = entries.get(index).isHeader();
+        boolean[] flags = headerFlagsCache;
+        if (flags == null) {
+            flags = new boolean[entries.size()];
+            for (int index = 0; index < flags.length; index++) {
+                flags[index] = entries.get(index).isHeader();
+            }
+            headerFlagsCache = flags;
         }
         return flags;
+    }
+
+    private void invalidateFitting() {
+        heightsCache = null;
+        headerFlagsCache = null;
     }
 
     private void rebuildEntries() {
@@ -406,6 +429,7 @@ public final class TacticalList<T> extends AbstractWidget {
         }
         entries = List.copyOf(built);
         entryOfItem = map;
+        invalidateFitting();
     }
 
     // ---- pure fitting -------------------------------------------------------------------------------

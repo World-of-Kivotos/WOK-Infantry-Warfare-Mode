@@ -7,25 +7,41 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class AdminLoadoutSelectionTest {
     @Test
     void classSettingsOpenOnlyWithFormationAndRule() {
-        assertEquals("", AdminLoadoutSelection.classSettingsBlockedReason(true, 3, true,
-                "突击兵"));
+        assertEquals(AdminLoadoutSelection.ClassSettingsBlock.NONE,
+                AdminLoadoutSelection.classSettingsBlock(true, 3, true));
+        assertNull(AdminLoadoutSelection.classSettingsReasonKey(
+                AdminLoadoutSelection.ClassSettingsBlock.NONE, "突击兵"));
         // admin-01: a formation without a rule for the selected profession used to open an
         // empty page whose renderer dereferenced fields that were never created.
-        String missingRule = AdminLoadoutSelection.classSettingsBlockedReason(true, 3, false,
-                "突击兵");
-        assertFalse(missingRule.isEmpty());
-        assertTrue(missingRule.contains("突击兵"));
-        assertFalse(AdminLoadoutSelection.classSettingsBlockedReason(true, 0, false, "")
-                .isEmpty());
-        assertFalse(AdminLoadoutSelection.classSettingsBlockedReason(false, 0, false, "")
-                .isEmpty());
-        assertFalse(AdminLoadoutSelection.classSettingsBlockedReason(true, 2, false, null)
-                .isEmpty());
+        AdminLoadoutSelection.ClassSettingsBlock missingRule =
+                AdminLoadoutSelection.classSettingsBlock(true, 3, false);
+        assertTrue(missingRule.blocked());
+        assertEquals(AdminLoadoutSelection.CLASS_SETTINGS_PREFIX + "no_rule",
+                AdminLoadoutSelection.classSettingsReasonKey(missingRule, "突击兵"),
+                "the reason names the class");
+        assertEquals(AdminLoadoutSelection.CLASS_SETTINGS_PREFIX + "no_rule_unnamed",
+                AdminLoadoutSelection.classSettingsReasonKey(missingRule, " "));
+        assertEquals(AdminLoadoutSelection.CLASS_SETTINGS_PREFIX + "no_rule_unnamed",
+                AdminLoadoutSelection.classSettingsReasonKey(missingRule, null));
+        assertEquals(AdminLoadoutSelection.ClassSettingsBlock.NO_RULES,
+                AdminLoadoutSelection.classSettingsBlock(true, 0, false));
+        assertEquals(AdminLoadoutSelection.ClassSettingsBlock.NO_FORMATION,
+                AdminLoadoutSelection.classSettingsBlock(false, 0, false));
+        // Review fix UI-06: every reason is a language key (en_us and zh_cn), never a literal.
+        for (AdminLoadoutSelection.ClassSettingsBlock block
+                : AdminLoadoutSelection.ClassSettingsBlock.values()) {
+            String key = AdminLoadoutSelection.classSettingsReasonKey(block, "突击兵");
+            assertEquals(block.blocked(), key != null, block::name);
+            if (key != null) {
+                assertTrue(key.startsWith("screen.wok_infantry."), key);
+            }
+        }
     }
 
     @Test

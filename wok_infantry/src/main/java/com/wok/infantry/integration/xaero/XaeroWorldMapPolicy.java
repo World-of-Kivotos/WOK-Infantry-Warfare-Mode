@@ -2,11 +2,13 @@ package com.wok.infantry.integration.xaero;
 
 import com.wok.infantry.WokInfantryMod;
 import com.wok.infantry.client.ClientBattleState;
+import com.wok.infantry.client.ClientFormationState;
 import com.wok.infantry.client.KeyBindingDefaults;
 import com.wok.infantry.client.screen.BattleTab;
 import com.wok.infantry.client.screen.BattleTerminalNav;
 import com.wok.infantry.client.screen.TacticalMapScreen;
 import com.wok.infantry.config.InfantryClientConfig;
+import com.wok.infantry.formation.selection.FormationSelectionSnapshot;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -25,13 +27,13 @@ import net.minecraftforge.fml.ModList;
  * ({@link #redirectAvailable()}).</p>
  *
  * <ul>
- *   <li>In a battle (the cached battle snapshot has a faction, see
- *   {@link KeyBindingDefaults#inBattle}) opening
+ *   <li>In a battle (the player has a formation, see {@link KeyBindingDefaults#battleEntered}:
+ *   the same rule as the WOK map and terminal keys) opening
  *   {@code xaero.map.gui.GuiMap} opens the tactical map instead. The map instance and its return
  *   screen come from {@link BattleTerminalNav}, so the view is kept between openings and Esc
  *   goes back to the game rather than into a Xaero screen.</li>
- *   <li>Outside a battle, or with {@code tacticalMap.redirectXaeroWorldMap = false}, Xaero's map
- *   opens as usual.</li>
+ *   <li>Outside a battle (no faction yet, or the faction's formation vote not locked yet), or
+ *   with {@code tacticalMap.redirectXaeroWorldMap = false}, Xaero's map opens as usual.</li>
  *   <li>When the WOK tactical-map key and Xaero's open-map key are the same key, WOK leaves the
  *   press to Xaero ({@link #handlesSamePress}): the redirect turns it into the tactical map in a
  *   battle, so the Xaero map never flashes up first and Esc never returns to it.</li>
@@ -120,8 +122,11 @@ public final class XaeroWorldMapPolicy {
             return;
         }
         Screen current = event.getCurrentScreen();
+        FormationSelectionSnapshot formation = ClientFormationState.snapshot();
         switch (decide(true, InfantryClientConfig.redirectXaeroWorldMap(),
-                KeyBindingDefaults.inBattle(ClientBattleState.snapshot()),
+                KeyBindingDefaults.battleEntered(
+                        KeyBindingDefaults.inBattle(ClientBattleState.snapshot()),
+                        formation == null ? null : formation.selectionRequired()),
                 current instanceof TacticalMapScreen)) {
             case KEEP -> {
             }

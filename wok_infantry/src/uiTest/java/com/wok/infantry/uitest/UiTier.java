@@ -11,18 +11,21 @@ import java.util.Locale;
  *
  * <p>640×336 is the user's 1920×1008 window at GUI 3; the automated run reaches the same logical
  * size with 1280×672 at GUI 2, and 480×270 (1080p at GUI 4) with 960×540 at GUI 2, so the window
- * always fits a 1080p monitor. At GUI 1 the WOK minimum 2x lays 960×720 out as 480×360.
+ * always fits a 1080p monitor. At GUI 1 the WOK minimum 2x lays 960×720 out as 480×360, and the
+ * 854×480 window (Minecraft's default size) as 427×240: the narrow layouts below 440 logical
+ * pixels and the HUD's boss-bar shift at 427 wide are captured there (report tier).
  */
 public enum UiTier {
     T320("320x240", 960, 720, 3, true, "320x240"),
     T960("960x720", 960, 720, 1, true, "960x720"),
     T640("640x336", 1280, 672, 2, true, "640x360"),
-    T480("480x270", 960, 540, 2, false, "480x270");
+    T480("480x270", 960, 540, 2, false, "480x270"),
+    T427("427x240", 854, 480, 1, false, "480x270");
 
     /** Required tiers, in capture order. */
     public static final List<UiTier> REQUIRED = List.of(T320, T960, T640);
     /** Every tier, in capture order. */
-    public static final List<UiTier> ALL = List.of(T320, T960, T640, T480);
+    public static final List<UiTier> ALL = List.of(T320, T960, T640, T480, T427);
 
     private final String id;
     private final int windowWidth;
