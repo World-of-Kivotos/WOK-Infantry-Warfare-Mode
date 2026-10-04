@@ -720,8 +720,15 @@ public final class FormationSelectionScreen extends TacticalScreen
                 TacticalDraw.PanelStyle.titled(FormationText.waitingTitle()));
         boolean empty = model().stage() == FormationVoteModel.Stage.EMPTY;
         int emptyWidth = Math.max(40, Math.min(c.width() - 24, 300));
-        int lines = TextFit.wrap(font, (empty ? FormationText.emptyHint()
-                : FormationText.waitingHint()).getString(), emptyWidth - 12, 0).size();
+        // Room for the longer waiting hint, so the retry key keeps its place when the hint turns
+        // into the "no answer" variant after the timeout.
+        int lines = empty
+                ? TextFit.wrap(font, FormationText.emptyHint().getString(), emptyWidth - 12, 0)
+                .size()
+                : Math.max(TextFit.wrap(font, FormationText.waitingHint(false).getString(),
+                        emptyWidth - 12, 0).size(),
+                TextFit.wrap(font, FormationText.waitingHint(true).getString(),
+                        emptyWidth - 12, 0).size());
         int blockHeight = 22 + lines * 10 + 8;
         int total = blockHeight + 6 + metrics.buttonHeight();
         int top = c.top() + Math.max(2, (c.height() - total) / 2);

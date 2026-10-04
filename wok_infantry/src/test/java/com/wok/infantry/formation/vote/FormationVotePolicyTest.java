@@ -1,8 +1,13 @@
 package com.wok.infantry.formation.vote;
 
+import com.wok.infantry.battle.Faction;
 import com.wok.infantry.formation.vote.FormationVotePolicy.AssignPlan;
 import com.wok.infantry.formation.vote.FormationVotePolicy.VoteBlock;
 import org.junit.jupiter.api.Test;
+
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -38,6 +43,43 @@ class FormationVotePolicyTest {
         assertEquals(VoteBlock.NONE, FormationVotePolicy.voteBlock(true,
                 FormationVotePhase.OPEN, true, 40, 1, "infantry", "infantry", false),
                 "repeating the own vote is not a change");
+    }
+
+    /**
+     * B11a: the server checks votes with {@link FormationVotePolicy#voteBlock} before the ledger
+     * records them, so the two must agree on every case the ledger also decides (capacity is
+     * the policy's own check).
+     */
+    @Test
+    void voteBlockAgreesWithTheBallotLedger() {
+        UUID voter = UUID.nameUUIDFromBytes("voter".getBytes(StandardCharsets.UTF_8));
+        FormationVoteLedger ledger = new FormationVoteLedger();
+        assertAgrees(ledger, voter, "infantry", false, "not opened yet");
+
+        ledger.open(Faction.BLUE, List.of("infantry", "armored"), false);
+        assertAgrees(ledger, voter, "special", false, "not a candidate");
+        assertAgrees(ledger, voter, "infantry", true, "first vote");
+        assertAgrees(ledger, voter, "infantry", true, "repeating the own vote");
+        assertAgrees(ledger, voter, "armored", false, "change not allowed");
+
+        ledger.lock(Faction.BLUE, "infantry");
+        assertAgrees(ledger, voter, "infantry", false, "locked");
+
+        FormationVoteLedger changeable = new FormationVoteLedger();
+        changeable.open(Faction.BLUE, List.of("infantry", "armored"), true);
+        assertAgrees(changeable, voter, "infantry", true, "first vote");
+        assertAgrees(changeable, voter, "armored", true, "change allowed");
+    }
+
+    private static void assertAgrees(FormationVoteLedger ledger, UUID voter, String target,
+                                     boolean expectedAccepted, String what) {
+        FormationVoteSnapshot vote = ledger.snapshot(Faction.BLUE, voter);
+        VoteBlock block = FormationVotePolicy.voteBlock(true, vote.phase(),
+                vote.candidates().contains(target), 40, 1, vote.ownVote(), target,
+                vote.voteChangeAllowed());
+        boolean accepted = ledger.cast(Faction.BLUE, voter, target).success();
+        assertEquals(expectedAccepted, accepted, what + ": ledger");
+        assertEquals(expectedAccepted, block == VoteBlock.NONE, what + ": policy " + block);
     }
 
     @Test

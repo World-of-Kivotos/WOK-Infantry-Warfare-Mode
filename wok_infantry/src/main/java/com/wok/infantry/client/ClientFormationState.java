@@ -7,12 +7,19 @@ import java.util.Optional;
 
 /** Client cache contains display data only and is never trusted by the server. */
 public final class ClientFormationState {
+    /**
+     * A catalog request still unanswered after this long counts as lost (the server drops
+     * requests over its rate limit silently); the waiting page then offers a retry.
+     */
+    public static final long CATALOG_TIMEOUT_NANOS = 3_000_000_000L;
     private static final long FEEDBACK_DURATION_NANOS = 3_000_000_000L;
     private static FormationSelectionSnapshot snapshot;
     private static String feedback = "";
     private static FeedbackKind feedbackKind = FeedbackKind.DANGER;
     private static long feedbackExpiresAt;
     private static LockTransition lockTransition;
+    /** {@link System#nanoTime()} of the last unanswered catalog request, 0 = none pending. */
+    private static long catalogRequestedAt;
 
     /**
      * Kind of the 3-second vote-page receipt: green confirmed success, red failure, or orange
@@ -33,6 +40,26 @@ public final class ClientFormationState {
 
     public static synchronized void update(FormationSelectionSnapshot replacement) {
         snapshot = replacement;
+        catalogRequestedAt = 0L;
+    }
+
+    /** The client just asked the server for the catalog; any arriving catalog answers it. */
+    public static synchronized void catalogRequested() {
+        long now = System.nanoTime();
+        catalogRequestedAt = now == 0L ? 1L : now;
+    }
+
+    /** Whether the last catalog request is still unanswered after {@link #CATALOG_TIMEOUT_NANOS}. */
+    public static synchronized boolean catalogOverdue() {
+        return catalogOverdue(catalogRequestedAt, System.nanoTime());
+    }
+
+    /**
+     * Pure rule of {@link #catalogOverdue()}: a request sent at {@code requestedAtNanos}
+     * (0 = none pending) is overdue at {@code nowNanos} once the timeout has passed.
+     */
+    public static boolean catalogOverdue(long requestedAtNanos, long nowNanos) {
+        return requestedAtNanos != 0L && nowNanos - requestedAtNanos >= CATALOG_TIMEOUT_NANOS;
     }
 
     /** Server receipt: green on success, red on failure (kept for existing callers). */
@@ -85,6 +112,7 @@ public final class ClientFormationState {
         feedbackKind = FeedbackKind.DANGER;
         feedbackExpiresAt = 0L;
         lockTransition = null;
+        catalogRequestedAt = 0L;
     }
 
     /** A formation lock observed by this client; {@code lockedAtNanos} uses {@link System#nanoTime()}. */

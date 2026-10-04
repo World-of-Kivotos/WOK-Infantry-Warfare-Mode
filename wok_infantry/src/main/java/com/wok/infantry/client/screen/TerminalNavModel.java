@@ -31,6 +31,27 @@ final class TerminalNavModel<S> {
         return current;
     }
 
+    /**
+     * Root of a terminal session entered from {@code start} when terminal pages may still be
+     * chained as parents: legacy pages that only keep their parent (the squad page until it
+     * joins the shared tab strip) are walked up with {@code parentOf}, terminal screens with
+     * {@code rootOf}, until a screen outside the terminal (or {@code null}, the game) is reached.
+     */
+    S rootSkipping(S start, Predicate<S> legacyPage, Function<S, S> parentOf,
+                   Predicate<S> isTerminal, Function<S, S> rootOf) {
+        S current = start;
+        for (int guard = 0; current != null && guard < 16; guard++) {
+            if (legacyPage.test(current)) {
+                current = parentOf.apply(current);
+            } else if (isTerminal.test(current)) {
+                current = rootOf.apply(current);
+            } else {
+                break;
+            }
+        }
+        return current;
+    }
+
     /** Instance for {@code tab} in the session of {@code root}; created on first use. */
     S reuse(BattleTab tab, S root, Supplier<S> factory) {
         Entry<S> entry = reusable.get(tab);

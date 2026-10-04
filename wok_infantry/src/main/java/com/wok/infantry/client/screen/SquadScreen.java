@@ -73,6 +73,11 @@ public final class SquadScreen extends Screen {
         this.page = openDeployment ? Page.DEPLOYMENT : Page.SQUADS;
     }
 
+    /** Screen this page returns to (see {@link BattleTerminalNav#rootSkippingSquadPages}). */
+    Screen previousScreen() {
+        return previous;
+    }
+
     @Override
     protected void init() {
         observedGeneration = ClientBattleState.generation();
@@ -190,11 +195,14 @@ public final class SquadScreen extends Screen {
         x += tabWidth + 3;
 
         // Temporary entry to the faction/formation vote page (player-08); 档 3 replaces the
-        // whole row with the shared terminal tab strip.
+        // whole row with the shared terminal tab strip. The vote page replaces this page and
+        // returns to the terminal's root, so switching tabs there never stacks a second squad
+        // page under it.
         Component formationLabel = fittedButtonLabel("screen.wok_infantry.tab.formation",
                 "screen.wok_infantry.tab.formation_short", tabWidth);
         addRenderableWidget(BattleUiButton.builder(formationLabel, ignored ->
-                        FormationClientNetworkBridge.openFromTerminal(this))
+                        FormationClientNetworkBridge.openFromTerminal(
+                                BattleTerminalNav.rootSkippingSquadPages(previous)))
                 .tooltip(Tooltip.create(Component.translatable(
                         "screen.wok_infantry.tab.formation")))
                 .bounds(x, buttonY, tabWidth, 20).build());

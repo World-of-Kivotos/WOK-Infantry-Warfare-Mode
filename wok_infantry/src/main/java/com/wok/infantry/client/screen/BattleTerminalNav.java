@@ -77,6 +77,19 @@ public final class BattleTerminalNav {
                 screen -> ((Terminal) screen).terminalReturnScreen());
     }
 
+    /**
+     * Root of the terminal entered from {@code start}, also when squad pages (not yet a
+     * {@link Terminal}, 档 3 replaces them) are chained as its parents. The squad page's temporary
+     * "编制" key opens the vote page with this root, so the vote page replaces the squad page and
+     * a later tab switch never stacks a second squad page under it.
+     */
+    public static Screen rootSkippingSquadPages(Screen start) {
+        return MODEL.rootSkipping(start, screen -> screen instanceof SquadScreen,
+                screen -> ((SquadScreen) screen).previousScreen(),
+                screen -> screen instanceof Terminal,
+                screen -> ((Terminal) screen).terminalReturnScreen());
+    }
+
     /** Replaces (or removes, with {@code null}) the opener of {@code tab}. */
     public static void registerOpener(BattleTab tab, Opener opener) {
         Objects.requireNonNull(tab, "tab");

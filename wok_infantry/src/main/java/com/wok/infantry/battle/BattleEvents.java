@@ -110,6 +110,12 @@ public final class BattleEvents {
                             ? BattleOpenTarget.DEPLOYMENT : BattleOpenTarget.NONE;
                     BattleNetwork.sendSnapshotToPlayer(service, player, target);
                 }
+                if (participant && FormationNetwork.isInitialized()) {
+                    // The client keeps no catalog across logins: send it once without opening
+                    // anything, so the terminal's "编制" tab shows the locked result at once
+                    // instead of waiting for it.
+                    FormationNetwork.sendSnapshotToPlayer(player, false);
+                }
             });
         }
     }

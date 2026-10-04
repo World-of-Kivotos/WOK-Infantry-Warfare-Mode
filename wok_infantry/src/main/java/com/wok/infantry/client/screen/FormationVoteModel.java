@@ -59,6 +59,11 @@ public final class FormationVoteModel {
         ADMIN_OPEN,
         /** Third step: pick a formation and vote. */
         VOTE,
+        /**
+         * Third step (administrator who has not voted): vote, or lock a result straight away
+         * (the administrator never has to vote first, vote-09).
+         */
+        ADMIN_VOTE,
         /** Fourth step: voted, waiting for the administrator's lock. */
         WAIT_LOCK,
         /** Fourth step (administrator): pick the result and lock it. */
@@ -432,7 +437,8 @@ public final class FormationVoteModel {
                 yield phase(browsing) == FormationVotePhase.LOCKED ? Step.JOIN_LOCKED : Step.JOIN;
             }
             case NOT_STARTED -> administrator ? Step.ADMIN_OPEN : Step.WAIT_OPEN;
-            case OPEN -> snapshot.ownVoteFormationId().isBlank() ? Step.VOTE
+            case OPEN -> snapshot.ownVoteFormationId().isBlank()
+                    ? administrator ? Step.ADMIN_VOTE : Step.VOTE
                     : administrator ? Step.ADMIN_LOCK : Step.WAIT_LOCK;
             case LOCKED -> hasFormation() ? Step.DEPLOY : Step.LOCKED_NO_FORMATION;
         };

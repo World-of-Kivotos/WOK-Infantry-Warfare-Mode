@@ -22,6 +22,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.HumanoidArm;
+import net.minecraft.world.scores.Scoreboard;
 import net.minecraftforge.client.event.RenderGuiEvent;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.extensions.common.IClientMobEffectExtensions;
@@ -40,9 +41,11 @@ import java.util.Objects;
  *
  * <p>Client render thread only. A frame is recomputed when a new GUI frame starts
  * ({@link #onRenderGuiPre}) or the screen size changes; the roster model is kept until the
- * battle snapshot, the layout width class or the language changes.
+ * battle snapshot, the layout width class, the language or the Unicode font option changes.
  *
  * @param factor       core HUD scale (UiScale.hudFactor()); parts draw in layout pixels
+ * @param playerListHeld vanilla draws the player list this frame (its key is held and there is
+ *                     a list to show, see {@link WokHudLayout#vanillaPlayerListShown})
  * @param strip        battle strip content, or null when the strip is hidden
  * @param notices      notices under the strip, top first (round result, base supply)
  * @param vote         formation ballot plate, or null (it replaces strip and notices)
@@ -72,6 +75,7 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
     private static BattleSnapshot rosterSnapshot;
     private static boolean rosterNarrow;
     private static String rosterLanguage;
+    private static boolean rosterUnicode;
     private static SquadRosterModel.Roster rosterCache;
 
     public HudFrame {
@@ -166,7 +170,7 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
         boolean hidden = minecraft.options.hideGui;
         boolean chatOpen = minecraft.screen instanceof ChatScreen;
         boolean debugScreen = minecraft.options.renderDebug;
-        boolean playerListHeld = minecraft.options.keyPlayerList.isDown();
+        boolean playerListHeld = playerListShown(minecraft, player);
         boolean spectator = player.isSpectator();
         boolean creative = player.isCreative();
         Font font = minecraft.font;
@@ -255,15 +259,35 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
                 WokHudLayout.compute(input));
     }
 
-    /** Roster of the viewer's squad, rebuilt only when the snapshot, width class or language changes. */
+    /**
+     * Whether vanilla draws the player list this frame: the key alone is not enough, single
+     * player without anyone else listed and without a list objective shows nothing.
+     */
+    private static boolean playerListShown(Minecraft minecraft, LocalPlayer player) {
+        if (!minecraft.options.keyPlayerList.isDown()) {
+            return false;
+        }
+        boolean listObjective = minecraft.level != null && minecraft.level.getScoreboard()
+                .getDisplayObjective(Scoreboard.DISPLAY_SLOT_LIST) != null;
+        int listed = player.connection == null ? 0
+                : player.connection.getListedOnlinePlayers().size();
+        return WokHudLayout.vanillaPlayerListShown(true, minecraft.isLocalServer(), listed,
+                listObjective);
+    }
+
+    /**
+     * Roster of the viewer's squad, rebuilt only when the snapshot, width class, language or
+     * font choice ("Force Unicode Font", which changes every text width) changes.
+     */
     private static SquadRosterModel.Roster roster(Minecraft minecraft, BattleSnapshot snapshot,
                                                   boolean narrow) {
         if (snapshot == null || snapshot.ownSquad() == null) {
             return null;
         }
         String language = Objects.requireNonNullElse(minecraft.options.languageCode, "");
+        boolean unicode = Boolean.TRUE.equals(minecraft.options.forceUnicodeFont().get());
         if (snapshot == rosterSnapshot && narrow == rosterNarrow
-                && language.equals(rosterLanguage)) {
+                && language.equals(rosterLanguage) && unicode == rosterUnicode) {
             return rosterCache;
         }
         SquadView squad = null;
@@ -281,6 +305,7 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
         rosterSnapshot = snapshot;
         rosterNarrow = narrow;
         rosterLanguage = language;
+        rosterUnicode = unicode;
         rosterCache = roster;
         return roster;
     }
