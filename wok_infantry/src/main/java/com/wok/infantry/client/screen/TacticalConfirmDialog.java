@@ -1,12 +1,14 @@
 package com.wok.infantry.client.screen;
 
 import com.wok.infantry.client.ui.probe.UiLayoutProbe;
+import net.minecraft.client.GameNarrator;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.List;
@@ -44,7 +46,7 @@ public final class TacticalConfirmDialog implements TacticalModal {
     private static final int LINE_HEIGHT = 10;
 
     private final Component title;
-    private final Component body;
+    private Component body;
     private final boolean danger;
     private final Runnable onConfirm;
     private final Runnable onCancel;
@@ -55,6 +57,10 @@ public final class TacticalConfirmDialog implements TacticalModal {
     private boolean closed;
     private UiRect card = UiRect.EMPTY;
     private List<String> bodyLines = List.of();
+    /** Arguments of the last {@link #layout}, to lay the card out again after {@link #updateBody}. */
+    private Font laidOutFont;
+    private int laidOutWidth;
+    private int laidOutHeight;
 
     private TacticalConfirmDialog(Builder builder) {
         this.title = builder.title;
@@ -121,6 +127,29 @@ public final class TacticalConfirmDialog implements TacticalModal {
         }
     }
 
+    /**
+     * Closes the dialog without running either callback: what it asked about no longer applies
+     * (for example a newer snapshot made the target unavailable). No-op once closed.
+     */
+    public void dismiss() {
+        finish();
+    }
+
+    /**
+     * Replaces the body when a newer snapshot changed what the dialog says (vote counts, the
+     * leader, the population) and lays the card out again; the keys and their focus stay.
+     */
+    public void updateBody(Component replacement) {
+        Component next = replacement == null ? Component.empty() : replacement;
+        if (closed || next.getString().equals(body.getString())) {
+            return;
+        }
+        body = next;
+        if (laidOutFont != null) {
+            layout(laidOutFont, laidOutWidth, laidOutHeight);
+        }
+    }
+
     private boolean finish() {
         if (closed) {
             return false;
@@ -174,6 +203,9 @@ public final class TacticalConfirmDialog implements TacticalModal {
 
     @Override
     public void layout(Font font, int screenWidth, int screenHeight) {
+        laidOutFont = font;
+        laidOutWidth = screenWidth;
+        laidOutHeight = screenHeight;
         TacticalShellLayout.Metrics metrics = TacticalShellLayout.Metrics.forSize(screenWidth,
                 screenHeight);
         int width = cardWidth(screenWidth, metrics.tight());
@@ -250,6 +282,9 @@ public final class TacticalConfirmDialog implements TacticalModal {
             case FOCUS_NEXT, FOCUS_PREVIOUS -> {
                 confirmFocused = !confirmFocused;
                 applyFocus();
+                // The keys are not screen children, so the vanilla narrator never reaches them.
+                narrate(focusNarration((confirmFocused ? confirmButton : cancelButton)
+                        .getMessage(), confirmFocused, danger));
             }
             case NONE -> {
             }
@@ -267,6 +302,31 @@ public final class TacticalConfirmDialog implements TacticalModal {
     private void applyFocus() {
         cancelButton.setFocused(!confirmFocused);
         confirmButton.setFocused(confirmFocused);
+    }
+
+    /**
+     * What the narrator says when the keyboard focus moves onto a key: its label, and for the
+     * confirm key of a dangerous dialog that Enter and Space do not press it.
+     */
+    static Component focusNarration(Component label, boolean confirmKey, boolean danger) {
+        MutableComponent text = Component.empty().append(label == null ? Component.empty()
+                : label);
+        if (confirmKey && danger) {
+            text.append(". ").append(Component.translatable(
+                    "screen.wok_infantry.confirm.mouse_only"));
+        }
+        return text;
+    }
+
+    private static void narrate(Component message) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null || message == null || message.getString().isEmpty()) {
+            return;
+        }
+        GameNarrator narrator = minecraft.getNarrator();
+        if (narrator != null) {
+            narrator.sayNow(message);
+        }
     }
 
     @Override

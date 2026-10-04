@@ -110,7 +110,9 @@ public final class TacticalBoardChrome {
 
     /**
      * Footer receipt. {@link Kind#PENDING} ("处理中", orange) is for requests that are still
-     * waiting for the server; green is only for confirmed success.
+     * waiting for the server; green is only for confirmed success. A standing "next step" guide
+     * is {@link Kind#GUIDE} and neutral, like the HUD's waiting and to-do plates: orange stays for
+     * sections, adjustable controls and attention.
      */
     public record Feedback(Kind kind, Component text) {
         public enum Kind {
@@ -119,7 +121,9 @@ public final class TacticalBoardChrome {
             /** Request sent, result not known yet. */
             PENDING,
             /** Attention without success or failure (cooldown, unsaved changes). */
-            NOTICE
+            NOTICE,
+            /** What to do next (a step guide): neutral, never a warning colour. */
+            GUIDE
         }
 
         public Feedback {
@@ -143,12 +147,17 @@ public final class TacticalBoardChrome {
             return new Feedback(Kind.NOTICE, text);
         }
 
+        public static Feedback guide(Component text) {
+            return new Feedback(Kind.GUIDE, text);
+        }
+
         /** Bright semantic colour of the receipt (dark footer). */
         public int color() {
             return switch (kind) {
                 case SUCCESS -> TacticalBoardTheme.SUCCESS_B;
                 case DANGER -> TacticalBoardTheme.DANGER_B;
                 case PENDING, NOTICE -> TacticalBoardTheme.ACCENT_B;
+                case GUIDE -> TacticalBoardTheme.NEUTRAL_B;
             };
         }
 

@@ -626,6 +626,50 @@ public final class FormationVoteModel {
         return joined() && voteAction().votes();
     }
 
+    /** What a newer catalog does to an open join or lock confirmation. */
+    public enum DialogFate {
+        /** Still valid: rewrite its text from the new catalog. */
+        KEEP,
+        /** Settled by itself (joined meanwhile, the ballot got locked): close, no receipt. */
+        CLOSE_SILENTLY,
+        /** Its target can no longer be joined or locked: close it and say so. */
+        CLOSE_WITH_NOTICE
+    }
+
+    /**
+     * Fate of the join confirmation for {@code factionId} under this (newer) catalog: the viewer
+     * joined meanwhile (an administrator assigned them), or the faction can no longer be joined.
+     */
+    public DialogFate joinDialogFate(String factionId) {
+        if (joined()) {
+            return DialogFate.CLOSE_SILENTLY;
+        }
+        if (browsing == null || !browsing.id().equals(factionId) || !joinAction().enabled()) {
+            return DialogFate.CLOSE_WITH_NOTICE;
+        }
+        return DialogFate.KEEP;
+    }
+
+    /**
+     * Fate of the administrator's lock confirmation for {@code formationId} of {@code factionId}
+     * under this (newer) catalog: the ballot got locked meanwhile, or the target can no longer be
+     * locked (gone, disabled, too small, no longer a candidate).
+     */
+    public DialogFate lockDialogFate(String factionId, String formationId) {
+        FactionSelectionView own = joinedFaction();
+        if (own == null || !own.id().equals(factionId)) {
+            return DialogFate.CLOSE_WITH_NOTICE;
+        }
+        if (snapshot.votePhase() == FormationVotePhase.LOCKED) {
+            return DialogFate.CLOSE_SILENTLY;
+        }
+        if (highlighted == null || !highlighted.id().equals(formationId)
+                || !admin().lockEnabled()) {
+            return DialogFate.CLOSE_WITH_NOTICE;
+        }
+        return DialogFate.KEEP;
+    }
+
     /** What Esc does on the page itself (a modal is closed first by the screen). */
     public static EscAction escAction(boolean narrowDetailPage) {
         return narrowDetailPage ? EscAction.BACK_TO_LIST : EscAction.CLOSE;

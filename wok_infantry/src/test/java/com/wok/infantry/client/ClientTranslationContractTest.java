@@ -150,6 +150,8 @@ class ClientTranslationContractTest {
             Map.entry("screen.wok_infantry.formation.reopen", 1),
             Map.entry("screen.wok_infantry.formation.locked_notice", 1),
             Map.entry("screen.wok_infantry.formation.quoted", 1),
+            // Administrator loadout "职业管理" disabled reason (review fix UI-06).
+            Map.entry("screen.wok_infantry.admin_loadout.class_settings.no_rule", 1),
             Map.entry("screen.wok_infantry.squad.member_count", 2),
             Map.entry("screen.wok_infantry.class.quota", 2),
             Map.entry("screen.wok_infantry.deployment.waiting", 1),

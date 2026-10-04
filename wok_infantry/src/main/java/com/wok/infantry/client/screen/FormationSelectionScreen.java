@@ -15,14 +15,18 @@ import com.wok.infantry.formation.vote.FormationVotePhase;
 import com.wok.infantry.network.battle.client.BattleClientNetworkBridge;
 import com.wok.infantry.network.formation.client.FormationClientNetworkBridge;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Faction and formation vote page of the battle terminal (preview {@code 45-formation.js} "new").
@@ -89,6 +93,27 @@ public final class FormationSelectionScreen extends TacticalScreen
     private UiRect actionKey = UiRect.EMPTY;
     private int reasonLeft;
     private UiRect actionBar = UiRect.EMPTY;
+    /**
+     * Which page control each focusable widget of the current build is (its probe id), so a
+     * rebuild (a teammate's vote, a new highlight) gives the keyboard focus back to the same
+     * control instead of dropping it.
+     */
+    private final Map<GuiEventListener, String> roles = new IdentityHashMap<>();
+    /** The join or lock confirmation this page opened, while it is open. */
+    private OpenDialog openDialog;
+
+    private enum DialogKind {
+        JOIN,
+        LOCK
+    }
+
+    /** A confirmation and what it is about, to re-check it when a newer catalog arrives. */
+    private record OpenDialog(DialogKind kind, String factionId, String formationId,
+                              TacticalConfirmDialog dialog) {
+    }
+
+    /** Role used for the tab strip in {@link #roles} (it has no probe id). */
+    private static final String TABS_ROLE = "formation.tabs";
 
     public FormationSelectionScreen(FormationSelectionSnapshot snapshot, Screen returnScreen) {
         this(snapshot, returnScreen, Entry.SERVER);
@@ -187,12 +212,17 @@ public final class FormationSelectionScreen extends TacticalScreen
         }
     }
 
-    /** Shows a newer catalog in place: highlight, scroll position and list focus are kept. */
+    /**
+     * Shows a newer catalog in place: highlight, scroll position and the keyboard focus are kept,
+     * and an open join or lock confirmation is rewritten from it (or closed when its target no
+     * longer applies).
+     */
     public void replaceSnapshot(FormationSelectionSnapshot replacement) {
         snapshot = replacement;
         normalizeSelection();
         if (minecraft != null) {
             rebuildKeepingFocus();
+            refreshOpenDialog();
         }
     }
 
@@ -235,6 +265,7 @@ public final class FormationSelectionScreen extends TacticalScreen
     @Override
     protected void initTactical() {
         rebuildPending = false;
+        roles.clear();
         FormationVoteModel model = model();
         TacticalShellLayout.Metrics metrics = TacticalShellLayout.Metrics.forSize(width, height);
         boolean waiting = model.stage() == FormationVoteModel.Stage.WAITING
@@ -256,6 +287,7 @@ public final class FormationSelectionScreen extends TacticalScreen
                     tab -> tab == BattleTab.FORMATION || model.hasFormation() ? null
                             : FormationText.tabLockedReason(), this::navigate);
             addRenderableWidget(strip);
+            roles.put(strip, TABS_ROLE);
             setTabStrip(strip);
             TacticalBoardChrome.placeTabs(font, shellLayout(), FormationText.title(width), strip);
         }
@@ -280,7 +312,7 @@ public final class FormationSelectionScreen extends TacticalScreen
                 }
             }
             case NARROW_DETAIL -> {
-                addRenderableWidget(UiLayoutProbe.tag(BattleUiButton.builder(
+                addRenderableWidget(role(BattleUiButton.builder(
                                 FormationText.listKey(), ignored -> {
                             detailPage = false;
                             requestRebuild();
@@ -291,6 +323,12 @@ public final class FormationSelectionScreen extends TacticalScreen
                 addVoteKey(model, layout.detailAction(), layout.detailAction().left());
             }
         }
+    }
+
+    /** Tags {@code widget} with its probe id and remembers it as that page control. */
+    private <T extends GuiEventListener> T role(T widget, String uiId) {
+        roles.put(widget, uiId);
+        return UiLayoutProbe.tag(widget, uiId);
     }
 
     private void addFactionKeys(FormationVoteModel model) {
@@ -304,7 +342,7 @@ public final class FormationSelectionScreen extends TacticalScreen
                     FormationText.factionBadge(model, faction), model.factionLook(faction),
                     ignored -> browse(faction.id()));
             key.setTooltip(Tooltip.create(FormationText.factionTooltip(model, faction)));
-            addRenderableWidget(UiLayoutProbe.tag(key, FACTION_UI_ID_PREFIX + faction.id()));
+            addRenderableWidget(role(key, FACTION_UI_ID_PREFIX + faction.id()));
         }
     }
 
@@ -323,12 +361,12 @@ public final class FormationSelectionScreen extends TacticalScreen
         key.active = join.enabled();
         key.setTooltip(Tooltip.create(join.enabled() ? labels.get(0)
                 : FormationText.step(model).get(0)));
-        addRenderableWidget(UiLayoutProbe.tag(key, JOIN_UI_ID));
+        addRenderableWidget(role(key, JOIN_UI_ID));
     }
 
     private void addList(FormationVoteModel model, TacticalShellLayout.Metrics metrics) {
         list.update(model, metrics, layout.well());
-        addRenderableWidget(UiLayoutProbe.tag(list.widget(), LIST_UI_ID));
+        addRenderableWidget(role(list.widget(), LIST_UI_ID));
     }
 
     private void addAdminKey(FormationVoteModel model) {
@@ -339,14 +377,14 @@ public final class FormationSelectionScreen extends TacticalScreen
         UiRect rect = layout.adminKey();
         Button key;
         if (admin.opening()) {
-            key = UiLayoutProbe.tag(BattleUiButton.builder(FormationText.adminOpenKey(),
+            key = role(BattleUiButton.builder(FormationText.adminOpenKey(),
                             ignored -> openVote())
                     .icon(TacticalIcon.UNLOCK)
                     .bounds(rect.left(), rect.top(), rect.width(), rect.height()).build(),
                     ADMIN_OPEN_UI_ID);
             key.active = admin.openEnabled();
         } else {
-            key = UiLayoutProbe.tag(BattleUiButton.builder(FormationText.adminLockKey(),
+            key = role(BattleUiButton.builder(FormationText.adminLockKey(),
                             ignored -> confirmLock())
                     .kind(BattleUiButton.Kind.DANGER).icon(TacticalIcon.LOCK)
                     .bounds(rect.left(), rect.top(), rect.width(), rect.height()).build(),
@@ -370,7 +408,7 @@ public final class FormationSelectionScreen extends TacticalScreen
                 }).icon(TacticalIcon.EYE)
                 .bounds(rect.left(), rect.top(), rect.width(), rect.height()).build();
         key.active = model.highlighted() != null;
-        addRenderableWidget(UiLayoutProbe.tag(key, DETAILS_UI_ID));
+        addRenderableWidget(role(key, DETAILS_UI_ID));
     }
 
     /** Vote key at the right of {@code bar}; the reason line takes the room left of it. */
@@ -403,12 +441,12 @@ public final class FormationSelectionScreen extends TacticalScreen
             // The reason is written beside the key; hovering the key says it too.
             key.setTooltip(Tooltip.create(FormationText.reason(model, action).get(0)));
         }
-        addRenderableWidget(UiLayoutProbe.tag(key, VOTE_UI_ID));
+        addRenderableWidget(role(key, VOTE_UI_ID));
     }
 
     private void addRetryKey() {
         UiRect retry = waitingGeometry().retry();
-        addRenderableWidget(UiLayoutProbe.tag(BattleUiButton.builder(FormationText.retryKey(),
+        addRenderableWidget(role(BattleUiButton.builder(FormationText.retryKey(),
                         ignored -> retry())
                 .kind(BattleUiButton.Kind.CONTROL).icon(TacticalIcon.REFRESH)
                 .bounds(retry.left(), retry.top(), retry.width(), retry.height()).build(),
@@ -446,7 +484,8 @@ public final class FormationSelectionScreen extends TacticalScreen
             return;
         }
         String factionId = faction.id();
-        openModal(TacticalConfirmDialog.builder(FormationText.joinConfirmTitle(faction),
+        TacticalConfirmDialog dialog = TacticalConfirmDialog.builder(
+                        FormationText.joinConfirmTitle(faction),
                         FormationText.joinConfirmBody(model, faction))
                 .confirmLabel(FormationText.joinConfirmOk())
                 .cancelLabel(FormationText.joinConfirmCancel())
@@ -458,7 +497,9 @@ public final class FormationSelectionScreen extends TacticalScreen
                     ClientFormationState.feedback(ClientFormationState.FeedbackKind.PENDING,
                             FormationText.pendingJoin(faction));
                 })
-                .build());
+                .build();
+        openDialog = new OpenDialog(DialogKind.JOIN, factionId, "", dialog);
+        openModal(dialog);
     }
 
     private void onVoteKey() {
@@ -508,7 +549,8 @@ public final class FormationSelectionScreen extends TacticalScreen
         }
         String factionId = own.id();
         String formationId = target.id();
-        openModal(TacticalConfirmDialog.builder(FormationText.lockConfirmTitle(own),
+        TacticalConfirmDialog dialog = TacticalConfirmDialog.builder(
+                        FormationText.lockConfirmTitle(own),
                         FormationText.lockConfirmBody(model, target))
                 .danger(true)
                 .confirmLabel(FormationText.lockConfirmOk())
@@ -520,7 +562,41 @@ public final class FormationSelectionScreen extends TacticalScreen
                     ClientFormationState.feedback(ClientFormationState.FeedbackKind.PENDING,
                             FormationText.pendingLock(target));
                 })
-                .build());
+                .build();
+        openDialog = new OpenDialog(DialogKind.LOCK, factionId, formationId, dialog);
+        openModal(dialog);
+    }
+
+    /**
+     * A newer catalog arrived while the join or lock confirmation is open: the dialog was written
+     * from the old one (population, votes, the leader). It is rewritten from the new catalog, or
+     * closed with a receipt when its target can no longer be joined or locked, so nobody confirms
+     * a decision on stale numbers.
+     */
+    private void refreshOpenDialog() {
+        OpenDialog open = openDialog;
+        if (open == null) {
+            return;
+        }
+        if (modal() != open.dialog() || open.dialog().closed()) {
+            openDialog = null;
+            return;
+        }
+        FormationVoteModel model = model();
+        boolean join = open.kind() == DialogKind.JOIN;
+        FormationVoteModel.DialogFate fate = join ? model.joinDialogFate(open.factionId())
+                : model.lockDialogFate(open.factionId(), open.formationId());
+        if (fate == FormationVoteModel.DialogFate.KEEP) {
+            open.dialog().updateBody(join ? FormationText.joinConfirmBody(model, model.browsing())
+                    : FormationText.lockConfirmBody(model, model.highlighted()));
+            return;
+        }
+        openDialog = null;
+        open.dialog().dismiss();
+        if (fate == FormationVoteModel.DialogFate.CLOSE_WITH_NOTICE) {
+            ClientFormationState.feedback(false, join ? FormationText.joinDialogClosed()
+                    : FormationText.lockDialogClosed());
+        }
     }
 
     /** Administrator actions stay chat commands: the command tree checks the permission. */
@@ -552,12 +628,42 @@ public final class FormationSelectionScreen extends TacticalScreen
         rebuildPending = true;
     }
 
+    /**
+     * Rebuilds the widgets and gives the focus back to the same page control (found by its
+     * role): the list always (its scroll-bar drag continues), a key while the keyboard drives the
+     * page, and the control that opened an open modal (so closing it still returns the focus).
+     */
     private void rebuildKeepingFocus() {
-        boolean listFocused = getFocused() == list.widget();
+        boolean modalOpen = hasModal();
+        GuiEventListener focused = modalOpen ? parkedFocus() : getFocused();
+        String role = focused == null ? null : roles.get(focused);
+        boolean keyboard = minecraft != null && minecraft.getLastInputType().isKeyboard();
         rebuildWidgets();
-        if (listFocused && children().contains(list.widget())) {
-            setFocused(list.widget());
+        GuiEventListener restored = focusTarget(role, LIST_UI_ID.equals(role) || keyboard
+                || modalOpen);
+        if (restored == null) {
+            return;
         }
+        if (modalOpen) {
+            reparkFocus(restored);
+        } else {
+            setFocused(restored);
+        }
+    }
+
+    /** The widget of this build playing {@code role}, or {@code null}. */
+    private GuiEventListener focusTarget(String role, boolean wanted) {
+        if (role == null || !wanted) {
+            return null;
+        }
+        for (Map.Entry<GuiEventListener, String> entry : roles.entrySet()) {
+            GuiEventListener widget = entry.getKey();
+            if (role.equals(entry.getValue()) && children().contains(widget)
+                    && !(widget instanceof AbstractWidget control && !control.active)) {
+                return widget;
+            }
+        }
+        return null;
     }
 
     @Override
@@ -650,13 +756,17 @@ public final class FormationSelectionScreen extends TacticalScreen
         }
         hints.add(TacticalBoardChrome.KeyHint.of(FormationText.hintWheel(),
                 detailView ? FormationText.hintScroll() : FormationText.hintBrowse()));
-        if (tabStrip() != null) {
+        if (tabStrip() != null && tabStrip().canCycle()) {
+            // Before the lock every other tab is disabled and Ctrl+Tab does nothing.
             hints.add(TacticalBoardChrome.KeyHint.switchTab());
         }
         return hints;
     }
 
-    /** Footer receipt: the 3-second server/pending receipt, otherwise the next step. */
+    /**
+     * Footer receipt: the 3-second server/pending receipt, otherwise the next step, in the neutral
+     * guide colour like the HUD's waiting and to-do plates (orange is for sections and controls).
+     */
     private TacticalBoardChrome.Feedback footer(FormationVoteModel model) {
         TacticalBoardChrome.Feedback receipt = TacticalBoardChrome.Feedback.fromFormation();
         if (receipt != null) {
@@ -665,7 +775,7 @@ public final class FormationSelectionScreen extends TacticalScreen
         UiRect footer = layout.shell().footer();
         int room = (int) Math.floor(footer.width() * (layout.shell().tight() ? 0.62D : 0.5D))
                 - 16;
-        return TacticalBoardChrome.Feedback.notice(FormationDetailPanel.pick(font,
+        return TacticalBoardChrome.Feedback.guide(FormationDetailPanel.pick(font,
                 FormationText.step(model), room));
     }
 

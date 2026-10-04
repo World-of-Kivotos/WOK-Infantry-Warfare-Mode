@@ -69,6 +69,21 @@ class TacticalTabStripTest {
     }
 
     @Test
+    void ctrlTabIsOnlyOfferedWhenAnotherTabIsEnabled() {
+        // Review fix UI-07: the formation page before the lock (every other tab disabled).
+        TacticalTabStrip locked = BattleTab.strip(BattleTab.FORMATION, tab ->
+                tab == BattleTab.FORMATION ? null : Component.literal("编制锁定后开放"), tab -> { });
+        assertFalse(locked.canCycle());
+        assertFalse(locked.cycle(1));
+        TacticalTabStrip open = BattleTab.strip(BattleTab.FORMATION, tab -> null, tab -> { });
+        assertTrue(open.canCycle());
+        TacticalTabStrip oneOther = BattleTab.strip(BattleTab.FORMATION, tab ->
+                tab == BattleTab.FORMATION || tab == BattleTab.MAP ? null
+                        : Component.literal("x"), tab -> { });
+        assertTrue(oneOther.canCycle());
+    }
+
+    @Test
     void battleTabsKeepThePreviewOrderAndIds() {
         assertEquals(List.of("squads", "classes", "deployment", "loadout", "map", "formation"),
                 java.util.Arrays.stream(BattleTab.values()).map(BattleTab::id).toList());

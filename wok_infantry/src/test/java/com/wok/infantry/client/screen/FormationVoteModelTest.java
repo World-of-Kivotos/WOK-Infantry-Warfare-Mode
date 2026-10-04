@@ -236,6 +236,47 @@ class FormationVoteModelTest {
                 tally(0, 0, 0)), "", DEFAULT, true).admin().relation());
     }
 
+    // ---- open confirmations under a newer catalog (review fix UI-05) ----------------------------
+
+    @Test
+    void anOpenLockConfirmationFollowsTheNewCatalogOrCloses() {
+        FormationVoteModel.DialogFate keep = FormationVoteModel.DialogFate.KEEP;
+        // The tally moved (the target became the leader): still lockable, the text is rewritten.
+        assertEquals(keep, model(joined(FormationVotePhase.OPEN, true, "", tally(1, 4, 0)), "",
+                DEFAULT, true).lockDialogFate(ACADEMY, DEFAULT));
+        assertEquals(keep, model(joined(FormationVotePhase.OPEN, true, "", tally(5, 4, 0)), "",
+                DEFAULT, true).lockDialogFate(ACADEMY, DEFAULT));
+        // The faction grew past the target's capacity: no longer lockable.
+        FormationSelectionSnapshot grown = withFactions(joined(FormationVotePhase.OPEN, true, "",
+                tally(0, 0, 0)), academy(18, 40, true, FormationVotePhase.OPEN, "", 12),
+                caesar(21, true));
+        assertEquals(FormationVoteModel.DialogFate.CLOSE_WITH_NOTICE,
+                model(grown, "", CAVALRY, true).lockDialogFate(ACADEMY, CAVALRY));
+        // Another administrator locked the ballot meanwhile: the page shows the result.
+        assertEquals(FormationVoteModel.DialogFate.CLOSE_SILENTLY,
+                model(lockedJoined(), "", MOBILE, true).lockDialogFate(ACADEMY, MOBILE));
+        // The highlight moved off the target (it left the catalog), or permission was lost.
+        assertEquals(FormationVoteModel.DialogFate.CLOSE_WITH_NOTICE,
+                model(joined(FormationVotePhase.OPEN, true, "", tally(1, 4, 0)), "", MOBILE,
+                        true).lockDialogFate(ACADEMY, DEFAULT));
+        assertEquals(FormationVoteModel.DialogFate.CLOSE_WITH_NOTICE,
+                model(joined(FormationVotePhase.OPEN, true, "", tally(1, 4, 0)), "", DEFAULT,
+                        false).lockDialogFate(ACADEMY, DEFAULT));
+    }
+
+    @Test
+    void anOpenJoinConfirmationClosesWhenTheFactionFillsUp() {
+        assertEquals(FormationVoteModel.DialogFate.KEEP,
+                model(unjoined(), ACADEMY, "", false).joinDialogFate(ACADEMY));
+        FormationSelectionSnapshot full = withFactions(unjoined(),
+                academy(40, 40, false, FormationVotePhase.NOT_STARTED, "", 40), caesar(21, true));
+        assertEquals(FormationVoteModel.DialogFate.CLOSE_WITH_NOTICE,
+                model(full, ACADEMY, "", false).joinDialogFate(ACADEMY));
+        assertEquals(FormationVoteModel.DialogFate.CLOSE_SILENTLY,
+                model(joined(FormationVotePhase.NOT_STARTED, true, "", Map.of()), ACADEMY, "",
+                        false).joinDialogFate(ACADEMY), "an administrator assigned the viewer");
+    }
+
     // ---- locked ballots and late joiners (vote-01) ---------------------------------------------------
 
     @Test
@@ -370,6 +411,22 @@ class FormationVoteModelTest {
                 true));
         assertEquals(Arrival.IGNORE, FormationVoteModel.arrival(locked, true, false, null,
                 true));
+    }
+
+    @Test
+    void theReplyToThePagesOwnCatalogRequestNeverReopensAClosedPage() {
+        // Review fix UI-01: the page opens itself before asking; a late reply only refreshes it.
+        assertFalse(com.wok.infantry.network.formation.packet.c2s.RequestFormationCatalogPacket
+                .REPLY_OPENS_SCREEN);
+        boolean reply = com.wok.infantry.network.formation.packet.c2s
+                .RequestFormationCatalogPacket.REPLY_OPENS_SCREEN;
+        for (FormationSelectionSnapshot pending : List.of(unjoined(),
+                joined(FormationVotePhase.OPEN, true, "", tally(4, 4, 0)))) {
+            assertEquals(Arrival.IGNORE, FormationVoteModel.arrival(pending, reply, false, null,
+                    true), "closed with Esc before the reply arrived");
+            assertEquals(Arrival.REPLACE, FormationVoteModel.arrival(pending, reply, false,
+                    FormationSelectionScreen.Entry.KEY, true), "still open: shows the reply");
+        }
     }
 
     private static FormationSelectionSnapshot lockedJoined() {

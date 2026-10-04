@@ -110,6 +110,24 @@ class TacticalBoardThemeTest {
     }
 
     @Test
+    void footerReceiptColoursFollowTheSemanticTable() {
+        // Review fix UI-09: a step guide is neutral like the HUD's to-do plates; orange stays for
+        // sections, adjustable controls and attention ("处理中" and notices).
+        net.minecraft.network.chat.Component text =
+                net.minecraft.network.chat.Component.literal("第二步");
+        assertEquals(TacticalBoardTheme.SUCCESS_B,
+                TacticalBoardChrome.Feedback.success(text).color());
+        assertEquals(TacticalBoardTheme.DANGER_B,
+                TacticalBoardChrome.Feedback.danger(text).color());
+        assertEquals(TacticalBoardTheme.ACCENT_B,
+                TacticalBoardChrome.Feedback.pending(text).color());
+        assertEquals(TacticalBoardTheme.ACCENT_B,
+                TacticalBoardChrome.Feedback.notice(text).color());
+        assertEquals(TacticalBoardTheme.NEUTRAL_B,
+                TacticalBoardChrome.Feedback.guide(text).color());
+    }
+
+    @Test
     void everyTokenIsAPublicConstant() throws IllegalAccessException {
         assertTrue(Modifier.isPublic(TacticalBoardTheme.class.getModifiers()),
                 "HUD and map packages must be able to use the tokens");

@@ -330,6 +330,25 @@ public abstract class TacticalScreen extends Screen {
         return modal;
     }
 
+    /**
+     * The control that gets the focus back when the open modal closes ({@code null} without a
+     * modal or when nothing had the focus).
+     */
+    protected final GuiEventListener parkedFocus() {
+        return modal == null ? null : focusBeforeModal;
+    }
+
+    /**
+     * Points the parked focus at {@code widget}: a screen that rebuilt its widgets while a modal
+     * stayed open hands over the new instance of the control that opened it, so closing the
+     * modal still gives the focus back. No-op without a modal.
+     */
+    protected final void reparkFocus(GuiEventListener widget) {
+        if (modal != null) {
+            focusBeforeModal = widget;
+        }
+    }
+
     private void layoutModal() {
         if (modal != null && font != null) {
             modal.layout(font, width, height);
