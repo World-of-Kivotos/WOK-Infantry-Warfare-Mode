@@ -34,6 +34,8 @@ public final class UiCase {
 
     /** Ticks a tier may take from opening to the end of its checks before it fails. */
     public static final int DEFAULT_BUDGET_TICKS = 200;
+    /** Group of the cases that finish the 14 baseline screenshots of the live flow. */
+    public static final String LEGACY_GROUP = "legacy";
 
     private final String surfaceId;
     private final String stateId;
@@ -85,6 +87,14 @@ public final class UiCase {
 
     public List<UiTier> tiers() {
         return tiers;
+    }
+
+    /**
+     * Tiers this case runs on under {@code wok.ui.tiers}. Legacy cases keep their pinned tiers:
+     * the live flow always waits for all 14 baseline screenshots, whatever the tier filter.
+     */
+    public List<UiTier> selectedTiers(String tierFilter) {
+        return LEGACY_GROUP.equals(group) ? tiers : UiTier.filter(tiers, tierFilter);
     }
 
     public boolean migrated() {

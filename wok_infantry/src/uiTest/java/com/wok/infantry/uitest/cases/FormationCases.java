@@ -36,7 +36,7 @@ public final class FormationCases {
 
     private static UiCase legacyVote() {
         return UiCase.builder("formation", "legacy")
-                .group("legacy")
+                .group(UiCase.LEGACY_GROUP)
                 .tiers(UiTier.T320, UiTier.T960)
                 .file(UiTier.T320, "wok_ui_10_formation_vote_320x240.png")
                 .file(UiTier.T960, "wok_ui_11_formation_vote_960x720.png")

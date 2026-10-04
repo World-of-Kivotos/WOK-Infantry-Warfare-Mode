@@ -71,7 +71,7 @@ public final class UiCaseRunner {
     public static int budgetTicks(List<UiCase> cases, String tierFilter) {
         int total = 0;
         for (UiCase uiCase : cases) {
-            total += 120 + UiTier.filter(uiCase.tiers(), tierFilter).size()
+            total += 120 + uiCase.selectedTiers(tierFilter).size()
                     * (uiCase.budgetTicks() + TIER_TIMEOUT_TICKS);
         }
         return total;
@@ -162,7 +162,7 @@ public final class UiCaseRunner {
             return;
         }
         current = cases.get(caseIndex);
-        tiers = UiTier.filter(current.tiers(), tierFilter);
+        tiers = current.selectedTiers(tierFilter);
         tierIndex = 0;
         caseState = new HashMap<>();
         if (tiers.isEmpty()) {

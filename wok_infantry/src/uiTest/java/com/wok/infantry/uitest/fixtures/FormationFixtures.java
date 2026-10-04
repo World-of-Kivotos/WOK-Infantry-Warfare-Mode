@@ -5,7 +5,6 @@ import com.wok.infantry.formation.FactionDefinition;
 import com.wok.infantry.formation.FormationClassRule;
 import com.wok.infantry.formation.FormationConfigData;
 import com.wok.infantry.formation.FormationDefinition;
-import com.wok.infantry.formation.FormationVehicleDefinition;
 import com.wok.infantry.formation.selection.FactionSelectionView;
 import com.wok.infantry.formation.selection.FormationSelectionSnapshot;
 import com.wok.infantry.formation.selection.FormationSelectionView;
@@ -17,6 +16,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Formation selection catalogs built from the core's real default configuration
@@ -25,7 +26,7 @@ import java.util.Map;
  * screen that shows internal ids instead of class names (player-09) is visible in the captures.
  */
 public final class FormationFixtures {
-    private static boolean capabilityWarningLogged;
+    private static final Set<String> SUMMARY_WARNINGS = ConcurrentHashMap.newKeySet();
 
     private FormationFixtures() {
     }
@@ -86,36 +87,31 @@ public final class FormationFixtures {
                 capabilities(formation));
     }
 
+    /** The server's own vehicle lines (private there, read reflectively here). */
     private static List<String> vehicles(FormationDefinition formation) {
-        Map<String, Integer> counts = new LinkedHashMap<>();
-        Map<String, Integer> cooldowns = new LinkedHashMap<>();
-        for (FormationVehicleDefinition vehicle : formation.vehicles()) {
-            counts.merge(vehicle.displayName(), 1, Integer::sum);
-            cooldowns.putIfAbsent(vehicle.displayName(), vehicle.replenishmentCooldownSeconds());
-        }
-        List<String> summaries = new ArrayList<>();
-        counts.forEach((name, count) -> {
-            int seconds = cooldowns.get(name);
-            String replenishment = seconds < 0 ? "不可再生"
-                    : seconds % 60 == 0 ? seconds / 60 + "分钟" : seconds + "秒";
-            summaries.add(name + (count > 1 ? " ×" + count : "") + "（" + replenishment + "）");
-        });
-        return summaries;
+        return serverSummaries("vehicleSummaries", formation);
     }
 
     /** The server's own capability lines (package-private there, read reflectively here). */
-    @SuppressWarnings("unchecked")
     private static List<String> capabilities(FormationDefinition formation) {
+        return serverSummaries("capabilitySummaries", formation);
+    }
+
+    /**
+     * Calls the static {@code FormationService.<method>(FormationDefinition)} that builds the
+     * summary lines of the real catalog, so the fixture never drifts from the server's wording.
+     */
+    @SuppressWarnings("unchecked")
+    private static List<String> serverSummaries(String method, FormationDefinition formation) {
         try {
-            Method method = FormationService.class.getDeclaredMethod("capabilitySummaries",
+            Method summaries = FormationService.class.getDeclaredMethod(method,
                     FormationDefinition.class);
-            method.setAccessible(true);
-            return (List<String>) method.invoke(null, formation);
+            summaries.setAccessible(true);
+            return (List<String>) summaries.invoke(null, formation);
         } catch (ReflectiveOperationException | RuntimeException exception) {
-            if (!capabilityWarningLogged) {
-                capabilityWarningLogged = true;
-                WokInfantryMod.LOGGER.warn("[UI ACCEPTANCE] Formation capability lines unavailable",
-                        exception);
+            if (SUMMARY_WARNINGS.add(method)) {
+                WokInfantryMod.LOGGER.warn("[UI ACCEPTANCE] FormationService.{} unavailable",
+                        method, exception);
             }
             return List.of();
         }

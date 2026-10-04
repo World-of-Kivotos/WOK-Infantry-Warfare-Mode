@@ -40,7 +40,7 @@ public final class AdminCases {
 
     private static UiCase list(String state, UiTier tier, String file, String size) {
         return UiCase.builder("admin", state)
-                .group("legacy")
+                .group(UiCase.LEGACY_GROUP)
                 .tiers(tier)
                 .file(tier, file)
                 .open(context -> new AdminLoadoutScreen(LoadoutFixtures.adminVisual()))
@@ -59,7 +59,7 @@ public final class AdminCases {
 
     private static UiCase classSettings() {
         return UiCase.builder("admin", "legacy_classes")
-                .group("legacy")
+                .group(UiCase.LEGACY_GROUP)
                 .tiers(UiTier.T320)
                 .file(UiTier.T320, "wok_ui_14_admin_class_settings_320x240.png")
                 .open(context -> new AdminLoadoutScreen(LoadoutFixtures.adminVisual()))

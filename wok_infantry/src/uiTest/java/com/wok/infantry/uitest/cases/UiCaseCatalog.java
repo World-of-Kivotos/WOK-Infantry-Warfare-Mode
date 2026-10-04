@@ -21,7 +21,8 @@ public final class UiCaseCatalog {
         List<UiCase> cases = new ArrayList<>();
         cases.addAll(FormationCases.cases());
         cases.addAll(AdminCases.cases());
-        return cases.stream().filter(uiCase -> "legacy".equals(uiCase.group())).toList();
+        return cases.stream().filter(uiCase -> UiCase.LEGACY_GROUP.equals(uiCase.group()))
+                .toList();
     }
 
     /** Every case after the legacy ones. */
@@ -31,6 +32,7 @@ public final class UiCaseCatalog {
         cases.addAll(FormationCases.cases());
         cases.addAll(AdminCases.cases());
         cases.addAll(HudCases.cases());
-        return cases.stream().filter(uiCase -> !"legacy".equals(uiCase.group())).toList();
+        return cases.stream().filter(uiCase -> !UiCase.LEGACY_GROUP.equals(uiCase.group()))
+                .toList();
     }
 }

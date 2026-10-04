@@ -317,7 +317,7 @@ public final class UiRuntimeAcceptanceHarness {
         // network harness and a real multiplayer server.
         minecraft.options.pauseOnLostFocus = false;
         runLiveFlow = CASE_FILTER.isEmpty() || List.of(CASE_FILTER.split(UiTier.LIST_SEPARATORS))
-                .stream().map(String::trim).anyMatch("legacy"::equals);
+                .stream().map(String::trim).anyMatch(UiCase.LEGACY_GROUP::equals);
         List<UiCase> cases = new ArrayList<>();
         if (runLiveFlow) {
             cases.addAll(UiCaseCatalog.legacy());
@@ -335,7 +335,9 @@ public final class UiRuntimeAcceptanceHarness {
         Files.createDirectories(screenshots);
         List<String> expectedFiles = new ArrayList<>(List.of(SCREENSHOTS));
         for (UiCase uiCase : selectedCases) {
-            for (UiTier tier : UiTier.filter(uiCase.tiers(), TIER_FILTER)) {
+            // Legacy cases ignore the tier filter (see UiCase.selectedTiers): the live flow always
+            // waits for all 14 baseline screenshots.
+            for (UiTier tier : uiCase.selectedTiers(TIER_FILTER)) {
                 expectedFiles.add(uiCase.fileName(tier));
             }
         }
