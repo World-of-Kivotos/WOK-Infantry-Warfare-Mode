@@ -587,8 +587,8 @@ public final class SquadScreen extends Screen {
         }
         super.render(graphics, mouseX, mouseY, partialTick);
         TacticalMapLayout.Rect footer = tabletLayout.footer();
-        BattleUiTheme.feedback(graphics, font, footer.left(), footer.right(),
-                footer.top() + 5);
+        BattleUiTheme.feedback(graphics, font, footer.left(), footer.top(), footer.right(),
+                footer.bottom());
     }
 
     private void renderSquadPage(GuiGraphics graphics, BattleSnapshot snapshot) {
