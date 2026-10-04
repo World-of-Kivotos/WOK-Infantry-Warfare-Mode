@@ -236,13 +236,14 @@ public final class ClientBootstrap {
     }
 
     /**
-     * Temporary formation entry (player-08) until the terminal's formation tab exists: the
-     * server answers a catalog request with the current snapshot and the "open" flag, and the
-     * client opens the formation page while a selection is required or a vote is open.
+     * Formation entry of the terminal and map keys while the player has no formation
+     * (player-08): the vote page opens at once (with the cached catalog, or waiting for it) and
+     * asks the server for the current one. If the server answers that nothing needs to be chosen
+     * any more, the page gives way to the squad page.
      */
     private static void openFormation(Minecraft minecraft) {
         if (!(minecraft.screen instanceof FormationSelectionScreen)) {
-            FormationClientNetworkBridge.requestCatalog();
+            FormationClientNetworkBridge.openFromTerminalKey(minecraft.screen);
         }
     }
 

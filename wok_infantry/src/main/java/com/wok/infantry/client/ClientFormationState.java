@@ -10,9 +10,19 @@ public final class ClientFormationState {
     private static final long FEEDBACK_DURATION_NANOS = 3_000_000_000L;
     private static FormationSelectionSnapshot snapshot;
     private static String feedback = "";
-    private static boolean feedbackSuccess;
+    private static FeedbackKind feedbackKind = FeedbackKind.DANGER;
     private static long feedbackExpiresAt;
     private static LockTransition lockTransition;
+
+    /**
+     * Kind of the 3-second vote-page receipt: green confirmed success, red failure, or orange
+     * "request sent, waiting for the server" (an administrator command, a join or a vote).
+     */
+    public enum FeedbackKind {
+        SUCCESS,
+        DANGER,
+        PENDING
+    }
 
     private ClientFormationState() {
     }
@@ -25,8 +35,14 @@ public final class ClientFormationState {
         snapshot = replacement;
     }
 
+    /** Server receipt: green on success, red on failure (kept for existing callers). */
     public static synchronized void feedback(boolean success, String message) {
-        feedbackSuccess = success;
+        feedback(success ? FeedbackKind.SUCCESS : FeedbackKind.DANGER, message);
+    }
+
+    /** Receipt of the given kind for 3 seconds; a blank message clears it. */
+    public static synchronized void feedback(FeedbackKind kind, String message) {
+        feedbackKind = Objects.requireNonNullElse(kind, FeedbackKind.DANGER);
         feedback = Objects.requireNonNullElse(message, "");
         feedbackExpiresAt = feedback.isBlank() ? 0L
                 : System.nanoTime() + FEEDBACK_DURATION_NANOS;
@@ -41,7 +57,11 @@ public final class ClientFormationState {
     }
 
     public static synchronized boolean feedbackSuccess() {
-        return feedbackSuccess;
+        return feedbackKind == FeedbackKind.SUCCESS;
+    }
+
+    public static synchronized FeedbackKind feedbackKind() {
+        return feedbackKind;
     }
 
     /**
@@ -62,7 +82,7 @@ public final class ClientFormationState {
     public static synchronized void clear() {
         snapshot = null;
         feedback = "";
-        feedbackSuccess = false;
+        feedbackKind = FeedbackKind.DANGER;
         feedbackExpiresAt = 0L;
         lockTransition = null;
     }

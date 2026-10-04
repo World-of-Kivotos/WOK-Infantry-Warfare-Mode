@@ -1,238 +1,111 @@
 package com.wok.infantry.client.screen;
 
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.wok.infantry.client.ClientFormationState;
 import com.wok.infantry.battle.BattleRules;
-import com.wok.infantry.formation.FormationCategory;
+import com.wok.infantry.client.ClientBattleState;
+import com.wok.infantry.client.ClientBootstrap;
+import com.wok.infantry.client.ClientFormationState;
+import com.wok.infantry.client.KeyBindingDefaults;
+import com.wok.infantry.client.hud.TacticalHud;
 import com.wok.infantry.formation.selection.FactionSelectionView;
 import com.wok.infantry.formation.selection.FormationSelectionSnapshot;
 import com.wok.infantry.formation.selection.FormationSelectionView;
-import com.wok.infantry.formation.vote.FormationVotePhase;
+import com.wok.infantry.network.battle.client.BattleClientNetworkBridge;
 import com.wok.infantry.network.formation.client.FormationClientNetworkBridge;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.FormattedCharSequence;
+import org.lwjgl.glfw.GLFW;
 
+import java.util.ArrayList;
 import java.util.List;
 
-/** Responsive tactical-board surface for faction -> category -> concrete formation. */
-public final class FormationSelectionScreen extends Screen {
+/**
+ * Faction and formation vote page of the battle terminal (preview {@code 45-formation.js} "new").
+ *
+ * <p>Flow: join a faction (confirmed) → the administrator opens the vote → vote → the
+ * administrator locks one formation (danger confirmation) → deployment. Faction keys and formation
+ * rows only change what is looked at; the join, vote, open and lock keys are separate and every
+ * disabled key says why next to it. The footer always carries the next step
+ * ({@link FormationVoteModel#step()}) unless a 3-second receipt replaces it.
+ *
+ * <p>Layouts ({@link FormationScreenLayout}): wide three areas (strip, list, detail) or, below
+ * 440 logical pixels, a list page and a detail page. Esc: an open dialog is cancelled first, the
+ * narrow detail page goes back to the list, otherwise the page closes; without a faction the
+ * action bar then says which key reopens it (user report 4).
+ */
+public final class FormationSelectionScreen extends TacticalScreen
+        implements BattleTerminalNav.Terminal {
+    /** How the page was opened, which decides what a settled snapshot does to it. */
+    public enum Entry {
+        /** Pushed by the server: closes once nothing is left to choose. */
+        SERVER,
+        /** Opened from the terminal's formation tab: stays open to show the locked result. */
+        TERMINAL,
+        /** Opened by the terminal key without a formation: falls back to the squad page. */
+        KEY
+    }
+
+    private static final int RETRY_KEY_WIDTH = 116;
+
     private FormationSelectionSnapshot snapshot;
     private final Screen returnScreen;
-    private String selectedFactionId;
-    private String selectedCategoryId;
+    private final Entry entry;
+    private String browseFactionId = "";
     private String highlightedFormationId = "";
-    private int formationPage;
-    private TacticalMapLayout.Layout tabletLayout;
-    private SelectionLayout selectionLayout;
+    private boolean detailPage;
+    private boolean rebuildPending;
+    private final FormationListWidget list = new FormationListWidget(this::highlight,
+            ignored -> castVote());
+    private final FormationDetailPanel detail = new FormationDetailPanel();
+    private FormationScreenLayout layout;
+    private UiRect actionKey = UiRect.EMPTY;
+    private int reasonLeft;
+    private UiRect actionBar = UiRect.EMPTY;
 
     public FormationSelectionScreen(FormationSelectionSnapshot snapshot, Screen returnScreen) {
-        super(Component.literal("WOK步战 · 阵营与编制"));
+        this(snapshot, returnScreen, Entry.SERVER);
+    }
+
+    /**
+     * @param snapshot     the catalog, or {@code null} to show the waiting state until it arrives
+     * @param returnScreen screen the whole terminal returns to
+     */
+    public FormationSelectionScreen(FormationSelectionSnapshot snapshot, Screen returnScreen,
+                                    Entry entry) {
+        super(Component.translatable("screen.wok_infantry.formation.title"));
         this.snapshot = snapshot;
         this.returnScreen = returnScreen;
-        this.selectedFactionId = preferredFaction(snapshot);
-        selectFirstCategoryAndFormation();
+        this.entry = entry == null ? Entry.SERVER : entry;
+        normalizeSelection();
     }
 
     public Screen returnScreen() {
         return returnScreen;
     }
 
+    @Override
+    public Screen terminalReturnScreen() {
+        return returnScreen;
+    }
+
+    public Entry entry() {
+        return entry;
+    }
+
+    /** The catalog shown, or {@code null} while waiting for it. */
+    public FormationSelectionSnapshot snapshot() {
+        return snapshot;
+    }
+
+    /** Shows a newer catalog in place: highlight, scroll position and list focus are kept. */
     public void replaceSnapshot(FormationSelectionSnapshot replacement) {
         snapshot = replacement;
-        if (snapshot.factions().stream().noneMatch(faction ->
-                faction.id().equals(selectedFactionId))) {
-            selectedFactionId = preferredFaction(snapshot);
+        normalizeSelection();
+        if (minecraft != null) {
+            rebuildKeepingFocus();
         }
-        if (formationsForSelectedCategory().isEmpty()) {
-            selectFirstCategoryAndFormation();
-        } else if (formationsForSelectedCategory().stream().noneMatch(formation ->
-                formation.id().equals(highlightedFormationId))) {
-            highlightedFormationId = formationsForSelectedCategory().get(0).id();
-        }
-        formationPage = boundedPage(formationPage, formationsForSelectedCategory().size(),
-                visibleFormationRows());
-        rebuildWidgets();
-    }
-
-    @Override
-    protected void init() {
-        tabletLayout = TacticalMapLayout.compute(width, height);
-        selectionLayout = SelectionLayout.compute(width, height, tabletLayout);
-        addFactionButtons();
-        addCategoryButtons();
-        addFormationButtons();
-        addAdministratorVoteActionButton();
-    }
-
-    private void addFactionButtons() {
-        List<FactionSelectionView> factions = snapshot.factions();
-        if (factions.isEmpty()) {
-            return;
-        }
-        int gap = 3;
-        int available = selectionLayout.right - selectionLayout.left
-                - gap * (factions.size() - 1);
-        int buttonWidth = Math.max(1, available / factions.size());
-        for (int index = 0; index < factions.size(); index++) {
-            FactionSelectionView faction = factions.get(index);
-            int left = selectionLayout.left + index * (buttonWidth + gap);
-            int right = index == factions.size() - 1 ? selectionLayout.right
-                    : left + buttonWidth;
-            String label = faction.displayName() + "  " + faction.population()
-                    + "/" + faction.capacity();
-            TacticalBoardButton button = new TacticalBoardButton(left,
-                    selectionLayout.factionTop, right - left, 20, Component.literal(label),
-                    ignored -> {
-                        selectedFactionId = faction.id();
-                        formationPage = 0;
-                        selectFirstCategoryAndFormation();
-                        if (snapshot.selectedFactionId().isBlank()) {
-                            FormationClientNetworkBridge.selectFaction(snapshot.generation(),
-                                    faction.id());
-                        }
-                        rebuildWidgets();
-                    }, TacticalBoardButton.Kind.NAVIGATION,
-                    faction.id().equals(selectedFactionId), TacticalBoardTheme.FRIENDLY);
-            button.active = snapshot.selectedFactionId().isBlank()
-                    ? faction.available() : faction.id().equals(snapshot.selectedFactionId());
-            addRenderableWidget(button);
-        }
-    }
-
-    private void addCategoryButtons() {
-        FormationCategory[] categories = FormationCategory.values();
-        int gap = 2;
-        int available = selectionLayout.right - selectionLayout.left
-                - gap * (categories.length - 1);
-        int buttonWidth = Math.max(1, available / categories.length);
-        FactionSelectionView faction = selectedFaction();
-        for (int index = 0; index < categories.length; index++) {
-            FormationCategory category = categories[index];
-            int left = selectionLayout.left + index * (buttonWidth + gap);
-            int right = index == categories.length - 1 ? selectionLayout.right
-                    : left + buttonWidth;
-            boolean present = faction != null && faction.formations().stream().anyMatch(
-                    formation -> category.id().equals(formation.categoryId()));
-            TacticalBoardButton button = new TacticalBoardButton(left,
-                    selectionLayout.categoryTop, right - left, 19,
-                    Component.literal(category.displayName()), ignored -> {
-                        selectedCategoryId = category.id();
-                        formationPage = 0;
-                        highlightedFormationId = formationsForSelectedCategory().stream()
-                                .map(FormationSelectionView::id).findFirst().orElse("");
-                        rebuildWidgets();
-                    }, TacticalBoardButton.Kind.TOGGLE,
-                    category.id().equals(selectedCategoryId), TacticalBoardTheme.ACCENT);
-            button.active = present;
-            addRenderableWidget(button);
-        }
-    }
-
-    private void addFormationButtons() {
-        List<FormationSelectionView> formations = formationsForSelectedCategory();
-        int rows = visibleFormationRows();
-        formationPage = boundedPage(formationPage, formations.size(), rows);
-        int start = formationPage * rows;
-        int end = Math.min(formations.size(), start + rows);
-        FactionSelectionView faction = selectedFaction();
-        for (int index = start; index < end; index++) {
-            FormationSelectionView formation = formations.get(index);
-            int y = selectionLayout.listTop + (index - start) * 23;
-            String label = formation.displayName() + "  " + formation.population()
-                    + "/" + formation.capacity()
-                    + (snapshot.votePhase() == FormationVotePhase.NOT_STARTED ? ""
-                    : "  票 " + snapshot.voteTally().getOrDefault(formation.id(), 0));
-            TacticalBoardButton button = new TacticalBoardButton(selectionLayout.listLeft, y,
-                    selectionLayout.listRight - selectionLayout.listLeft, 20,
-                    Component.literal(label), ignored -> {
-                        highlightedFormationId = formation.id();
-                        if (faction != null) {
-                            if (snapshot.votePhase() == FormationVotePhase.OPEN
-                                    && faction.id().equals(snapshot.selectedFactionId())) {
-                                FormationClientNetworkBridge.vote(snapshot.generation(),
-                                        formation.id());
-                            }
-                        }
-                    }, TacticalBoardButton.Kind.CONTROL,
-                    formation.id().equals(highlightedFormationId), TacticalBoardTheme.SELECTED);
-            button.active = faction != null && faction.available() && formation.available()
-                    && snapshot.votePhase() == FormationVotePhase.OPEN
-                    && faction.id().equals(snapshot.selectedFactionId())
-                    && (snapshot.ownVoteFormationId().isBlank()
-                    || snapshot.voteChangeAllowed()
-                    || formation.id().equals(snapshot.ownVoteFormationId()));
-            addRenderableWidget(button);
-        }
-        if (pageCount(formations.size(), rows) > 1) {
-            int pagerY = selectionLayout.bodyBottom - 20;
-            TacticalBoardButton previous = new TacticalBoardButton(selectionLayout.listLeft,
-                    pagerY, 24, 17, Component.literal("‹"), ignored -> {
-                        formationPage = Math.max(0, formationPage - 1);
-                        rebuildWidgets();
-                    }, TacticalBoardButton.Kind.NAVIGATION, false,
-                    TacticalBoardTheme.ACCENT);
-            previous.active = formationPage > 0;
-            addRenderableWidget(previous);
-            TacticalBoardButton next = new TacticalBoardButton(selectionLayout.listRight - 24,
-                    pagerY, 24, 17, Component.literal("›"), ignored -> {
-                        formationPage = Math.min(pageCount(formations.size(), rows) - 1,
-                                formationPage + 1);
-                        rebuildWidgets();
-                    }, TacticalBoardButton.Kind.NAVIGATION, false,
-                    TacticalBoardTheme.ACCENT);
-            next.active = formationPage + 1 < pageCount(formations.size(), rows);
-            addRenderableWidget(next);
-        }
-    }
-
-    private void addAdministratorVoteActionButton() {
-        if (!administratorVoteActionVisible()) {
-            return;
-        }
-        FormationSelectionView formation = highlightedFormation();
-        TacticalMapLayout.Rect footer = tabletLayout.footer();
-        int buttonWidth = Math.min(132, Math.max(92, footer.width() / 3));
-        int buttonHeight = Math.max(12, footer.height() - 2);
-        boolean opening = snapshot.votePhase() == FormationVotePhase.NOT_STARTED;
-        TacticalBoardButton action = new TacticalBoardButton(footer.right() - buttonWidth - 2,
-                footer.top() + 1, buttonWidth, buttonHeight,
-                Component.literal(opening ? "管理员开启投票" : "管理员锁定"),
-                ignored -> runAdministratorVoteAction(),
-                TacticalBoardButton.Kind.CONTROL, false, TacticalBoardTheme.ACCENT);
-        action.active = opening || formation != null && formation.available();
-        addRenderableWidget(action);
-    }
-
-    private boolean administratorVoteActionVisible() {
-        return minecraft != null && minecraft.player != null
-                && minecraft.player.hasPermissions(BattleRules.ADMIN_PERMISSION_LEVEL)
-                && snapshot.votePhase() != FormationVotePhase.LOCKED
-                && !snapshot.selectedFactionId().isBlank();
-    }
-
-    private void runAdministratorVoteAction() {
-        if (!administratorVoteActionVisible() || minecraft == null
-                || minecraft.player == null || minecraft.player.connection == null) {
-            ClientFormationState.feedback(false, "当前无法管理编制投票");
-            return;
-        }
-        if (snapshot.votePhase() == FormationVotePhase.NOT_STARTED) {
-            ClientFormationState.feedback(true, "正在开启编制投票");
-            minecraft.player.connection.sendCommand(administratorOpenVoteCommand(
-                    snapshot.selectedFactionId()));
-            return;
-        }
-        FormationSelectionView formation = highlightedFormation();
-        if (formation == null || !formation.available()) {
-            ClientFormationState.feedback(false, "当前编制无法锁定");
-            return;
-        }
-        ClientFormationState.feedback(true, "正在锁定：" + formation.displayName());
-        minecraft.player.connection.sendCommand(administratorLockCommand(
-                snapshot.selectedFactionId(), formation.id()));
     }
 
     static String administratorOpenVoteCommand(String factionId) {
@@ -243,261 +116,721 @@ public final class FormationSelectionScreen extends Screen {
         return "battle admin formation vote lock " + factionId + " " + formationId;
     }
 
-    @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        if (tabletLayout == null || selectionLayout == null) {
-            tabletLayout = TacticalMapLayout.compute(width, height);
-            selectionLayout = SelectionLayout.compute(width, height, tabletLayout);
-        }
-        TacticalBoardChrome.renderShell(graphics, width, height, tabletLayout);
-        TacticalBoardChrome.renderHeader(graphics, font, tabletLayout, title,
-                Component.literal(identityText()), true);
-
-        TacticalBoardTheme.raisedPanel(graphics, selectionLayout.left,
-                selectionLayout.bodyTop, selectionLayout.listRight,
-                selectionLayout.bodyBottom, TacticalBoardTheme.BOARD_ALT);
-        TacticalBoardTheme.sectionHeader(graphics, font, "具体编制",
-                selectionLayout.listLeft, selectionLayout.bodyTop + 3,
-                selectionLayout.listRight, TacticalBoardTheme.SECTION);
-
-        if (!selectionLayout.compact) {
-            TacticalBoardTheme.raisedPanel(graphics, selectionLayout.detailLeft,
-                    selectionLayout.bodyTop, selectionLayout.right,
-                    selectionLayout.bodyBottom, TacticalBoardTheme.BOARD_ALT);
-            renderDetails(graphics, selectionLayout.detailLeft + 6,
-                    selectionLayout.bodyTop + 4,
-                    selectionLayout.right - selectionLayout.detailLeft - 12,
-                    selectionLayout.bodyBottom - 6);
-        } else {
-            int detailsTop = selectionLayout.listTop
-                    + visibleFormationRows() * 23 + 2;
-            renderDetails(graphics, selectionLayout.listLeft + 4, detailsTop,
-                    selectionLayout.listRight - selectionLayout.listLeft - 8,
-                    selectionLayout.bodyBottom - 3);
-        }
-
-        String feedback = ClientFormationState.feedback();
-        int footerLeft = tabletLayout.footer().left() + 4;
-        int footerRight = administratorVoteActionVisible()
-                ? tabletLayout.footer().right()
-                - Math.min(132, Math.max(92, tabletLayout.footer().width() / 3)) - 6
-                : tabletLayout.footer().right() - 4;
-        int footerTextWidth = Math.max(1, footerRight - footerLeft);
-        // Shadowless and ellipsized like every other WOK步战 text.
-        if (!feedback.isBlank()) {
-            TextFit.draw(graphics, font, feedback, footerLeft,
-                    tabletLayout.footer().top() + 7, footerTextWidth,
-                    ClientFormationState.feedbackSuccess()
-                            ? TacticalBoardTheme.SUCCESS : TacticalBoardTheme.DANGER,
-                    TextFit.Align.CENTER);
-        } else {
-            TextFit.draw(graphics, font, voteStatusText(), footerLeft,
-                    tabletLayout.footer().top() + 7, footerTextWidth, TacticalBoardTheme.MUTED,
-                    TextFit.Align.CENTER);
-        }
-        super.render(graphics, mouseX, mouseY, partialTick);
+    /** Current page state (recomputed on demand; cheap). */
+    FormationVoteModel model() {
+        return FormationVoteModel.of(snapshot, browseFactionId, highlightedFormationId,
+                isAdministrator());
     }
 
-    private String voteStatusText() {
-        return switch (snapshot.votePhase()) {
-            case NOT_STARTED -> snapshot.selectedFactionId().isBlank()
-                    ? "阵营 → 大类别 → 具体编制"
-                    : "等待管理员开启编制投票 · Esc 暂时关闭";
-            case OPEN -> snapshot.ownVoteFormationId().isBlank()
-                    ? "编制投票进行中 · Esc 暂时关闭"
-                    : "已投：" + formationDisplayName(snapshot.ownVoteFormationId())
-                    + (snapshot.voteChangeAllowed() ? " · 可改票" : " · 不可改票")
-                    + " · Esc 暂时关闭";
-            case LOCKED -> "阵营共享编制："
-                    + formationDisplayName(snapshot.lockedFormationId());
-        };
-    }
-
-    private String formationDisplayName(String formationId) {
-        return snapshot.factions().stream()
-                .flatMap(faction -> faction.formations().stream())
-                .filter(formation -> formation.id().equals(formationId))
-                .map(FormationSelectionView::displayName)
-                .findFirst().orElse(formationId);
-    }
-
-    private void renderDetails(GuiGraphics graphics, int x, int y, int maxWidth,
-                               int bottom) {
-        FormationSelectionView formation = highlightedFormation();
-        if (formation == null || maxWidth <= 8 || bottom <= y) {
+    private void normalizeSelection() {
+        if (snapshot == null) {
             return;
         }
-        TacticalBoardTheme.sectionHeader(graphics, font, formation.displayName(), x, y,
-                x + maxWidth, formation.available()
-                        ? TacticalBoardTheme.ACCENT : TacticalBoardTheme.DANGER);
-        ResourceLocation icon = formation.iconId().isBlank() ? null
-                : ResourceLocation.tryParse(formation.iconId());
-        boolean compact = selectionLayout != null && selectionLayout.compact;
-        if (icon != null && compact) {
-            renderFormationIcon(graphics, icon, x + maxWidth - 13, y + 1, 12);
+        FormationVoteModel probe = FormationVoteModel.of(snapshot, browseFactionId,
+                highlightedFormationId, false);
+        String previousFaction = browseFactionId;
+        browseFactionId = probe.browsing() == null ? "" : probe.browsing().id();
+        FormationSelectionView highlighted = probe.highlighted();
+        highlightedFormationId = highlighted == null ? "" : highlighted.id();
+        if (!previousFaction.equals(browseFactionId)) {
+            detail.reset();
         }
-        y += 18;
-        int iconSize = icon == null || compact ? 0 : Math.min(48,
-                Math.max(24, maxWidth / 4));
-        int descriptionWidth = iconSize == 0 ? maxWidth - 4
-                : Math.max(1, maxWidth - iconSize - 10);
-        int descriptionBottom = y;
-        if (iconSize > 0) {
-            renderFormationIcon(graphics, icon, x + maxWidth - iconSize, y, iconSize);
-            descriptionBottom = y + iconSize;
+    }
+
+    private boolean isAdministrator() {
+        return minecraft != null && minecraft.player != null
+                && minecraft.player.hasPermissions(BattleRules.ADMIN_PERMISSION_LEVEL);
+    }
+
+    // ---- widgets ------------------------------------------------------------------------------------
+
+    @Override
+    protected void initTactical() {
+        rebuildPending = false;
+        FormationVoteModel model = model();
+        TacticalShellLayout.Metrics metrics = TacticalShellLayout.Metrics.forSize(width, height);
+        boolean waiting = model.stage() == FormationVoteModel.Stage.WAITING
+                || model.stage() == FormationVoteModel.Stage.EMPTY;
+        if (!FormationScreenLayout.narrow(width, height)) {
+            detailPage = false;
         }
-        y = drawWrapped(graphics, formation.description(), x + 2, y,
-                descriptionWidth, TacticalBoardTheme.TEXT, bottom, 3);
-        if (iconSize > 0) {
-            y = Math.max(y, descriptionBottom);
+        int listNeed = waiting ? 0
+                : FormationListWidget.naturalHeight(model.browsing(), metrics);
+        int joinWidth = waiting || model.joined() ? 0
+                : font.width(FormationText.joinLabel(model).get(0)) + 34;
+        layout = FormationScreenLayout.compute(width, height,
+                waiting ? 0 : model.snapshot().factions().size(), model.joined(),
+                model.admin().visible(), detailPage, waiting, listNeed, joinWidth);
+        actionKey = UiRect.EMPTY;
+        actionBar = UiRect.EMPTY;
+        if (model.joined()) {
+            TacticalTabStrip strip = BattleTab.strip(BattleTab.FORMATION,
+                    tab -> tab == BattleTab.FORMATION || model.hasFormation() ? null
+                            : FormationText.tabLockedReason(), this::navigate);
+            addRenderableWidget(strip);
+            setTabStrip(strip);
+            TacticalBoardChrome.placeTabs(font, shellLayout(), FormationText.title(width), strip);
         }
-        if (!formation.unavailableReason().isBlank()) {
-            y = drawWrapped(graphics, "不可用：" + formation.unavailableReason(), x + 2,
-                    y + 2, maxWidth - 4, TacticalBoardTheme.DANGER, bottom, 2);
+        switch (layout.mode()) {
+            case WAITING -> addRetryKey();
+            case WIDE -> {
+                addFactionKeys(model);
+                addJoinKey(model, layout.joinKey(), true);
+                addList(model, metrics);
+                addAdminKey(model);
+                addVoteKey(model, layout.detailAction(), layout.detailAction().left());
+            }
+            case NARROW_LIST -> {
+                addFactionKeys(model);
+                addList(model, metrics);
+                addAdminKey(model);
+                addDetailsKey(model);
+                if (model.joined()) {
+                    addVoteKey(model, layout.actionBar(), layout.detailsKey().right() + 4);
+                } else {
+                    addJoinKey(model, layout.mainKey(), false);
+                }
+            }
+            case NARROW_DETAIL -> {
+                addRenderableWidget(BattleUiButton.builder(FormationText.listKey(), ignored -> {
+                            detailPage = false;
+                            requestRebuild();
+                        }).icon(TacticalIcon.BACK)
+                        .bounds(layout.crumbBack().left(), layout.crumbBack().top(),
+                                layout.crumbBack().width(), layout.crumbBack().height())
+                        .build());
+                addVoteKey(model, layout.detailAction(), layout.detailAction().left());
+            }
         }
-        y = drawList(graphics, "能力", formation.capabilities(), x + 2, y + 3,
-                maxWidth - 4, TacticalBoardTheme.ACCENT, bottom, 3);
-        y = drawList(graphics, "兵种", formation.classes(), x + 2, y + 2,
-                maxWidth - 4, TacticalBoardTheme.TEXT, bottom, 2);
-        y = drawList(graphics, "小队", formation.squads(), x + 2, y + 2,
-                maxWidth - 4, TacticalBoardTheme.MUTED_TEXT, bottom, 2);
-        drawList(graphics, "载具", formation.vehicles(), x + 2, y + 2,
-                maxWidth - 4, TacticalBoardTheme.MUTED_TEXT, bottom, 2);
     }
 
-    private static void renderFormationIcon(GuiGraphics graphics, ResourceLocation icon,
-                                            int x, int y, int size) {
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-        graphics.blit(icon, x, y, size, size, 0.0F, 0.0F,
-                256, 256, 256, 256);
-        RenderSystem.disableBlend();
-    }
-
-    private int drawList(GuiGraphics graphics, String label, List<String> entries,
-                         int x, int y, int maxWidth, int color, int bottom, int maxLines) {
-        String value = entries.isEmpty() ? "无" : String.join("、", entries);
-        return drawWrapped(graphics, label + "：" + value, x, y, maxWidth, color,
-                bottom, maxLines);
-    }
-
-    private int drawWrapped(GuiGraphics graphics, String value, int x, int y,
-                            int maxWidth, int color, int bottom, int maxLines) {
-        if (value == null || value.isBlank() || y >= bottom) {
-            return y;
+    private void addFactionKeys(FormationVoteModel model) {
+        List<FactionSelectionView> factions = model.snapshot().factions();
+        for (int index = 0; index < factions.size() && index < layout.factionKeys().size();
+             index++) {
+            FactionSelectionView faction = factions.get(index);
+            UiRect rect = layout.factionKeys().get(index);
+            FormationFactionButton key = new FormationFactionButton(rect.left(), rect.top(),
+                    rect.width(), rect.height(), Component.literal(faction.displayName()),
+                    FormationText.factionBadge(model, faction), model.factionLook(faction),
+                    ignored -> browse(faction.id()));
+            key.setTooltip(Tooltip.create(FormationText.factionTooltip(model, faction)));
+            addRenderableWidget(key);
         }
-        List<FormattedCharSequence> lines = font.split(Component.literal(value),
-                Math.max(1, maxWidth));
-        int visible = Math.min(Math.min(lines.size(), maxLines),
-                Math.max(0, (bottom - y) / 10));
-        for (int index = 0; index < visible; index++) {
-            graphics.drawString(font, lines.get(index), x, y + index * 10, color, false);
+    }
+
+    private void addJoinKey(FormationVoteModel model, UiRect rect, boolean wide) {
+        if (rect.isEmpty() || model.joined()) {
+            return;
         }
-        return y + visible * 10;
+        FormationVoteModel.JoinAction join = model.joinAction();
+        List<Component> labels = FormationText.joinLabel(model);
+        Component label = FormationDetailPanel.pick(font, labels, Math.max(0,
+                rect.width() - 20));
+        Button key = BattleUiButton.builder(label, ignored -> confirmJoin())
+                .kind(BattleUiButton.Kind.SUCCESS)
+                .icon(join.enabled() ? TacticalIcon.CHECK : TacticalIcon.LOCK)
+                .bounds(rect.left(), rect.top(), rect.width(), rect.height()).build();
+        key.active = join.enabled();
+        key.setTooltip(Tooltip.create(join.enabled() ? labels.get(0)
+                : FormationText.step(model).get(0)));
+        addRenderableWidget(key);
     }
 
-    private String identityText() {
-        FactionSelectionView faction = selectedFaction();
-        FormationCategory category = FormationCategory.byId(selectedCategoryId).orElse(null);
-        String factionText = faction == null ? "未选择阵营" : faction.displayName();
-        return category == null ? factionText : factionText + " · " + category.displayName();
+    private void addList(FormationVoteModel model, TacticalShellLayout.Metrics metrics) {
+        list.update(model, metrics, layout.well());
+        addRenderableWidget(list.widget());
     }
 
-    private FactionSelectionView selectedFaction() {
-        return snapshot.factions().stream()
-                .filter(faction -> faction.id().equals(selectedFactionId)).findFirst()
-                .orElse(null);
-    }
-
-    private List<FormationSelectionView> formationsForSelectedCategory() {
-        FactionSelectionView faction = selectedFaction();
-        return faction == null ? List.of() : faction.formations().stream()
-                .filter(formation -> formation.categoryId().equals(selectedCategoryId)).toList();
-    }
-
-    private FormationSelectionView highlightedFormation() {
-        List<FormationSelectionView> formations = formationsForSelectedCategory();
-        return formations.stream().filter(formation ->
-                        formation.id().equals(highlightedFormationId)).findFirst()
-                .orElseGet(() -> formations.stream().findFirst().orElse(null));
-    }
-
-    private void selectFirstCategoryAndFormation() {
-        FactionSelectionView faction = selectedFaction();
-        FormationSelectionView first = faction == null ? null : faction.formations().stream()
-                .filter(FormationSelectionView::available).findFirst()
-                .orElseGet(() -> faction.formations().stream().findFirst().orElse(null));
-        selectedCategoryId = first == null ? FormationCategory.INFANTRY.id()
-                : first.categoryId();
-        highlightedFormationId = first == null ? "" : first.id();
-    }
-
-    private int visibleFormationRows() {
-        if (selectionLayout == null) {
-            return 4;
+    private void addAdminKey(FormationVoteModel model) {
+        FormationVoteModel.AdminState admin = model.admin();
+        if (!admin.visible() || layout.adminKey().isEmpty()) {
+            return;
         }
-        int availableHeight = selectionLayout.bodyBottom - selectionLayout.listTop
-                - (selectionLayout.compact ? 58 : 22);
-        return Math.max(1, Math.min(7, availableHeight / 23));
-    }
-
-    private static String preferredFaction(FormationSelectionSnapshot snapshot) {
-        if (!snapshot.selectedFactionId().isBlank()) {
-            return snapshot.selectedFactionId();
+        UiRect rect = layout.adminKey();
+        Button key;
+        if (admin.opening()) {
+            key = BattleUiButton.builder(FormationText.adminOpenKey(), ignored -> openVote())
+                    .icon(TacticalIcon.UNLOCK)
+                    .bounds(rect.left(), rect.top(), rect.width(), rect.height()).build();
+            key.active = admin.openEnabled();
+        } else {
+            key = BattleUiButton.builder(FormationText.adminLockKey(), ignored -> confirmLock())
+                    .kind(BattleUiButton.Kind.DANGER).icon(TacticalIcon.LOCK)
+                    .bounds(rect.left(), rect.top(), rect.width(), rect.height()).build();
+            key.active = admin.lockEnabled();
+            if (!admin.lockEnabled()) {
+                key.setTooltip(Tooltip.create(FormationText.adminDetail(model).get(0)));
+            }
         }
-        return snapshot.factions().stream().filter(FactionSelectionView::available)
-                .map(FactionSelectionView::id).findFirst()
-                .orElseGet(() -> snapshot.factions().stream().map(FactionSelectionView::id)
-                        .findFirst().orElse(""));
+        addRenderableWidget(key);
     }
 
-    private static int boundedPage(int requested, int itemCount, int pageSize) {
-        return Math.max(0, Math.min(requested, pageCount(itemCount, pageSize) - 1));
+    private void addDetailsKey(FormationVoteModel model) {
+        UiRect rect = layout.detailsKey();
+        if (rect.isEmpty()) {
+            return;
+        }
+        Button key = BattleUiButton.builder(FormationText.detailsKey(), ignored -> {
+                    detailPage = true;
+                    requestRebuild();
+                }).icon(TacticalIcon.EYE)
+                .bounds(rect.left(), rect.top(), rect.width(), rect.height()).build();
+        key.active = model.highlighted() != null;
+        addRenderableWidget(key);
     }
 
-    private static int pageCount(int itemCount, int pageSize) {
-        return Math.max(1, (itemCount + Math.max(1, pageSize) - 1)
-                / Math.max(1, pageSize));
+    /** Vote key at the right of {@code bar}; the reason line takes the room left of it. */
+    private void addVoteKey(FormationVoteModel model, UiRect bar, int left) {
+        if (bar.isEmpty() || model.highlighted() == null) {
+            return;
+        }
+        FormationVoteModel.VoteAction action = model.voteAction();
+        Component label = FormationText.voteLabel(action);
+        boolean icon = action.buttonIcon() != null || action.mine();
+        int minimum = layout.shell().metrics().tight() ? 84 : 104;
+        int width = Math.min(Math.max(font.width(label) + (icon ? 30 : 18), minimum),
+                (int) Math.floor((bar.right() - left) * 0.6D));
+        actionBar = bar;
+        reasonLeft = left;
+        actionKey = new UiRect(bar.right() - width, bar.top(), bar.right(), bar.bottom());
+        if (action.mine()) {
+            return;
+        }
+        BattleUiButton.Builder builder = BattleUiButton.builder(label, ignored -> onVoteKey())
+                .kind(action.label() == FormationVoteModel.VoteLabel.DEPLOY
+                        ? BattleUiButton.Kind.NORMAL : BattleUiButton.Kind.SUCCESS);
+        if (action.buttonIcon() != null) {
+            builder.icon(action.buttonIcon());
+        }
+        builder.bounds(actionKey.left(), actionKey.top(), actionKey.width(), actionKey.height());
+        Button key = builder.build();
+        key.active = action.enabled();
+        addRenderableWidget(key);
+    }
+
+    private void addRetryKey() {
+        UiRect retry = waitingGeometry().retry();
+        addRenderableWidget(BattleUiButton.builder(FormationText.retryKey(), ignored -> retry())
+                .kind(BattleUiButton.Kind.CONTROL).icon(TacticalIcon.REFRESH)
+                .bounds(retry.left(), retry.top(), retry.width(), retry.height()).build());
+    }
+
+    // ---- actions ------------------------------------------------------------------------------------
+
+    private void browse(String factionId) {
+        FormationVoteModel model = model();
+        FactionSelectionView faction = model.snapshot() == null ? null
+                : model.snapshot().faction(factionId);
+        if (faction == null || !model.factionClickable(faction)
+                || factionId.equals(browseFactionId)) {
+            return;
+        }
+        browseFactionId = factionId;
+        highlightedFormationId = FormationVoteModel.initialHighlight(snapshot, faction);
+        detail.reset();
+        requestRebuild();
+    }
+
+    private void highlight(FormationSelectionView formation) {
+        if (formation == null || formation.id().equals(highlightedFormationId)) {
+            return;
+        }
+        highlightedFormationId = formation.id();
+        requestRebuild();
+    }
+
+    private void confirmJoin() {
+        FormationVoteModel model = model();
+        FactionSelectionView faction = model.browsing();
+        if (faction == null || model.joined() || !model.joinAction().enabled()) {
+            return;
+        }
+        String factionId = faction.id();
+        openModal(TacticalConfirmDialog.builder(FormationText.joinConfirmTitle(faction),
+                        FormationText.joinConfirmBody(model, faction))
+                .confirmLabel(FormationText.joinConfirmOk())
+                .cancelLabel(FormationText.joinConfirmCancel())
+                .onConfirm(() -> {
+                    if (snapshot == null) {
+                        return;
+                    }
+                    FormationClientNetworkBridge.selectFaction(snapshot.generation(), factionId);
+                    ClientFormationState.feedback(ClientFormationState.FeedbackKind.PENDING,
+                            FormationText.pendingJoin(faction));
+                })
+                .build());
+    }
+
+    private void onVoteKey() {
+        FormationVoteModel model = model();
+        FormationVoteModel.VoteAction action = model.voteAction();
+        if (action.label() == FormationVoteModel.VoteLabel.DEPLOY && action.enabled()) {
+            if (minecraft != null) {
+                minecraft.setScreen(returnScreen);
+            }
+            BattleClientNetworkBridge.openDeploymentScreen();
+            return;
+        }
+        castVote();
+    }
+
+    /** Casts the vote for the highlighted formation when its key is live (Enter does the same). */
+    private void castVote() {
+        FormationVoteModel model = model();
+        FormationSelectionView formation = model.highlighted();
+        if (formation == null || snapshot == null || !model.enterVotes()) {
+            return;
+        }
+        FormationClientNetworkBridge.vote(snapshot.generation(), formation.id());
+        ClientFormationState.feedback(ClientFormationState.FeedbackKind.PENDING,
+                FormationText.pendingVote(formation));
+    }
+
+    private void openVote() {
+        FormationVoteModel model = model();
+        FactionSelectionView own = model.joinedFaction();
+        if (own == null || !model.admin().openEnabled() || !sendCommand(
+                administratorOpenVoteCommand(own.id()))) {
+            ClientFormationState.feedback(false, FormationText.cannotManage());
+            return;
+        }
+        ClientFormationState.feedback(ClientFormationState.FeedbackKind.PENDING,
+                FormationText.pendingOpen());
+    }
+
+    private void confirmLock() {
+        FormationVoteModel model = model();
+        FactionSelectionView own = model.joinedFaction();
+        FormationSelectionView target = model.highlighted();
+        if (own == null || target == null || !model.admin().lockEnabled()) {
+            ClientFormationState.feedback(false, FormationText.cannotLock());
+            return;
+        }
+        String factionId = own.id();
+        String formationId = target.id();
+        openModal(TacticalConfirmDialog.builder(FormationText.lockConfirmTitle(own),
+                        FormationText.lockConfirmBody(model, target))
+                .danger(true)
+                .confirmLabel(FormationText.lockConfirmOk())
+                .onConfirm(() -> {
+                    if (!sendCommand(administratorLockCommand(factionId, formationId))) {
+                        ClientFormationState.feedback(false, FormationText.cannotManage());
+                        return;
+                    }
+                    ClientFormationState.feedback(ClientFormationState.FeedbackKind.PENDING,
+                            FormationText.pendingLock(target));
+                })
+                .build());
+    }
+
+    /** Administrator actions stay chat commands: the command tree checks the permission. */
+    private boolean sendCommand(String command) {
+        if (!isAdministrator() || minecraft.player.connection == null) {
+            return false;
+        }
+        minecraft.player.connection.sendCommand(command);
+        return true;
+    }
+
+    private void retry() {
+        FormationClientNetworkBridge.requestCatalog();
+        ClientFormationState.feedback(ClientFormationState.FeedbackKind.PENDING,
+                net.minecraft.client.resources.language.I18n.get(
+                        FormationText.PREFIX + "feedback.retrying"));
+    }
+
+    private void navigate(BattleTab tab) {
+        if (tab == null || tab == BattleTab.FORMATION) {
+            return;
+        }
+        if (!BattleTerminalNav.navigate(this, tab) && tab == BattleTab.CLASSES) {
+            BattleTerminalNav.show(new SquadScreen(returnScreen));
+        }
+    }
+
+    private void requestRebuild() {
+        rebuildPending = true;
+    }
+
+    private void rebuildKeepingFocus() {
+        boolean listFocused = getFocused() == list.widget();
+        rebuildWidgets();
+        if (listFocused && children().contains(list.widget())) {
+            setFocused(list.widget());
+        }
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (rebuildPending && minecraft != null) {
+            rebuildKeepingFocus();
+        }
+    }
+
+    // ---- rendering ----------------------------------------------------------------------------------
+
+    @Override
+    protected void renderTactical(GuiGraphics graphics, int mouseX, int mouseY,
+                                  float partialTick) {
+        if (layout == null) {
+            renderWidgets(graphics, mouseX, mouseY, partialTick);
+            return;
+        }
+        FormationVoteModel model = model();
+        TacticalBoardChrome.ShellSpec spec = TacticalBoardChrome.ShellSpec
+                .of(FormationText.title(width))
+                .withIdentity(FormationText.identity(model, ClientBattleState.snapshot()))
+                .withLink(model.waiting() ? TacticalBoardChrome.LinkState.WAIT
+                        : TacticalBoardChrome.LinkState.OK)
+                .withTabs(tabStrip())
+                .withHints(hints(model))
+                .withFeedback(footer(model));
+        drawShell(graphics, spec);
+        switch (layout.mode()) {
+            case WAITING -> renderWaiting(graphics, model);
+            case WIDE -> {
+                renderStrip(graphics, model);
+                renderListPanel(graphics, model, false);
+                detail.render(graphics, font, layout, model);
+                renderAction(graphics, model);
+            }
+            case NARROW_LIST -> {
+                renderListPanel(graphics, model, true);
+                if (model.joined()) {
+                    renderAction(graphics, model);
+                }
+            }
+            case NARROW_DETAIL -> {
+                renderCrumb(graphics, model, mouseX, mouseY);
+                detail.render(graphics, font, layout, model);
+                renderAction(graphics, model);
+            }
+        }
+        renderWidgets(graphics, mouseX, mouseY, partialTick);
+    }
+
+    private List<TacticalBoardChrome.KeyHint> hints(FormationVoteModel model) {
+        Component terminalKey = ClientBootstrap.keyLabel(KeyBindingDefaults.Binding.TERMINAL);
+        List<TacticalBoardChrome.KeyHint> hints = new ArrayList<>();
+        Component esc = FormationText.escClose(model.joined(), terminalKey);
+        if (layout.mode() == FormationScreenLayout.Mode.WAITING) {
+            hints.add(TacticalBoardChrome.KeyHint.literal("R", FormationText.hintRetry()));
+            hints.add(TacticalBoardChrome.KeyHint.literal("Esc", esc));
+            return hints;
+        }
+        boolean detailView = layout.mode() == FormationScreenLayout.Mode.NARROW_DETAIL;
+        hints.add(TacticalBoardChrome.KeyHint.literal("Esc",
+                detailView ? FormationText.hintBackToList() : esc));
+        if (model.enterVotes()) {
+            hints.add(TacticalBoardChrome.KeyHint.literal("Enter",
+                    FormationText.voteLabel(model.voteAction())));
+        }
+        hints.add(TacticalBoardChrome.KeyHint.of(FormationText.hintWheel(),
+                detailView ? FormationText.hintScroll() : FormationText.hintBrowse()));
+        if (tabStrip() != null) {
+            hints.add(TacticalBoardChrome.KeyHint.switchTab());
+        }
+        return hints;
+    }
+
+    /** Footer receipt: the 3-second server/pending receipt, otherwise the next step. */
+    private TacticalBoardChrome.Feedback footer(FormationVoteModel model) {
+        TacticalBoardChrome.Feedback receipt = TacticalBoardChrome.Feedback.fromFormation();
+        if (receipt != null) {
+            return receipt;
+        }
+        UiRect footer = layout.shell().footer();
+        int room = (int) Math.floor(footer.width() * (layout.shell().tight() ? 0.62D : 0.5D))
+                - 16;
+        return TacticalBoardChrome.Feedback.notice(FormationDetailPanel.pick(font,
+                FormationText.step(model), room));
+    }
+
+    private void renderStrip(GuiGraphics graphics, FormationVoteModel model) {
+        UiRect area = layout.status();
+        if (area.width() < 24) {
+            return;
+        }
+        int textY = area.top() + Math.floorDiv(area.height() - 8, 2);
+        if (!model.joined()) {
+            Component note = FormationDetailPanel.pick(font, FormationText.joinNote(model),
+                    area.width());
+            TextFit.draw(graphics, font, note, area.left(), textY, area.width(),
+                    TacticalBoardTheme.TEXT, TextFit.Align.RIGHT);
+            return;
+        }
+        statusLine(graphics, area, textY, FormationText.statusLed(model),
+                FormationText.joinedStatus(model));
+    }
+
+    /** LED + main + muted sub, right-aligned; variants are tried from long to short. */
+    private void statusLine(GuiGraphics graphics, UiRect area, int textY, int led,
+                            List<Component[]> variants) {
+        if (variants.isEmpty()) {
+            return;
+        }
+        Component[] chosen = variants.get(variants.size() - 1);
+        for (Component[] variant : variants) {
+            if (7 + font.width(variant[0]) + 8 + font.width(variant[1]) <= area.width()) {
+                chosen = variant;
+                break;
+            }
+        }
+        int needed = 7 + font.width(chosen[0]) + 8 + font.width(chosen[1]);
+        int x = area.right() - Math.min(needed, area.width());
+        TacticalDraw.led(graphics, x, textY + 2, led);
+        TextFit.Fitted main = TextFit.draw(graphics, font, chosen[0], x + 7, textY,
+                Math.max(0, area.right() - x - 7), TacticalBoardTheme.TEXT, TextFit.Align.LEFT);
+        int subX = x + 7 + main.width() + 8;
+        if (area.right() - subX > 24) {
+            TextFit.draw(graphics, font, chosen[1], subX, textY, area.right() - subX,
+                    TacticalBoardTheme.MUTED, TextFit.Align.LEFT);
+        }
+    }
+
+    private void renderListPanel(GuiGraphics graphics, FormationVoteModel model, boolean narrow) {
+        TacticalShellLayout.Metrics metrics = layout.shell().metrics();
+        TacticalDraw.panel(graphics, font, layout.listPanel(), metrics,
+                TacticalDraw.PanelStyle.titled(FormationText.listTitle(model, narrow))
+                        .withMeta(FormationText.listMeta(model, narrow)));
+        if (!layout.summary().isEmpty()) {
+            renderSummary(graphics, model, layout.summary());
+        }
+        if (!layout.preview().isEmpty() && model.highlighted() != null) {
+            UiRect preview = layout.preview();
+            FormationDetailPanel.identity(graphics, font, preview, model, model.highlighted(),
+                    metrics);
+            int y = preview.top() + FormationScreenLayout.emblemSize(metrics) + 4;
+            int lines = (preview.bottom() - y + 2) / TacticalDraw.LINE_HEIGHT;
+            if (lines > 0) {
+                TacticalDraw.paragraph(graphics, font, model.highlighted().description(),
+                        preview.left(), y, preview.width(), TacticalBoardTheme.MUTED, lines);
+            }
+        }
+        if (!layout.admin().isEmpty()) {
+            renderAdmin(graphics, model, layout.admin());
+        }
+    }
+
+    private void renderSummary(GuiGraphics graphics, FormationVoteModel model, UiRect area) {
+        graphics.fill(area.left(), area.top() + 1, area.left() + 2, area.top() + 8,
+                TacticalBoardTheme.SECTION);
+        TextFit.draw(graphics, font, FormationText.summaryTitle(model), area.left() + 5,
+                area.top(), area.width() - 5, TacticalBoardTheme.TEXT, TextFit.Align.LEFT);
+        TacticalDraw.divider(graphics, area.left(), area.right(), area.top() + 10);
+        int y = area.top() + 14;
+        for (FormationText.SummaryRow row : FormationText.summary(model)) {
+            if (y + 8 > area.bottom()) {
+                break;
+            }
+            if (row.key() == null) {
+                int lines = Math.min(3, Math.max(1, (area.bottom() - y + 2) / 10));
+                y += TacticalDraw.paragraph(graphics, font, row.value().getString(), area.left(),
+                        y, area.width(), TacticalBoardTheme.MUTED, lines) * 10;
+                continue;
+            }
+            if (row.key().getString().isEmpty()) {
+                TextFit.draw(graphics, font, row.value(), area.left(), y, area.width(),
+                        row.color() == 0 ? TacticalBoardTheme.TEXT : row.color(),
+                        TextFit.Align.RIGHT);
+            } else {
+                TacticalDraw.kv(graphics, font, area.left(), y, area.width(), row.key(),
+                        row.value(), row.color());
+            }
+            y += 10;
+        }
+    }
+
+    private void renderAdmin(GuiGraphics graphics, FormationVoteModel model, UiRect area) {
+        TacticalDraw.divider(graphics, area.left(), area.right(), area.top());
+        int y1 = area.top() + 3;
+        int y2 = y1 + 11;
+        graphics.fill(area.left(), y1 + 1, area.left() + 2, y1 + 8, TacticalBoardTheme.SECTION);
+        TextFit.draw(graphics, font, FormationText.adminTitle(), area.left() + 5, y1, 40,
+                TacticalBoardTheme.TEXT, TextFit.Align.LEFT);
+        FormationDetailPanel.drawVariant(graphics, font, FormationText.adminHeadline(model),
+                area.left() + 46, y1, area.width() - 46, TacticalBoardTheme.MUTED);
+        FormationVoteModel.AdminState admin = model.admin();
+        List<Component> detailText = FormationText.adminDetail(model);
+        if (admin.opening()) {
+            FormationDetailPanel.drawReason(graphics, font, area.left(), y2, area.width(),
+                    TacticalIcon.INFO, detailText, TacticalBoardTheme.MUTED,
+                    TacticalBoardTheme.MUTED);
+        } else if (admin.lockBlock() != FormationVoteModel.LockBlock.NONE) {
+            FormationDetailPanel.drawReason(graphics, font, area.left(), y2, area.width(),
+                    TacticalIcon.LOCK, detailText, TacticalBoardTheme.TEXT,
+                    TacticalBoardTheme.MUTED);
+        } else if (admin.relation() == FormationVoteModel.AdminRelation.SOLE_LEADER) {
+            FormationDetailPanel.drawReason(graphics, font, area.left(), y2, area.width(),
+                    TacticalIcon.CHECK, detailText, TacticalBoardTheme.MUTED,
+                    TacticalBoardTheme.SUCCESS);
+        } else {
+            // Orange attention strip: locking something other than the sole leader.
+            graphics.fill(area.left(), y2 - 2, area.right(), y2 + 9,
+                    TacticalHud.withAlpha(TacticalBoardTheme.ACCENT, 0x40));
+            graphics.fill(area.left(), y2 - 2, area.left() + 2, y2 + 9,
+                    TacticalBoardTheme.ACCENT);
+            FormationDetailPanel.drawReason(graphics, font, area.left() + 4, y2,
+                    area.width() - 6, TacticalIcon.WARN, detailText, TacticalBoardTheme.TEXT,
+                    TacticalBoardTheme.ACCENT);
+        }
+    }
+
+    private void renderAction(GuiGraphics graphics, FormationVoteModel model) {
+        if (actionKey.isEmpty() || model.highlighted() == null) {
+            return;
+        }
+        FormationVoteModel.VoteAction action = model.voteAction();
+        if (action.mine()) {
+            FormationDetailPanel.drawMineBadge(graphics, font, actionKey,
+                    FormationText.voteLabel(action));
+        }
+        int textY = actionBar.top() + Math.floorDiv(actionBar.height() - 8, 2);
+        FormationDetailPanel.drawReason(graphics, font, reasonLeft + 2, textY,
+                actionKey.left() - 6 - (reasonLeft + 2), action.icon(),
+                FormationText.reason(model, action),
+                action.enabled() || action.mine() ? TacticalBoardTheme.MUTED
+                        : TacticalBoardTheme.TEXT, TacticalBoardTheme.MUTED);
+    }
+
+    private void renderCrumb(GuiGraphics graphics, FormationVoteModel model, int mouseX,
+                             int mouseY) {
+        FormationSelectionView formation = model.highlighted();
+        if (formation == null) {
+            return;
+        }
+        UiRect text = layout.crumbText();
+        TextFit.draw(graphics, font, FormationText.crumb(model, formation), text.left(),
+                text.top() + Math.floorDiv(text.height() - 8, 2), text.width(),
+                TacticalBoardTheme.MUTED, TextFit.Align.LEFT);
+        List<FormationSelectionView> ordered =
+                FormationVoteModel.orderedFormations(model.browsing());
+        TacticalDraw.pager(graphics, font, layout.crumbPager(), ordered.indexOf(formation),
+                ordered.size(), TacticalDraw.pagerHit(layout.crumbPager(), mouseX, mouseY));
+    }
+
+    private record WaitingGeometry(UiRect content, UiRect empty, UiRect retry) {
+    }
+
+    private WaitingGeometry waitingGeometry() {
+        TacticalShellLayout.Metrics metrics = layout.shell().metrics();
+        UiRect c = TacticalDraw.panelContent(layout.waitingPanel(), metrics,
+                TacticalDraw.PanelStyle.titled(FormationText.waitingTitle()));
+        boolean empty = model().stage() == FormationVoteModel.Stage.EMPTY;
+        int emptyWidth = Math.max(40, Math.min(c.width() - 24, 300));
+        int lines = TextFit.wrap(font, (empty ? FormationText.emptyHint()
+                : FormationText.waitingHint()).getString(), emptyWidth - 12, 0).size();
+        int blockHeight = 22 + lines * 10 + 8;
+        int total = blockHeight + 6 + metrics.buttonHeight();
+        int top = c.top() + Math.max(2, (c.height() - total) / 2);
+        int emptyLeft = c.left() + (c.width() - emptyWidth) / 2;
+        int retryWidth = Math.min(RETRY_KEY_WIDTH, c.width());
+        int retryLeft = c.left() + (c.width() - retryWidth) / 2;
+        int retryTop = Math.min(c.bottom() - metrics.buttonHeight(), top + blockHeight + 6);
+        return new WaitingGeometry(c, new UiRect(emptyLeft, top - 4, emptyLeft + emptyWidth,
+                Math.min(retryTop - 2, top + blockHeight - 4)),
+                new UiRect(retryLeft, retryTop, retryLeft + retryWidth,
+                        retryTop + metrics.buttonHeight()));
+    }
+
+    private void renderWaiting(GuiGraphics graphics, FormationVoteModel model) {
+        boolean empty = model.stage() == FormationVoteModel.Stage.EMPTY;
+        TacticalDraw.panel(graphics, font, layout.waitingPanel(), layout.shell().metrics(),
+                TacticalDraw.PanelStyle.titled(FormationText.waitingTitle())
+                        .withMeta(empty ? Component.empty() : FormationText.waitingMeta(),
+                                TacticalBoardTheme.ACCENT_B));
+        WaitingGeometry geometry = waitingGeometry();
+        TacticalDraw.well(graphics, geometry.content());
+        TacticalDraw.empty(graphics, font, geometry.empty(),
+                empty ? TacticalIcon.INFO : TacticalIcon.REFRESH,
+                empty ? FormationText.emptyHeading() : FormationText.waitingHeading(),
+                empty ? FormationText.emptyHint() : FormationText.waitingHint(), false);
+    }
+
+    // ---- input --------------------------------------------------------------------------------------
+
+    @Override
+    protected boolean onKeyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            if (layout != null && layout.mode() == FormationScreenLayout.Mode.NARROW_DETAIL
+                    && FormationVoteModel.escAction(true)
+                    == FormationVoteModel.EscAction.BACK_TO_LIST) {
+                detailPage = false;
+                requestRebuild();
+                return true;
+            }
+            onClose();
+            return true;
+        }
+        if ((keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER)
+                && (getFocused() == null || getFocused() == list.widget())
+                && model().enterVotes()) {
+            castVote();
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_R && layout != null
+                && layout.mode() == FormationScreenLayout.Mode.WAITING) {
+            retry();
+            return true;
+        }
+        return super.onKeyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    protected boolean onMouseClicked(double mouseX, double mouseY, int button) {
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && layout != null
+                && layout.mode() == FormationScreenLayout.Mode.NARROW_DETAIL) {
+            int step = TacticalDraw.pagerHit(layout.crumbPager(), mouseX, mouseY);
+            if (step != 0) {
+                page(step);
+                return true;
+            }
+        }
+        return super.onMouseClicked(mouseX, mouseY, button);
+    }
+
+    private void page(int step) {
+        FormationVoteModel model = model();
+        List<FormationSelectionView> ordered =
+                FormationVoteModel.orderedFormations(model.browsing());
+        int index = ordered.indexOf(model.highlighted());
+        int next = index + step;
+        if (index >= 0 && next >= 0 && next < ordered.size()) {
+            highlight(ordered.get(next));
+        }
+    }
+
+    @Override
+    protected boolean onMouseScrolled(double mouseX, double mouseY, double delta) {
+        if (layout != null && layout.mode() != FormationScreenLayout.Mode.WAITING
+                && layout.mode() != FormationScreenLayout.Mode.NARROW_LIST
+                && detail.mouseScrolled(mouseX, mouseY, delta)) {
+            return true;
+        }
+        return super.onMouseScrolled(mouseX, mouseY, delta);
     }
 
     @Override
     public boolean shouldCloseOnEsc() {
-        return !snapshot.selectionRequired() || !snapshot.selectedFactionId().isBlank();
+        return true;
     }
 
+    /**
+     * Closes the page. Without a faction the action bar then says which key opens it again, so a
+     * player who is not ready to join is never stuck on it (user report 4).
+     */
     @Override
     public void onClose() {
-        if (shouldCloseOnEsc() && minecraft != null) {
-            minecraft.setScreen(returnScreen);
+        if (minecraft == null) {
+            return;
         }
-    }
-
-    @Override
-    public boolean isPauseScreen() {
-        return false;
-    }
-
-    private record SelectionLayout(boolean compact, int left, int right,
-                                   int factionTop, int categoryTop,
-                                   int bodyTop, int bodyBottom,
-                                   int listLeft, int listRight, int listTop,
-                                   int detailLeft) {
-        private static SelectionLayout compute(int width, int height,
-                                               TacticalMapLayout.Layout tablet) {
-            int left = tablet.header().left() + 5;
-            int right = tablet.header().right() - 5;
-            int factionTop = tablet.header().bottom() + 4;
-            int categoryTop = factionTop + 23;
-            int bodyTop = categoryTop + 23;
-            int bodyBottom = Math.max(bodyTop + 40, tablet.footer().top() - 4);
-            boolean compact = width < 600 || height < 360;
-            int listLeft = left + 5;
-            int listRight = compact ? right - 5
-                    : left + Math.max(150, (right - left) * 42 / 100);
-            int detailLeft = compact ? right : listRight + 5;
-            return new SelectionLayout(compact, left, right, factionTop, categoryTop,
-                    bodyTop, bodyBottom, listLeft, listRight, bodyTop + 20, detailLeft);
+        boolean joined = snapshot != null && model().joined();
+        minecraft.setScreen(returnScreen);
+        if (!joined && minecraft.gui != null) {
+            minecraft.gui.setOverlayMessage(FormationText.reopenNotice(
+                    ClientBootstrap.keyLabel(KeyBindingDefaults.Binding.TERMINAL)), false);
         }
     }
 }

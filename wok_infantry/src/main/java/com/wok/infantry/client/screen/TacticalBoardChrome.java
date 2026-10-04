@@ -169,14 +169,18 @@ public final class TacticalBoardChrome {
             return fromBattle(ClientBattleState.feedback());
         }
 
-        /** The current formation receipt (3 s), or {@code null}. */
+        /** The current formation receipt (3 s, "处理中" stays orange), or {@code null}. */
         public static Feedback fromFormation() {
             String message = ClientFormationState.feedback();
             if (message == null || message.isBlank()) {
                 return null;
             }
-            return new Feedback(ClientFormationState.feedbackSuccess() ? Kind.SUCCESS : Kind.DANGER,
-                    Component.literal(message));
+            Kind kind = switch (ClientFormationState.feedbackKind()) {
+                case SUCCESS -> Kind.SUCCESS;
+                case PENDING -> Kind.PENDING;
+                case DANGER -> Kind.DANGER;
+            };
+            return new Feedback(kind, Component.literal(message));
         }
     }
 
