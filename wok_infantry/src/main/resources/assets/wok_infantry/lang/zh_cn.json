@@ -205,6 +205,8 @@
   "marker.wok_infantry.rally": "集结点",
   "marker.wok_infantry.attack_direction": "进攻方向",
   "marker.wok_infantry.main_base": "己方主基地",
+  "marker.wok_infantry.field_beacon": "部署信标",
+  "marker.wok_infantry.rally_pack": "小队队包",
   "message.wok_infantry.saved": "配装已保存",
   "message.wok_infantry.applied": "配装已发放",
   "message.wok_infantry.admin_saved": "管理员配置已保存",
