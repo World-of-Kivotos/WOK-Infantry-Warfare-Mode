@@ -12,6 +12,7 @@
   ],
   "client": [
     "ClientStaminaSprintMixin",
+    "EditBoxShadowMixin",
     "TaczProneRecoilMixin"
   ],
   "injectors": {
