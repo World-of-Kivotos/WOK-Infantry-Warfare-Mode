@@ -360,20 +360,23 @@ public final class AdminLoadoutScreen extends Screen {
                         ignored -> openClassSettings())
                 .bounds(classSettingsX, bottomY,
                         Math.max(48, width - classSettingsX - 10), 20).build();
-        String classSettingsBlocked = classSettingsBlockedReason();
-        classSettings.active = classSettingsBlocked.isEmpty();
+        AdminLoadoutSelection.ClassSettingsBlock classSettingsBlock = classSettingsBlock();
+        classSettings.active = !classSettingsBlock.blocked();
         if (!classSettings.active) {
-            classSettings.setTooltip(Tooltip.create(Component.literal(classSettingsBlocked)));
+            String className = selectedClassName();
+            classSettings.setTooltip(Tooltip.create(Component.translatable(
+                    AdminLoadoutSelection.classSettingsReasonKey(classSettingsBlock, className),
+                    className == null ? "" : className)));
         }
         addRenderableWidget(classSettings);
     }
 
-    /** Empty when the class settings page can open for the current selection (admin-01). */
-    private String classSettingsBlockedReason() {
+    /** Why the class settings page cannot open for the current selection (admin-01). */
+    private AdminLoadoutSelection.ClassSettingsBlock classSettingsBlock() {
         FormationDefinition formation = selectedFormation();
-        return AdminLoadoutSelection.classSettingsBlockedReason(formation != null,
+        return AdminLoadoutSelection.classSettingsBlock(formation != null,
                 formation == null ? 0 : formation.classes().size(),
-                selectedFormationRule() != null, selectedClassName());
+                selectedFormationRule() != null);
     }
 
     private void initClassSelector(List<LoadoutClassDefinition> classes) {
@@ -788,7 +791,7 @@ public final class AdminLoadoutScreen extends Screen {
     }
 
     private void openClassSettings() {
-        if (!classSettingsBlockedReason().isEmpty()) {
+        if (classSettingsBlock().blocked()) {
             return;
         }
         creatingClass = false;
