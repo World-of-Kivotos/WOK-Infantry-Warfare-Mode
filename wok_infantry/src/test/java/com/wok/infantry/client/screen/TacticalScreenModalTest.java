@@ -5,7 +5,12 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.client.gui.screens.inventory.tooltip.BelowOrAboveWidgetTooltipPositioner;
+import net.minecraft.client.gui.screens.inventory.tooltip.DefaultTooltipPositioner;
+import net.minecraft.client.gui.screens.inventory.tooltip.MenuTooltipPositioner;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
+import net.minecraft.util.FormattedCharSequence;
 import org.junit.jupiter.api.Test;
 import org.lwjgl.glfw.GLFW;
 
@@ -323,6 +328,147 @@ class TacticalScreenModalTest {
         assertTrue(screen.mouseClicked(201.0D, 99.0D, 0));
         assertEquals(List.of("100.5,49.5"), screen.widgetClicks, "divided exactly once");
         assertFalse(screen.keyPressed(GLFW.GLFW_KEY_R, 0, 0), "vanilla handling, no recursion");
+    }
+
+    /** A board whose widget opens a modal from its own mouseClicked, like a "解散" key. */
+    private static final class OpenerScreen extends TacticalScreen {
+        final List<String> boardEvents = new ArrayList<>();
+        AbstractWidget opener;
+        AbstractWidget other;
+        TacticalModal next;
+
+        OpenerScreen() {
+            super(Component.literal("opener"));
+        }
+
+        void simulateInit() {
+            init();
+        }
+
+        private AbstractWidget key(int x, boolean opensModal) {
+            return new AbstractWidget(x, 10, 80, 20, Component.empty()) {
+                @Override
+                public boolean mouseClicked(double mouseX, double mouseY, int button) {
+                    if (!isMouseOver(mouseX, mouseY)) {
+                        return false;
+                    }
+                    if (opensModal) {
+                        openModal(next);
+                    }
+                    return true;
+                }
+
+                @Override
+                protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY,
+                                            float partialTick) {
+                }
+
+                @Override
+                protected void updateWidgetNarration(NarrationElementOutput output) {
+                }
+            };
+        }
+
+        @Override
+        protected void initTactical() {
+            opener = addRenderableWidget(key(10, true));
+            other = addRenderableWidget(key(200, false));
+        }
+
+        @Override
+        protected boolean onMouseReleased(double mouseX, double mouseY, int button) {
+            boardEvents.add("release");
+            return super.onMouseReleased(mouseX, mouseY, button);
+        }
+
+        @Override
+        protected boolean onMouseDragged(double mouseX, double mouseY, int button,
+                                         double dragX, double dragY) {
+            boardEvents.add("drag");
+            return true;
+        }
+    }
+
+    /** Modal that closes itself on the press, as the confirm and cancel keys do. */
+    private static final class ClosingModal implements TacticalModal {
+        TacticalScreen host;
+
+        @Override
+        public void opened(TacticalScreen screen) {
+            host = screen;
+        }
+
+        @Override
+        public void layout(Font font, int screenWidth, int screenHeight) {
+        }
+
+        @Override
+        public void render(GuiGraphics graphics, Font font, int mouseX, int mouseY, float partialTick) {
+        }
+
+        @Override
+        public boolean mouseClicked(double mouseX, double mouseY, int button) {
+            host.closeModal(this);
+            return true;
+        }
+
+        @Override
+        public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+            return true;
+        }
+    }
+
+    @Test
+    void aModalOpenedByAClickOwnsTheFocusAndThePressThatClosesIt() {
+        OpenerScreen screen = new OpenerScreen();
+        screen.simulateInit();
+        screen.next = new ClosingModal();
+
+        screen.mouseClicked(20.0D, 15.0D, 0);
+        assertTrue(screen.hasModal());
+        assertEquals(null, screen.getFocused(), "nothing under the modal keeps the focus");
+        assertFalse(screen.isDragging());
+        screen.mouseReleased(20.0D, 15.0D, 0);
+
+        // The press on the modal closes it; its drag and release must not reach the board.
+        screen.mouseClicked(210.0D, 15.0D, 0);
+        assertFalse(screen.hasModal());
+        screen.mouseDragged(212.0D, 16.0D, 0, 2.0D, 1.0D);
+        screen.mouseReleased(212.0D, 16.0D, 0);
+        assertTrue(screen.boardEvents.isEmpty(), "release of the closing press: " + screen.boardEvents);
+        assertSame(screen.opener, screen.getFocused(), "focus returns to the key that opened it");
+
+        // The next board click is an ordinary one again.
+        screen.mouseClicked(210.0D, 15.0D, 0);
+        screen.mouseDragged(212.0D, 16.0D, 0, 2.0D, 1.0D);
+        screen.mouseReleased(212.0D, 16.0D, 0);
+        assertEquals(List.of("drag", "release"), screen.boardEvents);
+        assertSame(screen.other, screen.getFocused());
+    }
+
+    @Test
+    void tooltipCaptureFollowsTheVanillaReplaceRule() {
+        TestScreen screen = screen();
+        List<FormattedCharSequence> first = List.of(FormattedCharSequence.forward("first", Style.EMPTY));
+        List<FormattedCharSequence> second = List.of(FormattedCharSequence.forward("second", Style.EMPTY));
+        List<FormattedCharSequence> focused = List.of(FormattedCharSequence.forward("focused", Style.EMPTY));
+        List<FormattedCharSequence> plain = List.of(FormattedCharSequence.forward("plain", Style.EMPTY));
+
+        screen.setTooltipForNextRenderPass(first, new MenuTooltipPositioner(screen.strip), false);
+        screen.setTooltipForNextRenderPass(second, new MenuTooltipPositioner(screen.strip), false);
+        assertEquals(first, screen.capturedTooltip(), "without override the first tooltip wins");
+        assertFalse(screen.capturedTooltipAtFocus(), "a hovered widget's tooltip follows the mouse");
+
+        screen.setTooltipForNextRenderPass(focused, new BelowOrAboveWidgetTooltipPositioner(screen.strip),
+                true);
+        assertEquals(focused, screen.capturedTooltip(), "a focused widget replaces it");
+        assertTrue(screen.capturedTooltipAtFocus(), "keyboard focus anchors below the control");
+
+        screen.setTooltipForNextRenderPass(plain);
+        assertEquals(plain, screen.capturedTooltip(), "the plain list call always replaces (vanilla)");
+        assertFalse(screen.capturedTooltipAtFocus());
+        screen.setTooltipForNextRenderPass(second, DefaultTooltipPositioner.INSTANCE, false);
+        assertEquals(plain, screen.capturedTooltip());
     }
 
     @Test

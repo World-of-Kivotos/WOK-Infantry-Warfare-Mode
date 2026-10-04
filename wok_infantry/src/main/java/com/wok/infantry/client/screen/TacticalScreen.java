@@ -9,6 +9,7 @@ import net.minecraft.client.gui.components.events.ContainerEventHandler;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.tooltip.BelowOrAboveWidgetTooltipPositioner;
 import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipPositioner;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
@@ -36,14 +37,15 @@ import java.util.function.BooleanSupplier;
  * {@link UiScale#enableScissor}, never with {@link GuiGraphics#enableScissor} directly.
  *
  * <p><b>Tooltips.</b> Every widget tooltip ({@code setTooltip(...)}) and every
- * {@code setTooltipForNextRenderPass(...)} call is captured and drawn as a shadowless
- * {@link TacticalTooltip} in layout coordinates after the screen, so existing tooltip calls need
- * no change.
+ * {@code setTooltipForNextRenderPass(...)} call is captured (with vanilla's replace rule) and drawn
+ * as a shadowless {@link TacticalTooltip} in layout coordinates after the screen, next to the mouse
+ * or, for a keyboard-focused control, below it; existing tooltip calls need no change.
  *
  * <p><b>Modal layer.</b> {@link #openModal} shows a {@link TacticalModal} (for example a
  * {@link TacticalConfirmDialog}) inside this screen: the board is dimmed, hover and tooltips
- * underneath stop and all input goes to the modal. Closing it does not re-initialise the screen,
- * so drafts and scroll positions stay.
+ * underneath stop and all input goes to the modal (including the drag and release of a press that
+ * closed it). Nothing underneath keeps the focus; on close it returns to the control that opened
+ * the modal. Closing it does not re-initialise the screen, so drafts and scroll positions stay.
  *
  * <p><b>Tabs.</b> A strip registered with {@link #setTabStrip} receives Ctrl+Tab and
  * Ctrl+Shift+Tab from anywhere on the screen; plain Tab keeps the vanilla focus navigation.
@@ -217,44 +219,65 @@ public abstract class TacticalScreen extends Screen {
                 rectangle.height());
     }
 
-    // ---- tooltip capture (vanilla rule: first one wins, a focused one replaces it) ---------------
+    // ---- tooltip capture ------------------------------------------------------------------------
+    //
+    // Same rule as vanilla Screen: the plain list/component calls always replace the pending
+    // tooltip; the positioner calls (widget tooltips pass isFocused() as "override") replace it
+    // only with override, otherwise the first one wins. Vanilla picks a
+    // BelowOrAboveWidgetTooltipPositioner exactly for a keyboard-focused, not hovered widget, so
+    // only that tooltip is anchored at the focused control; every other one follows the mouse.
 
     @Override
     public final void setTooltipForNextRenderPass(List<FormattedCharSequence> lines) {
-        captureTooltip(lines, false);
+        captureTooltip(lines, true, false);
     }
 
     @Override
     public final void setTooltipForNextRenderPass(List<FormattedCharSequence> lines,
                                                   ClientTooltipPositioner positioner,
-                                                  boolean focused) {
-        captureTooltip(lines, focused);
+                                                  boolean override) {
+        captureTooltip(lines, override, anchorsAtFocus(positioner));
     }
 
     @Override
     protected final void setTooltipForNextRenderPass(Component text) {
         if (text != null && font != null) {
-            captureTooltip(TacticalTooltip.lines(font, text, width), false);
+            captureTooltip(TacticalTooltip.lines(font, text, width), true, false);
         }
     }
 
     @Override
     public final void setTooltipForNextRenderPass(Tooltip tooltip,
                                                   ClientTooltipPositioner positioner,
-                                                  boolean focused) {
+                                                  boolean override) {
         if (tooltip != null && minecraft != null) {
-            captureTooltip(tooltip.toCharSequence(minecraft), focused);
+            captureTooltip(tooltip.toCharSequence(minecraft), override, anchorsAtFocus(positioner));
         }
     }
 
-    private void captureTooltip(List<FormattedCharSequence> lines, boolean focused) {
+    private static boolean anchorsAtFocus(ClientTooltipPositioner positioner) {
+        return positioner instanceof BelowOrAboveWidgetTooltipPositioner;
+    }
+
+    private void captureTooltip(List<FormattedCharSequence> lines, boolean override,
+                                boolean atFocus) {
         if (lines == null || lines.isEmpty()) {
             return;
         }
-        if (pendingTooltip == null || focused) {
+        if (pendingTooltip == null || override) {
             pendingTooltip = List.copyOf(lines);
-            pendingTooltipKeyboard = focused;
+            pendingTooltipKeyboard = atFocus;
         }
+    }
+
+    /** Unit-test seam: the tooltip captured so far in this frame, or {@code null}. */
+    final List<FormattedCharSequence> capturedTooltip() {
+        return pendingTooltip;
+    }
+
+    /** Unit-test seam: whether the captured tooltip is anchored at the focused control. */
+    final boolean capturedTooltipAtFocus() {
+        return pendingTooltip != null && pendingTooltipKeyboard;
     }
 
     // ---- modal layer ----------------------------------------------------------------------------
@@ -331,6 +354,8 @@ public abstract class TacticalScreen extends Screen {
     // coordinates are not divided a second time and the hook is not entered again.
 
     private boolean dispatchingInput;
+    /** Mouse buttons whose press went to a modal; their drag and release never reach the board. */
+    private int modalPressedButtons;
 
     private boolean dispatch(BooleanSupplier hook) {
         dispatchingInput = true;
@@ -341,6 +366,24 @@ public abstract class TacticalScreen extends Screen {
         }
     }
 
+    private static int buttonBit(int button) {
+        return button >= 0 && button < Integer.SIZE ? 1 << button : 0;
+    }
+
+    /**
+     * A board click opened a modal. Vanilla focuses (and starts dragging) the clicked widget only
+     * after its handler returned, i.e. after {@link #openModal} parked the focus; park that widget
+     * instead, so nothing under the modal is focused and the opener gets the focus back on close.
+     */
+    private void parkFocusForModal() {
+        GuiEventListener focused = getFocused();
+        if (focused != null) {
+            focusBeforeModal = focused;
+            setFocused(null);
+        }
+        setDragging(false);
+    }
+
     @Override
     public final boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (dispatchingInput) {
@@ -349,10 +392,18 @@ public abstract class TacticalScreen extends Screen {
         double x = UiScale.toLayout(mouseX, uiScale);
         double y = UiScale.toLayout(mouseY, uiScale);
         if (modal != null) {
+            modalPressedButtons |= buttonBit(button);
             modal.mouseClicked(x, y, button);
             return true;
         }
-        return dispatch(() -> onMouseClicked(x, y, button));
+        // A fresh board press; a release lost while a modal was open must not swallow its drag.
+        modalPressedButtons &= ~buttonBit(button);
+        boolean handled = dispatch(() -> onMouseClicked(x, y, button));
+        if (modal != null) {
+            parkFocusForModal();
+            modalPressedButtons |= buttonBit(button);
+        }
+        return handled;
     }
 
     @Override
@@ -362,8 +413,15 @@ public abstract class TacticalScreen extends Screen {
         }
         double x = UiScale.toLayout(mouseX, uiScale);
         double y = UiScale.toLayout(mouseY, uiScale);
+        boolean pressedOnModal = (modalPressedButtons & buttonBit(button)) != 0;
+        modalPressedButtons &= ~buttonBit(button);
         if (modal != null) {
             modal.mouseReleased(x, y, button);
+            return true;
+        }
+        if (pressedOnModal) {
+            // The press closed the modal (confirm / cancel): its release is not a board click.
+            setDragging(false);
             return true;
         }
         return dispatch(() -> onMouseReleased(x, y, button));
@@ -381,6 +439,9 @@ public abstract class TacticalScreen extends Screen {
         double dy = UiScale.toLayout(dragY, uiScale);
         if (modal != null) {
             modal.mouseDragged(x, y, button, dx, dy);
+            return true;
+        }
+        if ((modalPressedButtons & buttonBit(button)) != 0) {
             return true;
         }
         return dispatch(() -> onMouseDragged(x, y, button, dx, dy));
