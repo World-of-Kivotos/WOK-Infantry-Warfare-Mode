@@ -10,6 +10,7 @@ import com.wok.infantry.client.hud.HudFrame;
 import com.wok.infantry.client.hud.SquadHudOverlay;
 import com.wok.infantry.client.hud.StaminaHudOverlay;
 import com.wok.infantry.client.hud.WokHudLayout;
+import com.wok.infantry.client.screen.UiRect;
 import com.wok.infantry.client.ui.probe.UiLayoutFrame;
 import com.wok.infantry.uitest.UiCapture;
 import com.wok.infantry.uitest.UiCase;
@@ -18,9 +19,13 @@ import com.wok.infantry.uitest.UiInputDriver;
 import com.wok.infantry.uitest.UiStep;
 import com.wok.infantry.uitest.UiTier;
 import com.wok.infantry.uitest.fixtures.HudFixtures;
+import net.minecraft.client.gui.components.BossHealthOverlay;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundBossEventPacket;
+import net.minecraft.server.level.ServerBossEvent;
+import net.minecraft.world.BossEvent;
 
 import java.util.List;
 
@@ -54,7 +59,43 @@ public final class HudCases {
                 hud("votewait", HudFixtures.Mode.VOTE_WAIT),
                 hud("vote", HudFixtures.Mode.VOTE),
                 hud("voted", HudFixtures.Mode.VOTED),
-                hud("locked", HudFixtures.Mode.LOCKED));
+                hud("locked", HudFixtures.Mode.LOCKED),
+                bossBar());
+    }
+
+    /**
+     * B11a: the eight-member roster with a vanilla boss bar. Below about 530 GUI pixels the
+     * roster reaches into the bar column, so the bars move down under the strip and right of the
+     * roster; the shifted bar region must stay clear of the roster and on screen. The boss bar is
+     * put into the client's own boss overlay only (no server boss) and removed afterwards.
+     */
+    private static UiCase bossBar() {
+        return UiCase.builder("hud", "boss")
+                .tiers(UiTier.ALL)
+                .migrated(true)
+                .hudCapture(true)
+                .open(context -> {
+                    HudFixtures.start(HudFixtures.Mode.ROSTER8);
+                    chatLines(context, HudFixtures.Mode.ROSTER8);
+                    BossHealthOverlay bosses = context.minecraft().gui.getBossOverlay();
+                    bosses.reset();
+                    bosses.update(ClientboundBossEventPacket.createAddPacket(new ServerBossEvent(
+                            Component.translatable("uitest.wok_infantry.hud.boss"),
+                            BossEvent.BossBarColor.RED, BossEvent.BossBarOverlay.PROGRESS)));
+                    return null;
+                })
+                .steps(UiStep.action(context ->
+                                UiInputDriver.releaseToCentre(context.minecraft())),
+                        UiStep.until("the HUD fixture", context -> HudFixtures.applied()))
+                .check(HudCases::checkCommon)
+                .check((context, capture) -> checkState(context, capture,
+                        HudFixtures.Mode.ROSTER8))
+                .check(HudCases::checkBossBar)
+                .cleanup(context -> {
+                    context.minecraft().gui.getBossOverlay().reset();
+                    HudFixtures.stop();
+                })
+                .build();
     }
 
     private static UiCase hud(String state, HudFixtures.Mode mode) {
@@ -134,6 +175,28 @@ public final class HudCases {
         context.observe("hudBoxes[" + context.uiCase().stateId() + "@" + context.tier().id()
                 + "]=" + frame.boxes().stream().filter(box -> !"hud.plate".equals(box.id()))
                 .map(box -> box.id() + box.rect()).toList());
+    }
+
+    /**
+     * The vanilla boss bars, moved by {@code bossShift} / {@code bossShiftX} (GUI pixels), never
+     * meet the squad roster and stay on screen.
+     */
+    private static void checkBossBar(UiCaseContext context, UiCapture.Result capture) {
+        HudFrame hud = HudFrame.current(capture.guiWidth(), capture.guiHeight());
+        context.require(hud != null, "no HUD frame");
+        UiLayoutFrame.Box roster = capture.frame().box(SquadHudOverlay.PROBE_BOX);
+        context.require(roster != null, "the squad roster was not drawn");
+        UiRect bars = WokHudLayout.bossBarRegion(capture.guiWidth(), capture.guiHeight(),
+                hud.layout().bossShift());
+        int shiftX = hud.layout().bossShiftX();
+        UiLayoutFrame.Rect shifted = new UiLayoutFrame.Rect(bars.left() + shiftX, bars.top(),
+                bars.right() + shiftX, bars.bottom());
+        context.require(!roster.rect().overlaps(shifted), "the squad roster " + roster.rect()
+                + " covers the boss bars " + shifted + " (shift " + shiftX + ")");
+        context.require(shifted.right() <= capture.guiWidth(),
+                "the boss bars were pushed off screen: " + shifted);
+        context.observe("hudBossShift[" + context.tier().id() + "]=x" + shiftX + " y"
+                + hud.layout().bossShift());
     }
 
     private static void checkState(UiCaseContext context, UiCapture.Result capture,

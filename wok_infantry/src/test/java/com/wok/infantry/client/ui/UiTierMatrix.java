@@ -59,11 +59,14 @@ public final class UiTierMatrix {
     public static final Tier T640_USER = new Tier("640x336", 1920, 1008, 3, true);
     public static final Tier T960X540 = new Tier("960x540", 1920, 1080, 2, false);
     public static final Tier T960 = new Tier("960x720", 960, 720, 1, true);
+    /** Minecraft's default 854×480 window at GUI 1: laid out at 2x as 427×240 (narrow layouts). */
+    public static final Tier T427 = new Tier("427x240", 854, 480, 1, false);
 
     /** The preview's five tiers. */
     public static final List<Tier> PREVIEW = List.of(T320, T480, T640, T960X540, T960);
-    /** Preview tiers plus the user's 640×336. */
-    public static final List<Tier> ALL = List.of(T320, T480, T640_USER, T640, T960X540, T960);
+    /** Preview tiers plus the user's 640×336 and the default window's 427×240. */
+    public static final List<Tier> ALL = List.of(T320, T427, T480, T640_USER, T640, T960X540,
+            T960);
     /** Tiers every migrated surface must pass (320×240, 960×720, 640×336). */
     public static final List<Tier> REQUIRED = List.of(T320, T960, T640_USER);
 
