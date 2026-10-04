@@ -45,6 +45,7 @@ class ClientTranslationContractTest {
     private static final Map<String, Integer> EXPECTED_ARGUMENT_COUNTS = Map.ofEntries(
             Map.entry("screen.wok_infantry.faction_population", 2),
             Map.entry("screen.wok_infantry.enemy_population", 2),
+            Map.entry("screen.wok_infantry.tabs.position", 3),
             Map.entry("screen.wok_infantry.squad.member_count", 2),
             Map.entry("screen.wok_infantry.class.quota", 2),
             Map.entry("screen.wok_infantry.deployment.waiting", 1),

@@ -87,15 +87,40 @@ public final class BattleUiTheme {
                 y, color, false);
     }
 
+    /**
+     * @deprecated use the footer receipt of {@link TacticalBoardChrome#shell} with
+     * {@link TacticalBoardChrome.Feedback#fromBattle()}.
+     */
+    @Deprecated
     public static void feedback(GuiGraphics graphics, Font font, int screenWidth, int y) {
         feedback(graphics, font, 0, screenWidth, y);
     }
 
-    /** Battle feedback banner centred in the region; long messages end in "…". */
+    /**
+     * Battle feedback banner centred in the region; text baseline {@code y}, banner y−3..y+11.
+     *
+     * @deprecated use the footer receipt of {@link TacticalBoardChrome#shell}; screens still on
+     * the old footer should call the bounded {@link #feedback(GuiGraphics, Font, int, int, int, int)}.
+     */
+    @Deprecated
     public static void feedback(GuiGraphics graphics, Font font,
                                 int regionLeft, int regionRight, int y) {
+        feedback(graphics, font, regionLeft, y - 3, regionRight, y + 11);
+    }
+
+    /**
+     * Battle feedback banner centred in [left, right) × [top, bottom): at most 14px tall and never
+     * outside the region (the old banner reached 2px below a 14px footer); long messages end in
+     * "…".
+     *
+     * @deprecated legacy footers only; new screens use the receipt of
+     * {@link TacticalBoardChrome#shell}.
+     */
+    @Deprecated
+    public static void feedback(GuiGraphics graphics, Font font, int regionLeft, int regionTop,
+                                int regionRight, int regionBottom) {
         ClientBattleState.BattleFeedback feedback = ClientBattleState.feedback();
-        if (feedback == null || feedback.message().isBlank()) {
+        if (feedback == null || feedback.message().isBlank() || regionBottom - regionTop < 9) {
             return;
         }
         int safeLeft = Math.max(0, Math.min(regionLeft, regionRight - 1));
@@ -107,10 +132,14 @@ public final class BattleUiTheme {
         int center = safeLeft + regionWidth / 2;
         int left = Math.max(safeLeft + 6, center - textWidth / 2 - 6);
         int right = Math.min(safeRight - 6, center + (textWidth + 1) / 2 + 6);
+        int bannerHeight = Math.min(14, regionBottom - regionTop);
+        int top = regionTop + (regionBottom - regionTop - bannerHeight) / 2;
+        int bottom = top + bannerHeight;
+        int textY = top + (bannerHeight - 8) / 2;
         int color = feedback.success()
                 ? TacticalBoardTheme.SUCCESS_B : TacticalBoardTheme.DANGER_B;
-        graphics.fill(left, y - 3, right, y + 11, TacticalBoardTheme.FEEDBACK_BG);
-        outline(graphics, left, y - 3, right, y + 11, color);
-        drawCenteredText(graphics, font, visible.text(), center, y, color);
+        graphics.fill(left, top, right, bottom, TacticalBoardTheme.FEEDBACK_BG);
+        outline(graphics, left, top, right, bottom, color);
+        drawCenteredText(graphics, font, visible.text(), center, textY, color);
     }
 }
