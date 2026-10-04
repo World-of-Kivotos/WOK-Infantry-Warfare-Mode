@@ -1334,9 +1334,10 @@ public final class BattleService {
         SupportView support = SupportService.get(server)
                 .map(service -> service.viewFor(viewer))
                 .orElseGet(SupportView::unavailable);
-        long visibleRevision = Integer.toUnsignedLong(Objects.hash(faction, formationId, ownSquad, leader,
-                commander, factionCount, enemyCount, squads, markers, permissions, quotas,
-                support.structuralRevision()));
+        // Structural projection only: per-heartbeat health changes must not rebuild client UIs.
+        long visibleRevision = BattleSnapshotRevision.visible(faction, formationId, ownSquad,
+                leader, commander, factionCount, enemyCount, squads, markers, permissions,
+                quotas, support.structuralRevision());
         return new BattleSnapshot(viewer.getUUID(), faction, ownSquad, leader, commander,
                 factionCount, enemyCount, BattleRules.FACTION_CAPACITY,
                 Math.max(1, formationSquadCapacity),
