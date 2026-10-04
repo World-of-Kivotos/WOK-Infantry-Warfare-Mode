@@ -258,7 +258,7 @@ public final class FormationSelectionScreen extends Screen {
                 selectionLayout.bodyBottom, TacticalBoardTheme.BOARD_ALT);
         TacticalBoardTheme.sectionHeader(graphics, font, "具体编制",
                 selectionLayout.listLeft, selectionLayout.bodyTop + 3,
-                selectionLayout.listRight, TacticalBoardTheme.SELECTED);
+                selectionLayout.listRight, TacticalBoardTheme.SECTION);
 
         if (!selectionLayout.compact) {
             TacticalBoardTheme.raisedPanel(graphics, selectionLayout.detailLeft,
@@ -282,19 +282,18 @@ public final class FormationSelectionScreen extends Screen {
                 ? tabletLayout.footer().right()
                 - Math.min(132, Math.max(92, tabletLayout.footer().width() / 3)) - 6
                 : tabletLayout.footer().right() - 4;
-        int footerCenter = footerLeft + Math.max(1, footerRight - footerLeft) / 2;
         int footerTextWidth = Math.max(1, footerRight - footerLeft);
+        // Shadowless and ellipsized like every other WOK步战 text.
         if (!feedback.isBlank()) {
-            graphics.drawCenteredString(font, Component.literal(
-                            font.plainSubstrByWidth(feedback, footerTextWidth)), footerCenter,
-                    tabletLayout.footer().top() + 7,
+            TextFit.draw(graphics, font, feedback, footerLeft,
+                    tabletLayout.footer().top() + 7, footerTextWidth,
                     ClientFormationState.feedbackSuccess()
-                            ? TacticalBoardTheme.SUCCESS : TacticalBoardTheme.DANGER);
+                            ? TacticalBoardTheme.SUCCESS : TacticalBoardTheme.DANGER,
+                    TextFit.Align.CENTER);
         } else {
-            graphics.drawCenteredString(font,
-                    Component.literal(font.plainSubstrByWidth(voteStatusText(), footerTextWidth)),
-                    footerCenter,
-                    tabletLayout.footer().top() + 7, TacticalBoardTheme.MUTED_TEXT);
+            TextFit.draw(graphics, font, voteStatusText(), footerLeft,
+                    tabletLayout.footer().top() + 7, footerTextWidth, TacticalBoardTheme.MUTED,
+                    TextFit.Align.CENTER);
         }
         super.render(graphics, mouseX, mouseY, partialTick);
     }
