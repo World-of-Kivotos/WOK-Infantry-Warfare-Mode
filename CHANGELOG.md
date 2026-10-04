@@ -40,7 +40,7 @@
 - `runUiTestClient -PuiLang=en_us -PuiLayoutStrict=false` 报告轮（同一提交）：`status=PASS`（语义检查全部通过），4335 tick，189 张截图，`layoutViolations=172`、`strictLayoutViolations=0`，180 行用例结果与首轮 `en_us-final` 逐行相同。比 0.4.0-beta.1 的 `en_us-final2`（168）多 4 条，都在新增截图里：testmode、testconfirm 两个状态 960、480 档阵营概况里的“3 (the faction picks one)”被省略号截断，与原有 join、confirm 状态同一行、同一位置的已知英文截断相同（留给 i18n 收尾）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.2\en_us-final2\`。
 - 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_infantry-0.4.0-beta.2.jar` PASS，强制依赖只有 `forge`、`minecraft`；连同工作区里其余 7 个附属 JAR（均为此前构建、版本未变）一起核对，8 个全部 PASS。
 - `tools/verify_versions.ps1 -Modules wok_infantry -Release`（Windows PowerShell 5.1）：PASS（源码版本、根 README 与 VERSIONING 版本表、模块 README 产物名、CHANGELOG 标题、JAR 名、modId 与内部版本一致；本条目六栏不空，JAR 晚于核心源码最后一次提交 `19d2114` 且源码没有未提交改动）。不带参数完整核对 8 个模块也 PASS。
-- 本版没有部署到测试端（测试端 `mods` 里仍是 0.4.0-beta.1，`config`、`mods`、`saves` 只读）；部署时用上面 SHA-256 的 JAR 替换 `wok_infantry-0.4.0-beta.1.jar`，两者不要并存。
+- 已部署：2026-10-05 把上面 SHA-256 为 `60829BC4…F50582` 的 `wok_infantry-0.4.0-beta.2.jar` 部署到测试端 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，部署后哈希与构建产物一致；0.4.0-beta.1 改名为 `wok_infantry-0.4.0-beta.1.jar.backup-20261005-061040-before-0.4.0-beta.2.bak`，两者不并存。测试端 8 个 WOK步战 JAR 的独立安装检查全部 PASS。
 - 未做：测试端真实客户端（PCL）里点“测试开局”的游戏内验收（含部署成功后编制页按三种打开方式都自动关闭）、重启后测试模式与 Boss 条恢复、局域网双人用 `/battle admin test start <阵营> <编制> <玩家>` 送第二个号；测试端 `loadouts.json` 的配装是否完整决定部署能否一次成功（不完整时会停在部署页并说明）。
 
 ## WOK步战核心 0.4.0-beta.1 — 2026-10-05
