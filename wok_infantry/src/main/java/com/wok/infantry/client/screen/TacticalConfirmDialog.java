@@ -56,11 +56,14 @@ public final class TacticalConfirmDialog implements TacticalModal {
         this.danger = builder.danger;
         this.onConfirm = builder.onConfirm;
         this.onCancel = builder.onCancel;
+        // Preview UI.confirm: cancel carries "back", confirm "warn" (danger) or "check".
         this.cancelButton = BattleUiButton.builder(builder.cancelLabel, ignored -> cancel())
+                .icon(TacticalIcon.BACK)
                 .bounds(0, 0, 0, 0).build();
         this.confirmButton = BattleUiButton.builder(builder.confirmLabel, ignored -> confirm())
                 .kind(danger ? BattleUiButton.Kind.DANGER : BattleUiButton.Kind.SUCCESS)
                 .armed(danger)
+                .icon(danger ? TacticalIcon.WARN : TacticalIcon.CHECK)
                 .bounds(0, 0, 0, 0).build();
         this.confirmFocused = !danger;
         applyFocus();
