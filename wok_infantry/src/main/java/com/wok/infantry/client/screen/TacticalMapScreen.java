@@ -652,7 +652,7 @@ public final class TacticalMapScreen extends Screen {
                     .append(Component.translatable(option.directional()
                             ? "screen.wok_infantry.map.support.target.directional"
                             : "screen.wok_infantry.map.support.target.point"));
-            if (option != null && !option.providerAvailable()
+            if (option != null && !option.providerAvailable() && !option.readOnlyMission()
                     && !option.availabilityReason().isBlank()) {
                 tooltip.append("\n").append(Component.literal(option.availabilityReason()));
             }
@@ -682,6 +682,13 @@ public final class TacticalMapScreen extends Screen {
 
     private static SupportUiStatus supportStatus(BattleSnapshot snapshot,
                                                  SupportOptionView option, long now) {
+        if (option != null && option.readOnlyMission()) {
+            return new SupportUiStatus(
+                    Component.translatable(
+                            "screen.wok_infantry.map.support.status.formation_closed"),
+                    Component.translatable(
+                            "screen.wok_infantry.map.support.status.formation_closed_short"));
+        }
         if (!snapshot.commander()) {
             return new SupportUiStatus(
                     Component.translatable("screen.wok_infantry.map.support.status.locked"),

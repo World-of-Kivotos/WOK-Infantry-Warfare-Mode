@@ -198,6 +198,35 @@ class BattleSnapshotCodecTest {
     }
 
     @Test
+    void readOnlyMissionOfAnotherFormationRoundTrips() {
+        // map-render-01: an inbound strike the viewer's formation does not open travels as an
+        // "active but unavailable" option so the teammate still draws the danger area.
+        UUID callId = playerId(4_010);
+        SupportOptionView readOnly = option(DIRECTIONAL_SUPPORT, SupportTargetMode.DIRECTIONAL,
+                false, "当前编制未开放该支援", 3_600L, true);
+        SupportView support = new SupportView(List.of(
+                option(POINT_SUPPORT, SupportTargetMode.POINT, true, "", 0L, false),
+                readOnly),
+                List.of(new SupportMissionView(callId, DIRECTIONAL_SUPPORT, OVERWORLD,
+                        10.5D, -20.25D, 80.5D, -20.25D, 140L, 4)),
+                100L, 11L, true, "");
+        BattleSnapshot original = snapshot(List.of(), List.of(), List.of(),
+                LEADER_PERMISSIONS, emptyDeployment(), 0, 0).withSupport(support);
+
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            BattleSnapshotCodec.encode(buffer, original);
+            BattleSnapshot decoded = BattleSnapshotCodec.decode(buffer);
+
+            assertEquals(support, decoded.support());
+            assertEquals(true, decoded.support().options().get(1).readOnlyMission());
+            assertEquals(0, buffer.readableBytes());
+        } finally {
+            buffer.release();
+        }
+    }
+
+    @Test
     void supportViewRoundTripsAndDeploymentReplacementPreservesIt() {
         UUID callId = playerId(4_001);
         SupportView support = new SupportView(List.of(

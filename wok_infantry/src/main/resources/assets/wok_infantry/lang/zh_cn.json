@@ -105,6 +105,8 @@
   "screen.wok_infantry.map.support.status.waiting_deployment_short": "待部署",
   "screen.wok_infantry.map.support.status.provider_missing": "扩展不可用",
   "screen.wok_infantry.map.support.status.provider_missing_short": "扩展",
+  "screen.wok_infantry.map.support.status.formation_closed": "不可用 · 当前编制未开放",
+  "screen.wok_infantry.map.support.status.formation_closed_short": "不可用",
   "screen.wok_infantry.map.support.status.active": "任务进行中",
   "screen.wok_infantry.map.support.status.active_short": "执行中",
   "screen.wok_infantry.map.support.status.seconds_suffix": "秒",
