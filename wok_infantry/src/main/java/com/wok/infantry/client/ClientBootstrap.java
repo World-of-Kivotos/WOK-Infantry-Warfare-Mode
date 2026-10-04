@@ -314,5 +314,6 @@ public final class ClientBootstrap {
         TaczAdsSpeedAdapter.resetClientTracking();
         ClientStaminaController.reset();
         ClientStaminaState.clear();
+        com.wok.infantry.battle.tickets.TicketNetwork.clearClient();
     }
 }
