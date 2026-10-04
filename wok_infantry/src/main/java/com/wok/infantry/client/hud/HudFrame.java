@@ -37,7 +37,8 @@ import java.util.Objects;
  * Everything the core HUD needs for one rendered frame, captured once and shared by every core
  * overlay and {@link InfantryHudApi}: the screen state (chat, F3, Tab, spectator, F1), the
  * vanilla obstacles (off-hand slot, attack indicator, effect icons), the capture panel, the
- * content of each part and the resulting {@link WokHudLayout.Layout}.
+ * add-on panels the roster must end above (body-health figure, downed panel, an add-on in the
+ * centre-low slot), the content of each part and the resulting {@link WokHudLayout.Layout}.
  *
  * <p>Client render thread only. A frame is recomputed when a new GUI frame starts
  * ({@link #onRenderGuiPre}) or the screen size changes; the roster model is kept until the
@@ -65,6 +66,7 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
     }
 
     private static long frameCounter;
+    private static long centerLowAskedFrame = -1;
     private static HudFrame cached;
     private static boolean capturing;
     private static boolean effectIconsDrawn = true;
@@ -85,6 +87,22 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
     /** Starts a new GUI frame (Forge bus, {@link RenderGuiEvent.Pre}). */
     public static void onRenderGuiPre(RenderGuiEvent.Pre event) {
         frameCounter++;
+    }
+
+    /**
+     * Records that an add-on asked for the centre-low slot this frame
+     * ({@link InfantryHudApi#slot}): from the next frame on the roster ends above that slot.
+     */
+    static void centerLowAsked() {
+        centerLowAskedFrame = frameCounter;
+    }
+
+    /**
+     * Whether an add-on draws in the centre-low slot: it asked for it this frame or the one
+     * before (a frame is laid out before the add-ons draw, so this frame's ask may not be in yet).
+     */
+    static boolean centerLowInUse(long frame, long askedFrame) {
+        return askedFrame >= 0 && frame - askedFrame <= 1;
     }
 
     /**
@@ -212,9 +230,20 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
 
         StaminaSnapshot stamina = ClientStaminaState.snapshot();
         boolean staminaAllowed = stamina.enabled() && !creative && !spectator;
-        int[] companionSlot = staminaAllowed && !hidden
-                ? BodyHealthHudBridge.companionSlot(guiWidth, guiHeight) : null;
+        // Asked for even without stamina: the roster keeps clear of the body-health figure.
+        int[] bodyHealthSlot = hidden ? null
+                : BodyHealthHudBridge.companionSlot(guiWidth, guiHeight);
+        int[] companionSlot = staminaAllowed ? bodyHealthSlot : null;
         boolean staminaShown = staminaAllowed && companionSlot == null;
+        List<UiRect> addonPanels = new ArrayList<>(2);
+        UiRect bodyHealth = BodyHealthHudBridge.hudRect(guiWidth, guiHeight, bodyHealthSlot);
+        if (bodyHealth != null) {
+            addonPanels.add(bodyHealth);
+        }
+        UiRect downed = hidden ? null : DownedHudBridge.panelRect(player, guiWidth, guiHeight);
+        if (downed != null) {
+            addonPanels.add(downed);
+        }
 
         boolean mainRight = player.getMainArm() == HumanoidArm.RIGHT;
         boolean offhandLeft = !spectator && mainRight && !player.getOffhandItem().isEmpty();
@@ -252,7 +281,9 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
                 .withHotbarNeighbours(offhandLeft, indicatorLeft)
                 .withEffects(beneficial, harmful)
                 .withEffectOffset(effectOffsetX, effectOffsetY)
-                .withCapturePanel(capture);
+                .withCapturePanel(capture)
+                .withAddonPanels(addonPanels)
+                .withCenterLowInUse(!hidden && centerLowInUse(frameCounter, centerLowAskedFrame));
         return new HudFrame(frameCounter, guiWidth, guiHeight, factor, hidden, chatOpen,
                 debugScreen, playerListHeld, spectator, creative, presence, roster, tickets,
                 strip, notices, vote, stamina, staminaShown, companionSlot,

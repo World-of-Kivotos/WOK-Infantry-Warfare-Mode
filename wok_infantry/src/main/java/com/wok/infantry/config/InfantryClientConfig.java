@@ -63,8 +63,8 @@ public final class InfantryClientConfig {
                 .comment("Revision of the WOK default key table already applied to options.txt "
                         + "(written by the mod, do not edit). While it is lower than the current "
                         + "revision, WOK keys still on their old default (K, L, U, O, and M while "
-                        + "Xaero's World Map open-map key is on M as well) are moved once to the "
-                        + "new default; keys you chose yourself are kept.")
+                        + "Xaero's World Map is redirected and its open-map key is on M as well) are "
+                        + "moved once to the new default; keys you chose yourself are kept.")
                 .defineInRange("defaultsRevision", 0, 0, Integer.MAX_VALUE);
         builder.pop();
         builder.comment("In-battle HUD settings (the GUI scale 1 size follows ui.minimumScale2x)")

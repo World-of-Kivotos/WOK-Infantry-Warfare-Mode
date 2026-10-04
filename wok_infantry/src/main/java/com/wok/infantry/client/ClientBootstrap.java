@@ -274,10 +274,12 @@ public final class ClientBootstrap {
         if (applied >= KeyBindingDefaults.DEFAULTS_REVISION) {
             return;
         }
-        // WOK's old M only gives way when Xaero's redirected open-map key is really on M as well.
+        // WOK's old M only gives way when Xaero's redirected open-map key is really on M as well,
+        // and only while the redirect is switched on in the client config (loaded by now): with
+        // tacticalMap.redirectXaeroWorldMap = false Xaero's M never reaches the tactical map.
         KeyMapping xaeroOpenMap = XaeroWorldMapPolicy.openMapKey();
         boolean xaeroTakesMapKey = xaeroOpenMap != null && KeyBindingDefaults.xaeroTakesOverMapKey(
-                XAERO_WORLD_MAP_INSTALLED,
+                XaeroWorldMapPolicy.redirectActive(),
                 xaeroOpenMap.getKey().getType() == InputConstants.Type.KEYSYM,
                 xaeroOpenMap.getKey().getValue(),
                 xaeroOpenMap.getKeyModifier() != KeyModifier.NONE);

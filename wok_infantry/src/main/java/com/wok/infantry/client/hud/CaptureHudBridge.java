@@ -19,9 +19,18 @@ import java.lang.reflect.Method;
  * at [140, w − 8) × [26, 61), wider screens the wide panel centred at
  * {@code pw = min(330, max(190, w − 24))} × [28, 80). Keep {@link #mirroredPanel} in step with the
  * add-on; {@code CaptureHudBridgeTest} pins these numbers.
+ *
+ * <p>Contract for the add-on: any version whose panel is not where alpha.3 draws it, including
+ * one that places it in {@link InfantryHudApi#TOP_CENTER_NEXT}, must provide
+ * {@code CaptureHudApi.panelRect}; a panel placed under the core's plates returns null there, so
+ * the core does not also move out of its way. Without that API the core keeps the alpha.3
+ * rectangle (a version check would drop the avoidance for every later release that kept the
+ * panel), and logs once when the installed version is not alpha.3.
  */
 public final class CaptureHudBridge {
     public static final String CAPTURE_MOD_ID = "wok_capture_points";
+    /** The add-on version whose panel {@link #mirroredPanel} mirrors. */
+    static final String MIRRORED_VERSION = "0.1.0-alpha.3";
     static final String STATE_CLASS = "com.wok.capturepoints.client.ClientCaptureState";
     static final String API_CLASS = "com.wok.capturepoints.api.CaptureHudApi";
     /** Mirrored alpha.3 geometry, GUI pixels. */
@@ -95,6 +104,14 @@ public final class CaptureHudBridge {
                     } catch (ReflectiveOperationException | LinkageError exception) {
                         WokInfantryMod.LOGGER.info("Installed WOK Capture Points exposes no "
                                 + "capture state; the core HUD keeps its default places.");
+                    }
+                    String version = ModList.get().getModContainerById(CAPTURE_MOD_ID)
+                            .map(container -> container.getModInfo().getVersion().toString())
+                            .orElse("?");
+                    if (insidePoint != null && !MIRRORED_VERSION.equals(version)) {
+                        WokInfantryMod.LOGGER.info("WOK Capture Points {} has no "
+                                + "CaptureHudApi.panelRect; the core HUD assumes its panel sits "
+                                + "where {} draws it.", version, MIRRORED_VERSION);
                     }
                 }
             }

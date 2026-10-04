@@ -22,7 +22,10 @@ import java.util.List;
  *
  * <p>Slots: squad roster at the top left; the battle strip (or, before the lock, the formation
  * ballot) at the top centre with notices under it; vitals at the bottom left under the chat and
- * left of the hotbar; a centre-low slot for the downed panel.
+ * left of the hotbar; a centre-low slot for the downed panel. Add-on panels drawn above the core
+ * HUD further down the screen (WOK步战附属-部位血量's figure, WOK步战附属-倒地's panel) are kept
+ * clear by the roster, which drops its last member rows when the capture panel pushes it down
+ * that far.
  */
 public final class WokHudLayout {
     /** Narrower layouts use the narrow roster (116px, role symbols, class initial). */
@@ -125,6 +128,14 @@ public final class WokHudLayout {
      * @param effectOffsetX     x translation (GUI pixels) applied to the effect icons by another MOD
      * @param effectOffsetY     y translation (GUI pixels) applied to the effect icons by another MOD
      * @param capturePanel      WOK步战附属-占点 panel in GUI pixels, or null while it is hidden
+     * @param addonPanels       add-on panels drawn above the core HUD (GUI pixels) that the squad
+     *                          roster must end above: WOK步战附属-部位血量's figure column at the
+     *                          bottom left, WOK步战附属-倒地's panel while the viewer is down. A
+     *                          roster that would reach into one it shares columns with (the
+     *                          capture panel pushes it down on low screens) drops its last member
+     *                          rows, then all but its title row (see {@link Layout#rosterRows})
+     * @param centerLowInUse    an add-on draws in the centre-low slot this frame; the roster ends
+     *                          above that slot as well
      */
     public record Input(int guiWidth, int guiHeight, int factor,
                         int rosterRows, boolean rosterCollapsed,
@@ -134,7 +145,7 @@ public final class WokHudLayout {
                         boolean offhandLeft, boolean attackIndicatorLeft,
                         int beneficialEffects, int harmfulEffects,
                         int effectOffsetX, int effectOffsetY,
-                        UiRect capturePanel) {
+                        UiRect capturePanel, List<UiRect> addonPanels, boolean centerLowInUse) {
         public Input {
             factor = Math.max(1, factor);
             rosterRows = Math.max(0, Math.min(MAX_ROSTER_ROWS, rosterRows));
@@ -142,60 +153,70 @@ public final class WokHudLayout {
             voteContentWidth = Math.max(0, voteContentWidth);
             beneficialEffects = Math.max(0, beneficialEffects);
             harmfulEffects = Math.max(0, harmfulEffects);
+            List<UiRect> panels = new ArrayList<>();
+            if (addonPanels != null) {
+                for (UiRect panel : addonPanels) {
+                    if (panel != null && !panel.isEmpty()) {
+                        panels.add(panel);
+                    }
+                }
+            }
+            addonPanels = List.copyOf(panels);
         }
 
         /** Empty HUD on a {@code guiWidth}×{@code guiHeight} screen drawn at {@code factor}. */
         public static Input screen(int guiWidth, int guiHeight, int factor) {
             return new Input(guiWidth, guiHeight, factor, 0, false, false, List.of(), 0, false,
-                    false, false, false, 0, 0, 0, 0, null);
+                    false, false, false, 0, 0, 0, 0, null, List.of(), false);
         }
 
         public Input withRoster(int rows, boolean collapsed) {
             return new Input(guiWidth, guiHeight, factor, rows, collapsed, strip, toastTextWidths,
                     voteContentWidth, voteMeter, stamina, offhandLeft, attackIndicatorLeft,
-                    beneficialEffects, harmfulEffects, effectOffsetX, effectOffsetY, capturePanel);
+                    beneficialEffects, harmfulEffects, effectOffsetX, effectOffsetY, capturePanel,
+                    addonPanels, centerLowInUse);
         }
 
         public Input withStrip(boolean shown) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, shown,
                     toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
                     attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
-                    effectOffsetY, capturePanel);
+                    effectOffsetY, capturePanel, addonPanels, centerLowInUse);
         }
 
         public Input withToasts(List<Integer> textWidths) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
                     textWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
                     attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
-                    effectOffsetY, capturePanel);
+                    effectOffsetY, capturePanel, addonPanels, centerLowInUse);
         }
 
         public Input withVote(int contentWidth, boolean meter) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
                     toastTextWidths, contentWidth, meter, stamina, offhandLeft,
                     attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
-                    effectOffsetY, capturePanel);
+                    effectOffsetY, capturePanel, addonPanels, centerLowInUse);
         }
 
         public Input withStamina(boolean shown) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
                     toastTextWidths, voteContentWidth, voteMeter, shown, offhandLeft,
                     attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
-                    effectOffsetY, capturePanel);
+                    effectOffsetY, capturePanel, addonPanels, centerLowInUse);
         }
 
         public Input withHotbarNeighbours(boolean offhandOnLeft, boolean indicatorOnLeft) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
                     toastTextWidths, voteContentWidth, voteMeter, stamina, offhandOnLeft,
                     indicatorOnLeft, beneficialEffects, harmfulEffects, effectOffsetX,
-                    effectOffsetY, capturePanel);
+                    effectOffsetY, capturePanel, addonPanels, centerLowInUse);
         }
 
         public Input withEffects(int beneficial, int harmful) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
                     toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
                     attackIndicatorLeft, beneficial, harmful, effectOffsetX, effectOffsetY,
-                    capturePanel);
+                    capturePanel, addonPanels, centerLowInUse);
         }
 
         /**
@@ -205,14 +226,30 @@ public final class WokHudLayout {
         public Input withEffectOffset(int dx, int dy) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
                     toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
-                    attackIndicatorLeft, beneficialEffects, harmfulEffects, dx, dy, capturePanel);
+                    attackIndicatorLeft, beneficialEffects, harmfulEffects, dx, dy, capturePanel,
+                    addonPanels, centerLowInUse);
         }
 
         public Input withCapturePanel(UiRect guiRect) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
                     toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
                     attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
-                    effectOffsetY, guiRect);
+                    effectOffsetY, guiRect, addonPanels, centerLowInUse);
+        }
+
+        /** Add-on panels (GUI pixels) the roster must end above; null entries are ignored. */
+        public Input withAddonPanels(List<UiRect> guiRects) {
+            return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
+                    toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
+                    attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
+                    effectOffsetY, capturePanel, guiRects, centerLowInUse);
+        }
+
+        public Input withCenterLowInUse(boolean inUse) {
+            return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
+                    toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
+                    attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
+                    effectOffsetY, capturePanel, addonPanels, inUse);
         }
     }
 
@@ -236,13 +273,16 @@ public final class WokHudLayout {
      * @param bossShiftX      GUI pixels the vanilla boss bars move right (0 = none) so they clear
      *                        the squad roster beside them on narrow screens (see
      *                        {@link #bossShiftX})
+     * @param rosterRows      member rows the roster plate holds, top first (0 = title row only):
+     *                        the input's rows, or fewer when the full roster would reach into an
+     *                        add-on panel under it ({@link Input#addonPanels})
      */
     public record Layout(int width, int height, int factor, boolean tight, boolean narrow,
                          int edge, int gap,
                          UiRect roster, UiRect strip, List<UiRect> toasts, UiRect vote,
                          UiRect band, UiRect vitals, UiRect staminaPlate, boolean staminaRow,
                          UiRect centerLow, UiRect topCenterNext, int topCenterBottom,
-                         int bossShift, UiRect capturePanel, int bossShiftX) {
+                         int bossShift, UiRect capturePanel, int bossShiftX, int rosterRows) {
         public Layout {
             toasts = List.copyOf(toasts);
         }
@@ -341,11 +381,35 @@ public final class WokHudLayout {
         List<UiRect> effects = effectRects(in);
         int rosterWidth = rosterWidth(narrow);
 
+        int lowWidth = Math.max(0, Math.min(CENTER_LOW_MAX_WIDTH, width - 2 * edge - 20));
+        int lowTop = height / 2 + CENTER_LOW_OFFSET;
+        UiRect centerLow = UiRect.of(width / 2 - lowWidth / 2, lowTop,
+                width / 2 + (lowWidth + 1) / 2, lowTop + CENTER_LOW_HEIGHT);
+
         UiRect roster = null;
+        int rosterRows = 0;
         if (in.rosterRows() > 0) {
             roster = UiRect.ofSize(edge, edge, rosterWidth,
                     rosterHeight(in.rosterRows(), tight, in.rosterCollapsed()));
             roster = belowCapture(roster, capture, gap);
+            rosterRows = in.rosterCollapsed() ? 0 : in.rosterRows();
+            // Add-on panels drawn above the core HUD (body-health figure, downed panel): the
+            // roster gives up its last rows rather than cover them.
+            List<UiRect> under = new ArrayList<>(in.addonPanels().size() + 1);
+            for (UiRect panel : in.addonPanels()) {
+                under.add(toLayout(panel, factor));
+            }
+            if (in.centerLowInUse()) {
+                under.add(centerLow);
+            }
+            int floor = floorAbove(roster, under, gap);
+            if (roster.bottom() > floor) {
+                rosterRows = rosterRowsAbove(roster.top(), floor, rosterRows, tight,
+                        in.rosterCollapsed());
+                roster = rosterRows < 0 ? null : UiRect.ofSize(roster.left(), roster.top(),
+                        rosterWidth, rosterHeight(rosterRows, tight, rosterRows == 0));
+                rosterRows = Math.max(0, rosterRows);
+            }
         }
 
         // Top centre: centre the strip unless that runs into the roster, then dock it right of
@@ -446,14 +510,46 @@ public final class WokHudLayout {
                 : STAMINA_PLATE_HEIGHT), vitalsRight, height - edge)
                 : null;
 
-        int lowWidth = Math.max(0, Math.min(CENTER_LOW_MAX_WIDTH, width - 2 * edge - 20));
-        int lowTop = height / 2 + CENTER_LOW_OFFSET;
-        UiRect centerLow = UiRect.of(width / 2 - lowWidth / 2, lowTop,
-                width / 2 + (lowWidth + 1) / 2, lowTop + CENTER_LOW_HEIGHT);
-
         return new Layout(width, height, factor, tight, narrow, edge, gap, roster, strip, toasts,
                 vote, band, vitals, staminaPlate, staminaRow, centerLow, topCenterNext,
-                topCenterBottom, bossShift, capture, bossShiftX);
+                topCenterBottom, bossShift, capture, bossShiftX, rosterRows);
+    }
+
+    /**
+     * Lowest bottom (layout pixels) a plate spanning {@code rect}'s columns may have: {@code gap}
+     * above every panel that shares one of its columns and does not end above it;
+     * {@link Integer#MAX_VALUE} when there is none.
+     */
+    static int floorAbove(UiRect rect, List<UiRect> panels, int gap) {
+        int floor = Integer.MAX_VALUE;
+        for (UiRect panel : panels) {
+            if (panel == null || panel.isEmpty() || panel.left() >= rect.right()
+                    || panel.right() <= rect.left() || panel.bottom() <= rect.top()) {
+                continue;
+            }
+            floor = Math.min(floor, panel.top() - gap);
+        }
+        return floor;
+    }
+
+    /**
+     * Member rows of a roster plate starting at {@code top} that still ends at or above
+     * {@code floor}: {@code rows} when all fit, otherwise as many as fit, 0 for the title row
+     * alone (also when {@code collapsed}), or −1 when not even the title row fits.
+     */
+    static int rosterRowsAbove(int top, int floor, int rows, boolean tight, boolean collapsed) {
+        int header = tight ? HEADER_HEIGHT_TIGHT : HEADER_HEIGHT;
+        if (top + header > floor) {
+            return -1;
+        }
+        if (collapsed || rows <= 0) {
+            return 0;
+        }
+        int room = floor - top - header - 2;
+        if (room < (tight ? ROW_HEIGHT_TIGHT : ROW_HEIGHT)) {
+            return 0;
+        }
+        return Math.min(rows, room / (tight ? ROW_HEIGHT_TIGHT : ROW_HEIGHT));
     }
 
     /**

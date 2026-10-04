@@ -15,7 +15,10 @@ import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
  * name and members over the squad's own capacity in the title, then one row per member with a
  * status dot, the map number, role tags, the name and the health-or-status column. The viewer's
  * row has a light blue wash. Drawn below the vanilla F3, chat and player list, and shrunk to its
- * title row while they need the room (see {@link WokHudLayout#rosterPresence}).
+ * title row while they need the room (see {@link WokHudLayout#rosterPresence}). When the capture
+ * panel pushes it down onto an add-on panel drawn above it (the body-health figure, the downed
+ * panel), it keeps only the member rows that still fit ({@link WokHudLayout.Layout#rosterRows});
+ * the title's member count still counts everyone.
  */
 public final class SquadHudOverlay {
     /** Overlay id {@code wok_infantry:squad_roster}; kept so packs can hide it by id. */
@@ -41,16 +44,22 @@ public final class SquadHudOverlay {
         }
         HudPaint.begin(graphics, frame.factor());
         try {
-            draw(graphics, Minecraft.getInstance().font, frame.layout().roster(), frame.roster(),
-                    frame.layout().tight(),
-                    frame.rosterPresence() == WokHudLayout.RosterPresence.COLLAPSED);
+            WokHudLayout.Layout layout = frame.layout();
+            draw(graphics, Minecraft.getInstance().font, layout.roster(), frame.roster(),
+                    layout.tight(),
+                    frame.rosterPresence() == WokHudLayout.RosterPresence.COLLAPSED
+                            || layout.rosterRows() <= 0, layout.rosterRows());
         } finally {
             HudPaint.end(graphics);
         }
     }
 
+    /**
+     * @param shownRows member rows the plate holds ({@link WokHudLayout.Layout#rosterRows}): the
+     *                  first {@code shownRows} members are drawn; the title still counts everyone
+     */
     static void draw(GuiGraphics graphics, Font font, UiRect rect, SquadRosterModel.Roster roster,
-                     boolean tight, boolean collapsed) {
+                     boolean tight, boolean collapsed, int shownRows) {
         int left = rect.left();
         int top = rect.top();
         // Layout-probe box of the roster (no-op outside the uiTest probe): its texts must stay
@@ -70,6 +79,9 @@ public final class SquadHudOverlay {
         int header = tight ? WokHudLayout.HEADER_HEIGHT_TIGHT : WokHudLayout.HEADER_HEIGHT;
         int rowHeight = tight ? WokHudLayout.ROW_HEIGHT_TIGHT : WokHudLayout.ROW_HEIGHT;
         for (SquadRosterModel.Row row : roster.rows()) {
+            if (row.number() > shownRows) {
+                break;
+            }
             int y = top + header + (row.number() - 1) * rowHeight + 1;
             int textY = y + (tight ? 0 : 1);
             if (row.self()) {

@@ -188,11 +188,13 @@ public final class KeyBindingDefaults {
 
     /**
      * Whether the one-time migration may move the WOK tactical-map key off its old default
-     * {@code M}: only while Xaero's redirect is available and Xaero's own open-map key is on that
+     * {@code M}: only while Xaero's redirect is active and Xaero's own open-map key is on that
      * same plain key, i.e. the two really collide and Xaero's key already reaches the tactical map.
-     * A player who moved Xaero's key away from {@code M} to keep the WOK map there keeps it.
+     * A player who moved Xaero's key away from {@code M} to keep the WOK map there keeps it, and so
+     * does one who switched the redirect off ({@code tacticalMap.redirectXaeroWorldMap = false}).
      *
-     * @param redirectAvailable {@code XaeroWorldMapPolicy.redirectAvailable()}
+     * @param redirectAvailable {@code XaeroWorldMapPolicy.redirectActive()}: the redirect can work
+     *                          and is switched on in the client config
      * @param xaeroKeyboardKey whether Xaero's open-map key is a keyboard key ({@code false} when
      *                         the mapping was not found)
      * @param xaeroKeyCode its GLFW key code
