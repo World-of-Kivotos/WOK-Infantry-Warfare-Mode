@@ -26,7 +26,12 @@ import java.util.Objects;
 public final class FormationNetwork {
     public static final ResourceLocation CHANNEL_NAME = ResourceLocation.fromNamespaceAndPath(
             WokInfantryMod.MOD_ID, "formation");
-    public static final String PROTOCOL_VERSION = "4";
+    /**
+     * 5 (core 0.3.0-beta.8): every viewer receives each faction's ballot phase and locked
+     * formation, formations carry a structured detail with public names, the catalog has a
+     * support name table and a lock-notice flag. Client and server must both be beta.8.
+     */
+    public static final String PROTOCOL_VERSION = "5";
 
     private static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(CHANNEL_NAME)
@@ -98,6 +103,16 @@ public final class FormationNetwork {
     }
 
     public static void sendSnapshotToPlayer(ServerPlayer player, boolean openScreen) {
+        sendSnapshotToPlayer(player, openScreen, false);
+    }
+
+    /**
+     * Sends the viewer's catalog. {@code lockNotice} marks that the faction's shared formation
+     * was just applied to this player; the client then records the lock and opens the deployment
+     * page (unless another mod's screen is open, then the HUD shows the notice).
+     */
+    public static void sendSnapshotToPlayer(ServerPlayer player, boolean openScreen,
+                                            boolean lockNotice) {
         Objects.requireNonNull(player, "player");
         FormationService service = FormationService.get(player).orElse(null);
         if (service == null) {
@@ -105,53 +120,103 @@ public final class FormationNetwork {
                     "阵营编制服务尚未就绪"));
             return;
         }
-        sendToPlayer(player, new FormationCatalogPacket(service.snapshotFor(player), openScreen));
+        sendToPlayer(player, new FormationCatalogPacket(service.snapshotFor(player), openScreen,
+                lockNotice));
+    }
+
+    /**
+     * The player's formation was just assigned (lock, late join, administrator assignment):
+     * first the battle snapshot, so the deployment page the client opens already shows the new
+     * formation, then the catalog with the lock notice. The server no longer pushes the
+     * deployment page itself; the client decides whether a WOK terminal may be replaced.
+     */
+    public static void sendFormationApplied(ServerPlayer player) {
+        Objects.requireNonNull(player, "player");
+        if (BattleNetwork.isInitialized()) {
+            BattleService.get(player).ifPresent(service -> BattleNetwork.sendSnapshotToPlayer(
+                    service, player, BattleOpenTarget.NONE));
+        }
+        sendSnapshotToPlayer(player, false, true);
+    }
+
+    /**
+     * Result receipt shown in the vote page footer. An empty success sends nothing; an empty
+     * failure says that it failed instead of leaking the result code's enum name.
+     */
+    public static void sendResult(ServerPlayer player, ActionResult result) {
+        Objects.requireNonNull(player, "player");
+        Objects.requireNonNull(result, "result");
+        if (result.message().isBlank() && result.success()) {
+            return;
+        }
+        sendToPlayer(player, new FormationSelectionResultPacket(result.success(),
+                result.message().isBlank() ? "操作未完成" : result.message()));
     }
 
     public static void finishSelection(ServerPlayer player, ActionResult result) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(result, "result");
-        sendToPlayer(player, new FormationSelectionResultPacket(result.success(),
-                result.message().isBlank() ? result.code().name() : result.message()));
+        sendResult(player, result);
         if (!result.success()) {
-            player.displayClientMessage(Component.literal(result.message()), false);
+            if (!result.message().isBlank()) {
+                player.displayClientMessage(Component.literal(result.message()), false);
+            }
             sendSnapshotToPlayer(player, true);
             return;
         }
-        sendSnapshotToPlayer(player, false);
-        BattleService.get(player).ifPresent(service -> BattleNetwork.sendSnapshotToPlayer(
-                service, player, BattleOpenTarget.DEPLOYMENT));
+        if (hasFormation(player)) {
+            sendFormationApplied(player);
+        } else {
+            // Faction-only assignment while the faction still votes: show the vote page.
+            sendSnapshotToPlayer(player, true);
+        }
     }
 
     public static void finishVote(ServerPlayer player, ActionResult result) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(result, "result");
-        sendToPlayer(player, new FormationSelectionResultPacket(result.success(),
-                result.message().isBlank() ? result.code().name() : result.message()));
+        sendResult(player, result);
         if (!result.message().isBlank()) {
             player.displayClientMessage(Component.literal(result.message()), false);
         }
         sendSnapshotToPlayer(player, true);
         if (result.success()) {
-            BattleService.get(player).flatMap(battle -> battle.factionOf(player.getUUID()))
-                    .ifPresent(faction -> player.server.getPlayerList().getPlayers().stream()
-                            .filter(other -> !other.getUUID().equals(player.getUUID()))
-                            .filter(other -> BattleService.get(other)
-                                    .flatMap(battle -> battle.factionOf(other.getUUID()))
-                                    .filter(faction::equals).isPresent())
-                            .forEach(other -> sendSnapshotToPlayer(other, false)));
+            refreshFactionMates(player);
         }
     }
 
     public static void finishFactionSelection(ServerPlayer player, ActionResult result) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(result, "result");
-        sendToPlayer(player, new FormationSelectionResultPacket(result.success(),
-                result.message().isBlank() ? result.code().name() : result.message()));
+        sendResult(player, result);
         if (!result.message().isBlank()) {
             player.displayClientMessage(Component.literal(result.message()), false);
         }
-        sendSnapshotToPlayer(player, result.success());
+        if (result.success() && hasFormation(player)) {
+            // Joined after the lock: the locked formation is already applied (vote-01).
+            sendFormationApplied(player);
+        } else {
+            sendSnapshotToPlayer(player, result.success());
+        }
+        if (result.success()) {
+            // Population and "已投 n/人数" changed for everyone already in the faction.
+            refreshFactionMates(player);
+        }
+    }
+
+    private static boolean hasFormation(ServerPlayer player) {
+        return FormationService.get(player)
+                .flatMap(service -> service.selectedFormation(player.getUUID())).isPresent();
+    }
+
+    private static void refreshFactionMates(ServerPlayer player) {
+        BattleService.get(player).flatMap(battle -> battle.factionOf(player.getUUID()))
+                .ifPresent(faction -> player.server.getPlayerList().getPlayers().stream()
+                        .filter(other -> !other.getUUID().equals(player.getUUID()))
+                        .filter(other -> BattleService.get(other)
+                                .flatMap(battle -> battle.factionOf(other.getUUID()))
+                                .filter(faction::equals).isPresent())
+                        .forEach(other -> sendSnapshotToPlayer(other, false)));
     }
 
     private static synchronized void ensureInitialized() {

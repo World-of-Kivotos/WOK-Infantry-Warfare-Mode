@@ -154,6 +154,112 @@ public final class BattleFormationGameTests {
         helper.succeed();
     }
 
+    /** vote-01: a player who joins after the lock gets the locked formation in the same step. */
+    @GameTest(templateNamespace = WokInfantryMod.MOD_ID,
+            template = "wok_empty", timeoutTicks = 200)
+    public static void lateJoinAfterLockInheritsTheSharedFormation(GameTestHelper helper) {
+        BattleSavedData data = new BattleSavedData();
+        BattleService service = new BattleService(helper.getLevel().getServer(), data,
+                (faction, formationId, callsign) -> BattleRules.SQUAD_CAPACITY);
+        ServerPlayer first = player(helper, "late-first");
+        ServerPlayer second = player(helper, "late-second");
+        ServerPlayer late = player(helper, "late-joiner");
+        ServerPlayer enemy = player(helper, "late-enemy");
+        enroll(data, first, "winning_formation");
+        enroll(data, second, "winning_formation");
+        long now = Math.max(1L, System.currentTimeMillis());
+        data.addPlayer(enemy.getUUID(), enemy.getGameProfile().getName(), now).faction =
+                Faction.RED;
+
+        ActionResult joined = service.joinFactionWithSharedFormation(late, Faction.BLUE,
+                BattleRules.FACTION_CAPACITY, "winning_formation", 40);
+
+        helper.assertTrue(joined.success(), "锁定后加入应直接成功：" + joined.message());
+        BattleSavedData.StoredPlayer record = data.player(late.getUUID());
+        helper.assertTrue(record.faction == Faction.BLUE, "晚加入者必须进入蓝方");
+        helper.assertTrue("winning_formation".equals(record.formationId),
+                "晚加入者必须直接拿到锁定编制，不能停在“有阵营无编制”");
+        helper.assertTrue(record.assignedClassId != null && !record.assignedClassId.isBlank(),
+                "晚加入者必须拿到默认兵种");
+        helper.assertTrue(service.factionMemberIds(Faction.BLUE).equals(Set.of(
+                        first.getUUID(), second.getUUID(), late.getUUID())),
+                "计票成员集合只含本阵营成员");
+        helper.assertTrue(service.joinFactionWithSharedFormation(late, Faction.BLUE, 40,
+                "winning_formation", 40).success(), "重复请求应幂等成功");
+        ActionResult otherSide = service.joinFactionWithSharedFormation(enemy, Faction.BLUE,
+                40, "winning_formation", 40);
+        helper.assertFalse(otherSide.success(), "已在对方阵营的玩家不能换阵营");
+        helper.assertTrue(otherSide.code() == ActionResult.Code.FORMATION_LOCKED,
+                "换阵营必须返回 FORMATION_LOCKED");
+        helper.assertTrue(data.player(enemy.getUUID()).faction == Faction.RED,
+                "被拒绝的请求不得修改对方阵营玩家");
+        helper.succeed();
+    }
+
+    /** The locked formation's capacity bounds the faction; a join beyond it changes nothing. */
+    @GameTest(templateNamespace = WokInfantryMod.MOD_ID,
+            template = "wok_empty", timeoutTicks = 200)
+    public static void lateJoinBeyondTheLockedCapacityIsRejectedWhole(GameTestHelper helper) {
+        BattleSavedData data = new BattleSavedData();
+        BattleService service = new BattleService(helper.getLevel().getServer(), data,
+                (faction, formationId, callsign) -> BattleRules.SQUAD_CAPACITY);
+        ServerPlayer first = player(helper, "full-first");
+        ServerPlayer second = player(helper, "full-second");
+        ServerPlayer late = player(helper, "full-late");
+        enroll(data, first, "small_formation");
+        enroll(data, second, "small_formation");
+
+        ActionResult rejected = service.joinFactionWithSharedFormation(late, Faction.BLUE,
+                BattleRules.FACTION_CAPACITY, "small_formation", 2);
+
+        helper.assertFalse(rejected.success(), "超出锁定编制容量必须拒绝");
+        helper.assertTrue(rejected.code() == ActionResult.Code.FACTION_FULL,
+                "超容量必须返回 FACTION_FULL");
+        BattleSavedData.StoredPlayer record = data.player(late.getUUID());
+        helper.assertTrue(record == null || record.faction == null && record.formationId == null,
+                "被拒绝的加入不得留下阵营或编制");
+        helper.assertTrue(service.factionSize(Faction.BLUE) == 2, "阵营人数保持不变");
+        helper.succeed();
+    }
+
+    /**
+     * Login after the lock: a member who is in the faction without a formation (joined before
+     * the lock and was offline, or reconciled) receives the locked formation; a member with
+     * another formation is never silently moved.
+     */
+    @GameTest(templateNamespace = WokInfantryMod.MOD_ID,
+            template = "wok_empty", timeoutTicks = 200)
+    public static void loginAfterLockInheritsTheSharedFormation(GameTestHelper helper) {
+        BattleSavedData data = new BattleSavedData();
+        BattleService service = new BattleService(helper.getLevel().getServer(), data,
+                (faction, formationId, callsign) -> BattleRules.SQUAD_CAPACITY);
+        ServerPlayer member = player(helper, "login-member");
+        ServerPlayer pending = player(helper, "login-pending");
+        ServerPlayer other = player(helper, "login-other");
+        enroll(data, member, "locked_formation");
+        enroll(data, other, "older_formation");
+        long now = Math.max(1L, System.currentTimeMillis());
+        BattleSavedData.StoredPlayer pendingRecord = data.addPlayer(pending.getUUID(),
+                pending.getGameProfile().getName(), now);
+        pendingRecord.faction = Faction.BLUE;
+        pendingRecord.formationId = null;
+
+        ActionResult inherited = service.joinFactionWithSharedFormation(pending, Faction.BLUE,
+                BattleRules.FACTION_CAPACITY, "locked_formation", 40);
+
+        helper.assertTrue(inherited.success(), "登录补继承应成功：" + inherited.message());
+        helper.assertTrue("locked_formation".equals(data.player(pending.getUUID()).formationId),
+                "有阵营无编制的玩家登录后必须拿到锁定编制");
+        helper.assertTrue(service.factionSize(Faction.BLUE) == 3,
+                "补继承不得重复占用阵营名额");
+        ActionResult moved = service.joinFactionWithSharedFormation(other, Faction.BLUE,
+                BattleRules.FACTION_CAPACITY, "locked_formation", 40);
+        helper.assertFalse(moved.success(), "已有其他编制的成员不得被补继承改动");
+        helper.assertTrue("older_formation".equals(data.player(other.getUUID()).formationId),
+                "被拒绝的补继承不得修改原编制");
+        helper.succeed();
+    }
+
     private static void enroll(BattleSavedData data, ServerPlayer player, String formationId) {
         long now = Math.max(1L, System.currentTimeMillis());
         BattleSavedData.StoredPlayer stored = data.addPlayer(player.getUUID(),

@@ -72,6 +72,66 @@ class FormationVoteLedgerTest {
     }
 
     @Test
+    void lockedBallotCannotBeReopenedUntilTheBattleIsReset() {
+        FormationVoteLedger ledger = new FormationVoteLedger();
+        UUID voter = UUID.randomUUID();
+        ledger.open(Faction.BLUE, List.of("infantry", "armored"), true);
+        ledger.cast(Faction.BLUE, voter, "armored");
+        assertTrue(ledger.lock(Faction.BLUE, "armored").success());
+
+        FormationVoteResult reopened = ledger.open(Faction.BLUE, List.of("infantry"), true);
+
+        assertFalse(reopened.success(), "vote-04: the lock is final for the match");
+        assertEquals(FormationVoteResult.Code.RESULT_ALREADY_LOCKED, reopened.code());
+        FormationVoteSnapshot snapshot = ledger.snapshot(Faction.BLUE, voter);
+        assertEquals(FormationVotePhase.LOCKED, snapshot.phase());
+        assertEquals("armored", snapshot.lockedFormationId());
+        assertEquals("armored", snapshot.ownVote());
+        assertTrue(ledger.open(Faction.RED, List.of("infantry"), true).success(),
+                "the other faction's ballot is independent");
+
+        ledger.clearAll();
+        assertTrue(ledger.open(Faction.BLUE, List.of("infantry"), true).success(),
+                "a battle reset clears the lock");
+    }
+
+    @Test
+    void openBallotsMayStillBeReopenedBeforeTheLock() {
+        FormationVoteLedger ledger = new FormationVoteLedger();
+        assertTrue(ledger.open(Faction.BLUE, List.of("infantry"), false).success());
+        assertTrue(ledger.open(Faction.BLUE, List.of("infantry", "armored"), true).success());
+        assertTrue(ledger.snapshot(Faction.BLUE, null).voteChangeAllowed());
+    }
+
+    @Test
+    void tallyCountsOnlyCurrentFactionMembers() {
+        FormationVoteLedger ledger = new FormationVoteLedger();
+        UUID stays = UUID.randomUUID();
+        UUID left = UUID.randomUUID();
+        ledger.open(Faction.BLUE, List.of("infantry", "armored"), true);
+        ledger.cast(Faction.BLUE, stays, "infantry");
+        ledger.cast(Faction.BLUE, left, "armored");
+
+        FormationVoteSnapshot eligible = ledger.snapshot(Faction.BLUE, left, stays::equals);
+
+        assertEquals(1, eligible.tally().get("infantry"));
+        assertEquals(0, eligible.tally().get("armored"), "vote-10: departed voters drop out");
+        assertEquals("armored", eligible.ownVote(), "the stored vote itself is kept");
+        assertEquals(1, ledger.snapshot(Faction.BLUE, null).tally().get("armored"),
+                "the unfiltered snapshot is unchanged");
+    }
+
+    @Test
+    void administratorLocksWithoutAnyVoteCast() {
+        FormationVoteLedger ledger = new FormationVoteLedger();
+        ledger.open(Faction.BLUE, List.of("infantry", "armored"), true);
+
+        assertTrue(ledger.lock(Faction.BLUE, "infantry").success(),
+                "vote-09: locking does not need the administrator's own vote");
+        assertEquals("infantry", ledger.snapshot(Faction.BLUE, null).lockedFormationId());
+    }
+
+    @Test
     void catalogReconciliationPreservesValidVotesAndClearsInvalidLockedResult() {
         FormationVoteLedger ledger = new FormationVoteLedger();
         UUID retained = UUID.randomUUID();

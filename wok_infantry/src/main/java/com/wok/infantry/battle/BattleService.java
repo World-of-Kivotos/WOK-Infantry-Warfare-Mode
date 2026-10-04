@@ -537,6 +537,132 @@ public final class BattleService {
                 + normalizedFormation);
     }
 
+    /**
+     * Joins a faction whose shared formation is already locked (vote-01): the faction slot, the
+     * locked formation and its default class are written in one step, so a late joiner never ends
+     * up "in a faction without a formation". A player who is already in this faction without a
+     * formation (reconnected after a release, cleared by reconciliation) receives it as well.
+     * After the lock the faction is bounded by the smaller of {@code factionCapacity} and the
+     * locked formation's {@code formationCapacity}; a join beyond it is rejected without any
+     * change. The caller resolves and validates the locked formation.
+     */
+    public synchronized ActionResult joinFactionWithSharedFormation(ServerPlayer actor,
+                                                                    Faction targetFaction,
+                                                                    int factionCapacity,
+                                                                    String formationId,
+                                                                    int formationCapacity) {
+        ActionResult actorCheck = validateActor(actor);
+        if (actorCheck != null) {
+            return actorCheck;
+        }
+        ActionResult ensured = ensurePlayerInternal(actor, false);
+        if (!ensured.success()) {
+            return ensured;
+        }
+        String normalizedFormation = normalizeFormationId(formationId);
+        if (targetFaction == null || normalizedFormation == null || factionCapacity < 1
+                || factionCapacity > BattleRules.FACTION_CAPACITY || formationCapacity < 1
+                || formationCapacity > BattleRules.FACTION_CAPACITY) {
+            return ActionResult.failure(ActionResult.Code.FORMATION_UNAVAILABLE,
+                    "阵营共享编制或容量配置无效");
+        }
+        BattleSavedData.StoredPlayer record = data.player(actor.getUUID());
+        if (record == null || !record.admitted) {
+            return ActionResult.failure(ActionResult.Code.NOT_ASSIGNED,
+                    "你未获准加入当前战局");
+        }
+        if (record.faction != null && record.faction != targetFaction) {
+            return ActionResult.failure(ActionResult.Code.FORMATION_LOCKED,
+                    "阵营在本轮确认后不能自行更换");
+        }
+        if (record.faction == targetFaction && record.formationId != null) {
+            return normalizedFormation.equals(record.formationId)
+                    ? ActionResult.ok("已在使用本阵营共享编制")
+                    : ActionResult.failure(ActionResult.Code.FORMATION_LOCKED,
+                    "阵营与编制在本轮确认后不能自行更换");
+        }
+        int capacity = Math.min(factionCapacity, formationCapacity);
+        int others = factionSize(targetFaction) - (record.faction == targetFaction ? 1 : 0);
+        if (others >= capacity) {
+            return ActionResult.failure(ActionResult.Code.FACTION_FULL,
+                    "本阵营已锁定编制，最多 " + capacity + " 人");
+        }
+        if (record.squad != null) {
+            detachFromSquad(record);
+        }
+        record.faction = targetFaction;
+        record.formationId = normalizedFormation;
+        record.squad = null;
+        record.squadJoinedAtMillis = 0L;
+        record.assignedClassId = configuredDefaultClassId(targetFaction, normalizedFormation);
+        data.changed();
+        return ActionResult.ok("已加入并使用本阵营共享编制");
+    }
+
+    /** IDs of every player record currently in {@code faction} (vote tallies count only these). */
+    public synchronized Set<UUID> factionMemberIds(Faction faction) {
+        if (faction == null) {
+            return Set.of();
+        }
+        LinkedHashSet<UUID> members = new LinkedHashSet<>();
+        for (BattleSavedData.StoredPlayer player : data.players()) {
+            if (player.faction == faction) {
+                members.add(player.playerId);
+            }
+        }
+        return Collections.unmodifiableSet(members);
+    }
+
+    /**
+     * Administrator assignment while the faction is still voting (vote-02/03): moves the target
+     * into {@code targetFaction} without a formation (it follows the faction's lock), leaving any
+     * squad, command and formation of a previous faction. Within {@code factionCapacity}.
+     */
+    public synchronized ActionResult forceAssignFactionPending(ServerPlayer administrator,
+                                                               UUID targetId,
+                                                               Faction targetFaction,
+                                                               int factionCapacity) {
+        ActionResult actorCheck = validateActor(administrator);
+        if (actorCheck != null) {
+            return actorCheck;
+        }
+        if (!isAdministrator(administrator)) {
+            return ActionResult.failure(ActionResult.Code.NOT_AUTHORIZED, "需要服务端管理员权限");
+        }
+        if (targetId == null || targetFaction == null) {
+            return ActionResult.failure(ActionResult.Code.INVALID_TARGET, "目标玩家或阵营缺失");
+        }
+        BattleSavedData.StoredPlayer target = data.player(targetId);
+        if (target == null) {
+            return ActionResult.failure(ActionResult.Code.TARGET_NOT_FOUND, "目标玩家不在战局记录中");
+        }
+        if (target.admitted && target.faction == targetFaction && target.formationId == null) {
+            return ActionResult.ok("目标已在该阵营等待编制投票");
+        }
+        int targetFactionSize = factionSize(targetFaction)
+                - (target.faction == targetFaction ? 1 : 0);
+        if (factionCapacity < 1 || factionCapacity > BattleRules.FACTION_CAPACITY
+                || targetFactionSize >= factionCapacity) {
+            return ActionResult.failure(ActionResult.Code.FACTION_FULL, "目标阵营已满");
+        }
+        if (target.squad != null) {
+            detachFromSquad(target);
+        }
+        if (target.faction != null && target.playerId.equals(data.commander(target.faction))) {
+            data.setCommander(target.faction, null);
+        }
+        target.faction = targetFaction;
+        target.formationId = null;
+        target.squad = null;
+        target.squadJoinedAtMillis = 0L;
+        target.admitted = true;
+        target.assignedClassId = BattleRules.DEFAULT_CLASS_ID;
+        data.changed();
+        DeploymentService.get(server).ifPresent(service ->
+                service.onRosterChanged(target.playerId));
+        return ActionResult.ok("已将目标分配至阵营，编制等待投票锁定");
+    }
+
     public synchronized Optional<SquadCallsign> squadOf(UUID playerId) {
         BattleSavedData.StoredPlayer player = playerId == null ? null : data.player(playerId);
         return player == null ? Optional.empty() : Optional.ofNullable(player.squad);
