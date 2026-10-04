@@ -95,6 +95,21 @@ class TacticalStepperTest {
     }
 
     @Test
+    void typedPlusAndMinusAreOneStepEachEvenThoughPlusNeedsShift() {
+        // US layout: "+" is Shift + "=", so Shift must not turn it into a coarse step.
+        assertEquals(1, TacticalStepper.keyStep(GLFW.GLFW_KEY_EQUAL, GLFW.GLFW_MOD_SHIFT));
+        assertEquals(1, TacticalStepper.keyStep(GLFW.GLFW_KEY_EQUAL, 0));
+        assertEquals(-1, TacticalStepper.keyStep(GLFW.GLFW_KEY_MINUS, GLFW.GLFW_MOD_SHIFT));
+        assertEquals(-1, TacticalStepper.keyStep(GLFW.GLFW_KEY_MINUS, 0));
+        assertEquals(5, TacticalStepper.keyStep(GLFW.GLFW_KEY_RIGHT, GLFW.GLFW_MOD_SHIFT),
+                "coarse steps stay on the arrows");
+
+        TacticalStepper stepper = stepper(0.0D);
+        assertTrue(stepper.keyPressed(GLFW.GLFW_KEY_EQUAL, 0, GLFW.GLFW_MOD_SHIFT));
+        assertEquals(1, stepper.selectedInt(), "typing + moves one step");
+    }
+
+    @Test
     void inactiveStepperIgnoresEverything() {
         TacticalStepper stepper = stepper(1.0D);
         stepper.active = false;

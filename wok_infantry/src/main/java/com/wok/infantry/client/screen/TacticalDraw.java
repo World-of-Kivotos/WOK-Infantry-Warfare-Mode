@@ -652,7 +652,8 @@ public final class TacticalDraw {
         BattleUiTheme.outline(graphics, x, y, x + size, y + size, slotEdge(selected, error));
         boolean hasItem = item != null && !item.isEmpty();
         if (error && !hasItem) {
-            TacticalIcon.WARN.drawCentered(graphics, x, y, x + size, y + size,
+            int inset = slotIconInset(size);
+            TacticalIcon.WARN.draw(graphics, x + inset, y + inset,
                     selected ? TacticalBoardTheme.ON_SELECT : TacticalBoardTheme.DANGER_B);
         }
         if (hasItem) {
@@ -675,6 +676,14 @@ public final class TacticalDraw {
                     TacticalBoardTheme.LIGHT, false);
             graphics.pose().popPose();
         }
+    }
+
+    /**
+     * Pure: offset of the 9×9 warning icon in an empty slot of side {@code size}, rounded towards
+     * the bottom-right like the preview ({@code UI.slot} draws it at {@code x + 5} in 18px).
+     */
+    static int slotIconInset(int size) {
+        return Math.max(0, Math.floorDiv(size - TacticalIcon.SIZE + 1, 2));
     }
 
     /** Pure: slot outline colour; an error wins over the selection. */

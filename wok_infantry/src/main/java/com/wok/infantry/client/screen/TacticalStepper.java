@@ -19,8 +19,8 @@ import java.util.function.DoubleFunction;
  *
  * <p>Values come from a {@link TacticalSliderScale} (continuous with a grid, or whole detents),
  * so a stepper and a slider over the same scale always agree. Input: click − / +, mouse wheel,
- * ←/→ or −/+ keys (Shift: {@value TacticalBoardSlider#COARSE_STEPS} steps), Home/End for the
- * ends. One focusable widget: Tab reaches it once, the arrows then adjust it.
+ * ←/→ (Shift: {@value TacticalBoardSlider#COARSE_STEPS} steps), the −/+ keys (one step),
+ * Home/End for the ends. One focusable widget: Tab reaches it once, the arrows then adjust it.
  */
 public final class TacticalStepper extends AbstractWidget {
     /** Widest − / + key; narrower steppers use their height (and never more than a third). */
@@ -49,15 +49,22 @@ public final class TacticalStepper extends AbstractWidget {
         return layout.plus().contains(x, y) ? 1 : 0;
     }
 
-    /** Pure: steps of a key press (arrows and −/+; Shift multiplies), 0 for other keys. */
+    /**
+     * Pure: steps of a key press, 0 for other keys. Arrows and the keypad −/+ take
+     * {@value TacticalBoardSlider#COARSE_STEPS} steps with Shift. The main-row −/= keys always
+     * take one step: on a US layout "+" itself is Shift + "=", so "+" and "−" stay symmetric.
+     */
     static int keyStep(int keyCode, int modifiers) {
-        int direction = switch (keyCode) {
-            case GLFW.GLFW_KEY_LEFT, GLFW.GLFW_KEY_MINUS, GLFW.GLFW_KEY_KP_SUBTRACT -> -1;
-            case GLFW.GLFW_KEY_RIGHT, GLFW.GLFW_KEY_EQUAL, GLFW.GLFW_KEY_KP_ADD -> 1;
+        boolean coarse = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0;
+        return switch (keyCode) {
+            case GLFW.GLFW_KEY_MINUS -> -1;
+            case GLFW.GLFW_KEY_EQUAL -> 1;
+            case GLFW.GLFW_KEY_LEFT, GLFW.GLFW_KEY_KP_SUBTRACT ->
+                    coarse ? -TacticalBoardSlider.COARSE_STEPS : -1;
+            case GLFW.GLFW_KEY_RIGHT, GLFW.GLFW_KEY_KP_ADD ->
+                    coarse ? TacticalBoardSlider.COARSE_STEPS : 1;
             default -> 0;
         };
-        return (modifiers & GLFW.GLFW_MOD_SHIFT) != 0
-                ? direction * TacticalBoardSlider.COARSE_STEPS : direction;
     }
 
     /**
@@ -73,10 +80,10 @@ public final class TacticalStepper extends AbstractWidget {
             return false;
         }
         Layout layout = layout(bounds);
-        key(graphics, font, layout.minus(), TacticalIcon.MINUS, enabled && canDecrease,
-                hoveredPart < 0);
-        key(graphics, font, layout.plus(), TacticalIcon.PLUS, enabled && canIncrease,
-                hoveredPart > 0);
+        TacticalDraw.iconKey(graphics, font, layout.minus(), TacticalIcon.MINUS,
+                enabled && canDecrease, hoveredPart < 0);
+        TacticalDraw.iconKey(graphics, font, layout.plus(), TacticalIcon.PLUS,
+                enabled && canIncrease, hoveredPart > 0);
         UiRect well = layout.value();
         boolean truncated = false;
         if (!well.isEmpty()) {
@@ -93,18 +100,6 @@ public final class TacticalStepper extends AbstractWidget {
                     bounds.bottom());
         }
         return truncated;
-    }
-
-    private static void key(GuiGraphics graphics, Font font, UiRect bounds, TacticalIcon icon,
-                            boolean enabled, boolean hovered) {
-        if (bounds.isEmpty()) {
-            return;
-        }
-        TacticalButtonStyle.Look look = TacticalButtonStyle.resolve(enabled, false, false,
-                TacticalButtonStyle.Variant.CONTROL, enabled && hovered, false);
-        TacticalButtonStyle.render(graphics, font, bounds.left(), bounds.top(), bounds.right(),
-                bounds.bottom(), Component.empty(), look,
-                TacticalButtonStyle.Options.DEFAULT.withIconOnly(icon));
     }
 
     private final Component label;

@@ -139,6 +139,9 @@ class TacticalDrawTest {
         assertEquals(TacticalBoardTheme.DANGER_B, TacticalDraw.slotEdge(true, true));
         assertEquals(TacticalBoardTheme.SELECT_BAR, TacticalDraw.slotEdge(true, false));
         assertEquals(TacticalBoardTheme.CELL_EDGE, TacticalDraw.slotEdge(false, false));
+        assertEquals(5, TacticalDraw.slotIconInset(TacticalDraw.SLOT_SIZE),
+                "warning icon at x + 5, y + 5 like the preview UI.slot");
+        assertEquals(14, TacticalDraw.slotIconInset(TacticalDraw.SLOT_SIZE * 2));
 
         assertEquals(TacticalBoardTheme.DANGER_B, TacticalDraw.inputEdge(true, true, false));
         assertEquals(TacticalBoardTheme.WELL_EDGE, TacticalDraw.inputEdge(true, false, false));
