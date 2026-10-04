@@ -39,6 +39,8 @@ public final class FormationSelectionCodec {
     public static final int MAX_RESPAWN_SECONDS = 3_600;
     /** Upper bound of outposts and rally packs on the wire. */
     public static final int MAX_DEPLOYABLES = 64;
+    /** Upper bound of a class quota, a vehicle group's count and a squad capacity on the wire. */
+    public static final int MAX_DETAIL_COUNT = 128;
     private static final int MAX_PHASE = 16;
 
     private FormationSelectionCodec() {
@@ -214,19 +216,19 @@ public final class FormationSelectionCodec {
         writeCount(buffer, detail.classQuotas().size(), MAX_DETAIL_ENTRIES, "class quotas");
         for (FormationDetailView.ClassQuota quota : detail.classQuotas()) {
             buffer.writeUtf(clip(quota.displayName(), MAX_DISPLAY_NAME), MAX_DISPLAY_NAME);
-            writeBounded(buffer, quota.squadLimit(), 0, 128, "class squad limit");
+            writeBounded(buffer, quota.squadLimit(), 0, MAX_DETAIL_COUNT, "class squad limit");
         }
         writeCount(buffer, detail.vehicles().size(), MAX_DETAIL_ENTRIES, "vehicles");
         for (FormationDetailView.Vehicle vehicle : detail.vehicles()) {
             buffer.writeUtf(clip(vehicle.displayName(), MAX_DISPLAY_NAME), MAX_DISPLAY_NAME);
-            writeBounded(buffer, vehicle.count(), 1, 128, "vehicle count");
+            writeBounded(buffer, vehicle.count(), 1, MAX_DETAIL_COUNT, "vehicle count");
             writeBounded(buffer, vehicle.cooldownSeconds(), FormationDetailView.Vehicle.NEVER,
                     MAX_COOLDOWN_SECONDS, "vehicle cooldown");
         }
         writeCount(buffer, detail.squads().size(), MAX_DETAIL_ENTRIES, "squads");
         for (FormationDetailView.Squad squad : detail.squads()) {
             buffer.writeUtf(clip(squad.displayName(), MAX_DISPLAY_NAME), MAX_DISPLAY_NAME);
-            writeBounded(buffer, squad.capacity(), 1, 128, "squad capacity");
+            writeBounded(buffer, squad.capacity(), 1, MAX_DETAIL_COUNT, "squad capacity");
         }
         writeBounded(buffer, detail.outpostMax(), 0, MAX_DEPLOYABLES, "outposts");
         writeBounded(buffer, detail.rallyMax(), 0, MAX_DEPLOYABLES, "rally packs");
@@ -246,13 +248,13 @@ public final class FormationSelectionCodec {
         List<FormationDetailView.ClassQuota> classes = new ArrayList<>(classCount);
         for (int index = 0; index < classCount; index++) {
             classes.add(new FormationDetailView.ClassQuota(buffer.readUtf(MAX_DISPLAY_NAME),
-                    readBounded(buffer, 0, 128, "class squad limit")));
+                    readBounded(buffer, 0, MAX_DETAIL_COUNT, "class squad limit")));
         }
         int vehicleCount = readCount(buffer, MAX_DETAIL_ENTRIES, "vehicles");
         List<FormationDetailView.Vehicle> vehicles = new ArrayList<>(vehicleCount);
         for (int index = 0; index < vehicleCount; index++) {
             vehicles.add(new FormationDetailView.Vehicle(buffer.readUtf(MAX_DISPLAY_NAME),
-                    readBounded(buffer, 1, 128, "vehicle count"),
+                    readBounded(buffer, 1, MAX_DETAIL_COUNT, "vehicle count"),
                     readBounded(buffer, FormationDetailView.Vehicle.NEVER, MAX_COOLDOWN_SECONDS,
                             "vehicle cooldown")));
         }
@@ -260,7 +262,7 @@ public final class FormationSelectionCodec {
         List<FormationDetailView.Squad> squads = new ArrayList<>(squadCount);
         for (int index = 0; index < squadCount; index++) {
             squads.add(new FormationDetailView.Squad(buffer.readUtf(MAX_DISPLAY_NAME),
-                    readBounded(buffer, 1, 128, "squad capacity")));
+                    readBounded(buffer, 1, MAX_DETAIL_COUNT, "squad capacity")));
         }
         int outposts = readBounded(buffer, 0, MAX_DEPLOYABLES, "outposts");
         int rally = readBounded(buffer, 0, MAX_DEPLOYABLES, "rally packs");

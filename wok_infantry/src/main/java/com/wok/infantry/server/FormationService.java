@@ -1215,10 +1215,14 @@ public final class FormationService {
      */
     static FormationDetailView detailView(FormationDefinition formation,
                                           List<String> registeredSupports) {
+        // Every number is clamped to the codec's wire bounds: an out-of-range value from a hand
+        // edited catalog must never make the whole catalog unencodable (as with clipped text).
         List<FormationDetailView.ClassQuota> classes = formation.classes().stream()
                 .map(rule -> new FormationDetailView.ClassQuota(
                         rule.displayName() == null || rule.displayName().isBlank()
-                                ? rule.classId() : rule.displayName(), rule.squadLimit()))
+                                ? rule.classId() : rule.displayName(),
+                        Math.min(rule.squadLimit(), FormationSelectionCodec.MAX_DETAIL_COUNT)))
+                .limit(FormationSelectionCodec.MAX_DETAIL_ENTRIES)
                 .toList();
         LinkedHashMap<VehicleSummaryKey, Integer> counts = new LinkedHashMap<>();
         for (FormationVehicleDefinition vehicle : formation.vehicles()) {
@@ -1227,12 +1231,14 @@ public final class FormationService {
         }
         List<FormationDetailView.Vehicle> vehicles = new ArrayList<>(counts.size());
         counts.forEach((key, count) -> vehicles.add(new FormationDetailView.Vehicle(
-                key.displayName(), count, key.cooldownSeconds() < 0
+                key.displayName(), Math.min(count, FormationSelectionCodec.MAX_DETAIL_COUNT),
+                key.cooldownSeconds() < 0
                 ? FormationDetailView.Vehicle.NEVER
                 : Math.min(key.cooldownSeconds(), FormationSelectionCodec.MAX_COOLDOWN_SECONDS))));
         List<FormationDetailView.Squad> squads = formation.squads().stream()
                 .map(squad -> new FormationDetailView.Squad(squad.displayName(),
-                        squad.capacity()))
+                        Math.min(squad.capacity(), FormationSelectionCodec.MAX_DETAIL_COUNT)))
+                .limit(FormationSelectionCodec.MAX_DETAIL_ENTRIES)
                 .toList();
         FormationCapabilityProfile capabilities = formation.capabilities();
         int outposts = capabilities.outpost().enabled()
