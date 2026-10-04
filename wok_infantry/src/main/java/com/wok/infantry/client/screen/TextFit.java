@@ -5,10 +5,12 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.locale.Language;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.FormattedText;
+import net.minecraft.network.chat.Style;
 import net.minecraft.util.FormattedCharSequence;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.ToIntFunction;
 
 /**
@@ -146,7 +148,9 @@ public final class TextFit {
         String headText = head.getString();
         String trimmed = stripTrailingWhitespace(headText);
         if (trimmed.length() != headText.length()) {
-            head = font.substrByWidth(text, font.width(trimmed));
+            // Cut by length, not by re-measuring the plain string: bold parts are wider than
+            // their plain text, so a width-based re-cut would drop visible characters.
+            head = prefixByLength(head, trimmed.length());
         }
         FormattedCharSequence sequence = Language.getInstance().getVisualOrder(
                 FormattedText.composite(head, FormattedText.of(ELLIPSIS)));
@@ -209,6 +213,28 @@ public final class TextFit {
             }
         }
         return low == 0 ? "" : text.substring(0, ends[low - 1]);
+    }
+
+    /** The first {@code length} chars of {@code text}; every kept part keeps its own style. */
+    static FormattedText prefixByLength(FormattedText text, int length) {
+        List<FormattedText> parts = new ArrayList<>();
+        int[] remaining = {Math.max(0, length)};
+        text.visit((style, content) -> {
+            if (remaining[0] <= 0) {
+                return FormattedText.STOP_ITERATION;
+            }
+            String piece = content.length() <= remaining[0]
+                    ? content : content.substring(0, remaining[0]);
+            remaining[0] -= piece.length();
+            if (!piece.isEmpty()) {
+                parts.add(FormattedText.of(piece, style));
+            }
+            if (remaining[0] <= 0) {
+                return FormattedText.STOP_ITERATION;
+            }
+            return Optional.empty();
+        }, Style.EMPTY);
+        return FormattedText.composite(parts);
     }
 
     private static int[] codePointEnds(String text) {
@@ -315,13 +341,15 @@ public final class TextFit {
         return tokens;
     }
 
+    /**
+     * CJK ideographs, kana, CJK punctuation and full-width forms may break on either side. Curly
+     * quotes, "…" and "·" are deliberately not in this set (as in the preview's {@code font.wrap}):
+     * inside a latin word ("don’t") they stay part of the word, and next to CJK text they still
+     * form their own token, so 避头尾 keeps them off the start of a line.
+     */
     private static boolean isBreakAnywhere(int codePoint) {
         return (codePoint >= 0x2E80 && codePoint <= 0x9FFF)
                 || (codePoint >= 0xF900 && codePoint <= 0xFAFF)
-                || (codePoint >= 0xFF00 && codePoint <= 0xFFEF)
-                || (codePoint >= 0x3000 && codePoint <= 0x303F)
-                || codePoint == 0x2026 || codePoint == 0x00B7
-                || codePoint == 0x2018 || codePoint == 0x2019
-                || codePoint == 0x201C || codePoint == 0x201D;
+                || (codePoint >= 0xFF00 && codePoint <= 0xFFEF);
     }
 }

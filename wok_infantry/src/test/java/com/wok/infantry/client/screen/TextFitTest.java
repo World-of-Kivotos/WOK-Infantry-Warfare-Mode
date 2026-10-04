@@ -1,8 +1,13 @@
 package com.wok.infantry.client.screen;
 
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.ToIntFunction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -131,6 +136,40 @@ class TextFitTest {
 
         assertEquals(List.of("一二", "三，四"), lines);
         lines.forEach(line -> assertFalse(line.startsWith("，"), line));
+    }
+
+    @Test
+    void curlyApostropheStaysInsideItsLatinWord() {
+        // Splitting at "’" would carry "n" down and print "we do" / "n’t" (review fix).
+        assertEquals(List.of("we", "don’t", "stop"),
+                TextFit.wrapPlain("we don’t stop", 40, 0, WIDTH));
+    }
+
+    @Test
+    void closingQuoteAfterChineseStillNeverStartsALine() {
+        assertEquals(List.of("一二", "三”四"), TextFit.wrapPlain("一二三”四", 27, 0, WIDTH));
+    }
+
+    @Test
+    void ellipsisRunAfterChineseNeverStartsALine() {
+        assertEquals(List.of("一二", "三……"), TextFit.wrapPlain("一二三……", 27, 0, WIDTH));
+    }
+
+    @Test
+    void lengthPrefixKeepsEveryPartsStyle() {
+        Component text = Component.empty()
+                .append(Component.literal("AB ").withStyle(ChatFormatting.BOLD))
+                .append(Component.literal("CD").withStyle(ChatFormatting.ITALIC));
+        List<String> parts = new ArrayList<>();
+        TextFit.prefixByLength(text, 4).visit((style, content) -> {
+            parts.add((style.isBold() ? "b:" : "") + (style.isItalic() ? "i:" : "") + content);
+            return Optional.empty();
+        }, Style.EMPTY);
+
+        assertEquals(List.of("b:AB ", "i:C"), parts);
+        assertEquals("AB", TextFit.prefixByLength(text, 2).getString());
+        assertEquals("", TextFit.prefixByLength(text, 0).getString());
+        assertEquals("AB CD", TextFit.prefixByLength(text, 99).getString());
     }
 
     @Test

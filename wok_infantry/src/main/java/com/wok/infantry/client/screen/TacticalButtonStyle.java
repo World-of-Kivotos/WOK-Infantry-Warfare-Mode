@@ -80,7 +80,10 @@ public final class TacticalButtonStyle {
     }
 
     /**
-     * Applies the fixed priority "disabled &gt; current/selected &gt; kind &gt; hover".
+     * Applies the fixed priority "disabled &gt; current/selected &gt; kind &gt; hover". "Current" is
+     * the one explicit exception to "disabled first": the caller marks a selected entry that is
+     * deliberately not clickable (current tab, current class), and only that keeps the selected
+     * look while inactive; any other inactive key is drawn disabled.
      *
      * @param active   whether the key can be clicked
      * @param selected whether the key shows the current selection
