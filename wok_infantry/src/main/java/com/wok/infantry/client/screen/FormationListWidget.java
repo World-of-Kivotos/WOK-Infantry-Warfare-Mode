@@ -62,6 +62,10 @@ final class FormationListWidget {
     /** Natural height of the well: every group title and row plus the well edges. */
     static int naturalHeight(FactionSelectionView faction, TacticalShellLayout.Metrics metrics) {
         List<FormationSelectionView> ordered = FormationVoteModel.orderedFormations(faction);
+        if (ordered.isEmpty()) {
+            // Room for the list's empty state instead of a 2px sliver.
+            return 3 * FormationScreenLayout.rowHeight(metrics) + 2;
+        }
         int groups = 0;
         String previous = null;
         for (FormationSelectionView formation : ordered) {
