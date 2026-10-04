@@ -32,6 +32,27 @@ public final class ServerFixtures {
         return "OK: operator";
     }
 
+    /**
+     * Takes back the operator rights a case granted, so the next screens show the ordinary
+     * player's view; refuses (ERROR) when the player was an operator before the acceptance, whose
+     * status the run never changes. The grant stays recorded, so the harness cleanup reports it.
+     */
+    public static String revokeTemporaryOperator(MinecraftServer server, UUID playerId) {
+        ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+        if (player == null) {
+            return "ERROR: fixture player is offline";
+        }
+        if (!server.getPlayerList().isOp(player.getGameProfile())) {
+            return "OK: not an operator";
+        }
+        if (!temporaryOperator) {
+            return "ERROR: the fixture player is a permanent operator; the player view cannot be"
+                    + " captured";
+        }
+        server.getPlayerList().deop(player.getGameProfile());
+        return "OK: operator revoked";
+    }
+
     /** Whether a case granted operator rights that the cleanup must revoke. */
     public static boolean temporaryOperatorGranted() {
         return temporaryOperator;

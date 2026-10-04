@@ -97,6 +97,40 @@ public final class MockData {
             new SupportData("wok_commander_support:millennium_f15ex_jdam_1000lb",
                     "F-15EX JDAM 1000磅", "inbound", 12, 26));
 
+    /**
+     * Support name table of the formation catalog: id, the add-on's translation key and the
+     * fallback name its server registers (WOK步战附属-指挥官支援 is not loaded in the acceptance,
+     * so the fallback is shown, as on a client without the add-on's language file).
+     */
+    public record SupportLabelData(String id, String translationKey, String fallbackName) {
+    }
+
+    public static final List<SupportLabelData> SUPPORT_LABELS = List.of(
+            support("recon_satellite", "侦察卫星"),
+            support("recon_drone", "无人机侦察"),
+            support("millennium_f15ex_jdam_1000lb", "千禧年 F-15EX 杰达姆 1000磅空袭"),
+            support("f16c_gbu12_paveway_500lb", "F-16C GBU-12 宝石路 II 500磅精准空袭"),
+            support("howitzer_3round_barrage", "三连发榴弹炮击"),
+            support("howitzer_105mm_rapid_3round_barrage", "快速三连发105毫米榴弹炮打击"),
+            support("howitzer_105mm_5round_barrage", "五连发105毫米榴弹炮打击"));
+
+    /** Five allow-listed supports of the {@code longcaps} formation (beta.7 capability lines). */
+    public static final List<String> LONG_CAPS_SUPPORTS = List.of(
+            "wok_commander_support:recon_satellite",
+            "wok_commander_support:recon_drone",
+            "wok_commander_support:howitzer_3round_barrage",
+            "wok_commander_support:howitzer_105mm_rapid_3round_barrage",
+            "wok_commander_support:howitzer_105mm_5round_barrage");
+
+    /** Catalog names of the formations the fixtures add (preview {@code RESERVE} and longcaps). */
+    public static final String RESERVE_NAME = "研讨会骑兵预备队";
+    public static final String LONG_CAPS_NAME = "研讨会联合火力支援群";
+
+    private static SupportLabelData support(String path, String fallbackName) {
+        return new SupportLabelData("wok_commander_support:" + path,
+                "support.wok_commander_support." + path, fallbackName);
+    }
+
     /** {@code battle}: tickets of both sides and their maximum, objective B at 62%. */
     public static final int TICKETS_BLUE = 412;
     public static final int TICKETS_RED = 377;
