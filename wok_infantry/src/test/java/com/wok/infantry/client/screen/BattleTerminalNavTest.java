@@ -10,15 +10,27 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 class BattleTerminalNavTest {
-    /** Stand-in for a screen: terminal screens remember the root they return to. */
-    private record FakeScreen(String name, FakeScreen root, boolean terminal) {
+    /**
+     * Stand-in for a screen: terminal screens remember the root they return to; legacy pages
+     * (the squad page before 档 3) only remember the screen they were opened over.
+     */
+    private record FakeScreen(String name, FakeScreen root, boolean terminal, boolean legacy) {
         static FakeScreen other(String name) {
-            return new FakeScreen(name, null, false);
+            return new FakeScreen(name, null, false, false);
         }
 
         static FakeScreen terminal(String name, FakeScreen root) {
-            return new FakeScreen(name, root, true);
+            return new FakeScreen(name, root, true, false);
         }
+
+        static FakeScreen legacy(String name, FakeScreen parent) {
+            return new FakeScreen(name, parent, false, true);
+        }
+    }
+
+    private FakeScreen rootSkippingLegacy(FakeScreen start) {
+        return model.rootSkipping(start, FakeScreen::legacy, FakeScreen::root,
+                FakeScreen::terminal, FakeScreen::root);
     }
 
     private final TerminalNavModel<FakeScreen> model = new TerminalNavModel<>();
@@ -54,6 +66,26 @@ class BattleTerminalNavTest {
         assertSame(inventory, squads.root());
         assertSame(inventory, map.root());
         assertSame(inventory, rootFor(map));
+    }
+
+    /** B11a: the squad page's "编制" key must not make the squad page the vote page's parent. */
+    @Test
+    void legacySquadPagesAreSkippedWhenEnteringTheVotePage() {
+        FakeScreen inventory = FakeScreen.other("inventory");
+        FakeScreen squads = FakeScreen.legacy("squads", inventory);
+        FakeScreen stacked = FakeScreen.legacy("squads-again", squads);
+
+        assertSame(inventory, rootSkippingLegacy(squads.root()));
+        assertSame(inventory, rootSkippingLegacy(stacked.root()),
+                "squad pages stacked on each other are all skipped");
+        FakeScreen formation = FakeScreen.terminal("formation", rootSkippingLegacy(squads.root()));
+        FakeScreen backToSquads = switchTo(formation, "squads");
+        assertSame(inventory, backToSquads.root(), "switching tabs keeps the session root");
+        assertNull(rootSkippingLegacy(FakeScreen.legacy("squads", null).root()),
+                "a squad page opened in game leads back to the game");
+        FakeScreen oldFormation = FakeScreen.terminal("formation-old", squads);
+        assertSame(inventory, rootSkippingLegacy(oldFormation),
+                "a terminal screen whose root is a squad page is walked up as well");
     }
 
     @Test
