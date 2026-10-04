@@ -49,7 +49,6 @@ import com.wok.infantry.support.SupportMissionView;
 import com.wok.infantry.support.SupportOptionView;
 import com.wok.infantry.support.SupportTargetMode;
 import com.wok.infantry.support.SupportView;
-import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -72,6 +71,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ScreenEvent;
+import net.minecraftforge.client.settings.KeyModifier;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -85,6 +85,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
@@ -98,8 +99,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * Development-only, real-client acceptance harness for the tactical UI.
  *
  * <p>The class lives in {@code src/uiTest}; default builds and the production JAR cannot see it.
- * It enters an integrated world, drives the same server-bound intent bridge as K/M, captures the
- * rendered framebuffer, writes a semantic result file and exits the client.</p>
+ * It enters an integrated world, presses whatever keys the squad and tactical-map mappings are
+ * actually bound to (so a new default key never breaks it), captures the rendered framebuffer,
+ * writes a semantic result file plus a per-phase progress file and exits the client.</p>
  */
 @Mod.EventBusSubscriber(modid = WokInfantryMod.MOD_ID, value = Dist.CLIENT,
         bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -140,6 +142,15 @@ public final class UiRuntimeAcceptanceHarness {
             java.util.Locale.ROOT);
     private static final boolean EXPECTED_JOURNEYMAP_LOADED =
             EXPECTED_JOURNEYMAP_LOADED_RAW.equals("true");
+    /** Set by build.gradle from -PuiLang; empty means "do not assert the language". */
+    private static final String EXPECTED_LANGUAGE = System.getProperty(
+            "wok.ui.expectedLanguage", "").trim().toLowerCase(java.util.Locale.ROOT);
+    private static final String WOK_KEY_PREFIX = "key.wok_infantry.";
+    private static final String SQUAD_KEY_MAPPING = WOK_KEY_PREFIX + "open_squad";
+    private static final String MAP_KEY_MAPPING = WOK_KEY_PREFIX + "open_tactical_map";
+    private static final String RESULT_DIRECTORY = "ui-test-results";
+    private static final String PROGRESS_FILE = "wok_ui_progress.txt";
+    private static final int PROGRESS_HISTORY_LIMIT = 200;
 
     private static final Map<String, Long> screenshotBaselines = new LinkedHashMap<>();
     private static final Map<String, String> screenshotCallbacks = new ConcurrentHashMap<>();
@@ -188,6 +199,8 @@ public final class UiRuntimeAcceptanceHarness {
     private static volatile String administratorToolResult;
     private static boolean formationAdministratorSetupQueued;
     private static volatile boolean formationAdministratorReady;
+    private static volatile boolean formationAdministratorTemporaryOperator;
+    private static volatile String temporaryOperatorCleanup;
     private static Boolean formationScreenCompact;
     private static int nextMarkerIndex;
     private static BattleClientActions.MarkerTool pendingMarker;
@@ -210,6 +223,8 @@ public final class UiRuntimeAcceptanceHarness {
     private static volatile boolean cleanupFinished;
     private static boolean resultWritten;
     private static String failureReason;
+    private static final List<String> progressHistory = new ArrayList<>();
+    private static boolean progressWriteFailed;
 
     private UiRuntimeAcceptanceHarness() {
     }
@@ -375,6 +390,17 @@ public final class UiRuntimeAcceptanceHarness {
             fail("JourneyMap loaded state mismatch: expected "
                     + EXPECTED_JOURNEYMAP_LOADED + ", got " + journeyMapLoaded);
         }
+        // options.txt is read before the first tick, so this is the code prepareUiTestOptions
+        // wrote. Whether a resource pack actually provides it is checked after login, once the
+        // resource reload has finished (see languageAvailable in waitForLogin).
+        String language = minecraft.getLanguageManager().getSelected();
+        observations.add("languageCode=" + language + " expected="
+                + (EXPECTED_LANGUAGE.isEmpty() ? "any" : EXPECTED_LANGUAGE));
+        if (!EXPECTED_LANGUAGE.isEmpty() && !EXPECTED_LANGUAGE.equals(language)) {
+            fail("UI acceptance language mismatch: expected " + EXPECTED_LANGUAGE
+                    + ", got " + language);
+        }
+        recordProgress("armed " + phase);
         WokInfantryMod.LOGGER.info("[UI ACCEPTANCE] Harness armed; waiting for integrated login");
     }
 
@@ -446,6 +472,15 @@ public final class UiRuntimeAcceptanceHarness {
         if (stableDeploymentScreenTicks < 20) {
             return;
         }
+        // Minecraft keeps an unknown lang code selected but silently renders English, so a
+        // mistyped -PuiLang would otherwise produce English captures labelled as another language.
+        String language = minecraft.getLanguageManager().getSelected();
+        if (minecraft.getLanguageManager().getLanguage(language) == null) {
+            fail("UI acceptance language " + language
+                    + " is not provided by any loaded resource pack");
+            return;
+        }
+        observations.add("languageAvailable=" + language);
         autoDeploymentObserved = true;
         minecraft.getTutorial().setStep(TutorialSteps.NONE);
         minecraft.getToasts().clear();
@@ -535,7 +570,9 @@ public final class UiRuntimeAcceptanceHarness {
             minecraft.setScreen(null);
         }
         if (!compactSquadKeySent && phaseTicks >= 2 && minecraft.screen == null) {
-            clickBoundKey(GLFW.GLFW_KEY_K);
+            if (!clickMappedKey(minecraft, SQUAD_KEY_MAPPING, "squad", true)) {
+                return;
+            }
             compactSquadKeySent = true;
         }
         if (minecraft.screen instanceof SquadScreen && phaseTicks >= SCREEN_SETTLE_TICKS) {
@@ -1185,7 +1222,9 @@ public final class UiRuntimeAcceptanceHarness {
             minecraft.setScreen(null);
         }
         if (!compactMapKeySent && phaseTicks >= 2 && minecraft.screen == null) {
-            clickBoundKey(GLFW.GLFW_KEY_M);
+            if (!clickMappedKey(minecraft, MAP_KEY_MAPPING, "map", false)) {
+                return;
+            }
             compactMapKeySent = true;
         }
         if (!(minecraft.screen instanceof TacticalMapScreen tacticalMapScreen)
@@ -1670,7 +1709,12 @@ public final class UiRuntimeAcceptanceHarness {
                 server.execute(() -> {
                     ServerPlayer player = server.getPlayerList().getPlayer(playerId);
                     if (player != null) {
-                        server.getPlayerList().op(player.getGameProfile());
+                        // The administrator vote controls stay visible through the admin-loadout
+                        // captures, so this grant is only revoked by the fixture cleanup.
+                        if (!server.getPlayerList().isOp(player.getGameProfile())) {
+                            formationAdministratorTemporaryOperator = true;
+                            server.getPlayerList().op(player.getGameProfile());
+                        }
                         formationAdministratorReady = true;
                     }
                 });
@@ -1939,8 +1983,12 @@ public final class UiRuntimeAcceptanceHarness {
             return;
         }
         if (!resultWritten) {
+            if (temporaryOperatorCleanup != null) {
+                observations.add("temporaryOperatorCleanup=" + temporaryOperatorCleanup);
+            }
             writeResult(minecraft, success);
             resultWritten = true;
+            recordProgress("result=" + (success ? "PASS" : "FAIL"));
             WokInfantryMod.LOGGER.info("[UI ACCEPTANCE] {}: {}",
                     success ? "PASS" : "FAIL", success ? "all captures written" : failureReason);
             phaseTicks = 0;
@@ -1974,20 +2022,29 @@ public final class UiRuntimeAcceptanceHarness {
                         || player.getInventory().getItem(7).is(Items.RED_DYE)) {
                     player.getInventory().setItem(7, ItemStack.EMPTY);
                 }
-                if (administratorToolTemporaryOperator
+                // Every OP grant the fixture made (beacon tools, formation administrator view)
+                // is revoked here; a player who was already an operator keeps the status.
+                boolean temporaryOperator = administratorToolTemporaryOperator
+                        || formationAdministratorTemporaryOperator;
+                boolean revoked = false;
+                if (temporaryOperator
                         && server.getPlayerList().isOp(player.getGameProfile())) {
                     server.getPlayerList().deop(player.getGameProfile());
+                    revoked = true;
                 }
+                temporaryOperatorCleanup = !temporaryOperator ? "none"
+                        : revoked ? "revoked" : "alreadyRevoked";
                 player.getInventory().setChanged();
                 player.inventoryMenu.broadcastChanges();
             }
             administratorToolTemporaryOperator = false;
+            formationAdministratorTemporaryOperator = false;
             cleanupFinished = true;
         });
     }
 
     private static void writeResult(Minecraft minecraft, boolean success) throws IOException {
-        Path resultDirectory = minecraft.gameDirectory.toPath().resolve("ui-test-results");
+        Path resultDirectory = minecraft.gameDirectory.toPath().resolve(RESULT_DIRECTORY);
         Files.createDirectories(resultDirectory);
         Path result = resultDirectory.resolve("wok_ui_acceptance.txt");
         List<String> lines = new ArrayList<>();
@@ -2026,8 +2083,67 @@ public final class UiRuntimeAcceptanceHarness {
         minecraft.resizeDisplay();
     }
 
-    private static void clickBoundKey(int glfwKey) {
-        KeyMapping.click(InputConstants.Type.KEYSYM.getOrCreate(glfwKey));
+    /**
+     * Presses the key a WOK mapping is currently bound to, found by its stable mapping name.
+     *
+     * <p>With {@code terminalFallback}, a mapping that has no key is replaced by the first bound
+     * WOK battle-terminal mapping ({@code key.wok_infantry.*terminal*}): once the default keys
+     * move the squad page behind the terminal key, the old squad mapping stays registered but
+     * unbound, and a player who rebound it still reaches the page directly.</p>
+     *
+     * <p>The click still goes through Forge's key lookup, so a conflicting binding that would
+     * swallow the key in a real client also makes this run fail; the observations list every
+     * conflict so such a timeout can be traced to the key.</p>
+     */
+    private static boolean clickMappedKey(Minecraft minecraft, String mappingName, String label,
+                                          boolean terminalFallback) {
+        KeyMapping mapping = findKeyMapping(minecraft, mappingName);
+        if (terminalFallback && (mapping == null || mapping.isUnbound())) {
+            for (KeyMapping candidate : minecraft.options.keyMappings) {
+                if (candidate.getName().startsWith(WOK_KEY_PREFIX)
+                        && candidate.getName().contains("terminal") && !candidate.isUnbound()) {
+                    mapping = candidate;
+                    break;
+                }
+            }
+        }
+        if (mapping == null) {
+            fail("Key mapping " + mappingName + " is not registered");
+            return false;
+        }
+        if (mapping.isUnbound()) {
+            // prepareUiTestOptions strips every key_key.wok_infantry.* line before each run, so
+            // only the mod's default binding counts here.
+            fail("Key mapping " + mappingName + " has no default key"
+                    + (terminalFallback ? " and no bound key.wok_infantry.*terminal* mapping" : "")
+                    + "; the acceptance run resets WOK keys to their defaults");
+            return false;
+        }
+        if (mapping.getKeyModifier() != KeyModifier.NONE) {
+            fail("Key mapping " + mapping.getName() + " needs the " + mapping.getKeyModifier()
+                    + " modifier, which the harness cannot hold down");
+            return false;
+        }
+        List<String> conflicts = new ArrayList<>();
+        for (KeyMapping other : minecraft.options.keyMappings) {
+            if (other != mapping && !other.isUnbound() && mapping.same(other)) {
+                conflicts.add(other.getName());
+            }
+        }
+        observations.add(label + "KeyMapping=" + mapping.getName() + "@"
+                + mapping.getKey().getName() + " conflicts="
+                + (conflicts.isEmpty() ? "none" : String.join(",", conflicts)));
+        KeyMapping.click(mapping.getKey());
+        return true;
+    }
+
+    private static KeyMapping findKeyMapping(Minecraft minecraft, String mappingName) {
+        for (KeyMapping candidate : minecraft.options.keyMappings) {
+            if (candidate.getName().equals(mappingName)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private static String logicalSize(Minecraft minecraft) {
@@ -2042,11 +2158,13 @@ public final class UiRuntimeAcceptanceHarness {
 
     private static void transition(Phase next) {
         WokInfantryMod.LOGGER.info("[UI ACCEPTANCE] {} -> {}", phase, next);
+        Phase previous = phase;
         phase = next;
         phaseTicks = 0;
         pendingCapture = null;
         renderedCapture = null;
         waitingForCapture = null;
+        recordProgress(previous + " -> " + next);
     }
 
     private static void fail(String reason) {
@@ -2055,11 +2173,52 @@ public final class UiRuntimeAcceptanceHarness {
         }
         failureReason = reason;
         WokInfantryMod.LOGGER.error("[UI ACCEPTANCE] FAIL in {}: {}", phase, reason);
+        Phase failedPhase = phase;
         phase = Phase.FAIL;
         phaseTicks = 0;
         pendingCapture = null;
         renderedCapture = null;
         waitingForCapture = null;
+        recordProgress("FAIL in " + failedPhase);
+    }
+
+    /**
+     * Rewrites {@code ui-test-results/wok_ui_progress.txt}. If the client exits before
+     * {@link #writeResult} runs, Gradle reports the last phase from this file.
+     */
+    private static void recordProgress(String event) {
+        if (progressHistory.size() >= PROGRESS_HISTORY_LIMIT) {
+            progressHistory.remove(0);
+        }
+        progressHistory.add("t=" + totalTicks + " " + event);
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null || minecraft.gameDirectory == null) {
+            return;
+        }
+        List<String> lines = new ArrayList<>();
+        lines.add("phase=" + phase);
+        lines.add("totalTicks=" + totalTicks);
+        lines.add("screen=" + (minecraft.screen == null ? "world"
+                : minecraft.screen.getClass().getSimpleName()));
+        lines.add("updatedAt=" + Instant.now());
+        if (failureReason != null) {
+            lines.add("failure=" + failureReason);
+        }
+        lines.add("history:");
+        lines.addAll(progressHistory);
+        try {
+            Path directory = minecraft.gameDirectory.toPath().resolve(RESULT_DIRECTORY);
+            Files.createDirectories(directory);
+            Files.write(directory.resolve(PROGRESS_FILE), lines, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE);
+        } catch (IOException | RuntimeException exception) {
+            if (!progressWriteFailed) {
+                progressWriteFailed = true;
+                WokInfantryMod.LOGGER.warn("[UI ACCEPTANCE] Could not write progress file",
+                        exception);
+            }
+        }
     }
 
     private record FixtureAnchor(ResourceLocation dimension, double x, double z) {
