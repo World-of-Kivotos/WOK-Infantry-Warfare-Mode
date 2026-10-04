@@ -45,8 +45,20 @@ File networkSelectorFallbackDir = layout.projectDirectory
         .dir('run/network-test/.selector-tcp-fallback/not-created').asFile.canonicalFile
 File uiTestResultFile = layout.projectDirectory
         .file('run/ui-test/ui-test-results/wok_ui_acceptance.txt').asFile.canonicalFile
+// Written on every harness phase change, so a client that exits without a result still shows
+// how far it got.
+File uiTestProgressFile = layout.projectDirectory
+        .file('run/ui-test/ui-test-results/wok_ui_progress.txt').asFile.canonicalFile
+File uiTestOptionsFile = layout.projectDirectory
+        .file('run/ui-test/options.txt').asFile.canonicalFile
 File uiSelectorFallbackDir = layout.projectDirectory
         .dir('run/ui-test/.selector-tcp-fallback/not-created').asFile.canonicalFile
+// UI acceptance runs in the language players actually use unless -PuiLang says otherwise.
+String uiLanguage = (project.findProperty('uiLang') ?: 'zh_cn').toString().trim()
+        .toLowerCase(Locale.ROOT)
+if (!(uiLanguage ==~ /[a-z]{2,3}_[a-z]{2,3}/)) {
+    throw new GradleException("uiLang must be a Minecraft language code such as zh_cn or en_us: ${uiLanguage}")
+}
 if (!networkTestRoot.toPath().startsWith(layout.projectDirectory.asFile.canonicalFile.toPath())
         || !networkTestResultsDir.toPath().startsWith(networkTestRoot.toPath())
         || !networkSelectorFallbackDir.toPath().startsWith(networkTestRoot.toPath())) {
@@ -178,7 +190,11 @@ minecraft {
             workingDirectory project.file('run/ui-test')
             singleInstance true
             jvmArgs "-Djdk.net.unixdomain.tmpdir=${uiSelectorFallbackDir.absolutePath}"
-            args '--quickPlaySingleplayer', 'wok_ui_test', '--width', '960', '--height', '720'
+            // Userdev does not read the JAR manifest's MixinConfigs, so the core mixins must be
+            // named here or the UI acceptance runs without them (same as the other client runs).
+            args '--mixin', 'wok_infantry.mixins.json',
+                    '--quickPlaySingleplayer', 'wok_ui_test', '--width', '960', '--height', '720'
+            property 'wok.ui.expectedLanguage', uiLanguage
             property 'wok.ui.expectedTerrainProvider',
                     (project.findProperty('uiExpectedTerrainProvider') ?: 'journeymap').toString()
             property 'wok.ui.expectedJourneyMapLoaded',
@@ -532,6 +548,35 @@ def prepareUiTestLoadouts = tasks.register('prepareUiTestLoadouts', Copy) {
     rename { 'loadouts.json' }
 }
 
+def prepareUiTestOptions = tasks.register('prepareUiTestOptions') {
+    description = 'Pins the UI acceptance language (-PuiLang, default zh_cn) and resets WOK keys to their defaults.'
+    inputs.property('uiLang', uiLanguage)
+    outputs.upToDateWhen { false }
+    doLast {
+        File uiRoot = layout.projectDirectory.dir('run/ui-test').asFile.canonicalFile
+        if (uiTestOptionsFile.parentFile.canonicalFile != uiRoot) {
+            throw new GradleException("Refusing to manage unexpected UI options path: ${uiTestOptionsFile}")
+        }
+        uiRoot.mkdirs()
+        List<String> lines = uiTestOptionsFile.isFile() ? uiTestOptionsFile.readLines('UTF-8') : []
+        // Minecraft writes every key binding back to options.txt. Dropping the WOK entries makes
+        // each run use the mod's current default keys instead of whatever an older build saved.
+        List<String> kept = lines.findAll {
+            !it.startsWith('lang:') && !it.startsWith('key_key.wok_infantry.')
+        }
+        if (!kept.any { it.startsWith('version:') }) {
+            // 1.20.1 data version; without it Minecraft would run every options data fixer.
+            kept.add(0, 'version:3465')
+        }
+        if (!kept.any { it.startsWith('onboardAccessibility:') }) {
+            kept.add('onboardAccessibility:false')
+        }
+        kept.add("lang:${uiLanguage}".toString())
+        uiTestOptionsFile.setText(kept.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle("UI acceptance language: ${uiLanguage}")
+    }
+}
+
 def prepareNetworkTestWorld = tasks.register('prepareNetworkTestWorld', Sync) {
     description = 'Rebuilds the isolated loopback network-test host world from the clean seed.'
     from layout.projectDirectory.dir('run/world')
@@ -584,7 +629,7 @@ tasks.matching { it.name == 'runGameTestServer' }.configureEach {
 }
 
 tasks.matching { it.name == 'runUiTestClient' }.configureEach {
-    dependsOn prepareUiTestWorld, prepareUiTestLoadouts
+    dependsOn prepareUiTestWorld, prepareUiTestLoadouts, prepareUiTestOptions
     doFirst {
         if (uiJourneyMapJar == null || !uiJourneyMapJar.isFile()) {
             throw new GradleException(
@@ -601,10 +646,25 @@ tasks.matching { it.name == 'runUiTestClient' }.configureEach {
         if (uiTestResultFile.exists() && !uiTestResultFile.delete()) {
             throw new GradleException("Could not remove stale UI acceptance result: ${uiTestResultFile}")
         }
+        if (uiTestProgressFile.parentFile.canonicalFile != uiTestResultFile.parentFile.canonicalFile) {
+            throw new GradleException("Refusing to manage unexpected UI progress path: ${uiTestProgressFile}")
+        }
+        if (uiTestProgressFile.exists() && !uiTestProgressFile.delete()) {
+            throw new GradleException("Could not remove stale UI acceptance progress: ${uiTestProgressFile}")
+        }
     }
     doLast {
         if (!uiTestResultFile.isFile()) {
-            throw new GradleException('UI acceptance client exited without writing a result')
+            String reached = 'no progress file'
+            if (uiTestProgressFile.isFile()) {
+                List<String> progress = uiTestProgressFile.readLines('UTF-8')
+                reached = progress.findAll {
+                    it.startsWith('phase=') || it.startsWith('totalTicks=')
+                            || it.startsWith('screen=') || it.startsWith('failure=')
+                }.join(', ')
+            }
+            throw new GradleException('UI acceptance client exited without writing a result; '
+                    + "last progress: ${reached} (${uiTestProgressFile})")
         }
         List<String> resultLines = uiTestResultFile.readLines('UTF-8')
         String status = resultLines.find { it.startsWith('status=') }
