@@ -27,6 +27,12 @@ Git 内容清单、版本归属及未完成验收见 [`2026-09-06 版本核对`]
 WOK步战附属专用客户端的当前依赖、地图后端和回滚基线见
 [`docs/WOK_INFANTRY_TEST_ENVIRONMENT.md`](docs/WOK_INFANTRY_TEST_ENVIRONMENT.md)。
 
+## 声明
+
+本项目（WOK步战及其附属 MOD）是非官方的粉丝同人作品。其中阵营、编制、组织、地名等名称以及相关标志取材自《蔚蓝档案》（Blue Archive），相关权利归原权利人所有。本项目与原作及其权利方没有任何关联，也未获得其授权或认可。如权利人提出要求，我们会更换或移除相关名称与图标，这不影响 MOD 的主要玩法。
+
+各模块使用的第三方素材及其来源见模块目录下的 `THIRD_PARTY_NOTICES.md`（JAR 内为 `META-INF/THIRD_PARTY_NOTICES.md`），例如 [WOK步战核心](wok_infantry/THIRD_PARTY_NOTICES.md)、[WOK步战附属-指挥官支援](wok_commander_support/THIRD_PARTY_NOTICES.md)。
+
 ## 当前效果
 
 - `wok_trauma:pain`（疼痛）：显示脉动式视野失焦叠层。
