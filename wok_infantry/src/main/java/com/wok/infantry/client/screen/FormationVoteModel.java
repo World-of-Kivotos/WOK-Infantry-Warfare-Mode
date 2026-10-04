@@ -607,6 +607,52 @@ public final class FormationVoteModel {
                 relation(target), candidates);
     }
 
+    /** Why the administrator's test-start key is disabled. */
+    public enum TestBlock {
+        NONE,
+        /** The browsed faction has no formation to use. */
+        NO_TARGET,
+        /** The highlighted formation is disabled or misses a required mod. */
+        UNAVAILABLE,
+        /** The highlighted formation is smaller than the faction (it could not be locked). */
+        SHORTFALL
+    }
+
+    /**
+     * Administrator test-start key (0.4.0-beta.2): visible to an administrator whenever a
+     * catalog is shown, before and after joining and also after the lock. It sends
+     * {@code battle admin test start <factionId> <formationId>}: the browsed faction and the
+     * highlighted formation, or the faction's locked formation, which a test start never
+     * changes ({@code lockKept} when another formation is highlighted).
+     */
+    public record TestStart(boolean visible, TestBlock block, String factionId,
+                            String formationId, boolean locked, boolean lockKept) {
+        static final TestStart HIDDEN = new TestStart(false, TestBlock.NO_TARGET, "", "", false,
+                false);
+
+        public boolean enabled() {
+            return visible && block == TestBlock.NONE;
+        }
+    }
+
+    /** The administrator test-start key for what the page shows. */
+    public TestStart testStart() {
+        if (!administrator || snapshot == null || browsing == null) {
+            return TestStart.HIDDEN;
+        }
+        String locked = lockedFormationId(browsing);
+        if (!locked.isEmpty()) {
+            boolean other = highlighted != null && !highlighted.id().equals(locked);
+            return new TestStart(true, TestBlock.NONE, browsing.id(), locked, true, other);
+        }
+        if (highlighted == null) {
+            return new TestStart(true, TestBlock.NO_TARGET, browsing.id(), "", false, false);
+        }
+        TestBlock block = !highlighted.available() ? TestBlock.UNAVAILABLE
+                : shortfall(browsing, highlighted) ? TestBlock.SHORTFALL : TestBlock.NONE;
+        return new TestStart(true, block, browsing.id(), highlighted.id(), false, false);
+    }
+
     /** How {@code target} relates to the leaders of the viewer's ballot. */
     public AdminRelation relation(FormationSelectionView target) {
         Leaders leaders = leaders();

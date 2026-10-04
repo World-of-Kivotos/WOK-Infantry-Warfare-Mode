@@ -446,6 +446,80 @@ public final class FormationText {
         };
     }
 
+    // ---- administrator test start (0.4.0-beta.2) ------------------------------------------------
+
+    public static Component testStartKey() {
+        return key("admin.test");
+    }
+
+    /** Hover text of the test-start key: what it does, or why it is disabled. */
+    public static Component testStartTooltip(FormationVoteModel model) {
+        FormationVoteModel.TestStart test = model.testStart();
+        return switch (test.block()) {
+            case NONE -> key("admin.test_tooltip");
+            case NO_TARGET -> key("admin.no_target");
+            case UNAVAILABLE -> {
+                FormationSelectionView target = model.highlighted();
+                yield target == null || target.unavailableReason().isBlank()
+                        ? key("admin.disabled") : Component.literal(target.unavailableReason());
+            }
+            case SHORTFALL -> key("admin.test_shortfall");
+        };
+    }
+
+    /** Line right of "管理员" in the compact test-start area, long to short. */
+    public static List<Component> testStartHeadline(FormationVoteModel model) {
+        FormationVoteModel.TestStart test = model.testStart();
+        if (test.formationId().isEmpty()) {
+            return List.of(key("admin.no_target"));
+        }
+        String faction = model.browsing() == null ? test.factionId()
+                : model.browsing().displayName();
+        String formation = testFormationName(model, test);
+        return List.of(key("admin.test_target", faction, formation),
+                key("admin.test_target_short", formation));
+    }
+
+    public static Component testConfirmTitle() {
+        return key("confirm.test_title");
+    }
+
+    /**
+     * Test-start confirmation: turn the server-wide test mode on, join the faction, lock the
+     * formation (or keep the faction's lock), make a squad, add the main bases and deploy; then
+     * what the test mode means for everyone.
+     */
+    public static Component testConfirmBody(FormationVoteModel model) {
+        FormationVoteModel.TestStart test = model.testStart();
+        String faction = model.browsing() == null ? test.factionId()
+                : model.browsing().displayName();
+        return key(test.locked() ? "confirm.test_body_locked" : "confirm.test_body", faction,
+                testFormationName(model, test)).append(key("confirm.test_body_note"));
+    }
+
+    public static Component testConfirmOk() {
+        return key("confirm.test_ok");
+    }
+
+    public static String cannotTestStart() {
+        return I18n.get(PREFIX + "feedback.test_unavailable");
+    }
+
+    public static String pendingTestStart(FormationVoteModel model) {
+        FormationVoteModel.TestStart test = model.testStart();
+        String faction = model.browsing() == null ? test.factionId()
+                : model.browsing().displayName();
+        return I18n.get(PREFIX + "feedback.test_starting", faction,
+                testFormationName(model, test));
+    }
+
+    private static String testFormationName(FormationVoteModel model,
+                                            FormationVoteModel.TestStart test) {
+        FormationSelectionView formation = model.browsing() == null ? null
+                : model.browsing().formation(test.formationId());
+        return formation == null ? test.formationId() : formation.displayName();
+    }
+
     // ---- vote key ------------------------------------------------------------------------------
 
     public static Component voteLabel(FormationVoteModel.VoteAction action) {

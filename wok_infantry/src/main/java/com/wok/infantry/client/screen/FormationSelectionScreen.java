@@ -52,6 +52,8 @@ public final class FormationSelectionScreen extends TacticalScreen
     /** Probe ids of the page's keys (the uiTest input driver clicks them by these ids). */
     public static final String ADMIN_OPEN_UI_ID = "formation.admin.open";
     public static final String ADMIN_LOCK_UI_ID = "formation.admin.lock";
+    /** Administrator test-start key (0.4.0-beta.2). */
+    public static final String TEST_START_UI_ID = "formation.admin.test";
     public static final String JOIN_UI_ID = "formation.join";
     public static final String VOTE_UI_ID = "formation.vote";
     public static final String DETAILS_UI_ID = "formation.details";
@@ -104,7 +106,9 @@ public final class FormationSelectionScreen extends TacticalScreen
 
     private enum DialogKind {
         JOIN,
-        LOCK
+        LOCK,
+        /** Administrator test start (0.4.0-beta.2). */
+        TEST
     }
 
     /** A confirmation and what it is about, to re-check it when a newer catalog arrives. */
@@ -159,8 +163,24 @@ public final class FormationSelectionScreen extends TacticalScreen
     public String uiStateId() {
         Boolean dangerDialog = modal() instanceof TacticalConfirmDialog dialog
                 ? dialog.danger() : null;
+        boolean testDialog = openDialog != null && openDialog.kind() == DialogKind.TEST
+                && modal() == openDialog.dialog();
         return uiStateId(model(), detailPage && layout != null
-                && layout.mode() == FormationScreenLayout.Mode.NARROW_DETAIL, dangerDialog);
+                && layout.mode() == FormationScreenLayout.Mode.NARROW_DETAIL, dangerDialog,
+                testDialog);
+    }
+
+    /**
+     * {@link #uiStateId(FormationVoteModel, boolean, Boolean)} with the administrator's
+     * test-start confirmation, which reports {@code testconfirm} (0.4.0-beta.2).
+     */
+    static String uiStateId(FormationVoteModel model, boolean detailPage, Boolean dangerDialog,
+                            boolean testDialog) {
+        if (testDialog && model.stage() != FormationVoteModel.Stage.WAITING
+                && model.stage() != FormationVoteModel.Stage.EMPTY) {
+            return "testconfirm";
+        }
+        return uiStateId(model, detailPage, dangerDialog);
     }
 
     /**
@@ -234,6 +254,11 @@ public final class FormationSelectionScreen extends TacticalScreen
         return "battle admin formation vote lock " + factionId + " " + formationId;
     }
 
+    /** The test-start key's command (no new packet: the command tree checks the permission). */
+    static String administratorTestStartCommand(String factionId, String formationId) {
+        return "battle admin test start " + factionId + " " + formationId;
+    }
+
     /** Current page state (recomputed on demand; cheap). */
     FormationVoteModel model() {
         return FormationVoteModel.of(snapshot, browseFactionId, highlightedFormationId,
@@ -277,9 +302,12 @@ public final class FormationSelectionScreen extends TacticalScreen
                 : FormationListWidget.naturalHeight(model.browsing(), metrics);
         int joinWidth = waiting || model.joined() ? 0
                 : font.width(FormationText.joinLabel(model).get(0)) + 34;
+        int testKeyWidth = waiting || !model.testStart().visible() ? 0
+                : font.width(FormationText.testStartKey()) + 30;
         layout = FormationScreenLayout.compute(width, height,
                 waiting ? 0 : model.snapshot().factions().size(), model.joined(),
-                model.admin().visible(), detailPage, waiting, listNeed, joinWidth);
+                model.admin().visible(), detailPage, waiting, listNeed, joinWidth,
+                testKeyWidth);
         actionKey = UiRect.EMPTY;
         actionBar = UiRect.EMPTY;
         if (model.joined()) {
@@ -298,12 +326,14 @@ public final class FormationSelectionScreen extends TacticalScreen
                 addJoinKey(model, layout.joinKey(), true);
                 addList(model, metrics);
                 addAdminKey(model);
+                addTestStartKey(model);
                 addVoteKey(model, layout.detailAction(), layout.detailAction().left());
             }
             case NARROW_LIST -> {
                 addFactionKeys(model);
                 addList(model, metrics);
                 addAdminKey(model);
+                addTestStartKey(model);
                 addDetailsKey(model);
                 if (model.joined()) {
                     addVoteKey(model, layout.actionBar(), layout.detailsKey().right() + 4);
@@ -395,6 +425,25 @@ public final class FormationSelectionScreen extends TacticalScreen
             }
         }
         addRenderableWidget(key);
+    }
+
+    /**
+     * Administrator test-start key (0.4.0-beta.2): an adjustable (orange) control beside the
+     * vote key, or alone in the compact administrator area before joining or after the lock.
+     */
+    private void addTestStartKey(FormationVoteModel model) {
+        FormationVoteModel.TestStart test = model.testStart();
+        if (!test.visible() || layout.testKey().isEmpty()) {
+            return;
+        }
+        UiRect rect = layout.testKey();
+        Button key = BattleUiButton.builder(FormationText.testStartKey(),
+                        ignored -> confirmTestStart())
+                .kind(BattleUiButton.Kind.CONTROL).icon(TacticalIcon.WRENCH)
+                .bounds(rect.left(), rect.top(), rect.width(), rect.height()).build();
+        key.active = test.enabled();
+        key.setTooltip(Tooltip.create(FormationText.testStartTooltip(model)));
+        addRenderableWidget(role(key, TEST_START_UI_ID));
     }
 
     private void addDetailsKey(FormationVoteModel model) {
@@ -568,6 +617,38 @@ public final class FormationSelectionScreen extends TacticalScreen
     }
 
     /**
+     * Administrator test start (0.4.0-beta.2): an ordinary confirmation naming the faction and
+     * formation, then {@code battle admin test start <faction> <formation>} as a chat command;
+     * the server checks the permission, reports every step in chat and answers in the footer.
+     * A successful start deploys the administrator, which closes this page.
+     */
+    private void confirmTestStart() {
+        FormationVoteModel model = model();
+        FormationVoteModel.TestStart test = model.testStart();
+        if (!test.enabled()) {
+            ClientFormationState.feedback(false, FormationText.cannotTestStart());
+            return;
+        }
+        String factionId = test.factionId();
+        String formationId = test.formationId();
+        String pending = FormationText.pendingTestStart(model);
+        TacticalConfirmDialog dialog = TacticalConfirmDialog.builder(
+                        FormationText.testConfirmTitle(), FormationText.testConfirmBody(model))
+                .confirmLabel(FormationText.testConfirmOk())
+                .onConfirm(() -> {
+                    if (!sendCommand(administratorTestStartCommand(factionId, formationId))) {
+                        ClientFormationState.feedback(false, FormationText.cannotTestStart());
+                        return;
+                    }
+                    ClientFormationState.feedback(ClientFormationState.FeedbackKind.PENDING,
+                            pending);
+                })
+                .build();
+        openDialog = new OpenDialog(DialogKind.TEST, factionId, formationId, dialog);
+        openModal(dialog);
+    }
+
+    /**
      * A newer catalog arrived while the join or lock confirmation is open: the dialog was written
      * from the old one (population, votes, the leader). It is rewritten from the new catalog, or
      * closed with a receipt when its target can no longer be joined or locked, so nobody confirms
@@ -583,6 +664,18 @@ public final class FormationSelectionScreen extends TacticalScreen
             return;
         }
         FormationVoteModel model = model();
+        if (open.kind() == DialogKind.TEST) {
+            // The test start names what the page shows; it is rewritten while that still
+            // applies (a teammate's vote, the lock) and closed silently when it no longer does.
+            FormationVoteModel.TestStart test = model.testStart();
+            if (test.enabled() && test.factionId().equals(open.factionId())) {
+                open.dialog().updateBody(FormationText.testConfirmBody(model));
+                return;
+            }
+            openDialog = null;
+            open.dialog().dismiss();
+            return;
+        }
         boolean join = open.kind() == DialogKind.JOIN;
         FormationVoteModel.DialogFate fate = join ? model.joinDialogFate(open.factionId())
                 : model.lockDialogFate(open.factionId(), open.formationId());
@@ -881,6 +974,12 @@ public final class FormationSelectionScreen extends TacticalScreen
         graphics.fill(area.left(), y1 + 1, area.left() + 2, y1 + 8, TacticalBoardTheme.SECTION);
         TextFit.draw(graphics, font, FormationText.adminTitle(), area.left() + 5, y1, 40,
                 TacticalBoardTheme.TEXT, TextFit.Align.LEFT);
+        if (!model.admin().visible()) {
+            // Compact area (not joined yet, or locked): only the test-start key and its target.
+            FormationDetailPanel.drawVariant(graphics, font, FormationText.testStartHeadline(model),
+                    area.left() + 46, y1, area.width() - 46, TacticalBoardTheme.MUTED);
+            return;
+        }
         FormationDetailPanel.drawVariant(graphics, font, FormationText.adminHeadline(model),
                 area.left() + 46, y1, area.width() - 46, TacticalBoardTheme.MUTED);
         FormationVoteModel.AdminState admin = model.admin();

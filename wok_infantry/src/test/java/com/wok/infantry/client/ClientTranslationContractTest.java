@@ -150,6 +150,12 @@ class ClientTranslationContractTest {
             Map.entry("screen.wok_infantry.formation.reopen", 1),
             Map.entry("screen.wok_infantry.formation.locked_notice", 1),
             Map.entry("screen.wok_infantry.formation.quoted", 1),
+            // Administrator test start on the formation page (0.4.0-beta.2).
+            Map.entry("screen.wok_infantry.formation.admin.test_target", 2),
+            Map.entry("screen.wok_infantry.formation.admin.test_target_short", 1),
+            Map.entry("screen.wok_infantry.formation.confirm.test_body", 2),
+            Map.entry("screen.wok_infantry.formation.confirm.test_body_locked", 2),
+            Map.entry("screen.wok_infantry.formation.feedback.test_starting", 2),
             // Administrator loadout "职业管理" disabled reason (review fix UI-06).
             Map.entry("screen.wok_infantry.admin_loadout.class_settings.no_rule", 1),
             Map.entry("screen.wok_infantry.squad.member_count", 2),
