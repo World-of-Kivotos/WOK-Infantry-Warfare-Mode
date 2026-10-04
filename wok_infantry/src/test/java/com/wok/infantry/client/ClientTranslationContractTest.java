@@ -108,6 +108,7 @@ class ClientTranslationContractTest {
             Map.entry("screen.wok_infantry.formation.reason.late_not_chosen_short", 1),
             Map.entry("screen.wok_infantry.formation.reason.shortfall", 3),
             Map.entry("screen.wok_infantry.formation.reason.shortfall_short", 2),
+            Map.entry("screen.wok_infantry.formation.reason.shortfall_tiny", 2),
             Map.entry("screen.wok_infantry.formation.detail.sub", 2),
             Map.entry("screen.wok_infantry.formation.detail.sub_votes", 4),
             Map.entry("screen.wok_infantry.formation.fit.capacity", 3),

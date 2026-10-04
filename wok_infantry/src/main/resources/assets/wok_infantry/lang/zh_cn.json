@@ -203,6 +203,7 @@
   "screen.wok_infantry.formation.reason.unavailable": "编制已停用或配置无效",
   "screen.wok_infantry.formation.reason.shortfall": "最多容纳 %1$s 人，%2$s已有 %3$s 人，不能作为共享编制",
   "screen.wok_infantry.formation.reason.shortfall_short": "容量不足：上限 %1$s < 本阵营 %2$s 人",
+  "screen.wok_infantry.formation.reason.shortfall_tiny": "上限 %1$s < 本阵营 %2$s",
   "screen.wok_infantry.formation.reason.not_candidate": "不在本次投票的候选中",
   "screen.wok_infantry.formation.reason.no_change": "本轮投票不可改票",
   "screen.wok_infantry.formation.reason.no_formation": "尚未分配编制，请联系管理员",

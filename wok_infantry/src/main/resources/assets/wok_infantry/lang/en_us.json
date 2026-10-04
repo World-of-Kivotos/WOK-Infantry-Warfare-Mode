@@ -203,6 +203,7 @@
   "screen.wok_infantry.formation.reason.unavailable": "Formation disabled or invalid",
   "screen.wok_infantry.formation.reason.shortfall": "Holds %1$s, %2$s has %3$s players: cannot be the shared formation",
   "screen.wok_infantry.formation.reason.shortfall_short": "Too small: max %1$s < faction %2$s",
+  "screen.wok_infantry.formation.reason.shortfall_tiny": "Max %1$s < %2$s",
   "screen.wok_infantry.formation.reason.not_candidate": "Not a candidate of this vote",
   "screen.wok_infantry.formation.reason.no_change": "Votes cannot be changed this round",
   "screen.wok_infantry.formation.reason.no_formation": "No formation assigned, ask an administrator",

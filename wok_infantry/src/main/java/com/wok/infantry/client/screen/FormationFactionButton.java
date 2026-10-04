@@ -1,6 +1,7 @@
 package com.wok.infantry.client.screen;
 
 import com.wok.infantry.client.hud.TacticalHud;
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -56,9 +57,11 @@ final class FormationFactionButton extends Button {
         int bottom = top + height;
         boolean focus = TacticalButtonStyle.keyboardFocused(this);
         TextFit.Fitted fitted;
+        String probeState;
         if (look == FormationVoteModel.FactionLook.BROWSING) {
             fitted = renderBrowsing(graphics, font, left, top, right, bottom,
                     TacticalButtonStyle.hovered(this), focus);
+            probeState = "BROWSING";
         } else {
             TacticalButtonStyle.Look style = switch (look) {
                 case JOINED -> new TacticalButtonStyle.Look(TacticalButtonStyle.State.CURRENT,
@@ -74,8 +77,10 @@ final class FormationFactionButton extends Button {
             fitted = TacticalButtonStyle.render(graphics, font, left, top, right, bottom,
                     getMessage(), style, new TacticalButtonStyle.Options(TextFit.Align.LEFT,
                             badge, TacticalBoardTheme.MUTED, focus, icon, false));
+            probeState = style.state().name();
         }
         truncationTooltip.sync(this, getMessage(), fitted.truncated());
+        UiLayoutProbe.widget(graphics, this, "button", probeState, fitted.truncated(), focus);
     }
 
     private TextFit.Fitted renderBrowsing(GuiGraphics graphics, Font font, int left, int top,
