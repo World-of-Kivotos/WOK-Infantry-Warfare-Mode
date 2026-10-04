@@ -6,56 +6,60 @@ import com.wok.infantryarmor.armor.HelmetVariant;
 import com.wok.infantryarmor.armor.item.HelmetItem;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.resources.ResourceLocation;
+import software.bernie.geckolib.cache.object.BakedGeoModel;
 import software.bernie.geckolib.cache.object.GeoBone;
 import software.bernie.geckolib.renderer.GeoArmorRenderer;
 
-/** GeckoLib armor renderer for Blockbench-authored headgear geometry. */
+/**
+ * GeckoLib armor renderer for the generated headgear models (wok_infantry_armor/tools/helmet-models).
+ *
+ * <p>The models are built at true size with every visible surface at least 0.25 px outside the skin's
+ * hat layer, so no extra scaling is applied. Visor glass and lenses live in their own {@value #GLASS_BONE}
+ * bone and are drawn in a second, translucent pass after the opaque shell. Switching render types only
+ * after the opaque pass has finished keeps the translucent state from leaking into the shell (drawing
+ * glass bones in the middle of the recursion made the whole helmet translucent on GeckoLib 4.8.4).
+ */
 public final class HelmetGeoRenderer extends GeoArmorRenderer<HelmetItem> {
 
-    /**
-     * Player head overlays extend beyond the base 8x8 head. This is especially visible when a
-     * client turns the skin's second layer into real voxel geometry. Keep the helmet outside that
-     * envelope instead of hiding the player's complete head overlay (which may also contain
-     * glasses, facial hair, or other details).
-     */
-    private static final float HEAD_OVERLAY_CLEARANCE_WIDTH = 1.10F;
-    private static final float HEAD_OVERLAY_CLEARANCE_HEIGHT = 1.06F;
-
-    private static final ResourceLocation VISOR_GLASS_TEXTURE = new ResourceLocation(
-            "minecraft", "textures/block/tinted_glass.png");
-
-    private final HelmetVariant variant;
+    private static final String SHELL_BONE = "helmet_shell";
+    private static final String GLASS_BONE = "visor_glass";
+    private static final float GLASS_ALPHA = 0.45F;
 
     public HelmetGeoRenderer(HelmetVariant variant) {
         super(new HelmetGeoModel(variant));
-        this.variant = variant;
-        withScale(HEAD_OVERLAY_CLEARANCE_WIDTH, HEAD_OVERLAY_CLEARANCE_HEIGHT);
     }
 
     @Override
-    public void renderRecursively(PoseStack poseStack, HelmetItem animatable, GeoBone bone,
-                                  RenderType renderType, MultiBufferSource bufferSource,
-                                  VertexConsumer buffer, boolean isReRender, float partialTick,
-                                  int packedLight, int packedOverlay, float red, float green,
-                                  float blue, float alpha) {
-        boolean vulkanGlass = variant == HelmetVariant.VULKAN_5_HEAVY
-                && "vulkan_visor_glass".equals(bone.getName());
-        // Altyn uses opaque smoked armored glass. Rendering several curved
-        // child bones through entityTranslucent leaks the translucent render
-        // state into the complete Gecko armor pass on Forge/GeckoLib 4.8.4,
-        // making the green titanium shell appear transparent. Keep only the
-        // single-plane Vulkan visor on the translucent pass.
-        if (vulkanGlass) {
-            RenderType glassRenderType = RenderType.entityTranslucent(VISOR_GLASS_TEXTURE);
-            VertexConsumer glassBuffer = bufferSource.getBuffer(glassRenderType);
-            super.renderRecursively(poseStack, animatable, bone, glassRenderType, bufferSource,
-                    glassBuffer, isReRender, partialTick, packedLight, packedOverlay,
-                    0.58F, 0.66F, 0.70F, 0.42F);
+    public void actuallyRender(PoseStack poseStack, HelmetItem animatable, BakedGeoModel model,
+                               RenderType renderType, MultiBufferSource bufferSource,
+                               VertexConsumer buffer, boolean isReRender, float partialTick,
+                               int packedLight, int packedOverlay, float red, float green,
+                               float blue, float alpha) {
+        GeoBone glass = model.getBone(GLASS_BONE).orElse(null);
+        if (glass == null || isReRender || bufferSource == null) {
+            super.actuallyRender(poseStack, animatable, model, renderType, bufferSource, buffer,
+                    isReRender, partialTick, packedLight, packedOverlay, red, green, blue, alpha);
             return;
         }
+        GeoBone shell = model.getBone(SHELL_BONE).orElse(null);
 
-        super.renderRecursively(poseStack, animatable, bone, renderType, bufferSource, buffer,
-                isReRender, partialTick, packedLight, packedOverlay, red, green, blue, alpha);
+        glass.setHidden(true);
+        super.actuallyRender(poseStack, animatable, model, renderType, bufferSource, buffer,
+                false, partialTick, packedLight, packedOverlay, red, green, blue, alpha);
+        glass.setHidden(false);
+
+        if (shell != null) {
+            shell.setHidden(true);
+        }
+        try {
+            RenderType glassType = RenderType.entityTranslucent(getTextureLocation(animatable));
+            super.actuallyRender(poseStack, animatable, model, glassType, bufferSource,
+                    bufferSource.getBuffer(glassType), true, partialTick, packedLight, packedOverlay,
+                    red, green, blue, alpha * GLASS_ALPHA);
+        } finally {
+            if (shell != null) {
+                shell.setHidden(false);
+            }
+        }
     }
 }

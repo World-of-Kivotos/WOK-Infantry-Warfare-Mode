@@ -1,0 +1,32 @@
+{
+  "key": "fast_heavy_protection_kit",
+  "order": 15,
+  "name": "FAST 重型套件",
+  "tier": "V · 重型",
+  "title": "FAST MT + SLAAP 附加板 + 下颌护具",
+  "refs": [
+    {
+      "label": "FAST MT 城市沙色",
+      "url": "https://assets.tarkov.dev/5ac8d6885acfc400180ae7b0-512.webp"
+    },
+    {
+      "label": "SLAAP 附加板",
+      "url": "https://assets.tarkov.dev/5c0e66e2d174af02a96252f4-512.webp"
+    },
+    {
+      "label": "Gunsight 下颌护具",
+      "url": "https://assets.tarkov.dev/5a16ba61fcdbcb098008728a-512.webp"
+    },
+    {
+      "label": "FAST 侧护",
+      "url": "https://assets.tarkov.dev/5a16badafcdbcb001865f72d-512.webp"
+    }
+  ],
+  "notes": [
+    "原图是<b>城市沙色</b>的 FAST MT 超级高切，外加两件附件。<b>SLAAP 附加板</b>是一块比盔壳更深、偏棕的厚板，盖住盔顶前半：正面挖出一个大拱形口，让夜视罩露在外面，拱口两边的板一直伸到盔沿，侧面停在导轨上方，后沿在头顶划一道弧。",
+    "<b>Gunsight 下颌护具</b>是 MultiCam 迷彩的防弹织物，正中一块黑色硬质护板，里面是深色内衬，两侧挂在导轨上，从脸颊绕到嘴前面。塔科夫里这件护具只有 MultiCam 一种颜色，所以没有做成沙色。",
+    "盔壳、导轨、夜视罩、弹力绳、魔术贴和下颌带照 FAST MT 的做法，只换成沙色。SLAAP 板比盔壳厚出半格，边缘颜色更深。下颌护具从导轨下面的黑色转接块挂下来，分前片、颊片、侧片几段，黑色护板在正中，只挡嘴和下巴，不挡眼睛。",
+    "现在的模型：盔壳还是 6B47 那种一层层的台阶壳，没有高切；下颌护具是一整块深棕色大方块，把脸几乎全包住，眼睛只露出一条缝，也不是迷彩色。",
+    "Minecraft 的限制：原物的护具是一整片弧面，这里只能用台阶拼成 U 形；护具在脸前 0.75 格，从上往下看能看到嘴。FAST 侧护在塔科夫里是单独的配件，现在的模型也没有，所以没做。"
+  ]
+}
