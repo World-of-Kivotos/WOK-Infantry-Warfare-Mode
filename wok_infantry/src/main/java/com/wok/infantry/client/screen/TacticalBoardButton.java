@@ -1,12 +1,15 @@
 package com.wok.infantry.client.screen;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
 
-/** Map-local button skin that keeps the vanilla input, focus, tooltip and narration behavior. */
+/**
+ * Board key of the map and formation surfaces, drawn from the shared
+ * {@link TacticalButtonStyle} state table. Keeps the vanilla input, focus, tooltip and
+ * narration behaviour.
+ */
 final class TacticalBoardButton extends Button {
     enum Kind {
         NAVIGATION,
@@ -18,59 +21,59 @@ final class TacticalBoardButton extends Button {
 
     private final Kind kind;
     private final boolean engaged;
-    private final int accentColor;
+    private final TruncationTooltip truncationTooltip = new TruncationTooltip();
+    private boolean labelTruncated;
 
+    /**
+     * @param engaged     the key shows the current selection (selected tab, tool, layer...)
+     * @param accentColor no longer used: selection is always blue with a light stripe; kept so
+     *                    existing screens compile unchanged until they migrate
+     */
     TacticalBoardButton(int x, int y, int width, int height, Component message,
                         OnPress onPress, Kind kind, boolean engaged, int accentColor) {
         super(x, y, width, height, message, onPress, DEFAULT_NARRATION);
-        this.kind = kind;
+        this.kind = kind == null ? Kind.NAVIGATION : kind;
         this.engaged = engaged;
-        this.accentColor = accentColor;
+    }
+
+    /**
+     * Look of a board key. When an engaged key is not clickable only {@link Kind#NAVIGATION}
+     * (the current page tab) keeps the selected look; every other kind is drawn as disabled,
+     * so e.g. a highlighted formation row outside the voting phase no longer looks selectable.
+     */
+    static TacticalButtonStyle.Look look(Kind kind, boolean engaged, boolean active,
+                                         boolean hovered) {
+        boolean current = engaged && !active && kind == Kind.NAVIGATION;
+        return TacticalButtonStyle.resolve(active, engaged, current, variant(kind), hovered,
+                false);
+    }
+
+    static TacticalButtonStyle.Variant variant(Kind kind) {
+        if (kind == null) {
+            return TacticalButtonStyle.Variant.NORMAL;
+        }
+        return switch (kind) {
+            case NAVIGATION, TOGGLE, TOOL -> TacticalButtonStyle.Variant.NORMAL;
+            case CONTROL -> TacticalButtonStyle.Variant.CONTROL;
+            case DANGER -> TacticalButtonStyle.Variant.DANGER;
+        };
+    }
+
+    /** True when the last drawn label was shortened with an ellipsis. */
+    boolean labelTruncated() {
+        return labelTruncated;
     }
 
     @Override
     protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY,
                                 float partialTick) {
-        int left = getX();
-        int top = getY();
-        int right = left + width;
-        int bottom = top + height;
-        int fillColor;
-        if (engaged) {
-            fillColor = isHoveredOrFocused()
-                    ? TacticalBoardTheme.SELECTED_HOVER : TacticalBoardTheme.SELECTED;
-        } else if (!active) {
-            fillColor = TacticalBoardTheme.CARD_DISABLED;
-        } else if (isHoveredOrFocused()) {
-            fillColor = TacticalBoardTheme.CARD_HOVER;
-        } else {
-            fillColor = TacticalBoardTheme.CARD;
-        }
-        graphics.fill(left, top, right, bottom, fillColor);
-        int borderColor = kind == Kind.DANGER
-                ? TacticalBoardTheme.DANGER
-                : engaged ? accentColor
-                : isHoveredOrFocused() ? TacticalBoardTheme.SELECTED
-                : TacticalBoardTheme.BORDER;
-        BattleUiTheme.outline(graphics, left, top, right, bottom, borderColor);
-        if (engaged) {
-            graphics.fill(left + 1, top + 1, left + 4, bottom - 1, accentColor);
-        } else if (kind == Kind.CONTROL) {
-            graphics.fill(left + 2, bottom - 3, right - 2, bottom - 2,
-                    TacticalBoardTheme.ACCENT);
-        }
-
-        Component message = getMessage();
-        if (!message.getString().isEmpty()) {
-            Font font = Minecraft.getInstance().font;
-            int available = Math.max(1, width - (engaged ? 10 : 6));
-            String text = font.plainSubstrByWidth(message.getString(), available);
-            int textColor = engaged ? TacticalBoardTheme.LIGHT_TEXT
-                    : active ? TacticalBoardTheme.TEXT : TacticalBoardTheme.MUTED_TEXT;
-            BattleUiTheme.drawCenteredText(graphics, font, text,
-                    left + width / 2,
-                    top + Math.max(0, (height - font.lineHeight) / 2) + 1,
-                    textColor);
-        }
+        TacticalButtonStyle.Look look = look(kind, engaged, active,
+                TacticalButtonStyle.hovered(this));
+        TacticalButtonStyle.Options options = TacticalButtonStyle.Options.DEFAULT
+                .withFocusRing(TacticalButtonStyle.keyboardFocused(this));
+        TextFit.Fitted fitted = TacticalButtonStyle.render(graphics, Minecraft.getInstance().font,
+                getX(), getY(), getX() + width, getY() + height, getMessage(), look, options);
+        labelTruncated = fitted.truncated();
+        truncationTooltip.sync(this, getMessage(), labelTruncated);
     }
 }
