@@ -59,6 +59,8 @@ public final class SupportService {
     private static final int MAX_REQUEST_RECEIPTS = 512;
     private static final long REQUEST_RECEIPT_TTL_TICKS = 10L * 60L * 20L;
     private static final double MAX_ABSOLUTE_COORDINATE = 29_999_000.0D;
+    /** Reason carried by a read-only option: the mission is in flight, the formation is closed. */
+    static final String FORMATION_CLOSED_REASON = "当前编制未开放该支援";
 
     private static final Map<MinecraftServer, SupportService> INSTANCES =
             Collections.synchronizedMap(new WeakHashMap<>());
@@ -280,7 +282,8 @@ public final class SupportService {
             return SupportView.unavailable(now,
                     visibleRevision(List.of(), List.of(), false, reason), reason);
         }
-        List<SupportOptionView> options = new ArrayList<>(registry.definitions().size());
+        List<SupportOptionView> callableOptions =
+                new ArrayList<>(registry.definitions().size());
         FormationService formations = FormationService.get(server).orElse(null);
         for (SupportDefinition definition : registry.definitions()) {
             ResourceLocation supportId = definition.id();
@@ -292,23 +295,82 @@ public final class SupportService {
             ProviderAvailability availability = provider == null
                     ? ProviderAvailability.unavailable("未实现该支援适配器")
                     : provider.availability();
-            long storedReadyAt = savedData.readyAt(faction, supportId);
-            long visibleReadyAt = storedReadyAt > now ? storedReadyAt : 0L;
-            options.add(new SupportOptionView(definition, availability.available(),
-                    availability.reason(), visibleReadyAt,
+            callableOptions.add(new SupportOptionView(definition, availability.available(),
+                    availability.reason(), visibleReadyAt(faction, supportId, now),
                     hasActive(faction, supportId)));
         }
-        List<SupportMissionView> missions = activeMissions.values().stream()
+        // Missions are filtered by faction only. A teammate whose formation does not open the
+        // support (an administrator assignment, or a catalog reload while a call is inbound)
+        // must still see the friendly danger area instead of breaking the whole broadcast.
+        List<InFlightMission> missions = activeMissions.values().stream()
                 .filter(mission -> mission.faction() == faction)
-                .map(ActiveMission::view)
+                .map(mission -> new InFlightMission(mission.definition(), mission.view(),
+                        visibleReadyAt(faction, mission.supportId(), now)))
                 .toList();
-        if (options.isEmpty()) {
-            String message = "尚未注册支援能力";
-            return SupportView.empty(now,
-                    visibleRevision(options, missions, true, message));
+        return mergeMissionOptions(now, callableOptions, missions);
+    }
+
+    private long visibleReadyAt(Faction faction, ResourceLocation supportId, long now) {
+        long storedReadyAt = savedData.readyAt(faction, supportId);
+        return storedReadyAt > now ? storedReadyAt : 0L;
+    }
+
+    /**
+     * Builds the viewer's support view from the options their formation opens and every
+     * in-flight mission of their faction, without ever throwing for a formation mismatch.
+     *
+     * <p>Wire invariants kept here: every mission references exactly one option, an option is
+     * {@code active} exactly when its faction has a mission in flight, and the combination
+     * "active but unavailable" means {@link SupportOptionView#readOnlyMission()} only. A mission
+     * whose support the viewer's formation does not open gets a read-only option built from the
+     * mission's own definition ({@link #FORMATION_CLOSED_REASON}); a callable option whose
+     * provider dropped out while its mission is still in flight is shown as in flight until the
+     * scheduler cancels that mission. A second mission for one support id cannot be accepted
+     * (one per faction and support) and would be dropped rather than break the view.</p>
+     */
+    static SupportView mergeMissionOptions(long now, List<SupportOptionView> callableOptions,
+                                          List<InFlightMission> factionMissions) {
+        List<SupportMissionView> missions = new ArrayList<>(factionMissions.size());
+        LinkedHashMap<ResourceLocation, InFlightMission> missionBySupport =
+                new LinkedHashMap<>();
+        for (InFlightMission mission : factionMissions) {
+            if (missionBySupport.putIfAbsent(mission.view().supportId(), mission) == null) {
+                missions.add(mission.view());
+            }
         }
-        return new SupportView(options, missions, now,
-                visibleRevision(options, missions, true, ""), true, "");
+        LinkedHashMap<ResourceLocation, SupportOptionView> options = new LinkedHashMap<>();
+        for (SupportOptionView option : callableOptions) {
+            if (option == null || options.containsKey(option.id())) {
+                continue;
+            }
+            boolean inFlight = missionBySupport.containsKey(option.id());
+            SupportOptionView normalized = option;
+            if (inFlight && (!option.active() || !option.providerAvailable())) {
+                normalized = withState(option, true, "", true);
+            } else if (!inFlight && option.active()) {
+                normalized = withState(option, option.providerAvailable(),
+                        option.availabilityReason(), false);
+            }
+            options.put(option.id(), normalized);
+        }
+        missionBySupport.forEach((supportId, mission) -> options.computeIfAbsent(supportId,
+                ignored -> new SupportOptionView(mission.definition(), false,
+                        FORMATION_CLOSED_REASON, mission.visibleReadyAt(), true)));
+        List<SupportOptionView> merged = List.copyOf(options.values());
+        if (merged.isEmpty()) {
+            return SupportView.empty(now,
+                    visibleRevision(merged, missions, true, "尚未注册支援能力"));
+        }
+        return new SupportView(merged, missions, now,
+                visibleRevision(merged, missions, true, ""), true, "");
+    }
+
+    private static SupportOptionView withState(SupportOptionView option,
+                                               boolean providerAvailable, String reason,
+                                               boolean active) {
+        return new SupportOptionView(option.id(), option.translationKey(),
+                option.fallbackName(), option.shortName(), option.targetMode(),
+                option.radius(), providerAvailable, reason, option.readyAtGameTick(), active);
     }
 
     /** Executes due mission steps without exceeding four provider callbacks in one server tick. */
@@ -740,6 +802,22 @@ public final class SupportService {
 
     /** Result of one {@link #runDueSteps} pass; {@code end} is null while the mission continues. */
     record StepRun(int callbacks, MissionEnd end) {
+    }
+
+    /**
+     * One faction mission as {@link #mergeMissionOptions} sees it: the definition it was
+     * accepted with, its client view and the faction cooldown visible to the viewer.
+     */
+    record InFlightMission(SupportDefinition definition, SupportMissionView view,
+                           long visibleReadyAt) {
+        InFlightMission {
+            Objects.requireNonNull(definition, "definition");
+            Objects.requireNonNull(view, "view");
+            if (!definition.id().equals(view.supportId())) {
+                throw new IllegalArgumentException("Mission view does not match its definition");
+            }
+            visibleReadyAt = Math.max(0L, visibleReadyAt);
+        }
     }
 
     /** Terminal classification of a mission: refund, circuit state and player-visible reason. */

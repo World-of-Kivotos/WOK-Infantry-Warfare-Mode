@@ -105,6 +105,8 @@
   "screen.wok_infantry.map.support.status.waiting_deployment_short": "DEPLOY",
   "screen.wok_infantry.map.support.status.provider_missing": "EXTENSION UNAVAILABLE",
   "screen.wok_infantry.map.support.status.provider_missing_short": "EXT",
+  "screen.wok_infantry.map.support.status.formation_closed": "UNAVAILABLE · NOT IN FORMATION",
+  "screen.wok_infantry.map.support.status.formation_closed_short": "N/A",
   "screen.wok_infantry.map.support.status.active": "MISSION ACTIVE",
   "screen.wok_infantry.map.support.status.active_short": "LIVE",
   "screen.wok_infantry.map.support.status.seconds_suffix": "s",

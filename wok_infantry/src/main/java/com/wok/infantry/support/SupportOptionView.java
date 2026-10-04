@@ -60,6 +60,17 @@ public record SupportOptionView(
         return providerAvailable && !active && cooldownRemainingTicks(serverGameTick) == 0L;
     }
 
+    /**
+     * True for a mission of the viewer's faction that is in flight although the viewer's own
+     * formation does not open this support, for example after an administrator assigned the
+     * viewer to another formation. The option is read-only: it never becomes callable and only
+     * carries the definition the client needs to draw the friendly danger area. The server emits
+     * the "active but unavailable" combination for this case only.
+     */
+    public boolean readOnlyMission() {
+        return active && !providerAvailable;
+    }
+
     public static String sanitizeAvailabilityReason(String reason) {
         String safe = Objects.requireNonNullElse(reason, "");
         if (safe.length() <= MAX_AVAILABILITY_REASON_LENGTH) {

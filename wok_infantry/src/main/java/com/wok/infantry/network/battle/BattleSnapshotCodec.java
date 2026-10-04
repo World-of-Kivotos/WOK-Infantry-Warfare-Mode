@@ -443,10 +443,9 @@ public final class BattleSnapshotCodec {
             if (optionsById.putIfAbsent(option.id(), option) != null) {
                 throw invalid("duplicate support option", option.id());
             }
+            // "Active but unavailable" is the read-only option of a mission the viewer's
+            // formation does not open (SupportOptionView#readOnlyMission); same wire layout.
             if (option.active()) {
-                if (!option.providerAvailable()) {
-                    throw invalid("active unavailable support option", option.id());
-                }
                 activeOptionIds.add(option.id());
             }
             writeSupportId(buffer, option.id());
@@ -535,9 +534,6 @@ public final class BattleSnapshotCodec {
             long readyAt = readNonNegativeLong(buffer, "support ready tick");
             boolean active = buffer.readBoolean();
             if (active) {
-                if (!providerAvailable) {
-                    throw invalid("active unavailable support option", id);
-                }
                 activeOptionIds.add(id);
             }
             SupportOptionView option = new SupportOptionView(id, translationKey, fallbackName,
