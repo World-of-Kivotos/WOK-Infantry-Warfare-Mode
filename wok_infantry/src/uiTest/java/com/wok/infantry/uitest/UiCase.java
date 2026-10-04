@@ -15,7 +15,9 @@ import java.util.Objects;
  * checks the layout and runs the case's own checks.
  *
  * <p>{@code migrated} surfaces (rebuilt on the new shared components) fail the run on any layout
- * violation on a required tier; surfaces still waiting for their batch are only reported.
+ * violation on a required tier; surfaces still waiting for their batch are only reported. The
+ * runner also requires a migrated screen to report the case's surface id through
+ * {@code UiSurfaceInfo} and to lay out as 480×360 on 960×720 at GUI 1.
  * Screenshots are named {@code wok_ui_<surface>_<state>_<tier>.png} unless a legacy name is pinned
  * with {@link Builder#file}.
  */

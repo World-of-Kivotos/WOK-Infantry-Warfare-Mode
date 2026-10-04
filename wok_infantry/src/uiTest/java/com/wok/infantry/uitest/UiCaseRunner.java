@@ -2,6 +2,7 @@ package com.wok.infantry.uitest;
 
 import com.wok.infantry.WokInfantryMod;
 import com.wok.infantry.client.ui.probe.UiLayoutReport;
+import com.wok.infantry.client.ui.probe.UiSurfaceInfo;
 import com.mojang.blaze3d.platform.Window;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -265,6 +266,7 @@ public final class UiCaseRunner {
                 UiLayoutReport.Options.of(language));
         String failure = null;
         try {
+            checkMigrated(result);
             for (UiCase.Check check : current.checks()) {
                 check.check(context, result);
             }
@@ -273,6 +275,33 @@ public final class UiCaseRunner {
         }
         record(result, violations, failure);
         nextTier();
+    }
+
+    /**
+     * Built-in checks of a migrated surface (方案 3.2 B3 / 5.1): the captured screen reports the
+     * case's preview surface through {@link UiSurfaceInfo}, and on 960×720 at GUI 1 it lays out
+     * as 480×360 under the minimum 2x. A screen that is not a WOK surface (a vanilla chat screen
+     * over a HUD case) is left to the case's own checks.
+     */
+    private void checkMigrated(UiCapture.Result result) {
+        if (!current.migrated()) {
+            return;
+        }
+        Screen screen = result.screen();
+        if (screen != null && !(screen instanceof UiSurfaceInfo)) {
+            return;
+        }
+        if (screen instanceof UiSurfaceInfo info) {
+            context.require(current.surfaceId().equals(info.uiSurfaceId()),
+                    "migrated surface reports surface id " + info.uiSurfaceId() + " instead of "
+                            + current.surfaceId());
+        }
+        if (tiers.get(tierIndex) == UiTier.T960) {
+            context.require(result.layoutWidth() == 480 && result.layoutHeight() == 360,
+                    "960x720 at GUI 1 must lay out as 480x360 at 2x, got "
+                            + result.layoutWidth() + "x" + result.layoutHeight() + " x"
+                            + result.baseScale());
+        }
     }
 
     private void record(UiCapture.Result result, List<UiLayoutReport.Violation> violations,
