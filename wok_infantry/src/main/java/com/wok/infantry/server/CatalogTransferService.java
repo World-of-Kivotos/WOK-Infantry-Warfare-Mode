@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -136,7 +137,7 @@ public final class CatalogTransferService {
     private void refreshClients(FormationService formations) {
         loadouts.refreshCatalogClients();
         if (!FormationNetwork.isInitialized()) return;
-        server.getPlayerList().getPlayers().forEach(player -> {
+        FormationNetwork.forEachRecipient(List.copyOf(server.getPlayerList().getPlayers()), player -> {
             boolean required = formations.snapshotFor(player).selectionRequired();
             if (BattleNetwork.isInitialized()) {
                 if (required) BattleNetwork.sendClearToPlayer(player);

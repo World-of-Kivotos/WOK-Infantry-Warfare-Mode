@@ -1,10 +1,13 @@
 package com.wok.infantry.network.formation;
 
+import com.mojang.logging.LogUtils;
 import com.wok.infantry.WokInfantryMod;
 import com.wok.infantry.battle.ActionResult;
 import com.wok.infantry.battle.BattleService;
+import com.wok.infantry.battle.Faction;
 import com.wok.infantry.network.battle.BattleNetwork;
 import com.wok.infantry.network.battle.BattleOpenTarget;
+import com.wok.infantry.network.battle.PerRecipientDelivery;
 import com.wok.infantry.network.formation.packet.c2s.RequestFormationCatalogPacket;
 import com.wok.infantry.network.formation.packet.c2s.SelectFormationPacket;
 import com.wok.infantry.network.formation.packet.c2s.CastFormationVotePacket;
@@ -19,8 +22,13 @@ import net.minecraftforge.network.NetworkDirection;
 import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
+import org.slf4j.Logger;
 
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.function.Consumer;
 
 /** Independent versioned channel for the pre-battle roster selection state machine. */
 public final class FormationNetwork {
@@ -39,6 +47,8 @@ public final class FormationNetwork {
             .clientAcceptedVersions(PROTOCOL_VERSION::equals)
             .serverAcceptedVersions(PROTOCOL_VERSION::equals)
             .simpleChannel();
+    private static final Logger LOGGER = LogUtils.getLogger();
+    private static final PerRecipientDelivery DELIVERY_FAILURES = new PerRecipientDelivery();
     private static boolean initialized;
 
     private FormationNetwork() {
@@ -129,14 +139,43 @@ public final class FormationNetwork {
      * first the battle snapshot, so the deployment page the client opens already shows the new
      * formation, then the catalog with the lock notice. The server no longer pushes the
      * deployment page itself; the client decides whether a WOK terminal may be replaced.
+     * A failing battle snapshot is logged and does not stop the catalog.
      */
     public static void sendFormationApplied(ServerPlayer player) {
         Objects.requireNonNull(player, "player");
         if (BattleNetwork.isInitialized()) {
-            BattleService.get(player).ifPresent(service -> BattleNetwork.sendSnapshotToPlayer(
-                    service, player, BattleOpenTarget.NONE));
+            deliverSafely(player, recipient -> BattleService.get(recipient).ifPresent(service ->
+                    BattleNetwork.sendSnapshotToPlayer(service, recipient,
+                            BattleOpenTarget.NONE)));
         }
-        sendSnapshotToPlayer(player, false, true);
+        deliverSafely(player, recipient -> sendSnapshotToPlayer(recipient, false, true));
+    }
+
+    /**
+     * Runs {@code delivery} for every recipient; a failure for one player is logged (once per
+     * signature and window) and never stops the others. Every formation fan-out goes through
+     * here: vote opened or locked, catalog reload or transfer, battle reset, teammate refresh.
+     */
+    public static void forEachRecipient(Iterable<ServerPlayer> recipients,
+                                        Consumer<ServerPlayer> delivery) {
+        PerRecipientDelivery.deliverEach(recipients, delivery, FormationNetwork::reportFailure);
+    }
+
+    private static void deliverSafely(ServerPlayer player, Consumer<ServerPlayer> delivery) {
+        forEachRecipient(List.of(player), delivery);
+    }
+
+    private static void reportFailure(ServerPlayer player, RuntimeException failure) {
+        String playerName = player.getGameProfile().getName();
+        if (DELIVERY_FAILURES.firstReport(failure)) {
+            LOGGER.error("Could not send the formation catalog or battle snapshot to {}; the "
+                    + "other players in this pass still received theirs. Repeats of this "
+                    + "failure within five minutes are logged at debug level only.", playerName,
+                    failure);
+        } else {
+            LOGGER.debug("Formation delivery to {} failed again: {}", playerName,
+                    PerRecipientDelivery.signature(failure));
+        }
     }
 
     /**
@@ -153,55 +192,102 @@ public final class FormationNetwork {
                 result.message().isBlank() ? "操作未完成" : result.message()));
     }
 
-    public static void finishSelection(ServerPlayer player, ActionResult result) {
+    /**
+     * Answer to the player's own faction-and-formation request ({@code select}). {@code before}
+     * is the player's state taken before the request: only a real change pushes the formation
+     * and refreshes the old and new faction's members; a repeat answers the sender alone.
+     */
+    public static void finishSelection(ServerPlayer player, ActionResult result,
+                                       FormationSeatState before) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(result, "result");
+        Objects.requireNonNull(before, "before");
         sendResult(player, result);
+        FormationSeatState after = FormationSeatState.of(player);
         if (!result.success()) {
             if (!result.message().isBlank()) {
                 player.displayClientMessage(Component.literal(result.message()), false);
             }
-            sendSnapshotToPlayer(player, true);
+            deliverSafely(player, recipient -> sendSnapshotToPlayer(recipient, true));
+            // The faction may have been joined before the vote part was refused.
+            refreshFactionMembers(player, before.affectedFactions(after));
             return;
         }
-        if (hasFormation(player)) {
+        if (before.seatChanged(after) && hasFormation(player)) {
             sendFormationApplied(player);
         } else {
-            // Faction-only assignment while the faction still votes: show the vote page.
-            sendSnapshotToPlayer(player, true);
+            // Faction only while the faction still votes, or nothing changed: the vote page.
+            deliverSafely(player, recipient -> sendSnapshotToPlayer(recipient, true));
         }
+        refreshFactionMembers(player, before.affectedFactions(after));
     }
 
-    public static void finishVote(ServerPlayer player, ActionResult result) {
+    /** Answer to a vote; teammates refresh only when the player's vote really changed. */
+    public static void finishVote(ServerPlayer player, ActionResult result,
+                                  FormationSeatState before) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(result, "result");
+        Objects.requireNonNull(before, "before");
         sendResult(player, result);
         if (!result.message().isBlank()) {
             player.displayClientMessage(Component.literal(result.message()), false);
         }
-        sendSnapshotToPlayer(player, true);
-        if (result.success()) {
-            refreshFactionMates(player);
-        }
+        deliverSafely(player, recipient -> sendSnapshotToPlayer(recipient, true));
+        refreshFactionMembers(player, before.affectedFactions(FormationSeatState.of(player)));
     }
 
-    public static void finishFactionSelection(ServerPlayer player, ActionResult result) {
+    /**
+     * Answer to a faction choice. Joining after the lock applies the locked formation (vote-01);
+     * only a real join refreshes the faction's members ("已投 n/人数" and the population changed).
+     * Choosing the faction the player is already in answers the sender alone, without a battle
+     * snapshot or teammate refresh (NET-1).
+     */
+    public static void finishFactionSelection(ServerPlayer player, ActionResult result,
+                                              FormationSeatState before) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(result, "result");
+        Objects.requireNonNull(before, "before");
         sendResult(player, result);
         if (!result.message().isBlank()) {
             player.displayClientMessage(Component.literal(result.message()), false);
         }
-        if (result.success() && hasFormation(player)) {
-            // Joined after the lock: the locked formation is already applied (vote-01).
+        FormationSeatState after = FormationSeatState.of(player);
+        if (result.success() && before.seatChanged(after) && hasFormation(player)) {
             sendFormationApplied(player);
         } else {
-            sendSnapshotToPlayer(player, result.success());
+            deliverSafely(player, recipient -> sendSnapshotToPlayer(recipient, result.success()));
         }
-        if (result.success()) {
-            // Population and "已投 n/人数" changed for everyone already in the faction.
-            refreshFactionMates(player);
+        refreshFactionMembers(player, before.affectedFactions(after));
+    }
+
+    /**
+     * An administrator assignment of {@code target} succeeded. When the target's faction or
+     * formation really changed, the target gets a receipt in its own words with public names
+     * (never the internal battle side), then its formation or the vote page, and the online
+     * members of the old and the new faction refresh their catalogs. An assignment that changed
+     * nothing pushes nothing to anyone.
+     *
+     * @return whether the target's faction or formation changed
+     */
+    public static boolean finishAdminAssignment(ServerPlayer target, FormationSeatState before) {
+        Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(before, "before");
+        FormationSeatState after = FormationSeatState.of(target);
+        if (!before.seatChanged(after)) {
+            return false;
         }
+        String receipt = FormationService.get(target)
+                .map(service -> service.assignmentReceipt(target.getUUID()))
+                .orElse(FormationService.adminAssignmentReceipt("", ""));
+        sendResult(target, ActionResult.ok(receipt));
+        target.displayClientMessage(Component.literal(receipt), false);
+        if (hasFormation(target)) {
+            sendFormationApplied(target);
+        } else {
+            deliverSafely(target, recipient -> sendSnapshotToPlayer(recipient, true));
+        }
+        refreshFactionMembers(target, before.affectedFactions(after));
+        return true;
     }
 
     private static boolean hasFormation(ServerPlayer player) {
@@ -209,14 +295,22 @@ public final class FormationNetwork {
                 .flatMap(service -> service.selectedFormation(player.getUUID())).isPresent();
     }
 
-    private static void refreshFactionMates(ServerPlayer player) {
-        BattleService.get(player).flatMap(battle -> battle.factionOf(player.getUUID()))
-                .ifPresent(faction -> player.server.getPlayerList().getPlayers().stream()
-                        .filter(other -> !other.getUUID().equals(player.getUUID()))
-                        .filter(other -> BattleService.get(other)
-                                .flatMap(battle -> battle.factionOf(other.getUUID()))
-                                .filter(faction::equals).isPresent())
-                        .forEach(other -> sendSnapshotToPlayer(other, false)));
+    /** Catalog refresh for the other online members of {@code factions}, one player at a time. */
+    private static void refreshFactionMembers(ServerPlayer actor, Set<Faction> factions) {
+        if (factions.isEmpty()) {
+            return;
+        }
+        BattleService battle = BattleService.get(actor).orElse(null);
+        if (battle == null) {
+            return;
+        }
+        UUID actorId = actor.getUUID();
+        forEachRecipient(actor.server.getPlayerList().getPlayers().stream()
+                        .filter(other -> !other.getUUID().equals(actorId))
+                        .filter(other -> battle.factionOf(other.getUUID())
+                                .filter(factions::contains).isPresent())
+                        .toList(),
+                other -> sendSnapshotToPlayer(other, false));
     }
 
     private static synchronized void ensureInitialized() {
