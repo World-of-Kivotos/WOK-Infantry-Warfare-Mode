@@ -16,6 +16,8 @@ import com.wok.infantry.formation.FormationDeployablePolicy;
 import com.wok.infantry.registry.InfantryBlocks;
 import com.wok.infantry.server.FormationService;
 import com.wok.infantry.server.LoadoutService;
+import com.wok.infantry.testmode.TestModeRules;
+import com.wok.infantry.testmode.TestModeService;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -1044,7 +1046,11 @@ public final class DeploymentService {
             holdPlayer(player);
             return inventoryCommit;
         }
-        if (!preservesAdministratorCreative(player)
+        // The server-wide test mode is for testing the real survival rules (stamina, body
+        // health, downed state): there even an administrator in creative deploys in survival.
+        boolean keepCreative = preservesAdministratorCreative(player)
+                && !TestModeService.isEnabled(server);
+        if (!keepCreative && player.gameMode.getGameModeForPlayer() != GameType.SURVIVAL
                 && !player.setGameMode(GameType.SURVIVAL)) {
             KitProvenance.purgeAllIssued(player);
             holdPlayer(player);
@@ -1297,6 +1303,94 @@ public final class DeploymentService {
         return ActionResult.ok("已清除 " + faction.id() + " 方主基地");
     }
 
+    /**
+     * Server-wide test mode: gives {@code faction} a main base near the overworld spawn when it
+     * has none (an existing base is never moved). The columns of
+     * {@link TestModeRules#baseColumns} are tried in order; a column outside the world border is
+     * skipped, otherwise the same bounded safe-landing search as every other deployment point
+     * runs from the world surface. The caller ({@code TestModeService}) owns the permission
+     * check: it runs only for a permission-two command or an already enabled test mode.
+     */
+    public MainBaseProvision provisionMainBase(Faction faction) {
+        Objects.requireNonNull(faction, "faction");
+        DeploymentPoint existing = savedData.mainBase(faction).orElse(null);
+        if (existing != null) {
+            return new MainBaseProvision(faction, false, existing,
+                    "已有主基地 " + existing.dimension() + " "
+                            + existing.position().toShortString());
+        }
+        ServerLevel level = server.overworld();
+        BlockPos spawn = level.getSharedSpawnPos();
+        net.minecraft.world.level.border.WorldBorder border = level.getWorldBorder();
+        List<String> refusals = new ArrayList<>();
+        for (TestModeRules.BaseColumn center : TestModeRules.baseCenters(faction,
+                spawn.getX(), spawn.getZ())) {
+            int outside = 0;
+            Map<String, Integer> floors = new LinkedHashMap<>();
+            for (TestModeRules.BaseColumn column : TestModeRules.searchColumns(center)) {
+                if (!TestModeRules.insideBorder(border.getMinX(), border.getMinZ(),
+                        border.getMaxX(), border.getMaxZ(), column.x(), column.z())) {
+                    outside++;
+                    continue;
+                }
+                BlockPos surface = level.getHeightmapPos(net.minecraft.world.level.levelgen
+                                .Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                        new BlockPos(column.x(), spawn.getY(), column.z()));
+                BlockPos feet = findSafeFeet(level, surface).orElse(null);
+                // 审查修正: the surface heightmap skips leaves, so on normal terrain the bounded
+                // search could settle on a tree canopy; a provisioned base needs real ground.
+                if (feet == null || level.getBlockState(feet.below()).is(BlockTags.LEAVES)) {
+                    floors.merge(String.valueOf(net.minecraftforge.registries.ForgeRegistries
+                            .BLOCKS.getKey(level.getBlockState(feet == null ? surface.below()
+                                    : feet.below()).getBlock())),
+                            1, Integer::sum);
+                    continue;
+                }
+                DeploymentPoint point = new DeploymentPoint(UUID.randomUUID(), faction,
+                        level.dimension().location(), feet,
+                        normalizeYaw(TestModeRules.baseYaw(faction,
+                                center.x() - spawn.getX())),
+                        DeploymentPoint.DEFAULT_SUPPLY_RADIUS);
+                savedData.setMainBase(point);
+                return new MainBaseProvision(faction, true, point, column.label() + " "
+                        + level.dimension().location() + " " + feet.toShortString());
+            }
+            String area = center.label() + "（" + center.x() + ", " + center.z() + "）周围 "
+                    + TestModeRules.BASE_SEARCH_RADIUS + " 格内";
+            if (floors.isEmpty()) {
+                refusals.add(area + "全部超出世界边界");
+            } else {
+                String commonFloor = floors.entrySet().stream()
+                        .max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse("?");
+                refusals.add(area + "没有安全落脚位置（地表多为 " + commonFloor + "）"
+                        + (outside > 0 ? "，另有 " + outside + " 处超出世界边界" : ""));
+            }
+        }
+        return new MainBaseProvision(faction, false, null, String.join("；", refusals)
+                + "。请站到实心地面后执行 /battle deployment setbase " + faction.id());
+    }
+
+    /**
+     * Server-wide test mode was just switched on: every waiting player's running countdown ends
+     * now, so a deployment request is answered at once. Players already deployed or ready are
+     * not touched.
+     *
+     * @return how many countdowns were cut short
+     */
+    public int skipWaitingCountdowns() {
+        long now = gameTick();
+        int skipped = 0;
+        for (DeploymentRecord record : records.values()) {
+            if (record.phase == DeploymentPhase.WAITING && record.eligibleGameTick > now) {
+                record.eligibleGameTick = now;
+                updateReady(record, now);
+                touch(record);
+                skipped++;
+            }
+        }
+        return skipped;
+    }
+
     /** Called at authoritative roster mutation sites, not merely from packet handlers. */
     public void onRosterChanged(UUID playerId) {
         if (isVehicleTestMode(playerId)) {
@@ -1419,6 +1513,10 @@ public final class DeploymentService {
     }
 
     private long respawnDelayTicks(UUID playerId) {
+        if (TestModeService.isEnabled(server)) {
+            // Server-wide test mode: no deployment countdown and no respawn wait.
+            return 0L;
+        }
         return FormationService.get(server)
                 .map(formations -> formations.respawnDelayTicks(playerId,
                         RESPAWN_DELAY_TICKS))

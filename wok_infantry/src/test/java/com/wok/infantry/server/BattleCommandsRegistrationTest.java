@@ -23,6 +23,41 @@ class BattleCommandsRegistrationTest {
     }
 
     @Test
+    void registersTestModeSwitchAndTestStartBesideTheVehicleTest() {
+        CommandNode<CommandSourceStack> test = BattleCommands.testCommand().build();
+        CommandNode<CommandSourceStack> mode = test.getChild("mode");
+        assertNotNull(mode, "Missing /battle admin test mode");
+        for (String state : new String[] {"on", "off", "status"}) {
+            assertNotNull(mode.getChild(state), "Missing test mode " + state);
+            assertNotNull(mode.getChild(state).getCommand(), state + " must execute");
+        }
+        CommandNode<CommandSourceStack> start = test.getChild("start");
+        assertNotNull(start, "Missing /battle admin test start");
+        assertNotNull(start.getCommand(), "test start without arguments must execute");
+        CommandNode<CommandSourceStack> node = start;
+        for (String segment : new String[] {"faction", "formation", "player"}) {
+            node = node.getChild(segment);
+            assertNotNull(node, "Missing test start argument: " + segment);
+            assertNotNull(node.getCommand(), "test start must execute after " + segment);
+        }
+        assertNotNull(test.getChild("vehicle"), "the vehicle test mode stays available");
+    }
+
+    @Test
+    void parsesTestStartWithFactionAndFormation() {
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.register(BattleCommands.testCommand());
+
+        ParseResults<CommandSourceStack> parsed = dispatcher.parse(
+                "test start academy millennium_seminar_mobile", null);
+
+        assertTrue(parsed.getReader().getRemaining().isEmpty(),
+                "faction and formation ids must be consumed as words");
+        assertNotNull(parsed.getContext().build(parsed.getReader().getString()).getCommand(),
+                "test start with faction and formation must resolve to the start action");
+    }
+
+    @Test
     void parsesNamespacedSupportIdWithoutTrailingInput() {
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.register(BattleCommands.supportAdminCommand());

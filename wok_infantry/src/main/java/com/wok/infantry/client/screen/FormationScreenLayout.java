@@ -18,7 +18,10 @@ import java.util.List;
  *   detail panel.</li>
  *   <li><b>Waiting</b>: one panel with the waiting state and the retry key.</li>
  * </ul>
- * Panels never overlap; every rectangle stays inside the board body.
+ * An administrator also gets the test-start key (0.4.0-beta.2): beside the vote key in the
+ * administrator area, or, when there is no vote key (not joined yet, or locked), alone in a
+ * compact administrator area at the same place. Panels never overlap; every rectangle stays
+ * inside the board body.
  */
 public record FormationScreenLayout(Mode mode, TacticalShellLayout shell, UiRect inner,
                                     UiRect strip, List<UiRect> factionKeys, UiRect status,
@@ -28,7 +31,7 @@ public record FormationScreenLayout(Mode mode, TacticalShellLayout shell, UiRect
                                     UiRect mainKey, UiRect detailPanel, UiRect identity,
                                     UiRect content, UiRect detailAction, UiRect crumb,
                                     UiRect crumbBack, UiRect crumbText, UiRect crumbPager,
-                                    UiRect waitingPanel) {
+                                    UiRect waitingPanel, UiRect testKey) {
     /** Which arrangement is used. */
     public enum Mode {
         WAITING,
@@ -53,6 +56,19 @@ public record FormationScreenLayout(Mode mode, TacticalShellLayout shell, UiRect
     public static int adminHeight(TacticalShellLayout.Metrics metrics) {
         return 26 + metrics.buttonHeight();
     }
+
+    /**
+     * Height of the administrator area that only holds the test-start key (0.4.0-beta.2): one
+     * text line and the key. Used when the vote keys are not shown (not joined yet, or locked).
+     */
+    public static int adminCompactHeight(TacticalShellLayout.Metrics metrics) {
+        return 14 + metrics.buttonHeight();
+    }
+
+    /** Gap between the vote key and the test-start key sharing the administrator key row. */
+    public static final int ADMIN_KEY_GAP = 4;
+    /** Largest share of the administrator key row the test-start key takes beside a vote key. */
+    public static final int TEST_KEY_SHARE_PERCENT = 45;
 
     /** Emblem size of the detail identity block: 64 in the roomy class, otherwise 32. */
     public static int emblemSize(TacticalShellLayout.Metrics metrics) {
@@ -90,6 +106,22 @@ public record FormationScreenLayout(Mode mode, TacticalShellLayout shell, UiRect
                                                 boolean joined, boolean admin,
                                                 boolean detailPage, boolean waiting,
                                                 int listNeed, int joinWidth) {
+        return compute(width, height, factions, joined, admin, detailPage, waiting, listNeed,
+                joinWidth, 0);
+    }
+
+    /**
+     * @param testKeyWidth preferred width of the administrator test-start key (0.4.0-beta.2),
+     *                     0 for none. Beside the vote keys ({@code admin}) it takes the right
+     *                     part of their row (at most {@value #TEST_KEY_SHARE_PERCENT}%); without
+     *                     them a compact administrator area holds it alone, full width.
+     * @see #compute(int, int, int, boolean, boolean, boolean, boolean, int, int)
+     */
+    public static FormationScreenLayout compute(int width, int height, int factions,
+                                                boolean joined, boolean admin,
+                                                boolean detailPage, boolean waiting,
+                                                int listNeed, int joinWidth,
+                                                int testKeyWidth) {
         TacticalShellLayout shell = TacticalShellLayout.compute(width, height);
         TacticalShellLayout.Metrics m = shell.metrics();
         UiRect inner = shell.body().inset(m.gap());
@@ -100,17 +132,18 @@ public record FormationScreenLayout(Mode mode, TacticalShellLayout shell, UiRect
             return b.build();
         }
         if (!narrow(width, height)) {
-            wide(b, m, factions, joined, admin, listNeed, joinWidth);
+            wide(b, m, factions, joined, admin, listNeed, joinWidth, testKeyWidth);
         } else if (detailPage) {
             narrowDetail(b, m);
         } else {
-            narrowList(b, m, factions, admin, listNeed);
+            narrowList(b, m, factions, admin, listNeed, testKeyWidth);
         }
         return b.build();
     }
 
     private static void wide(Builder b, TacticalShellLayout.Metrics m, int factions,
-                             boolean joined, boolean admin, int listNeed, int joinWidth) {
+                             boolean joined, boolean admin, int listNeed, int joinWidth,
+                             int testKeyWidth) {
         b.mode = Mode.WIDE;
         UiRect inner = b.inner;
         b.strip = inner.topSlice(m.buttonHeight());
@@ -141,12 +174,12 @@ public record FormationScreenLayout(Mode mode, TacticalShellLayout shell, UiRect
         List<UiRect> columns = main.cols(m.gap() + 3, UiRect.Size.px(listWidth),
                 UiRect.Size.STAR);
         b.listPanel = columns.get(0);
-        listPanelInterior(b, m, admin, listNeed, false);
+        listPanelInterior(b, m, admin, listNeed, false, testKeyWidth);
         detailPanel(b, m, columns.get(1));
     }
 
     private static void narrowList(Builder b, TacticalShellLayout.Metrics m, int factions,
-                                   boolean admin, int listNeed) {
+                                   boolean admin, int listNeed, int testKeyWidth) {
         b.mode = Mode.NARROW_LIST;
         UiRect inner = b.inner;
         b.strip = inner.topSlice(m.buttonHeight());
@@ -161,7 +194,7 @@ public record FormationScreenLayout(Mode mode, TacticalShellLayout shell, UiRect
         }
         b.listPanel = new UiRect(inner.left(), b.strip.bottom() + m.gap() + 1, inner.right() - 1,
                 inner.bottom() - 1);
-        listPanelInterior(b, m, admin, listNeed, true);
+        listPanelInterior(b, m, admin, listNeed, true, testKeyWidth);
     }
 
     private static void narrowDetail(Builder b, TacticalShellLayout.Metrics m) {
@@ -177,7 +210,7 @@ public record FormationScreenLayout(Mode mode, TacticalShellLayout shell, UiRect
     }
 
     private static void listPanelInterior(Builder b, TacticalShellLayout.Metrics m, boolean admin,
-                                          int listNeed, boolean narrow) {
+                                          int listNeed, boolean narrow, int testKeyWidth) {
         UiRect c = TacticalDraw.panelContent(b.listPanel, m,
                 TacticalDraw.PanelStyle.titled(PANEL_TITLE));
         int bottom = c.bottom();
@@ -191,7 +224,20 @@ public record FormationScreenLayout(Mode mode, TacticalShellLayout shell, UiRect
         }
         if (admin) {
             b.admin = new UiRect(c.left(), bottom - adminHeight(m), c.right(), bottom);
-            b.adminKey = b.admin.bottomSlice(m.buttonHeight());
+            UiRect row = b.admin.bottomSlice(m.buttonHeight());
+            if (testKeyWidth > 0) {
+                int test = Math.max(0, Math.min(testKeyWidth,
+                        row.width() * TEST_KEY_SHARE_PERCENT / 100));
+                b.testKey = row.rightSlice(test);
+                b.adminKey = new UiRect(row.left(), row.top(),
+                        Math.max(row.left(), b.testKey.left() - ADMIN_KEY_GAP), row.bottom());
+            } else {
+                b.adminKey = row;
+            }
+            bottom = b.admin.top() - m.gap() - 2;
+        } else if (testKeyWidth > 0) {
+            b.admin = new UiRect(c.left(), bottom - adminCompactHeight(m), c.right(), bottom);
+            b.testKey = b.admin.bottomSlice(m.buttonHeight());
             bottom = b.admin.top() - m.gap() - 2;
         }
         int wellBottom = Math.max(c.top(), Math.min(bottom, c.top() + Math.max(0, listNeed)));
@@ -266,6 +312,7 @@ public record FormationScreenLayout(Mode mode, TacticalShellLayout shell, UiRect
         private UiRect crumbText = UiRect.EMPTY;
         private UiRect crumbPager = UiRect.EMPTY;
         private UiRect waitingPanel = UiRect.EMPTY;
+        private UiRect testKey = UiRect.EMPTY;
 
         private Builder(TacticalShellLayout shell, UiRect inner) {
             this.shell = shell;
@@ -276,7 +323,7 @@ public record FormationScreenLayout(Mode mode, TacticalShellLayout shell, UiRect
             return new FormationScreenLayout(mode, shell, inner, strip, List.copyOf(factionKeys),
                     status, joinKey, listPanel, well, summary, preview, admin, adminKey,
                     actionBar, detailsKey, mainKey, detailPanel, identity, content, detailAction,
-                    crumb, crumbBack, crumbText, crumbPager, waitingPanel);
+                    crumb, crumbBack, crumbText, crumbPager, waitingPanel, testKey);
         }
     }
 }

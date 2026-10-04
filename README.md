@@ -9,7 +9,7 @@
 
 | 模块 | 正式名称 | 当前版本 | 源码目录 |
 | --- | --- | --- | --- |
-| `wok_infantry` | WOK步战核心 | `0.4.0-beta.1` | `wok_infantry/` |
+| `wok_infantry` | WOK步战核心 | `0.4.0-beta.2` | `wok_infantry/` |
 | `wok_trauma` | WOK步战附属-创伤治疗 | `0.1.0-beta.1` | 仓库根目录 |
 | `wok_body_health` | WOK步战附属-部位血量 | `0.1.0-beta.10` | `wok_body_health/` |
 | `wok_infantry_armor` | WOK步战附属-独立护甲 | `1.2.0-beta.1` | `wok_infantry_armor/` |

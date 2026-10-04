@@ -1,5 +1,48 @@
 # 更新日志
 
+## WOK步战核心 0.4.0-beta.2 — 2026-10-05
+
+> 用户需求（2026-10-05）：“加一个功能 测试模式，因为现在我需要部署点 没法测试功能”。选阵营/编制时人在黑色等待空间里，超平坦测试世界两方都没有主基地，没法测试部署后的功能。本版新增全服测试模式与一键测试开局（命令和编制页按钮），不改任何网络协议号，可与 0.4.0-beta.1 互连。
+
+### 新增
+- 全服测试模式：`/battle admin test mode on|off|status`（权限等级 2）。开关写进独立存档 `<世界>/data/wok_infantry_test_mode.dat`（只记开关、开关人和时间），对全服生效、重启后保留。开启时全服公告，所有在线玩家（之后登录或重生的也一样）顶部显示黄色 Boss 条“WOK步战测试模式已开启 · /battle admin test mode off 关闭”；关闭时移除 Boss 条并公告，公告里说明补出的主基地保留。`status` 显示开关、谁在何时开关的和两方主基地坐标。
+- 测试模式开启时：缺主基地的一方自动在主世界出生点附近补设并公告坐标——蓝方在出生点的安全落脚处，红方在出生点 +64 X 的安全落脚处，复用部署点的安全落点查找（2 格内、向上 2 格），尊重世界边界；出生点在水里等找不到落脚处时，在中心 24 格内按 8 格步长逐圈外扩，红方东边全不行再试 -64 X（这时红方朝东、面向出生点），两方的候选列互不重叠；地面是树叶的落脚处（普通地形的树冠）跳过；都找不到就在公告和回执里写明原因（例如“出生点（0, 0）周围 24 格内没有安全落脚位置（地表多为 minecraft:water）”）。已有的主基地不动。正在进行的部署倒计时立即结束，之后部署倒计时和阵亡后的重生等待都是 0（请求部署后立即部署）；兵力、配装、体力、部位血量、倒地等其余规则全部照常。
+- 一键测试开局：`/battle admin test start [阵营] [编制] [玩家]`（权限等级 2，须在游戏内执行，默认对执行者本人生效，加玩家参数可把局域网的第二个玩家也送进去）。先在不做任何改动的情况下核对阵营、编制和该阵营的空位：参数写错、锁定编制当前不可用、阵营已满（上限取阵营人数上限与编制容量中较小者）时直接回报原因，不开启测试模式、不补基地、不开或锁定投票、不动玩家。核对通过后依次：测试模式未开启则先开启；选阵营——参数优先，否则当前所在阵营，否则目录第一个公开阵营，测试开局可以换到另一阵营（绕过“本轮不可换阵营”，只有这条命令可以）；选编制——参数优先，否则该阵营已锁定的编制，否则 `default`，否则第一个候选；该阵营投票未锁定时（必要时先开启投票、候选过期时重开）直接锁定为所选编制，已锁定为别的编制时不改锁定结果、直接加入锁定编制并说明；没有小队就创建第一个空闲呼号的小队并当队长（呼号都已有小队时加入第一个有空位的）；最后选本方主基地并以生存模式部署、发配装。每一步都在聊天回报，失败的一步写成红字并停止，不留半截状态：部署被拒（例如配装不完整）时玩家停在部署页（阵营、编制、小队已就绪），页脚写原因，聊天写补法（点“配装”补齐必需槽位，或用 `/loadoutadmin` 配置该编制的兵种装备，再点“部署”或重新执行）。锁定照常推给该阵营其他成员（与管理员锁定命令相同；锁定之后的某一步失败时也一样推送，其他客户端不会停在旧投票上），被测试开局的玩家本人只收到战局快照和不带锁定标记的目录，不会在部署前被推到别的页面。
+- 编制投票页的“测试开局”键（uiId `formation.admin.test`）：只对客户端判断有权限等级 2 的玩家显示，可调/橙色样式、扳手图标。没加入阵营或阵营已锁定时，单独放在紧凑管理员区（标题行“管理员 测试开局：学院军 · 常规编制”）；投票未锁定时与“开启编制投票”/“锁定投票结果”并排，最多占该行 45%。阵营取当前浏览的阵营，编制取高亮的编制，阵营已锁定时用锁定编制；编制停用、缺 MOD 或容量小于阵营人数时禁用，悬停写原因。点击后弹出 B2c 普通确认层（页面状态 `testconfirm`）：“开启全服测试模式，并自动加入<阵营>、锁定“<编制>”、建小队、补主基地后直接部署？”（已锁定时写“沿用本局已锁定的“<编制>””），另起一段说明测试模式全服生效、重启后保留、用完执行 `/battle admin test mode off`；确认后经 `ClientPacketListener.sendCommand` 发送 `battle admin test start <阵营> <编制>`，页脚显示“正在执行测试开局：…”；成功部署时编制页随部署关闭——不论编制页是服务端推出、用战斗终端键打开还是从终端“编制”页签打开的（只有发出过测试开局的这一页会这样关闭；部署被拒时照常换成部署页）。
+- 语言：中英成对新增 18 个语言键（各由 663 个增至 681 个）：编制页 12 个（按键、悬停、目标行、确认层、处理中与不可用回执），服务端公告 6 个（Boss 条、开启、关闭、补设成功、补设失败、登录提醒），公告与 Boss 条按玩家客户端语言显示。
+- 开发用：`LoadoutService.swapCatalogForGameTest` / `catalogForGameTest`（只在内存里换配装目录，不写 `loadouts.json`），供 GameTest 部署不依赖测试世界的配装文件。
+
+### 修改
+- 部署：测试模式开启时，部署一律切到生存模式，管理员在创造模式下等待时“保留创造”的例外不再适用（等待区里仍保留，便于布置）；部署前已是生存模式时不再调用切换（原版会把“没有变化”当成失败，从而误报“服务器阻止切换到生存模式”；正常流程中等待区是冒险模式，以前碰不到）。
+- 部署：阵亡、重新部署和首次进入的等待时长在测试模式下为 0，关闭后恢复为编制配置或默认 15 秒；`/battle admin test` 下新增 `mode`、`start` 两个子命令，原有 `vehicle` 子命令和载具测试模式不变。
+- 编制页：管理员区的按键行在投票未锁定时分成两键（开启/锁定键在左，测试开局键在右）；未加入阵营或已锁定时管理员会多出一个紧凑管理员区，320×240 窄屏列表页的编制预览因此可能收起（列表照常滚动）。普通玩家的编制页布局与 0.4.0-beta.1 完全相同。`FormationScreenLayout` 新增带 `testKeyWidth` 的 `compute` 重载和 `testKey` 区域，原 9 参签名行为不变。
+
+### 修复
+- 无。
+
+### 兼容性
+- 网络协议号全部不变：战局 `19`、编制 `5`、兵力 `2`、体力 `2`、配装 `11`。0.4.0-beta.2 与 0.4.0-beta.1 可以互连；编制页按钮只是发聊天命令，没有新增网络包。服务端是 0.4.0-beta.1 时按钮发出的命令会被回“未知命令”；客户端是 0.4.0-beta.1 时看不到按钮，Boss 条和公告显示为语言键原文（新语言键只在 0.4.0-beta.2 客户端里）。
+- 测试模式是全服开关：开启后同一服务器的所有玩家都没有部署倒计时和重生等待，并显示 Boss 条；正式对局前务必 `/battle admin test mode off`。测试开局会锁定阵营投票，要恢复正常流程需 `/battle admin reset`（测试模式开关不受重置影响）。
+- 与载具测试模式（`/battle admin test vehicle on|off|status [玩家]`：单人、不保存、切创造并暂停部署限制）互不影响；处于载具测试模式的玩家不能执行测试开局。
+- 公共 API 只新增：`TestModeService`、`TestModeRules`、`TestModeSavedData`（`com.wok.infantry.testmode`）、`DeploymentService.provisionMainBase` / `skipWaitingCountdowns`、`MainBaseProvision`、`FormationVoteModel.TestStart` / `testStart()`、`FormationSelectionScreen.awaitingTestStart()` / `closesOnTestStartDeployment(...)`、`FormationScreenLayout` 的新重载与 `testKey()`（record 多一个分量）。附属 MOD 都不用改：没有任何附属直接构造 `FormationScreenLayout`；指挥官支援 0.1.0-beta.3 的依赖范围 `[0.3.0-beta.6,)` 包含本版。
+- 已知限制：测试开局须在游戏内执行（各步骤以执行者的管理员身份进行），控制台和命令方块执行会被要求“需要玩家”；主基地补设只在主世界、只在开启测试模式（含重启后恢复）和测试开局时检查，开启期间被手动清除的主基地要再执行一次 `/battle admin test mode on` 或测试开局才会补回。
+
+### 配置/存档影响
+- 新增存档文件 `<世界>/data/wok_infantry_test_mode.dat`（`Version`、`Enabled`、`ChangedAt`、`ChangedBy` 四个字段）；旧版本读不到它也不影响加载，其余存档格式不变（`wok_infantry_battle.dat` 仍为 Version 6，部署、投票、支援、载具存档都不变）。
+- 开启测试模式时补出的主基地写进原有的 `wok_infantry_deployment.dat`（与 `/battle deployment setbase` 写入的完全相同），关闭测试模式后保留。测试开局对投票、阵营、小队的改动与对应的管理员命令相同，照常写进 `wok_infantry_battle.dat` 与编制投票存档。
+- 服务端配置、客户端配置、`formations.json`、`loadouts.json` 都不新增项、不被改写。
+
+### 测试结果
+- 以下为审查修正后的最终结果（`19d2114`）；首轮（`c40e4d9`：JUnit 905 项、21 项 GameTest、2,062,775 字节、SHA-256 `1230DE869343EED83C3D83920662639A78C5F78FBA21468396890153A53AD324`，归档 `zh_cn-final`、`en_us-final`）的产物已作废，归档留作对照。
+- `wok_infantry` 在 `19d2114`（本版最后一个源码提交）：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 907 项全部通过，0 失败、0 跳过（比 0.4.0-beta.1 多 31 项：`TestModeRulesTest` 15 项——开关状态机、存档往返与字段钳制、阵营与编制选择规则、阵营空位（阵营上限与编制容量取较小者）、首个空闲呼号、两方基地候选列与外扩、朝向（红方退到 -64 X 时朝东）、世界边界；`FormationTestStartTest` 14 项——按键可见性与阵营/编制取值、锁定时沿用锁定编制、禁用原因、`testconfirm` 状态、发送的命令、发出测试开局后部署成功才关页、6 个尺寸下的按键布局；`BattleCommandsRegistrationTest` 2 项——`test mode on|off|status` 与 `test start [阵营] [编制] [玩家]` 命令树和解析）。产物 `wok_infantry-0.4.0-beta.2.jar`，2,066,819 字节，SHA-256 `60829BC47C86F4AF894CA32C1A210B5CA5E2D824B52A495892003BC6BAF50582`；GameTest 与两轮 UI 验收跑完后重新核对，SHA-256 不变。
+- `runGameTestServer`（同一提交）：22 项必需 GameTest 全部通过，含本版新增 3 项：`testModeAddsBothMainBasesAndShowsItsBossBarUntilTurnedOff`（清掉两方主基地后开启：两方都补出主基地，在主世界、世界边界内、蓝方在出生点附近、红方在出生点 +64 X 附近，开关写进存档，Boss 条显示；重复开启不动已有基地；关闭后 Boss 条移除且没有观看者、两方基地保留、回执说明“保留”）、`testStartDeploysAWaitingAdministratorAndOffRestoresTheCountdown`（黑色等待空间 lobby 里的管理员执行测试开局：阵营投票被锁定为 `default`，管理员加入该阵营、当上新建 Alpha 小队的队长，以生存模式从本方主基地部署到主世界；测试模式下新一条生命的等待为 0，关闭后倒计时恢复，再开启立即结束倒计时）和 `testStartWithUnknownArgumentsChangesNothing`（审查修正：写错阵营、写错编制各执行一次，都只回报一行原因，测试模式不开、不显示 Boss 条、不补主基地、两方投票阶段不变、不给玩家建战局记录）。GameTest 世界的出生点 (0, 63, 0) 在水里，补设走了外扩：蓝方落在 (-16, 64, 16)，红方落在 (48, 66, 16)，正好覆盖“出生点落水”的退路。三项测试结束时还原测试模式开关、两方主基地、阵营投票和内存配装目录（GameTest 世界 `run/world` 也是 UI 验收种子）。
+- `runUiTestClient` zh_cn 严格轮（同一提交）：`status=PASS`，4358 tick，40 个用例、189 张截图（新增 `formation.testmode`、`formation.testconfirm` 各 5 档），`strictLayoutViolations=0`；新增 10 张在 5 个档位（含 427×240）都是 0 违规。`layoutViolations=169`，180 行用例结果与首轮 `zh_cn-final` 逐行相同（原有 179 张截图的结果也与 0.4.0-beta.1 的 `zh_cn-final2` 相同，违规全是旧界面）；`finalActiveMarkers=1` 与首轮相同（比 0.4.0-beta.1 的 3 少，是整轮多了 10 张截图、标记按存活时间过期所致）。“测试开局”键（屏幕像素）：320×240 303×14、427×240 820×28（2× 排版）、480×270 170×14、640×336 200×18、960×720 332×36（2× 排版）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.2\zh_cn-final2\`。
+- `runUiTestClient -PuiLang=en_us -PuiLayoutStrict=false` 报告轮（同一提交）：`status=PASS`（语义检查全部通过），4335 tick，189 张截图，`layoutViolations=172`、`strictLayoutViolations=0`，180 行用例结果与首轮 `en_us-final` 逐行相同。比 0.4.0-beta.1 的 `en_us-final2`（168）多 4 条，都在新增截图里：testmode、testconfirm 两个状态 960、480 档阵营概况里的“3 (the faction picks one)”被省略号截断，与原有 join、confirm 状态同一行、同一位置的已知英文截断相同（留给 i18n 收尾）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.2\en_us-final2\`。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_infantry-0.4.0-beta.2.jar` PASS，强制依赖只有 `forge`、`minecraft`；连同工作区里其余 7 个附属 JAR（均为此前构建、版本未变）一起核对，8 个全部 PASS。
+- `tools/verify_versions.ps1 -Modules wok_infantry -Release`（Windows PowerShell 5.1）：PASS（源码版本、根 README 与 VERSIONING 版本表、模块 README 产物名、CHANGELOG 标题、JAR 名、modId 与内部版本一致；本条目六栏不空，JAR 晚于核心源码最后一次提交 `19d2114` 且源码没有未提交改动）。不带参数完整核对 8 个模块也 PASS。
+- 已部署：2026-10-05 把上面 SHA-256 为 `60829BC4…F50582` 的 `wok_infantry-0.4.0-beta.2.jar` 部署到测试端 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，部署后哈希与构建产物一致；0.4.0-beta.1 改名为 `wok_infantry-0.4.0-beta.1.jar.backup-20261005-061040-before-0.4.0-beta.2.bak`，两者不并存。测试端 8 个 WOK步战 JAR 的独立安装检查全部 PASS。
+- 未做：测试端真实客户端（PCL）里点“测试开局”的游戏内验收（含部署成功后编制页按三种打开方式都自动关闭）、重启后测试模式与 Boss 条恢复、局域网双人用 `/battle admin test start <阵营> <编制> <玩家>` 送第二个号；测试端 `loadouts.json` 的配装是否完整决定部署能否一次成功（不完整时会停在部署页并说明）。
+
 ## WOK步战核心 0.4.0-beta.1 — 2026-10-05
 
 > 新版界面档 1：共享界面组件与 GUI 1 最低 2× 缩放、编制选择与投票页重写、新战斗 HUD、键位调整，并修掉此前仍在的 P1 问题（map-render-01 可能崩服、弹药箱标题压住点数）和管理员“职业管理”NPE。小队、地图、配装、管理员、补给等旧界面本版只换配色，布局留给档 2/档 3。三个网络协议升级，客户端和服务端必须同为本版（见“兼容性”）。本版原计划编号 0.3.0-beta.8，因网络协议与 0.3.x 不兼容改为 0.4.0-beta.1；测试端曾以 0.3.0-beta.8 文件名部署过同一功能的预交付构建（当时界面标题前缀仍为“WOK //”，编制页在 400–439 宽仍用完整标题，素材声明为旧版，其余功能相同）。

@@ -57,6 +57,8 @@ public final class FormationCases {
     public static final String ADMIN_OPEN_UI_ID = FormationSelectionScreen.ADMIN_OPEN_UI_ID;
     /** uiId of the administrator "lock vote" key (the page's {@code ADMIN_LOCK_UI_ID}). */
     public static final String ADMIN_LOCK_UI_ID = FormationSelectionScreen.ADMIN_LOCK_UI_ID;
+    /** uiId of the administrator test-start key (0.4.0-beta.2). */
+    public static final String TEST_START_UI_ID = FormationSelectionScreen.TEST_START_UI_ID;
     /** Lower-case ids, e.g. a class id or a support id, must never reach the detail. */
     private static final Pattern INTERNAL_ID = Pattern.compile(
             "^[a-z0-9_]+$|[a-z0-9_]+:[a-z0-9_/]+");
@@ -144,6 +146,16 @@ public final class FormationCases {
                 .steps(UiStep.click(ADMIN_LOCK_UI_ID),
                         UiStep.until("the lock confirmation", FormationCases::modalOpen))
                 .check(FormationCases::checkLockConfirm).build());
+        // Administrator test start (0.4.0-beta.2): the key in the black waiting space before
+        // joining, alone in the compact administrator area, and its ordinary confirmation.
+        cases.add(admin("testmode", () -> FormationFixtures.Scenario
+                .unjoined(FormationVotePhase.NOT_STARTED).build(), "join")
+                .check(FormationCases::checkTestStartKey).build());
+        cases.add(admin("testconfirm", () -> FormationFixtures.Scenario
+                .unjoined(FormationVotePhase.NOT_STARTED).build())
+                .steps(UiStep.click(TEST_START_UI_ID),
+                        UiStep.until("the test-start confirmation", FormationCases::modalOpen))
+                .check(FormationCases::checkTestStartConfirm).build());
         return List.copyOf(cases);
     }
 
@@ -189,7 +201,13 @@ public final class FormationCases {
     }
 
     private static UiCase.Builder admin(String state, Supplier<FormationSelectionSnapshot> catalog) {
-        return base(state, catalog, state).prepare(asAdministrator());
+        return admin(state, catalog, state);
+    }
+
+    /** An administrator-view state; {@code expectedState} is what the page must report. */
+    private static UiCase.Builder admin(String state, Supplier<FormationSelectionSnapshot> catalog,
+                                        String expectedState) {
+        return base(state, catalog, expectedState).prepare(asAdministrator());
     }
 
     private static UiCase.Builder base(String state, Supplier<FormationSelectionSnapshot> catalog,
@@ -435,6 +453,8 @@ public final class FormationCases {
         }
         UiLayoutFrame.Control join = control(context, capture, FormationSelectionScreen.JOIN_UI_ID);
         context.require(join.active(), "the join key is disabled while the faction has room");
+        context.require(capture.frame().control(TEST_START_UI_ID) == null,
+                "players must never see the administrator test-start key");
         // User report 4: Esc closes the page even before joining.
         UiInputDriver.key(context.minecraft(), GLFW.GLFW_KEY_ESCAPE, 0);
         context.require(!(context.screen() instanceof FormationSelectionScreen),
@@ -526,6 +546,12 @@ public final class FormationCases {
     private static void checkPending(UiCaseContext context, UiCapture.Result capture) {
         UiLayoutFrame.Control open = control(context, capture, ADMIN_OPEN_UI_ID);
         context.require(open.active(), "the administrator cannot open the vote");
+        // 0.4.0-beta.2: the test-start key shares the administrator key row.
+        UiLayoutFrame.Control test = control(context, capture, TEST_START_UI_ID);
+        context.require(test.active() && !test.rect().overlaps(open.rect())
+                        && Math.abs(test.rect().top() - open.rect().top()) < 0.5F,
+                "the test-start key must sit beside the open-vote key: " + test.rect() + " / "
+                        + open.rect());
         if (!context.tight()) {
             context.require(capture.frame().box("tooltip") != null,
                     "hovering the other faction must explain why it cannot be chosen");
@@ -541,6 +567,46 @@ public final class FormationCases {
     private static void checkAdminTie(UiCaseContext context, UiCapture.Result capture) {
         UiLayoutFrame.Control lock = control(context, capture, ADMIN_LOCK_UI_ID);
         context.require(lock.active(), "the administrator cannot lock one of the tied formations");
+    }
+
+    /**
+     * 0.4.0-beta.2 test start before joining: the administrator sees the key, live, alone in
+     * the compact administrator area (no vote keys yet), inside the list panel.
+     */
+    private static void checkTestStartKey(UiCaseContext context, UiCapture.Result capture) {
+        UiLayoutFrame.Control test = control(context, capture, TEST_START_UI_ID);
+        context.require(test.active(), "the administrator test-start key is disabled before "
+                + "joining: " + test.disabledReason());
+        context.require(capture.frame().control(ADMIN_OPEN_UI_ID) == null
+                        && capture.frame().control(ADMIN_LOCK_UI_ID) == null,
+                "the vote keys must stay hidden before joining");
+        UiLayoutFrame.Box list = capture.frame().box(FormationSelectionScreen.LIST_BOX);
+        context.require(list != null && test.rect().within(list.rect(), 0.01F),
+                "the test-start key must sit inside the list panel");
+        context.observe("formationTestStartKey[" + context.tier().id() + "]="
+                + Math.round(test.rect().width()) + "x" + Math.round(test.rect().height()));
+    }
+
+    /**
+     * The test-start confirmation is an ordinary one (the command only reaches the server after
+     * a click or Enter on "开始测试") naming the browsed faction; Esc cancels and keeps the page.
+     */
+    private static void checkTestStartConfirm(UiCaseContext context, UiCapture.Result capture) {
+        FormationSelectionScreen screen = page(context);
+        context.require(screen.modal() instanceof TacticalConfirmDialog dialog
+                        && !dialog.danger(),
+                "the test start must ask an ordinary (not dangerous) confirmation");
+        TacticalConfirmDialog dialog = (TacticalConfirmDialog) screen.modal();
+        String faction = screen.snapshot().faction(MockData.VIEWER_FACTION).displayName();
+        context.require(dialog.body().getString().contains(faction),
+                "the confirmation must name the faction it joins: " + dialog.body().getString());
+        context.require(capture.frame().box("modal.confirm") != null,
+                "the confirmation card was not drawn");
+        context.require(capture.frame().control(TacticalConfirmDialog.CONFIRM_UI_ID) != null,
+                "the test-start confirmation has no confirm key");
+        UiInputDriver.key(context.minecraft(), GLFW.GLFW_KEY_ESCAPE, 0);
+        context.require(!screen.hasModal() && context.screen() == screen,
+                "Esc must cancel the test-start confirmation and keep the page");
     }
 
     /** The lock confirmation is dangerous and starts on "cancel" (Enter never locks). */

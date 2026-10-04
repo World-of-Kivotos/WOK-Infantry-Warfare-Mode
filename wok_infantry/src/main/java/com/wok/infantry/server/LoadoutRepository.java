@@ -56,6 +56,16 @@ final class LoadoutRepository {
 
     Path configPath() { return configPath; }
 
+    /**
+     * GameTest only: publishes {@code replacement} in memory without writing loadouts.json and
+     * returns the catalog it replaced, which the test publishes back the same way.
+     */
+    synchronized LoadoutConfigData swapInMemoryForGameTest(LoadoutConfigData replacement) {
+        LoadoutConfigData previous = config;
+        config = java.util.Objects.requireNonNull(replacement, "replacement");
+        return previous;
+    }
+
     /** Called only after CatalogFiles has durably committed both configurations. */
     synchronized void publishImported(LoadoutConfigData replacement) {
         config = replacement.copy();

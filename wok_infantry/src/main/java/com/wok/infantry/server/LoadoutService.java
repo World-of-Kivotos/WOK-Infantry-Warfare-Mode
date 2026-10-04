@@ -66,6 +66,20 @@ public final class LoadoutService {
 
     public CatalogTransferService catalogTransfers() { return catalogTransfers; }
 
+    /**
+     * GameTest only: publishes {@code replacement} as the loadout catalog in memory (never
+     * written to loadouts.json) and returns the catalog it replaced, which the test puts back
+     * the same way. Never call it from gameplay code.
+     */
+    public LoadoutConfigData swapCatalogForGameTest(LoadoutConfigData replacement) {
+        return repository.swapInMemoryForGameTest(replacement);
+    }
+
+    /** GameTest only: the live loadout catalog (copy it before changing anything). */
+    public LoadoutConfigData catalogForGameTest() {
+        return repository.config();
+    }
+
     void refreshCatalogClients() {
         server.getPlayerList().getPlayers().forEach(player ->
                 sendSnapshot(player, LoadoutSnapshotPacket.OpenTarget.REFRESH_CATALOG));
