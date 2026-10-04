@@ -267,7 +267,8 @@ public final class UiLayoutProbe {
 
     /**
      * A widget finished drawing. {@code state} is the state it was drawn in (for WOK keys the
-     * {@code TacticalButtonStyle.State} name); a disabled widget's reason is its tooltip.
+     * {@code TacticalButtonStyle.State} name); a disabled widget's reason is its tooltip (see
+     * {@link #disabledReason}).
      */
     public static void widget(GuiGraphics graphics, AbstractWidget widget, String kind, String state,
                               boolean truncated, boolean focusRing) {
@@ -276,11 +277,25 @@ public final class UiLayoutProbe {
             return;
         }
         String tooltip = tooltipText(widget.getTooltip());
+        String label = widget.getMessage().getString();
         target.addControl(uiIdOf(widget), kind, state,
                 UiLayoutFrame.transform(pose(graphics), widget.getX(), widget.getY(),
                         widget.getX() + widget.getWidth(), widget.getY() + widget.getHeight()),
-                widget.active, widget.visible, focusRing, truncated,
-                widget.getMessage().getString(), tooltip, widget.active ? "" : tooltip, false);
+                widget.active, widget.visible, focusRing, truncated, label, tooltip,
+                disabledReason(widget.active, label, tooltip), false);
+    }
+
+    /**
+     * Why a widget is disabled: its tooltip, unless the widget is active or the tooltip only
+     * repeats the label (the automatic full-text tooltip of a shortened or icon-only key explains
+     * nothing).
+     */
+    static String disabledReason(boolean active, String label, String tooltip) {
+        if (active || tooltip == null || tooltip.isBlank()) {
+            return "";
+        }
+        String squashedLabel = label == null ? "" : label.replaceAll("\\s+", "");
+        return tooltip.replaceAll("\\s+", "").equals(squashedLabel) ? "" : tooltip;
     }
 
     /**

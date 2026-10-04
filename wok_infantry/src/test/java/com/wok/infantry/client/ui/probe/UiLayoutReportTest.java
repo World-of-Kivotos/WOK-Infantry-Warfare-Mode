@@ -212,6 +212,18 @@ class UiLayoutReportTest {
     }
 
     @Test
+    void aTooltipThatOnlyRepeatsTheLabelIsNoDisabledReason() {
+        assertEquals("", UiLayoutProbe.disabledReason(true, "部署", "尚未选择部署点"),
+                "active widgets have no disabled reason");
+        assertEquals("", UiLayoutProbe.disabledReason(false, "职业管理", ""));
+        assertEquals("", UiLayoutProbe.disabledReason(false, "超长按钮文字会省略：配置当前兵种装备",
+                        "超长按钮文字会省略：配置当\n前兵种装备"),
+                "the automatic full-label tooltip of a shortened key explains nothing");
+        assertEquals("编制没有这个职业",
+                UiLayoutProbe.disabledReason(false, "职业管理", "编制没有这个职业"));
+    }
+
+    @Test
     void controlsMustStayOnScreen() {
         UiLayoutFrame frame = frame();
         frame.addControl("far", "button", "NORMAL", rect(300, 10, 340, 24), true, true, false,

@@ -35,7 +35,8 @@ class UiArchitectureTest {
     }
 
     private static final List<Rule> RULES = List.of(
-            new Rule("direct-scissor", Pattern.compile("\\bgraphics\\.enableScissor\\("),
+            // Any receiver (graphics, guiGraphics, g …) except the UiScale wrapper itself.
+            new Rule("direct-scissor", Pattern.compile("(?<!\\bUiScale)\\.enableScissor\\("),
                     "clip with UiScale.enableScissor"),
             new Rule("shadow-centered-text", Pattern.compile("\\.drawCenteredString\\("),
                     "draw with TextFit (no shadow)"),
