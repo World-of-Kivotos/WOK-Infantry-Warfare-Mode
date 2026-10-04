@@ -7,13 +7,17 @@ import com.wok.infantry.battle.MemberView;
 import com.wok.infantry.battle.PermissionView;
 import com.wok.infantry.battle.SquadCallsign;
 import com.wok.infantry.battle.SquadView;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.contents.TranslatableContents;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.UUID;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SquadWorldMarkerRendererTest {
@@ -75,6 +79,25 @@ class SquadWorldMarkerRendererTest {
         BattleSnapshot stale = snapshot(previousViewer, SquadCallsign.ALPHA,
                 member(TARGET, SquadCallsign.ALPHA, true, true));
         assertFalse(visible(stale, TARGET, 1.0D, true, false));
+    }
+
+    @Test
+    void leaderWhoIsAlsoCommanderShowsBothRoles() {
+        MemberView both = new MemberView(TARGET, "member", true, true, 20.0F, 20.0F,
+                true, true, SquadCallsign.ALPHA, "assault");
+        Component suffix = SquadWorldMarkerRenderer.roleSuffix(both);
+        assertEquals("hud.wok_infantry.role.leader_short",
+                ((TranslatableContents) suffix.getContents()).getKey());
+        assertTrue(suffix.getSiblings().stream().anyMatch(sibling ->
+                sibling.getContents() instanceof TranslatableContents translatable
+                        && translatable.getKey().equals("hud.wok_infantry.role.commander_short")),
+                "the commander tag is no longer dropped for a squad leader");
+        MemberView commander = new MemberView(TARGET, "member", true, true, 20.0F, 20.0F,
+                false, true, SquadCallsign.ALPHA, "assault");
+        assertEquals("hud.wok_infantry.role.commander_short", ((TranslatableContents)
+                SquadWorldMarkerRenderer.roleSuffix(commander).getContents()).getKey());
+        assertNull(SquadWorldMarkerRenderer.roleSuffix(member(TARGET, SquadCallsign.ALPHA,
+                true, true)));
     }
 
     private static boolean visible(BattleSnapshot snapshot, UUID targetId,
