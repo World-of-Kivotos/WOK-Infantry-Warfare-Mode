@@ -718,6 +718,82 @@ tasks.matching { it.name == 'runUiTestClient' }.configureEach {
             String failure = resultLines.find { it.startsWith('failure=') }
             throw new GradleException("UI acceptance failed: ${failure ?: status ?: 'missing status'}")
         }
+        // A PASS must come with its manifest: every capture listed with its screenshot, so the
+        // archive (archiveUiAcceptance) and the side-by-side index.html are complete.
+        File manifest = new File(uiTestResultFile.parentFile, 'wok_ui_manifest.json')
+        if (!manifest.isFile()) {
+            throw new GradleException("UI acceptance passed without a manifest: ${manifest}")
+        }
+        def captureList = new groovy.json.JsonSlurper().parse(manifest, 'UTF-8').captures
+        File shots = layout.projectDirectory.dir('run/ui-test/screenshots').asFile
+        List<String> missingShots = captureList.collect { it.file }.findAll {
+            it && !new File(shots, it.toString()).isFile()
+        }
+        if (!missingShots.isEmpty()) {
+            throw new GradleException("UI acceptance manifest lists missing screenshots: ${missingShots}")
+        }
+        logger.lifecycle("UI acceptance manifest: ${captureList.size()} capture(s) (${manifest})")
+    }
+}
+
+// Copies the last runUiTestClient run (the screenshots its manifest lists, the result file, the
+// layout report and the side-by-side index.html) into the infantry test installation, where the
+// user reviews it: D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<version>\<label>\.
+// The label defaults to the language the run used, so the zh_cn run and the en_us report run of
+// one round sit side by side; -PuiArchiveLabel / -PuiArchiveDate override. Nothing outside the
+// ui-acceptance folder is touched and an existing folder is never overwritten.
+tasks.register('archiveUiAcceptance') {
+    group = 'verification'
+    description = 'Archives the last UI acceptance run into the infantry test installation.'
+    doLast {
+        File allowedRoot = new File('D:/WOK步战测试/1.20.1-Forge_47.4.22/ui-acceptance')
+                .canonicalFile
+        String date = (project.findProperty('uiArchiveDate')
+                ?: new Date().format('yyyyMMdd')).toString().trim()
+        // The language the archived run really used (its result file), so an en_us report run is
+        // never filed under zh_cn by an archive call without -PuiLang.
+        String ranLanguage = uiTestResultFile.isFile() ? uiTestResultFile.readLines('UTF-8')
+                .find { it.startsWith('languageCode=') }?.substring('languageCode='.length())
+                ?.split(' ')?.getAt(0)?.trim() : null
+        String label = (project.findProperty('uiArchiveLabel') ?: ranLanguage ?: uiLanguage)
+                .toString().trim()
+        if (!(date ==~ /\d{8}/) || !(label ==~ /[A-Za-z0-9_.-]{1,40}/)) {
+            throw new GradleException("uiArchiveDate must be yyyyMMdd and uiArchiveLabel a plain name: ${date} / ${label}")
+        }
+        File target = new File(allowedRoot, "${date}-${project.version}/${label}").canonicalFile
+        if (!target.toPath().startsWith(allowedRoot.toPath()) || target == allowedRoot) {
+            throw new GradleException("Refusing to archive outside ${allowedRoot}: ${target}")
+        }
+        if (target.exists()) {
+            throw new GradleException("UI acceptance archive already exists, choose another -PuiArchiveLabel: ${target}")
+        }
+        File results = uiTestResultFile.parentFile
+        File manifest = new File(results, 'wok_ui_manifest.json')
+        if (!uiTestResultFile.isFile() || !manifest.isFile()) {
+            throw new GradleException("No UI acceptance run to archive; run runUiTestClient first (${results})")
+        }
+        File shots = layout.projectDirectory.dir('run/ui-test/screenshots').asFile
+        Set<String> files = new groovy.json.JsonSlurper().parse(manifest, 'UTF-8').captures
+                .collect { it.file?.toString() }.findAll { it } as Set
+        List<String> missing = files.findAll { !new File(shots, it).isFile() }.sort()
+        if (!missing.isEmpty()) {
+            throw new GradleException("Screenshots listed in the manifest are missing: ${missing}")
+        }
+        project.copy {
+            from shots
+            include files
+            into new File(target, 'screenshots')
+        }
+        project.copy {
+            from results
+            include 'wok_ui_acceptance.txt', 'wok_ui_progress.txt', 'wok_ui_layout.json',
+                    'wok_ui_manifest.json', 'index.html'
+            into new File(target, 'ui-test-results')
+        }
+        String status = uiTestResultFile.readLines('UTF-8').find { it.startsWith('status=') }
+        logger.lifecycle("Archived UI acceptance (${status ?: 'status=?'}, ${files.size()} screenshot(s), "
+                + "lang=${ranLanguage ?: '?'}) to ${target}")
+        logger.lifecycle("Open ${new File(target, 'ui-test-results/index.html')}")
     }
 }
 
