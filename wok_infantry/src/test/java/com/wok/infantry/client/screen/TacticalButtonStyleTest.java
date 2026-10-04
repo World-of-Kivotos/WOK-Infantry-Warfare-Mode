@@ -237,6 +237,76 @@ class TacticalButtonStyleTest {
                 LoadoutPreviewButton.cardState(false, true, false));
     }
 
+    @Test
+    void labelWithoutIconCentresLikeTextFit() {
+        // 60px key, pad 3 + 3: room 54; a 20px label centres at 3 + 17.
+        TacticalButtonStyle.Content content = TacticalButtonStyle.content(0, 0, 60, 14, 3,
+                false, 20, 0, TextFit.Align.CENTER);
+
+        assertEquals(54, content.textRoom());
+        assertEquals(TextFit.alignedX(3, 54, 20, TextFit.Align.CENTER), content.textX());
+        assertEquals(20, content.textX());
+    }
+
+    @Test
+    void iconAndLabelCentreAsOneGroup() {
+        // Preview UI.button: room excludes the 11px icon advance; the icon+label group is centred.
+        TacticalButtonStyle.Content content = TacticalButtonStyle.content(0, 0, 60, 14, 3,
+                true, 20, 0, TextFit.Align.CENTER);
+
+        assertEquals(43, content.textRoom());
+        assertEquals(14, content.iconX());
+        assertEquals(2, content.iconY());
+        assertEquals(25, content.textX());
+        int groupLeft = content.iconX();
+        int groupRight = content.textX() + 20;
+        assertTrue(Math.abs((groupLeft - 3) - (60 - 3 - groupRight)) <= 1,
+                "the group sits in the middle of the padded key");
+    }
+
+    @Test
+    void iconOnlyKeyCentresTheIconOnTheWholeKey() {
+        TacticalButtonStyle.Content selected = TacticalButtonStyle.content(10, 4, 26, 20, 5,
+                true, 0, 0, TextFit.Align.CENTER);
+
+        assertEquals(TacticalIcon.centeredStart(10, 26), selected.iconX(),
+                "the selection stripe padding does not shift an icon-only key");
+        assertEquals(TacticalIcon.centeredStart(4, 20), selected.iconY());
+    }
+
+    @Test
+    void leftAlignedIconStartsAtThePadding() {
+        TacticalButtonStyle.Content content = TacticalButtonStyle.content(0, 0, 100, 18, 5,
+                true, 30, 0, TextFit.Align.LEFT);
+
+        assertEquals(5, content.iconX());
+        assertEquals(5 + TacticalIcon.ADVANCE, content.textX());
+    }
+
+    @Test
+    void badgeAndIconShareTheRoomWithTheLabel() {
+        TacticalButtonStyle.Content content = TacticalButtonStyle.content(0, 0, 80, 14, 3,
+                true, 200, 20, TextFit.Align.CENTER);
+
+        assertEquals(80 - 3 - 3 - TacticalIcon.ADVANCE - 22, content.textRoom());
+        assertEquals(3, content.iconX(), "a label that fills the room starts at the padding");
+    }
+
+    @Test
+    void optionsKeepTheIconlessFormAndTrackIconOnly() {
+        TacticalButtonStyle.Options plain = new TacticalButtonStyle.Options(TextFit.Align.LEFT,
+                null, TacticalBoardTheme.MUTED, true);
+
+        assertEquals(null, plain.icon());
+        assertFalse(plain.iconOnly());
+        assertTrue(plain.withIconOnly(TacticalIcon.CLOSE).iconOnly());
+        assertFalse(plain.withIconOnly(null).iconOnly());
+        assertFalse(plain.withIconOnly(TacticalIcon.CLOSE).withIcon(TacticalIcon.CHECK).iconOnly());
+        assertEquals(TacticalIcon.CLOSE,
+                plain.withIconOnly(TacticalIcon.CLOSE).withFocusRing(false).icon());
+        assertTrue(plain.withIconOnly(TacticalIcon.CLOSE).withFocusRing(false).iconOnly());
+    }
+
     private static Look resolveActive(Variant variant, boolean hovered) {
         return TacticalButtonStyle.resolve(true, false, false, variant, hovered, false);
     }

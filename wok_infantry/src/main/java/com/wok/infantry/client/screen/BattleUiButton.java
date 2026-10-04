@@ -26,6 +26,8 @@ final class BattleUiButton extends Button {
     private final Component badge;
     private final int badgeColor;
     private final TextFit.Align align;
+    private final TacticalIcon icon;
+    private final boolean iconOnly;
     private final TruncationTooltip truncationTooltip = new TruncationTooltip();
     private boolean labelTruncated;
 
@@ -38,6 +40,8 @@ final class BattleUiButton extends Button {
         this.badge = options.badge;
         this.badgeColor = options.badgeColor;
         this.align = options.align;
+        this.icon = options.icon;
+        this.iconOnly = options.iconOnly;
     }
 
     public static Builder builder(Component message, OnPress onPress) {
@@ -77,7 +81,7 @@ final class BattleUiButton extends Button {
         TacticalButtonStyle.Look look = look(kind, selected, current, active,
                 TacticalButtonStyle.hovered(this), armed);
         TacticalButtonStyle.Options options = new TacticalButtonStyle.Options(align, badge,
-                badgeColor, TacticalButtonStyle.keyboardFocused(this));
+                badgeColor, TacticalButtonStyle.keyboardFocused(this), icon, iconOnly);
         TextFit.Fitted fitted = TacticalButtonStyle.render(graphics, Minecraft.getInstance().font,
                 getX(), getY(), getX() + width, getY() + height, getMessage(), look, options);
         labelTruncated = fitted.truncated();
@@ -102,9 +106,29 @@ final class BattleUiButton extends Button {
         private Component badge;
         private int badgeColor = TacticalBoardTheme.MUTED;
         private TextFit.Align align = TextFit.Align.CENTER;
+        private TacticalIcon icon;
+        private boolean iconOnly;
 
         private Builder(Component message, OnPress onPress) {
             super(message, onPress);
+        }
+
+        /** 9×9 icon in front of the label, drawn in the label colour; null for none. */
+        Builder icon(TacticalIcon icon) {
+            this.icon = icon;
+            this.iconOnly = false;
+            return this;
+        }
+
+        /**
+         * Icon-only key (pager arrows, steppers, close): only the icon is drawn, centred. The
+         * message stays the key's name for narration and is shown as its tooltip unless the
+         * screen sets its own.
+         */
+        Builder iconOnly(TacticalIcon icon) {
+            this.icon = icon;
+            this.iconOnly = icon != null;
+            return this;
         }
 
         /** Shows the current selection (blue). Selected but inactive keys draw as "current". */

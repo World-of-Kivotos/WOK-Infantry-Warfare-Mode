@@ -57,15 +57,46 @@ public final class TacticalButtonStyle {
         }
     }
 
-    /** Optional content settings: label alignment, a right-side badge and the focus ring. */
+    /**
+     * Optional content settings: label alignment, a right-side badge, the focus ring and a 9×9
+     * icon in front of the label. An {@code iconOnly} key draws just the icon, centred on the
+     * whole key; its label is still the key's name for narration and is offered as a tooltip.
+     */
     public record Options(TextFit.Align align, Component badge, int badgeColor,
-                          boolean focusRing) {
+                          boolean focusRing, TacticalIcon icon, boolean iconOnly) {
         public static final Options DEFAULT = new Options(TextFit.Align.CENTER, null,
                 TacticalBoardTheme.MUTED, false);
 
-        public Options withFocusRing(boolean focus) {
-            return focus == focusRing ? this : new Options(align, badge, badgeColor, focus);
+        /** Options without an icon (the B2a form). */
+        public Options(TextFit.Align align, Component badge, int badgeColor, boolean focusRing) {
+            this(align, badge, badgeColor, focusRing, null, false);
         }
+
+        public Options withFocusRing(boolean focus) {
+            return focus == focusRing ? this
+                    : new Options(align, badge, badgeColor, focus, icon, iconOnly);
+        }
+
+        /** Icon drawn in front of the label, in the label colour. */
+        public Options withIcon(TacticalIcon newIcon) {
+            return new Options(align, badge, badgeColor, focusRing, newIcon, false);
+        }
+
+        /** Icon-only key: the label is not drawn. */
+        public Options withIconOnly(TacticalIcon newIcon) {
+            return new Options(align, badge, badgeColor, focusRing, newIcon, newIcon != null);
+        }
+    }
+
+    /**
+     * Where the content of a key goes (preview {@code UI.button}: [icon][label][badge]).
+     *
+     * @param iconX    left of the 9×9 icon (meaningless without an icon)
+     * @param iconY    top of the icon
+     * @param textX    left of the label as drawn
+     * @param textRoom width the label may take before it is ellipsized
+     */
+    public record Content(int iconX, int iconY, int textX, int textRoom) {
     }
 
     /** Card look used by preview cards (loadout candidates). */
@@ -165,9 +196,10 @@ public final class TacticalButtonStyle {
     }
 
     /**
-     * Draws a key in [left, right) x [top, bottom) and its fitted label.
+     * Draws a key in [left, right) x [top, bottom), its optional icon and its fitted label.
      *
      * @return the fitted label, so the caller can offer the full text when it was truncated
+     *         (an icon-only key with a name reports {@code truncated})
      */
     public static TextFit.Fitted render(GuiGraphics graphics, Font font, int left, int top,
                                         int right, int bottom, Component label, Look look,
@@ -199,13 +231,12 @@ public final class TacticalButtonStyle {
                                               int right, int bottom, Component label,
                                               Palette palette, Options options) {
         int padLeft = labelPadLeft(palette);
-        int padRight = 3;
         int textY = top + Math.max(0, (bottom - top - 8) / 2);
         int badgeWidth = 0;
         Component badge = options.badge();
         if (badge != null && !badge.getString().isEmpty()) {
             badgeWidth = font.width(badge) + 6;
-            int badgeLeft = right - padRight - badgeWidth;
+            int badgeLeft = right - LABEL_PAD_RIGHT - badgeWidth;
             graphics.fill(badgeLeft, textY - 1, badgeLeft + badgeWidth, textY + 8,
                     palette.darkFill() ? TacticalBoardTheme.BADGE_ON_SELECT
                             : TacticalBoardTheme.BADGE_ON_CARD);
@@ -213,13 +244,59 @@ public final class TacticalButtonStyle {
                     : palette.hatch() ? TacticalBoardTheme.DISABLED_TEXT : options.badgeColor();
             graphics.drawString(font, badge, badgeLeft + 3, textY, badgeColor, false);
         }
-        int room = Math.max(0, right - left - padLeft - padRight
-                - (badgeWidth > 0 ? badgeWidth + 2 : 0));
-        if (label == null || label.getString().isEmpty()) {
-            return TextFit.Fitted.EMPTY;
+        boolean hasLabel = label != null && !label.getString().isEmpty();
+        TacticalIcon icon = options.icon();
+        boolean iconOnly = icon != null && options.iconOnly();
+        boolean drawLabel = hasLabel && !iconOnly;
+        int room = labelRoom(left, right, padLeft, icon != null, badgeWidth);
+        TextFit.Fitted fitted = drawLabel ? TextFit.fit(font, label, room) : TextFit.Fitted.EMPTY;
+        Content content = content(left, top, right, bottom, padLeft, icon != null,
+                fitted.width(), badgeWidth, options.align());
+        if (icon != null) {
+            icon.draw(graphics, content.iconX(), content.iconY(), palette.text());
         }
-        return TextFit.draw(graphics, font, label, left + padLeft, textY, room, palette.text(),
-                options.align() == TextFit.Align.LEFT ? TextFit.Align.LEFT : TextFit.Align.CENTER);
+        if (!drawLabel) {
+            // An icon-only key reports its hidden label as truncated, so the button offers its
+            // name as a tooltip (and uiTest's "truncated needs a tooltip" check covers it).
+            return iconOnly && hasLabel
+                    ? new TextFit.Fitted(TextFit.Fitted.EMPTY.text(), 0, true)
+                    : TextFit.Fitted.EMPTY;
+        }
+        return TextFit.drawFitted(graphics, font, fitted, content.textX(), textY,
+                fitted.width(), palette.text(), TextFit.Align.LEFT);
+    }
+
+    /** Room left for the label after paddings, the icon and the badge. */
+    static int labelRoom(int left, int right, int padLeft, boolean hasIcon, int badgeWidth) {
+        return Math.max(0, right - left - padLeft - LABEL_PAD_RIGHT
+                - (hasIcon ? TacticalIcon.ADVANCE : 0) - (badgeWidth > 0 ? badgeWidth + 2 : 0));
+    }
+
+    /**
+     * Places icon and label like the preview's {@code UI.button}: centred as one group (or from
+     * the left padding with {@link TextFit.Align#LEFT}); a key with an icon but no drawn label
+     * centres the icon on the whole key.
+     *
+     * @param labelWidth width of the label as it will be drawn (already fitted), 0 for none
+     * @param badgeWidth width of the badge including its padding, 0 for none
+     */
+    public static Content content(int left, int top, int right, int bottom, int padLeft,
+                                  boolean hasIcon, int labelWidth, int badgeWidth,
+                                  TextFit.Align align) {
+        int room = labelRoom(left, right, padLeft, hasIcon, badgeWidth);
+        int iconAdvance = hasIcon ? TacticalIcon.ADVANCE : 0;
+        int shown = Math.min(Math.max(0, labelWidth), room);
+        int start;
+        if (align == TextFit.Align.LEFT) {
+            start = left + padLeft;
+        } else {
+            start = left + padLeft + Math.floorDiv(room + iconAdvance - (iconAdvance + shown), 2);
+        }
+        if (hasIcon && shown == 0) {
+            start = TacticalIcon.centeredStart(left, right);
+        }
+        int iconY = TacticalIcon.centeredStart(top, bottom);
+        return new Content(start, iconY, start + iconAdvance, room);
     }
 
     /**
@@ -261,23 +338,22 @@ public final class TacticalButtonStyle {
     }
 
     /**
-     * Diagonal 1px hatch, one line every 4px, inside [left, right) x [top, bottom). All dots
-     * are batched into one draw call.
+     * Diagonal 1px hatch ("\"), one line every 4px, inside [left, right) x [top, bottom), with
+     * a line through the top-left corner. One blit tiles {@link TacticalTextures#UI_HATCH}
+     * ({@link TacticalBoardTheme#HATCH}), whatever the size of the key.
      */
     public static void hatch(GuiGraphics graphics, int left, int top, int right, int bottom) {
-        if (right <= left || bottom <= top) {
-            return;
-        }
-        graphics.drawManaged(() -> {
-            for (int y = top; y < bottom; y++) {
-                int x = left + Math.floorMod(y - top, HATCH_SPACING);
-                for (; x < right; x += HATCH_SPACING) {
-                    graphics.fill(x, y, x + 1, y + 1, TacticalBoardTheme.HATCH);
-                }
-            }
-        });
+        TacticalTextures.tile(graphics, TacticalTextures.UI_HATCH, left, top, right, bottom,
+                TacticalTextures.UI_HATCH_SIZE, TacticalTextures.UI_HATCH_SIZE);
+    }
+
+    /** Whether the hatch covers the pixel {@code (dx, dy)} away from its region's top-left. */
+    public static boolean hatchCovers(int dx, int dy) {
+        return Math.floorMod(dx - dy, HATCH_SPACING) == 0;
     }
 
     /** Pitch of the disabled hatch in GUI pixels. */
     public static final int HATCH_SPACING = 4;
+    /** Right padding of a key's content. */
+    static final int LABEL_PAD_RIGHT = 3;
 }

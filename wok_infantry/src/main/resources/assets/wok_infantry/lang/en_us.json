@@ -214,6 +214,8 @@
   "marker.wok_infantry.rally": "Rally Point",
   "marker.wok_infantry.attack_direction": "Attack Direction",
   "marker.wok_infantry.main_base": "Friendly Main Base",
+  "marker.wok_infantry.field_beacon": "Deployment Beacon",
+  "marker.wok_infantry.rally_pack": "Squad Rally",
   "message.wok_infantry.saved": "Loadout saved",
   "message.wok_infantry.applied": "Loadout applied",
   "message.wok_infantry.admin_saved": "Admin configuration saved",
