@@ -306,7 +306,9 @@ public final class TacticalMapIcons {
     }
 
     /**
-     * Draws a marker anchored at (x, y) in the current pose's GUI coordinates.
+     * Draws a marker anchored at (x, y) in the current pose's GUI coordinates. The pose may
+     * translate and scale (map pan, the tactical screen's 2×) but must not rotate; the window
+     * GUI scale and the pose scale together give the physical pixel grid the icon snaps to.
      *
      * @param artPx physical pixels per art pixel, normally {@link #physicalPerArt}
      * @param alpha whole-marker opacity, {@link #EXPIRING_ALPHA} for a marker about to expire
