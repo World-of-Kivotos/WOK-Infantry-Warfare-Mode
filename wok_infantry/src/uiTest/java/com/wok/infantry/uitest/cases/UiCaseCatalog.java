@@ -25,12 +25,17 @@ public final class UiCaseCatalog {
                 .toList();
     }
 
-    /** Every case after the legacy ones. */
+    /**
+     * Every case after the legacy ones. The HUD cases come last: they replace client caches
+     * (battle snapshot, tickets, stamina, ballot) until each case's cleanup restores them.
+     */
     public static List<UiCase> surfaces() {
         List<UiCase> cases = new ArrayList<>();
         cases.addAll(KitCases.cases());
+        cases.addAll(MapIconCases.cases());
         cases.addAll(FormationCases.cases());
         cases.addAll(AdminCases.cases());
+        cases.addAll(AmmoCases.cases());
         cases.addAll(HudCases.cases());
         return cases.stream().filter(uiCase -> !UiCase.LEGACY_GROUP.equals(uiCase.group()))
                 .toList();

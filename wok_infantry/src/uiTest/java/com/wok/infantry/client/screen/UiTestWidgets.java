@@ -45,4 +45,28 @@ public final class UiTestWidgets {
         builder.bounds(bounds.left(), bounds.top(), bounds.width(), bounds.height());
         return builder.build();
     }
+
+    /**
+     * Geometry the ammunition board drew this frame (player-01 regression): the remaining-points
+     * text, its meter, the section header and the panel, as {@code [left, top, right, bottom]}
+     * in the screen's GUI coordinates, keyed {@code points}, {@code meter}, {@code section},
+     * {@code panel} and {@code list}.
+     */
+    public static java.util.Map<String, int[]> ammoSupplyGeometry(AmmoSupplyScreen screen)
+            throws ReflectiveOperationException {
+        java.lang.reflect.Field field = AmmoSupplyScreen.class.getDeclaredField("supplyLayout");
+        field.setAccessible(true);
+        AmmoSupplyLayout layout = (AmmoSupplyLayout) field.get(screen);
+        java.util.Map<String, int[]> geometry = new java.util.LinkedHashMap<>();
+        geometry.put("points", rect(layout.pointsText()));
+        geometry.put("meter", rect(layout.meterBar()));
+        geometry.put("section", rect(layout.sectionHeader()));
+        geometry.put("panel", rect(layout.panel()));
+        geometry.put("list", rect(layout.list()));
+        return geometry;
+    }
+
+    private static int[] rect(TacticalMapLayout.Rect rect) {
+        return new int[]{rect.left(), rect.top(), rect.right(), rect.bottom()};
+    }
 }
