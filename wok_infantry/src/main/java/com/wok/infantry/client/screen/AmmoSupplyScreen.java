@@ -20,17 +20,16 @@ import java.util.function.IntConsumer;
 
 /** Responsive tactical-tablet selector for infantry and nearby vehicle ammunition. */
 public final class AmmoSupplyScreen extends Screen {
-    private static final int GUN_ROW_HEIGHT = 34;
-    private static final int VEHICLE_ROW_HEIGHT = 48;
+    private static final int GUN_ROW_HEIGHT = AmmoSupplyLayout.GUN_ROW_HEIGHT;
+    private static final int VEHICLE_ROW_HEIGHT = AmmoSupplyLayout.VEHICLE_ROW_HEIGHT;
     private final AmmoSupplyView view;
     private final List<VisibleGunRow> visibleGunRows = new ArrayList<>();
     private final List<VisibleVehicleRow> visibleVehicleRows = new ArrayList<>();
     private final Map<String, Integer> selectedRounds = new HashMap<>();
     private TacticalMapLayout.Layout layout;
+    private AmmoSupplyLayout supplyLayout;
     private int panelLeft;
     private int panelRight;
-    private int listTop;
-    private int listBottom;
     private int firstVisible;
     private Mode mode;
 
@@ -53,22 +52,30 @@ public final class AmmoSupplyScreen extends Screen {
 
     @Override
     protected void init() {
-        layout = TacticalMapLayout.compute(width, height);
-        int margin = layout.rich() ? 16 : 8;
-        panelLeft = margin;
-        panelRight = width - margin;
-        boolean hasModeTabs = view.target().isLarge();
-        listTop = layout.rich() ? hasModeTabs ? 117 : 84 : hasModeTabs ? 101 : 68;
-        listBottom = Math.max(listTop + rowHeight(), layout.footer().top() - 7);
         rebuildRows();
     }
 
+    /** Recomputed on every rebuild: the list's minimum height follows the selected mode. */
+    private void updateLayout() {
+        supplyLayout = AmmoSupplyLayout.compute(width, height, view.target().kind(),
+                mode == Mode.VEHICLE, font.width(pointsLabel()));
+        layout = supplyLayout.board();
+        panelLeft = supplyLayout.panel().left();
+        panelRight = supplyLayout.panel().right();
+    }
+
+    private Component pointsLabel() {
+        return Component.translatable("screen.wok_infantry.ammo_supply.points",
+                view.remainingPoints(), view.capacityPoints());
+    }
+
     private void rebuildRows() {
+        updateLayout();
         clearWidgets();
         visibleGunRows.clear();
         visibleVehicleRows.clear();
         addModeTabs();
-        int visibleCount = Math.max(1, (listBottom - listTop) / rowHeight());
+        int visibleCount = supplyLayout.visibleRows();
         firstVisible = Mth.clamp(firstVisible, 0,
                 Math.max(0, optionCount() - visibleCount));
         if (mode == Mode.VEHICLE) {
@@ -79,28 +86,27 @@ public final class AmmoSupplyScreen extends Screen {
     }
 
     private void addModeTabs() {
-        if (!view.target().isLarge()) {
+        if (!view.target().isLarge() || !supplyLayout.modeTabs()) {
             return;
         }
-        int gap = 4;
-        int left = panelLeft + 4;
-        int tabWidth = Math.max(50, Math.min(112,
-                (panelRight - panelLeft - 12) / 2));
-        int top = layout.rich() ? 78 : 62;
+        TacticalMapLayout.Rect infantry = supplyLayout.infantryTab();
+        TacticalMapLayout.Rect vehicle = supplyLayout.vehicleTab();
         addRenderableWidget(BattleUiButton.builder(Component.translatable(
                         "screen.wok_infantry.ammo_supply.mode.infantry"), ignored -> {
                     mode = Mode.INFANTRY;
                     firstVisible = 0;
                     rebuildRows();
                 }).selected(mode == Mode.INFANTRY).kind(BattleUiButton.Kind.CONTROL)
-                .bounds(left, top, tabWidth, 20).build());
+                .bounds(infantry.left(), infantry.top(), infantry.width(), infantry.height())
+                .build());
         addRenderableWidget(BattleUiButton.builder(Component.translatable(
                         "screen.wok_infantry.ammo_supply.mode.vehicle"), ignored -> {
                     mode = Mode.VEHICLE;
                     firstVisible = 0;
                     rebuildRows();
                 }).selected(mode == Mode.VEHICLE).kind(BattleUiButton.Kind.CONTROL)
-                .bounds(left + tabWidth + gap, top, tabWidth, 20).build());
+                .bounds(vehicle.left(), vehicle.top(), vehicle.width(), vehicle.height())
+                .build());
     }
 
     private void addGunRows(int visibleCount) {
@@ -110,7 +116,7 @@ public final class AmmoSupplyScreen extends Screen {
         for (int index = firstVisible;
              index < view.guns().size() && visibleGunRows.size() < visibleCount; index++) {
             AmmoSupplyView.GunOption option = view.guns().get(index);
-            int y = listTop + visibleGunRows.size() * GUN_ROW_HEIGHT;
+            int y = supplyLayout.rowTop(visibleGunRows.size());
             Button button = BattleUiButton.builder(Component.translatable(
                             "gui.wok_infantry.ammo_supply.select"),
                             ignored -> BattleNetwork.sendToServer(
@@ -135,7 +141,7 @@ public final class AmmoSupplyScreen extends Screen {
         for (int index = firstVisible; index < view.vehicleAmmunition().size()
                 && visibleVehicleRows.size() < visibleCount; index++) {
             AmmoSupplyView.VehicleAmmoOption option = view.vehicleAmmunition().get(index);
-            int y = listTop + visibleVehicleRows.size() * VEHICLE_ROW_HEIGHT;
+            int y = supplyLayout.rowTop(visibleVehicleRows.size());
             int buttonLeft = rowRight - buttonWidth;
             int sliderLeft = buttonLeft - sliderWidth - 4;
             String selectorKey = selectorKey(option);
@@ -169,7 +175,7 @@ public final class AmmoSupplyScreen extends Screen {
         }
         int before = firstVisible;
         firstVisible -= (int) Math.signum(delta);
-        int visibleCount = Math.max(1, (listBottom - listTop) / rowHeight());
+        int visibleCount = supplyLayout.visibleRows();
         firstVisible = Mth.clamp(firstVisible, 0,
                 Math.max(0, optionCount() - visibleCount));
         if (before != firstVisible) {
@@ -191,20 +197,23 @@ public final class AmmoSupplyScreen extends Screen {
         TacticalBoardChrome.renderHeader(graphics, font, layout,
                 Component.translatable("screen.wok_infantry.ammo_supply.board_title"),
                 station, true);
-        TacticalBoardTheme.raisedPanel(graphics, panelLeft, layout.rich() ? 52 : 43,
-                panelRight, listBottom + 1, TacticalBoardTheme.BOARD_ALT);
+        TacticalMapLayout.Rect panel = supplyLayout.panel();
+        TacticalBoardTheme.raisedPanel(graphics, panel.left(), panel.top(),
+                panel.right(), panel.bottom(), TacticalBoardTheme.BOARD_ALT);
         renderSupplyMeter(graphics);
-        TacticalBoardTheme.sectionHeader(graphics, font, Component.translatable(
-                        mode == Mode.VEHICLE
-                                ? "screen.wok_infantry.ammo_supply.vehicle_ammunition"
-                                : "screen.wok_infantry.ammo_supply.weapons"),
-                panelLeft + 4, listTop - 16, panelRight - 4, TacticalBoardTheme.ACCENT);
+        TacticalMapLayout.Rect section = supplyLayout.sectionHeader();
+        String sectionTitle = Component.translatable(mode == Mode.VEHICLE
+                ? "screen.wok_infantry.ammo_supply.vehicle_ammunition"
+                : "screen.wok_infantry.ammo_supply.weapons").getString();
+        TacticalBoardTheme.sectionHeader(graphics, font,
+                font.plainSubstrByWidth(sectionTitle, Math.max(0, section.width() - 12)),
+                section.left(), section.top(), section.right(), TacticalBoardTheme.ACCENT);
         if (optionCount() == 0) {
             BattleUiTheme.drawCenteredText(graphics, font, Component.translatable(
                             mode == Mode.VEHICLE
                                     ? "screen.wok_infantry.ammo_supply.no_vehicles"
                                     : "screen.wok_infantry.ammo_supply.no_weapons"),
-                    width / 2, listTop + 18, TacticalBoardTheme.MUTED_TEXT);
+                    width / 2, supplyLayout.list().top() + 18, TacticalBoardTheme.MUTED_TEXT);
         }
         visibleGunRows.forEach(row -> renderGunRow(graphics, row));
         visibleVehicleRows.forEach(row -> renderVehicleRow(graphics, row));
@@ -218,23 +227,22 @@ public final class AmmoSupplyScreen extends Screen {
     }
 
     private void renderSupplyMeter(GuiGraphics graphics) {
-        int top = layout.rich() ? 56 : 47;
-        int left = panelLeft + 8;
-        int right = panelRight - 8;
-        int meterLeft = left + Math.min(126, Math.max(80, (right - left) / 3));
-        Component points = Component.translatable("screen.wok_infantry.ammo_supply.points",
-                view.remainingPoints(), view.capacityPoints());
-        graphics.drawString(font, points, left, top + 4,
+        TacticalMapLayout.Rect text = supplyLayout.pointsText();
+        graphics.drawString(font, font.plainSubstrByWidth(pointsLabel().getString(),
+                        text.width()), text.left(), text.top(),
                 view.remainingPoints() > 0 ? TacticalBoardTheme.TEXT
                         : TacticalBoardTheme.DANGER, false);
-        graphics.fill(meterLeft, top + 4, right, top + 13, TacticalBoardTheme.INSET);
-        int meterWidth = Math.max(0, right - meterLeft - 2);
-        int filled = view.capacityPoints() == 0 ? 0
-                : meterWidth * view.remainingPoints() / view.capacityPoints();
-        graphics.fill(meterLeft + 1, top + 5, meterLeft + 1 + filled, top + 12,
-                view.remainingPoints() > view.capacityPoints() / 5
+        TacticalMapLayout.Rect bar = supplyLayout.meterBar();
+        graphics.fill(bar.left(), bar.top(), bar.right(), bar.bottom(),
+                TacticalBoardTheme.INSET);
+        int meterWidth = Math.max(0, bar.width() - 2);
+        int filled = view.capacityPoints() <= 0 ? 0 : Mth.clamp(
+                (int) ((long) meterWidth * view.remainingPoints() / view.capacityPoints()),
+                0, meterWidth);
+        graphics.fill(bar.left() + 1, bar.top() + 1, bar.left() + 1 + filled,
+                bar.bottom() - 1, view.remainingPoints() > view.capacityPoints() / 5
                         ? TacticalBoardTheme.SUCCESS : TacticalBoardTheme.DANGER);
-        BattleUiTheme.outline(graphics, meterLeft, top + 4, right, top + 13,
+        BattleUiTheme.outline(graphics, bar.left(), bar.top(), bar.right(), bar.bottom(),
                 TacticalBoardTheme.BORDER);
     }
 
@@ -293,10 +301,6 @@ public final class AmmoSupplyScreen extends Screen {
 
     private int optionCount() {
         return mode == Mode.VEHICLE ? view.vehicleAmmunition().size() : view.guns().size();
-    }
-
-    private int rowHeight() {
-        return mode == Mode.VEHICLE ? VEHICLE_ROW_HEIGHT : GUN_ROW_HEIGHT;
     }
 
     private static String selectorKey(AmmoSupplyView.VehicleAmmoOption option) {
