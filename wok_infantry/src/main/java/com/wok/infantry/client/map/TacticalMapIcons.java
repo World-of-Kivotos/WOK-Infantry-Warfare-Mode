@@ -3,6 +3,7 @@ package com.wok.infantry.client.map;
 import com.wok.infantry.battle.TacticalMarkerType;
 import com.wok.infantry.client.screen.TacticalBoardTheme;
 import com.wok.infantry.client.screen.TacticalTextures;
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import com.wok.infantry.deployment.DeploymentPointKind;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -334,6 +335,11 @@ public final class TacticalMapIcons {
         double guiScale = Minecraft.getInstance().getWindow().getGuiScale();
         Placement placement = place(icon, physical(x, scaleX, translateX, guiScale),
                 physical(y, scaleY, translateY, guiScale), artPx);
+        if (UiLayoutProbe.recording()) {
+            UiLayoutProbe.icon(icon.id(), state == null ? "NORMAL" : state.name(),
+                    placement.plateLeft(), placement.plateTop(), placement.plateRight(),
+                    placement.plateBottom(), guiScale);
+        }
         graphics.pose().pushPose();
         // From here on one unit is one physical pixel at the screen origin: a point P lands at
         // scale * (-translate / scale + P / (guiScale * scale)) + translate = P / guiScale.

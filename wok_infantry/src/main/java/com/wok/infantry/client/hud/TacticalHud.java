@@ -3,6 +3,7 @@ package com.wok.infantry.client.hud;
 import com.wok.infantry.client.screen.BattleUiTheme;
 import com.wok.infantry.client.screen.TacticalBoardTheme;
 import com.wok.infantry.client.screen.TextFit;
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import com.wok.infantry.stamina.StaminaRules;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -109,6 +110,7 @@ public final class TacticalHud {
         if (right <= left || bottom <= top) {
             return;
         }
+        UiLayoutProbe.box(graphics, "hud.plate", left, top, right, bottom);
         graphics.fill(left, top, right, bottom,
                 solid ? TacticalBoardTheme.HUD_PLATE_SOLID : TacticalBoardTheme.HUD_PLATE);
         BattleUiTheme.outline(graphics, left, top, right, bottom, TacticalBoardTheme.HUD_EDGE);
@@ -195,6 +197,7 @@ public final class TacticalHud {
         int barLeft = x;
         if (label != null && !label.getString().isEmpty()) {
             graphics.drawString(font, label, x, y, TacticalBoardTheme.LIGHT_MUTED, false);
+            UiLayoutProbe.rawText(graphics, font, label, x, y);
             barLeft = x + font.width(label) + 2;
         }
         Box bar = labelledBarTrack(barLeft, y, right);
@@ -223,6 +226,7 @@ public final class TacticalHud {
             return x;
         }
         graphics.drawString(font, text, x, y, color, false);
+        UiLayoutProbe.rawText(graphics, font, text, x, y);
         return x + font.width(text);
     }
 
@@ -233,6 +237,7 @@ public final class TacticalHud {
             return x;
         }
         graphics.drawString(font, text, x, y, color, false);
+        UiLayoutProbe.rawText(graphics, font, text, x, y);
         return x + font.width(text);
     }
 
@@ -342,6 +347,7 @@ public final class TacticalHud {
         graphics.fill(x, y - 1, x + width, y + 8, TacticalBoardTheme.FRAME_MID);
         BattleUiTheme.outline(graphics, x, y - 1, x + width, y + 8, TacticalBoardTheme.KEYCAP_EDGE);
         graphics.drawString(font, key, x + 2, y, TacticalBoardTheme.LIGHT, false);
+        UiLayoutProbe.rawText(graphics, font, key, x + 2, y);
         return x + width;
     }
 

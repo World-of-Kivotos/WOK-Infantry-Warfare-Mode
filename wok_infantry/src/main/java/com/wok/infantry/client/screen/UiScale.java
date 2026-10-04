@@ -1,6 +1,7 @@
 package com.wok.infantry.client.screen;
 
 import com.mojang.blaze3d.platform.Window;
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import com.wok.infantry.config.InfantryClientConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -98,6 +99,9 @@ public final class UiScale {
     public static void enableScissor(GuiGraphics graphics, int left, int top, int right, int bottom) {
         int[] bounds = scissorBounds(graphics.pose().last().pose(), left, top, right, bottom);
         graphics.enableScissor(bounds[0], bounds[1], bounds[2], bounds[3]);
+        if (UiLayoutProbe.recording()) {
+            UiLayoutProbe.clipGui(bounds[0], bounds[1], bounds[2], bounds[3]);
+        }
     }
 
     public static void enableScissor(GuiGraphics graphics, UiRect rect) {
@@ -106,6 +110,9 @@ public final class UiScale {
 
     public static void disableScissor(GuiGraphics graphics) {
         graphics.disableScissor();
+        if (UiLayoutProbe.recording()) {
+            UiLayoutProbe.unclip();
+        }
     }
 
     /**

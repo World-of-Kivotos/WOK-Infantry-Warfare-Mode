@@ -1,5 +1,6 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -507,6 +508,10 @@ public final class TacticalList<T> extends AbstractWidget {
         }
         TacticalDraw.focusRingIfKeyboard(graphics, this);
         super.setTooltip(tooltip != null ? tooltip : ownTooltip);
+        if (UiLayoutProbe.recording()) {
+            UiLayoutProbe.widget(graphics, this, "list", active ? "NORMAL" : "DISABLED", false,
+                    TacticalButtonStyle.keyboardFocused(this));
+        }
     }
 
     /**
@@ -539,6 +544,9 @@ public final class TacticalList<T> extends AbstractWidget {
                     boolean hovered = isHovered() && mouseX >= row.left() && mouseX < row.right()
                             && mouseY >= y && mouseY < y + pitch;
                     DrawnRow drawn = renderItem(graphics, font, row, entry.item(), hovered);
+                    if (UiLayoutProbe.recording()) {
+                        probeRow(graphics, row, entry.item(), drawn, hovered);
+                    }
                     // The hovered row wins; with keyboard focus the selected row speaks otherwise.
                     if (hovered || (tipRow == null && keyboard && entry.item() == selected)) {
                         tipRow = drawn;
@@ -574,6 +582,22 @@ public final class TacticalList<T> extends AbstractWidget {
 
     /** A drawn item row and what had to be shortened in it. */
     private record DrawnRow(TacticalDraw.RowSpec spec, boolean titleCut, boolean subCut) {
+    }
+
+    /**
+     * Reports a drawn row to the uiTest layout probe as control {@code <list uiId>/<index>}. A
+     * default row offers its full text on hover (see {@link #rowTooltipText}); a custom renderer
+     * only does so through the spec's tooltip.
+     */
+    private void probeRow(GuiGraphics graphics, UiRect row, int index, DrawnRow drawn,
+                          boolean hovered) {
+        TacticalDraw.RowSpec spec = drawn.spec();
+        String state = index == selected ? "SELECTED" : spec.disabled() ? "DISABLED"
+                : hovered ? "HOVER" : "NORMAL";
+        UiLayoutProbe.part(graphics, this, Integer.toString(index), "list-row", state, row.left(),
+                row.top(), row.right(), row.bottom(), !spec.disabled(), spec.title(),
+                spec.disabledReason(), drawn.titleCut() || drawn.subCut(),
+                renderer == null || spec.tooltip() != null);
     }
 
     private DrawnRow renderItem(GuiGraphics graphics, Font font, UiRect row, int index,

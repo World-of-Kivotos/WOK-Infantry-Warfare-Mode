@@ -1,5 +1,6 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -34,6 +35,11 @@ public final class TacticalConfirmDialog implements TacticalModal {
         FOCUS_PREVIOUS
     }
 
+    /** Layout-probe uiId of the cancel key (uiTest clicks it by this id). */
+    public static final String CANCEL_UI_ID = "modal.confirm.cancel";
+    /** Layout-probe uiId of the confirm key. */
+    public static final String CONFIRM_UI_ID = "modal.confirm.ok";
+
     private static final int SECTION_HEIGHT = 14;
     private static final int LINE_HEIGHT = 10;
 
@@ -67,6 +73,8 @@ public final class TacticalConfirmDialog implements TacticalModal {
                 .bounds(0, 0, 0, 0).build();
         this.confirmFocused = !danger;
         applyFocus();
+        UiLayoutProbe.tag(cancelButton, CANCEL_UI_ID);
+        UiLayoutProbe.tag(confirmButton, CONFIRM_UI_ID);
     }
 
     public static Builder builder(Component title, Component body) {
@@ -196,6 +204,9 @@ public final class TacticalConfirmDialog implements TacticalModal {
         if (card.isEmpty()) {
             return;
         }
+        // Not solid: the modal card is meant to cover the board below it.
+        UiLayoutProbe.begin(graphics, "modal.confirm", card.left(), card.top(), card.right(),
+                card.bottom(), false);
         graphics.fill(card.left(), card.top(), card.right(), card.bottom(), TacticalBoardTheme.BOARD);
         BattleUiTheme.outline(graphics, card.left(), card.top(), card.right(), card.bottom(),
                 TacticalBoardTheme.BORDER_DARK);
@@ -206,10 +217,12 @@ public final class TacticalConfirmDialog implements TacticalModal {
         int y = card.top() + 21;
         for (String line : bodyLines) {
             graphics.drawString(font, line, card.left() + 8, y, TacticalBoardTheme.TEXT, false);
+            UiLayoutProbe.rawText(graphics, font, line, card.left() + 8, y);
             y += LINE_HEIGHT;
         }
         cancelButton.render(graphics, mouseX, mouseY, partialTick);
         confirmButton.render(graphics, mouseX, mouseY, partialTick);
+        UiLayoutProbe.end(graphics);
     }
 
     @Override

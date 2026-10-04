@@ -1,5 +1,6 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -270,10 +271,12 @@ public final class TacticalStepper extends AbstractWidget {
         }
         boolean enabled = active && !scale.empty();
         int hovered = enabled && isHovered() ? hit(bounds(), mouseX, mouseY) : 0;
+        boolean focusRing = TacticalButtonStyle.keyboardFocused(this);
         boolean truncated = draw(graphics, minecraft.font, bounds(), formatter.apply(current),
-                canDecrease(), canIncrease(), hovered, enabled,
-                TacticalButtonStyle.keyboardFocused(this));
+                canDecrease(), canIncrease(), hovered, enabled, focusRing);
         truncationTooltip.sync(this, getMessage(), truncated);
+        UiLayoutProbe.widget(graphics, this, "stepper", enabled ? "CONTROL" : "DISABLED",
+                truncated, focusRing);
     }
 
     @Override

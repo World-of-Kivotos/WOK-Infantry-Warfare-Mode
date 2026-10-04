@@ -1,5 +1,6 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
@@ -20,6 +21,9 @@ public enum BattleTab {
     MAP("map", "screen.wok_infantry.tab.map", "screen.wok_infantry.tab.map_short"),
     FORMATION("formation", "screen.wok_infantry.tab.formation",
             "screen.wok_infantry.tab.formation_short");
+
+    /** Layout-probe uiId of the strip built by {@link #strip}; tabs are {@code terminal.tabs/<id>}. */
+    public static final String TERMINAL_TABS_UI_ID = "terminal.tabs";
 
     private final String id;
     private final String labelKey;
@@ -79,12 +83,13 @@ public enum BattleTab {
     public static TacticalTabStrip strip(BattleTab current,
                                          Function<BattleTab, Component> disabledReason,
                                          Consumer<BattleTab> onSelect) {
-        return new TacticalTabStrip(TacticalTabStrip.Skin.HEADER, tabs(disabledReason),
-                current == null ? 0 : current.ordinal(),
+        // uiTest clicks a terminal page as "terminal.tabs/<tab id>" (no-op outside the probe).
+        return UiLayoutProbe.tag(new TacticalTabStrip(TacticalTabStrip.Skin.HEADER,
+                tabs(disabledReason), current == null ? 0 : current.ordinal(),
                 index -> {
                     if (onSelect != null && index >= 0 && index < values().length) {
                         onSelect.accept(values()[index]);
                     }
-                });
+                }), TERMINAL_TABS_UI_ID);
     }
 }

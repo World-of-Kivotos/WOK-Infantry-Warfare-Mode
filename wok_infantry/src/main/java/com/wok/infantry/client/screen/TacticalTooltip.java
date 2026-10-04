@@ -1,5 +1,6 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -121,13 +122,18 @@ public final class TacticalTooltip {
         int bottom = top + placement.height();
         graphics.pose().pushPose();
         graphics.pose().translate(0.0F, 0.0F, Z);
+        // Not solid: a tooltip floats above whatever it points at.
+        UiLayoutProbe.begin(graphics, "tooltip", left, top, right, bottom, false);
         graphics.fill(left, top, right, bottom, TacticalBoardTheme.TOOLTIP_BG);
         BattleUiTheme.outline(graphics, left, top, right, bottom, TacticalBoardTheme.TOOLTIP_EDGE);
         graphics.fill(left, top, right, top + 1, TacticalBoardTheme.ACCENT_B);
         for (int index = 0; index < lines.size(); index++) {
             graphics.drawString(font, lines.get(index), left + 4, top + 3 + index * LINE_HEIGHT,
                     index == 0 ? TacticalBoardTheme.LIGHT : TacticalBoardTheme.LIGHT_MUTED, false);
+            UiLayoutProbe.rawText(graphics, font, lines.get(index), left + 4,
+                    top + 3 + index * LINE_HEIGHT);
         }
+        UiLayoutProbe.end(graphics);
         graphics.pose().popPose();
     }
 }

@@ -1,5 +1,6 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -407,9 +408,29 @@ public final class TacticalTabStrip extends AbstractWidget {
                 if (index == hovered) {
                     tooltip = tooltipFor(index, truncated);
                 }
+                if (UiLayoutProbe.recording()) {
+                    probeTab(graphics, cell, tab, tab.labelFor(mode), index == current,
+                            index == hovered, truncated);
+                }
             }
         }
         setTooltip(tooltip);
+        if (UiLayoutProbe.recording()) {
+            UiLayoutProbe.widget(graphics, this, "tabs", mode.name(), false, focusRing);
+        }
+    }
+
+    /**
+     * Reports one tab cell to the uiTest layout probe as control {@code <strip uiId>/<tab id>}.
+     * A shortened tab label is always offered in full on hover ({@link #tooltipFor}).
+     */
+    private void probeTab(GuiGraphics graphics, UiRect cell, Tab tab, Component label,
+                          boolean isCurrent, boolean hovered, boolean truncated) {
+        String state = isCurrent ? "CURRENT" : !tab.enabled() ? "DISABLED"
+                : hovered ? "HOVER" : "NORMAL";
+        UiLayoutProbe.part(graphics, this, tab.id(), "tab", state, cell.left(), cell.top(),
+                cell.right(), cell.bottom(), tab.enabled(), label, tab.disabledReason(), truncated,
+                true);
     }
 
     private Tooltip tooltipFor(int index, boolean truncated) {
@@ -514,6 +535,9 @@ public final class TacticalTabStrip extends AbstractWidget {
                 .append("  " + (current + 1) + "/" + tabs.size());
         boolean truncated = renderTab(graphics, font, parts.get(1), tab, label, true, false,
                 focusRing);
+        if (UiLayoutProbe.recording()) {
+            probeTab(graphics, parts.get(1), tab, label, true, false, truncated);
+        }
         if (isHovered() && parts.get(1).contains(mouseX, mouseY)
                 && (truncated || !tab.shortLabel().getString().equals(tab.label().getString()))) {
             if (labelTooltips[current] == null) {
