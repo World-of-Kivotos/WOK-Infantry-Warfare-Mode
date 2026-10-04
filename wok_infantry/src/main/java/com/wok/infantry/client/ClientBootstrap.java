@@ -1,8 +1,10 @@
 package com.wok.infantry.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import com.wok.infantry.WokInfantryMod;
 import com.wok.infantry.client.KeyBindingDefaults.Binding;
 import com.wok.infantry.client.KeyBindingDefaults.LabelSource;
+import com.wok.infantry.config.InfantryClientConfig;
 import com.wok.infantry.formation.selection.FormationSelectionSnapshot;
 import com.wok.infantry.network.LoadoutNetwork;
 import com.wok.infantry.network.battle.client.BattleClientNetworkBridge;
@@ -35,6 +37,7 @@ import net.minecraftforge.fml.ModList;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalInt;
 
 public final class ClientBootstrap {
     // Default keys, conflict context and routing live in KeyBindingDefaults (unit tested).
@@ -54,6 +57,7 @@ public final class ClientBootstrap {
             Binding.LOADOUT, OPEN_LOADOUT,
             Binding.ADMIN_LOADOUT, OPEN_ADMIN_LOADOUT,
             Binding.WEAPON_TUNING, OPEN_WEAPON_TUNING));
+    private static boolean keyDefaultsMigrated;
 
     private ClientBootstrap() {
     }
@@ -154,6 +158,7 @@ public final class ClientBootstrap {
         XaeroMinimapIntegration.onClientTick();
         TaczAdsSpeedAdapter.clientTick(Minecraft.getInstance().player);
         ClientProneStability.tick();
+        migrateKeyDefaultsOnce(Minecraft.getInstance());
         boolean terminalPressed = false;
         while (OPEN_TERMINAL.consumeClick()) {
             terminalPressed = true;
@@ -247,6 +252,45 @@ public final class ClientBootstrap {
     private static Boolean formationRequired() {
         FormationSelectionSnapshot formation = ClientFormationState.snapshot();
         return formation == null ? null : formation.selectionRequired();
+    }
+
+    /**
+     * Moves WOK mappings still exactly on their pre-0.3.0-beta.8 default key to the new default,
+     * once per client (recorded in {@code keys.defaultsRevision} of the client config). Runs on
+     * the first client tick with both options.txt and the client config loaded, normally on the
+     * title screen.
+     */
+    private static void migrateKeyDefaultsOnce(Minecraft minecraft) {
+        if (keyDefaultsMigrated || minecraft.options == null) {
+            return;
+        }
+        int applied = InfantryClientConfig.keyDefaultsRevision();
+        if (applied < 0) {
+            return;
+        }
+        keyDefaultsMigrated = true;
+        if (applied >= KeyBindingDefaults.DEFAULTS_REVISION) {
+            return;
+        }
+        StringBuilder moved = new StringBuilder();
+        for (Map.Entry<Binding, KeyMapping> entry : MAPPINGS.entrySet()) {
+            KeyMapping mapping = entry.getValue();
+            InputConstants.Key key = mapping.getKey();
+            OptionalInt target = KeyBindingDefaults.migratedKey(entry.getKey(),
+                    key.getType() == InputConstants.Type.KEYSYM, key.getValue(),
+                    mapping.getKeyModifier() != KeyModifier.NONE, XAERO_WORLD_MAP_INSTALLED);
+            if (target.isPresent()) {
+                mapping.setKey(InputConstants.Type.KEYSYM.getOrCreate(target.getAsInt()));
+                moved.append(moved.isEmpty() ? "" : ", ").append(mapping.getName());
+            }
+        }
+        if (!moved.isEmpty()) {
+            KeyMapping.resetMapping();
+            minecraft.options.save();
+            WokInfantryMod.LOGGER.info("Moved WOK key mappings still on their old default key to "
+                    + "the 0.3.0-beta.8 defaults: {}", moved);
+        }
+        InfantryClientConfig.setKeyDefaultsRevision(KeyBindingDefaults.DEFAULTS_REVISION);
     }
 
     /** Administrator keys are dropped silently without permission level 2 (server re-checks). */

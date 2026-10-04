@@ -14,6 +14,7 @@ public final class InfantryClientConfig {
     private static final ForgeConfigSpec.DoubleValue MAP_MARKER_SCALE;
     private static final ForgeConfigSpec.BooleanValue REDIRECT_XAERO_WORLD_MAP;
     private static final ForgeConfigSpec.BooleanValue MINIMUM_SCALE_2X;
+    private static final ForgeConfigSpec.IntValue KEY_DEFAULTS_REVISION;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -38,6 +39,16 @@ public final class InfantryClientConfig {
                         + "Infantry screens and HUD at 2x (960x720 is laid out as 480x360) so CJK "
                         + "text stays readable. Set to false to keep the 1x size.")
                 .define("minimumScale2x", DEFAULT_MINIMUM_SCALE_2X);
+        builder.pop();
+        builder.comment("Key binding bookkeeping")
+                .push("keys");
+        KEY_DEFAULTS_REVISION = builder
+                .comment("Revision of the WOK default key table already applied to options.txt "
+                        + "(written by the mod, do not edit). While it is lower than the current "
+                        + "revision, WOK keys still on their old default (K, L, U, O, and M with "
+                        + "Xaero's World Map installed) are moved once to the new default; keys "
+                        + "you chose yourself are kept.")
+                .defineInRange("defaultsRevision", 0, 0, Integer.MAX_VALUE);
         builder.pop();
         SPEC = builder.build();
     }
@@ -79,6 +90,26 @@ public final class InfantryClientConfig {
             return DEFAULT_MINIMUM_SCALE_2X;
         }
         return MINIMUM_SCALE_2X.get();
+    }
+
+    /**
+     * {@code keys.defaultsRevision}: default key table revision already applied to options.txt,
+     * or {@code -1} while the client config is not loaded (nothing may be migrated yet).
+     */
+    public static int keyDefaultsRevision() {
+        if (!SPEC.isLoaded()) {
+            return -1;
+        }
+        return KEY_DEFAULTS_REVISION.get();
+    }
+
+    /** Records that the default key table {@code revision} has been applied (saved at once). */
+    public static void setKeyDefaultsRevision(int revision) {
+        if (!SPEC.isLoaded() || KEY_DEFAULTS_REVISION.get() == revision) {
+            return;
+        }
+        KEY_DEFAULTS_REVISION.set(Math.max(0, revision));
+        KEY_DEFAULTS_REVISION.save();
     }
 
     private static double clamp(double value) {

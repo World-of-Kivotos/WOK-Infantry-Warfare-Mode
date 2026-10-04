@@ -8,6 +8,7 @@ import org.lwjgl.glfw.GLFW;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.OptionalInt;
 import java.util.function.Function;
 import java.util.function.IntPredicate;
 import java.util.function.Predicate;
@@ -28,7 +29,9 @@ import java.util.function.Predicate;
  *   duplicate in the controls screen (see {@link #defaultKey(Binding, boolean)}).</li>
  *   <li>Loadout, the old squad mapping, the administrator loadout terminal and the weapon
  *   editor start unbound. Players who already bound them keep their keys: the mapping names
- *   ({@code key.wok_infantry.*}) are unchanged and options.txt stores the chosen key.
+ *   ({@code key.wok_infantry.*}) are unchanged and options.txt stores the chosen key. Only a
+ *   mapping still exactly on its old default is moved once to the new default
+ *   ({@link #migratedKey}), because options.txt cannot tell an untouched default from a choice.
  *   Administrator keys are only sent with permission level 2 ({@link #allowsPress}).</li>
  *   <li>Every mapping uses {@link KeyConflictContext#IN_GAME}: it only fires without a screen
  *   open. Note that Forge 47's {@code KeyMapping.same} still reports two mappings on the same
@@ -42,24 +45,35 @@ public final class KeyBindingDefaults {
     /** Permission level the server requires for the administrator screens. */
     public static final int ADMIN_PERMISSION_LEVEL = BattleRules.ADMIN_PERMISSION_LEVEL;
 
+    /**
+     * Revision of this default key table. {@link #migratedKey} moves mappings still on the
+     * defaults of an older revision once; bump it (and extend the legacy defaults) only when a
+     * later release moves default keys again.
+     */
+    public static final int DEFAULTS_REVISION = 1;
+
     /** One WOK key mapping. The mapping names are a compatibility contract (options.txt). */
     public enum Binding {
         /** Opens the battle terminal (squad page), or the formation page before a formation. */
-        TERMINAL("key.wok_infantry.open_terminal", GLFW.GLFW_KEY_GRAVE_ACCENT, false),
+        TERMINAL("key.wok_infantry.open_terminal", GLFW.GLFW_KEY_GRAVE_ACCENT, UNBOUND, false),
         /** Former squad key (K). Kept for players who bound it; same route as the terminal. */
-        SQUAD("key.wok_infantry.open_squad", UNBOUND, false),
-        TACTICAL_MAP("key.wok_infantry.open_tactical_map", GLFW.GLFW_KEY_M, false),
-        LOADOUT("key.wok_infantry.open_loadout", UNBOUND, false),
-        ADMIN_LOADOUT("key.wok_infantry.open_admin_loadout", UNBOUND, true),
-        WEAPON_TUNING("key.wok_infantry.open_weapon_tuning", UNBOUND, true);
+        SQUAD("key.wok_infantry.open_squad", UNBOUND, GLFW.GLFW_KEY_K, false),
+        TACTICAL_MAP("key.wok_infantry.open_tactical_map", GLFW.GLFW_KEY_M, GLFW.GLFW_KEY_M,
+                false),
+        LOADOUT("key.wok_infantry.open_loadout", UNBOUND, GLFW.GLFW_KEY_L, false),
+        ADMIN_LOADOUT("key.wok_infantry.open_admin_loadout", UNBOUND, GLFW.GLFW_KEY_U, true),
+        WEAPON_TUNING("key.wok_infantry.open_weapon_tuning", UNBOUND, GLFW.GLFW_KEY_O, true);
 
         private final String mappingName;
         private final int defaultKey;
+        private final int legacyDefaultKey;
         private final boolean administratorOnly;
 
-        Binding(String mappingName, int defaultKey, boolean administratorOnly) {
+        Binding(String mappingName, int defaultKey, int legacyDefaultKey,
+                boolean administratorOnly) {
             this.mappingName = mappingName;
             this.defaultKey = defaultKey;
+            this.legacyDefaultKey = legacyDefaultKey;
             this.administratorOnly = administratorOnly;
         }
 
@@ -71,6 +85,14 @@ public final class KeyBindingDefaults {
         /** Default GLFW key without optional map mods; {@link #UNBOUND} for none. */
         public int defaultKey() {
             return defaultKey;
+        }
+
+        /**
+         * Default key up to 0.3.0-beta.7 (K, M, L, U, O); {@link #UNBOUND} for the terminal key,
+         * which did not exist then.
+         */
+        public int legacyDefaultKey() {
+            return legacyDefaultKey;
         }
 
         /** Whether the key opens a permission-two screen (pressed only by administrators). */
@@ -136,6 +158,30 @@ public final class KeyBindingDefaults {
             return UNBOUND;
         }
         return binding.defaultKey();
+    }
+
+    /**
+     * One-time move of a mapping that still sits exactly on its pre-0.3.0-beta.8 default key
+     * (K, L, U, O, and M while Xaero's World Map is installed) to the new default. options.txt
+     * stores every key, so without this an upgraded client would keep the old, conflicting keys
+     * and the red marks in the controls screen. Anything the player chose is kept: another key, a
+     * mouse button, or the old key with a modifier.
+     *
+     * @param keyboardKey whether the mapping is bound to a keyboard key ({@code KEYSYM})
+     * @param keyCode its GLFW key code
+     * @param modified whether it has a Forge key modifier (Ctrl, Shift, Alt)
+     * @return the GLFW key to set ({@link #UNBOUND} to unbind), or empty to leave it alone
+     */
+    public static OptionalInt migratedKey(Binding binding, boolean keyboardKey, int keyCode,
+                                          boolean modified, boolean xaeroWorldMapInstalled) {
+        Objects.requireNonNull(binding, "binding");
+        int legacy = binding.legacyDefaultKey();
+        int current = defaultKey(binding, xaeroWorldMapInstalled);
+        if (legacy == UNBOUND || legacy == current || !keyboardKey || modified
+                || keyCode != legacy) {
+            return OptionalInt.empty();
+        }
+        return OptionalInt.of(current);
     }
 
     /**

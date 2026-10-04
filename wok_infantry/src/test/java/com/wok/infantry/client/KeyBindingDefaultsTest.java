@@ -8,6 +8,7 @@ import com.wok.infantry.client.KeyBindingDefaults.Binding;
 import com.wok.infantry.client.KeyBindingDefaults.LabelSource;
 import com.wok.infantry.client.KeyBindingDefaults.MapRoute;
 import com.wok.infantry.client.KeyBindingDefaults.TerminalRoute;
+import com.wok.infantry.config.InfantryClientConfig;
 import net.minecraftforge.client.settings.KeyConflictContext;
 import org.junit.jupiter.api.Test;
 import org.lwjgl.glfw.GLFW;
@@ -17,6 +18,7 @@ import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -101,6 +103,66 @@ class KeyBindingDefaultsTest {
                 .filter(key -> key != KeyBindingDefaults.UNBOUND)
                 .collect(Collectors.toSet());
         assertEquals(Set.of(GLFW.GLFW_KEY_GRAVE_ACCENT, GLFW.GLFW_KEY_M), withoutXaero);
+    }
+
+    @Test
+    void legacyDefaultsAreTheKeysUpToBetaSeven() {
+        assertEquals(1, KeyBindingDefaults.DEFAULTS_REVISION);
+        Map<Binding, Integer> legacy = new EnumMap<>(Binding.class);
+        legacy.put(Binding.TERMINAL, KeyBindingDefaults.UNBOUND);
+        legacy.put(Binding.SQUAD, GLFW.GLFW_KEY_K);
+        legacy.put(Binding.TACTICAL_MAP, GLFW.GLFW_KEY_M);
+        legacy.put(Binding.LOADOUT, GLFW.GLFW_KEY_L);
+        legacy.put(Binding.ADMIN_LOADOUT, GLFW.GLFW_KEY_U);
+        legacy.put(Binding.WEAPON_TUNING, GLFW.GLFW_KEY_O);
+        for (Binding binding : Binding.values()) {
+            assertEquals(legacy.get(binding), binding.legacyDefaultKey(), binding::name);
+        }
+    }
+
+    @Test
+    void untouchedOldDefaultsMoveOnceToTheNewDefaults() {
+        for (Binding binding : List.of(Binding.SQUAD, Binding.LOADOUT, Binding.ADMIN_LOADOUT,
+                Binding.WEAPON_TUNING)) {
+            for (boolean xaero : new boolean[]{false, true}) {
+                assertEquals(OptionalInt.of(KeyBindingDefaults.UNBOUND),
+                        KeyBindingDefaults.migratedKey(binding, true,
+                                binding.legacyDefaultKey(), false, xaero),
+                        () -> binding + " still on its old default is unbound");
+            }
+        }
+        assertEquals(OptionalInt.of(KeyBindingDefaults.UNBOUND),
+                KeyBindingDefaults.migratedKey(Binding.TACTICAL_MAP, true, GLFW.GLFW_KEY_M,
+                        false, true), "M is left to Xaero's redirected open-map key");
+        assertEquals(OptionalInt.empty(),
+                KeyBindingDefaults.migratedKey(Binding.TACTICAL_MAP, true, GLFW.GLFW_KEY_M,
+                        false, false), "without Xaero M stays the tactical map key");
+    }
+
+    @Test
+    void keysThePlayerChoseAreNeverMigrated() {
+        // The test client's own options.txt: loadout moved to ';', everything else untouched.
+        assertEquals(OptionalInt.empty(), KeyBindingDefaults.migratedKey(Binding.LOADOUT, true,
+                GLFW.GLFW_KEY_SEMICOLON, false, true));
+        assertEquals(OptionalInt.empty(), KeyBindingDefaults.migratedKey(Binding.SQUAD, true,
+                GLFW.GLFW_KEY_K, true, true), "Ctrl+K is a choice, not the old default");
+        assertEquals(OptionalInt.empty(), KeyBindingDefaults.migratedKey(Binding.SQUAD, false,
+                GLFW.GLFW_KEY_K, false, true), "a mouse button with the same number");
+        assertEquals(OptionalInt.empty(), KeyBindingDefaults.migratedKey(Binding.SQUAD, true,
+                KeyBindingDefaults.UNBOUND, false, true), "already unbound");
+        assertEquals(OptionalInt.empty(), KeyBindingDefaults.migratedKey(Binding.WEAPON_TUNING,
+                true, GLFW.GLFW_KEY_K, false, true), "the old default of another mapping");
+        for (int key : new int[]{KeyBindingDefaults.UNBOUND, GLFW.GLFW_KEY_GRAVE_ACCENT,
+                GLFW.GLFW_KEY_K}) {
+            assertEquals(OptionalInt.empty(), KeyBindingDefaults.migratedKey(Binding.TERMINAL,
+                    true, key, false, true), "the terminal key is new and never migrated");
+        }
+    }
+
+    @Test
+    void migrationWaitsForTheClientConfig() {
+        assertEquals(-1, InfantryClientConfig.keyDefaultsRevision(),
+                "unloaded client config: nothing is migrated or recorded yet");
     }
 
     @Test
