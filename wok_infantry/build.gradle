@@ -56,7 +56,9 @@ File uiSelectorFallbackDir = layout.projectDirectory
 // UI acceptance runs in the language players actually use unless -PuiLang says otherwise.
 String uiLanguage = (project.findProperty('uiLang') ?: 'zh_cn').toString().trim()
         .toLowerCase(Locale.ROOT)
-if (!(uiLanguage ==~ /[a-z]{2,3}_[a-z]{2,3}/)) {
+// Only guards the options.txt line. Vanilla 1.20.1 also ships codes such as lzh, esan and
+// zlm_arab; whether the code is really provided is checked by the harness after login.
+if (!(uiLanguage ==~ /[a-z]{2,8}(_[a-z]{2,8})?/)) {
     throw new GradleException("uiLang must be a Minecraft language code such as zh_cn or en_us: ${uiLanguage}")
 }
 if (!networkTestRoot.toPath().startsWith(layout.projectDirectory.asFile.canonicalFile.toPath())

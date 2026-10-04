@@ -2112,8 +2112,11 @@ public final class UiRuntimeAcceptanceHarness {
             return false;
         }
         if (mapping.isUnbound()) {
-            fail("Key mapping " + mappingName + " is unbound; the acceptance run needs a key "
-                    + "for it (default or key_" + mappingName + " in run/ui-test/options.txt)");
+            // prepareUiTestOptions strips every key_key.wok_infantry.* line before each run, so
+            // only the mod's default binding counts here.
+            fail("Key mapping " + mappingName + " has no default key"
+                    + (terminalFallback ? " and no bound key.wok_infantry.*terminal* mapping" : "")
+                    + "; the acceptance run resets WOK keys to their defaults");
             return false;
         }
         if (mapping.getKeyModifier() != KeyModifier.NONE) {
