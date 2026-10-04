@@ -21,7 +21,8 @@ import java.util.List;
  *
  * <p>While any top-centre plate is shown, the vanilla boss bars move down below it as one
  * block (pose translation around {@link VanillaGuiOverlay#BOSS_EVENT_PROGRESS}), so the first
- * boss bar is never covered.
+ * boss bar is never covered; on narrow screens they also move right, clear of the squad roster
+ * ({@link WokHudLayout.Layout#bossShiftX()}).
  */
 public final class BattleStripOverlay {
     /** Overlay id {@code wok_infantry:tickets}; kept so packs can hide it by id. */
@@ -83,7 +84,8 @@ public final class BattleStripOverlay {
     }
 
     /**
-     * Forge bus, lowest priority: moves the vanilla boss bars below the core's top-centre plates.
+     * Forge bus, lowest priority: moves the vanilla boss bars below the core's top-centre plates
+     * and, on narrow screens, right of the squad roster.
      * Listening last means a cancelled boss overlay is never shifted (no unmatched pose push).
      */
     public static void onOverlayPre(RenderGuiOverlayEvent.Pre event) {
@@ -93,11 +95,13 @@ public final class BattleStripOverlay {
         Window window = Minecraft.getInstance().getWindow();
         HudFrame frame = HudFrame.current(window.getGuiScaledWidth(),
                 window.getGuiScaledHeight());
-        if (frame == null || frame.hidden() || frame.layout().bossShift() <= 0) {
+        if (frame == null || frame.hidden() || frame.layout().bossShift() <= 0
+                && frame.layout().bossShiftX() <= 0) {
             return;
         }
         event.getGuiGraphics().pose().pushPose();
-        event.getGuiGraphics().pose().translate(0.0F, frame.layout().bossShift(), 0.0F);
+        event.getGuiGraphics().pose().translate(frame.layout().bossShiftX(),
+                frame.layout().bossShift(), 0.0F);
         bossShifted = true;
     }
 

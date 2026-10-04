@@ -88,6 +88,11 @@ public final class WokHudLayout {
     public static final int BOSS_TITLE_TOP = 3;
     /** Boss bars span width / 2 ± 91 (BossHealthOverlay). */
     public static final int BOSS_BAR_HALF_WIDTH = 91;
+    /** First boss bar row (BossHealthOverlay: j = 12), the bar is 5px tall. */
+    public static final int BOSS_BAR_FIRST_TOP = 12;
+    public static final int BOSS_BAR_HEIGHT = 5;
+    /** Default row pitch of the boss bars (10 + 9, Forge's BossEventProgress increment). */
+    public static final int BOSS_BAR_PITCH = 19;
 
     private WokHudLayout() {
     }
@@ -228,13 +233,16 @@ public final class WokHudLayout {
      *                        top-centre plates and, while it spans the boss bar column, below
      *                        the WOK步战附属-占点 panel (drawn above all, it would hide them)
      * @param capturePanel    the WOK步战附属-占点 panel in layout pixels, or null
+     * @param bossShiftX      GUI pixels the vanilla boss bars move right (0 = none) so they clear
+     *                        the squad roster beside them on narrow screens (see
+     *                        {@link #bossShiftX})
      */
     public record Layout(int width, int height, int factor, boolean tight, boolean narrow,
                          int edge, int gap,
                          UiRect roster, UiRect strip, List<UiRect> toasts, UiRect vote,
                          UiRect band, UiRect vitals, UiRect staminaPlate, boolean staminaRow,
                          UiRect centerLow, UiRect topCenterNext, int topCenterBottom,
-                         int bossShift, UiRect capturePanel) {
+                         int bossShift, UiRect capturePanel, int bossShiftX) {
         public Layout {
             toasts = List.copyOf(toasts);
         }
@@ -274,10 +282,21 @@ public final class WokHudLayout {
     }
 
     /**
+     * Whether vanilla draws the player list this frame (Forge's {@code ForgeGui.renderPlayerList}):
+     * only while its key is held and, in single player, with someone else listed or a list
+     * scoreboard objective. Single player alone shows nothing, so the roster stays full then.
+     */
+    public static boolean vanillaPlayerListShown(boolean keyDown, boolean localServer,
+                                                 int listedPlayers, boolean listObjective) {
+        return keyDown && (!localServer || listedPlayers > 1 || listObjective);
+    }
+
+    /**
      * Roster presence: spectators and {@link HudRosterMode#HIDDEN} hide it; in
      * {@link HudRosterMode#AUTO} it shrinks to its title row on a tight screen with the chat
-     * open, while the F3 screen is shown, or while the player-list key is held, so the vanilla
-     * overlays drawn above the core HUD stay readable.
+     * open, while the F3 screen is shown, or while vanilla draws the player list
+     * ({@code playerListHeld}, see {@link #vanillaPlayerListShown}), so the vanilla overlays
+     * drawn above the core HUD stay readable.
      */
     public static RosterPresence rosterPresence(HudRosterMode mode, boolean tight,
                                                 boolean chatOpen, boolean debugScreen,
@@ -400,6 +419,16 @@ public final class WokHudLayout {
         UiRect topCenterNext = UiRect.of(band.left(), nextTop, band.right(),
                 Math.max(nextTop, height / 2));
         int bossShift = bossShift(in.guiWidth(), topCenterBottom * factor, in.capturePanel());
+        List<UiRect> bossObstacles = new ArrayList<>(effectRects(in.guiWidth(),
+                in.beneficialEffects(), in.harmfulEffects(), in.effectOffsetX(),
+                in.effectOffsetY(), 1));
+        if (in.capturePanel() != null) {
+            bossObstacles.add(in.capturePanel());
+        }
+        int bossShiftX = bossShiftX(in.guiWidth(), in.guiHeight(), bossShift,
+                roster == null ? null : UiRect.of(roster.left() * factor, roster.top() * factor,
+                        roster.right() * factor, roster.bottom() * factor),
+                bossObstacles, edge * factor);
 
         int vitalsRight = Math.max(edge, Math.min(
                 Math.floorDiv(hotbarObstacleLeft(in), factor) - OBSTACLE_CLEARANCE,
@@ -424,7 +453,55 @@ public final class WokHudLayout {
 
         return new Layout(width, height, factor, tight, narrow, edge, gap, roster, strip, toasts,
                 vote, band, vitals, staminaPlate, staminaRow, centerLow, topCenterNext,
-                topCenterBottom, bossShift, capture);
+                topCenterBottom, bossShift, capture, bossShiftX);
+    }
+
+    /**
+     * Region the vanilla boss bars may cover (GUI pixels) after moving down {@code bossShiftY}:
+     * the bar column (width / 2 ± 91) from the first title row to the last bar vanilla still
+     * draws (it stops once the next row would start at height / 3 or lower).
+     */
+    public static UiRect bossBarRegion(int guiWidth, int guiHeight, int bossShiftY) {
+        int lastTop = BOSS_BAR_FIRST_TOP;
+        for (int next = BOSS_BAR_FIRST_TOP + BOSS_BAR_PITCH; next < guiHeight / 3;
+             next += BOSS_BAR_PITCH) {
+            lastTop = next;
+        }
+        return UiRect.of(guiWidth / 2 - BOSS_BAR_HALF_WIDTH, BOSS_TITLE_TOP + bossShiftY,
+                guiWidth / 2 + BOSS_BAR_HALF_WIDTH, lastTop + BOSS_BAR_HEIGHT + bossShiftY);
+    }
+
+    /**
+     * GUI pixels the vanilla boss bars move right so the squad roster no longer covers their
+     * left end. Below about 530 GUI pixels the roster (top left) reaches into the bar column
+     * (427 and 480 wide, for example, also while both sit under the capture panel); the bars
+     * move just far enough right of the roster, but never past the screen edge or into an
+     * obstacle on their right (status-effect icons, the capture panel) that shares their rows.
+     * 0 when the bars do not meet the roster or there is no room.
+     *
+     * @param rosterGui    the roster plate in GUI pixels, or null
+     * @param obstaclesGui other parts in GUI pixels that the bars must not move into
+     * @param edgeGui      screen edge margin in GUI pixels
+     */
+    static int bossShiftX(int guiWidth, int guiHeight, int bossShiftY, UiRect rosterGui,
+                          List<UiRect> obstaclesGui, int edgeGui) {
+        if (rosterGui == null || rosterGui.isEmpty()) {
+            return 0;
+        }
+        UiRect bars = bossBarRegion(guiWidth, guiHeight, bossShiftY);
+        if (!bars.intersects(rosterGui)) {
+            return 0;
+        }
+        int needed = rosterGui.right() + OBSTACLE_CLEARANCE - bars.left();
+        int room = guiWidth - edgeGui - bars.right();
+        for (UiRect obstacle : obstaclesGui) {
+            if (obstacle == null || obstacle.isEmpty() || obstacle.left() < bars.left()
+                    || obstacle.top() >= bars.bottom() || obstacle.bottom() <= bars.top()) {
+                continue;
+            }
+            room = Math.min(room, obstacle.left() - OBSTACLE_CLEARANCE - bars.right());
+        }
+        return Math.max(0, Math.min(needed, room));
     }
 
     /**

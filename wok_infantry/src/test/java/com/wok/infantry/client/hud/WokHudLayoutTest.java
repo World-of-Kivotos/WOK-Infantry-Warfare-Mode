@@ -229,6 +229,73 @@ class WokHudLayoutTest {
                 "a panel beside the boss column does not move the bars");
     }
 
+    /**
+     * B11a: below about 530 GUI pixels the roster reaches into the boss bar column (427 and 480
+     * also while both sit under the capture panel); the bars move right, clear of it.
+     */
+    @Test
+    void bossBarsMoveRightOfTheRosterOnNarrowScreens() {
+        for (int[] tier : TIERS) {
+            for (boolean capture : new boolean[]{false, true}) {
+                Input input = Input.screen(tier[0], tier[1], tier[2]).withRoster(8, false)
+                        .withStrip(true).withCapturePanel(capture
+                                ? CaptureHudBridge.mirroredPanel(tier[0]) : null);
+                Layout layout = WokHudLayout.compute(input);
+                String where = tier[0] + "x" + tier[1] + "@" + tier[2]
+                        + (capture ? " in a capture point" : "");
+                UiRect bars = WokHudLayout.bossBarRegion(tier[0], tier[1], layout.bossShift())
+                        .offset(layout.bossShiftX(), 0);
+                UiRect roster = layout.toGui(layout.roster());
+                assertFalse(bars.intersects(roster), where + ": bars " + bars + " vs roster "
+                        + roster);
+                assertTrue(bars.right() <= tier[0] - layout.edge() * tier[2],
+                        where + ": bars stay on screen");
+            }
+        }
+        assertEquals(53, WokHudLayout.compute(Input.screen(320, 240, 1).withRoster(8, false)
+                .withStrip(true)).bossShiftX(), "118 + 4 − (160 − 91)");
+        assertEquals(56, WokHudLayout.compute(Input.screen(427, 240, 1).withRoster(8, false)
+                .withStrip(true).withCapturePanel(CaptureHudBridge.mirroredPanel(427)))
+                .bossShiftX(), "reviewed case: 427 wide inside a capture point");
+        assertEquals(29, WokHudLayout.compute(Input.screen(480, 270, 1).withRoster(8, false)
+                .withStrip(true).withCapturePanel(CaptureHudBridge.mirroredPanel(480)))
+                .bossShiftX());
+        assertEquals(0, WokHudLayout.compute(Input.screen(640, 336, 1).withRoster(8, false)
+                .withStrip(true)).bossShiftX(), "wide enough: the bars stay centred");
+        assertEquals(0, WokHudLayout.compute(Input.screen(320, 240, 1).withStrip(true))
+                .bossShiftX(), "no roster, no move");
+    }
+
+    @Test
+    void bossBarsMoveOnlyAsFarAsTheirRightNeighboursAllow() {
+        UiRect roster = UiRect.of(2, 2, 118, 95);
+        // h = 240: rows at 12, 31, 50, 69 (88 ≥ 80 stops) → region y [23, 94) after a 20px shift
+        assertEquals(UiRect.of(69, 23, 251, 94), WokHudLayout.bossBarRegion(320, 240, 20));
+        assertEquals(53, WokHudLayout.bossShiftX(320, 240, 20, roster, List.of(), 2));
+        assertEquals(15, WokHudLayout.bossShiftX(320, 240, 20, roster,
+                List.of(UiRect.of(270, 30, 319, 54)), 2), "stops 4px left of the effect icons");
+        assertEquals(53, WokHudLayout.bossShiftX(320, 240, 20, roster,
+                List.of(UiRect.of(270, 100, 319, 124), UiRect.of(10, 30, 60, 54)), 2),
+                "neighbours below the bars or left of them do not limit the move");
+        assertEquals(0, WokHudLayout.bossShiftX(320, 240, 20, roster,
+                List.of(UiRect.of(200, 30, 319, 54)), 2), "no room: the bars keep their place");
+        assertEquals(0, WokHudLayout.bossShiftX(320, 240, 20, UiRect.of(2, 100, 118, 150),
+                List.of(), 2), "a roster under the bars does not move them");
+        assertEquals(0, WokHudLayout.bossShiftX(320, 240, 20, null, List.of(), 2));
+    }
+
+    @Test
+    void playerListCollapsesTheRosterOnlyWhenVanillaDrawsIt() {
+        assertFalse(WokHudLayout.vanillaPlayerListShown(false, false, 10, true), "key not held");
+        assertFalse(WokHudLayout.vanillaPlayerListShown(true, true, 1, false),
+                "single player alone: vanilla shows no list, the roster stays full");
+        assertTrue(WokHudLayout.vanillaPlayerListShown(true, true, 2, false));
+        assertTrue(WokHudLayout.vanillaPlayerListShown(true, true, 1, true),
+                "a list objective is shown even alone");
+        assertTrue(WokHudLayout.vanillaPlayerListShown(true, false, 1, false),
+                "on a server the list is always drawn");
+    }
+
     @Test
     void vitalsStayLeftOfHotbarOffhandAndAttackIndicator() {
         for (int width = 320; width <= 1920; width++) {
