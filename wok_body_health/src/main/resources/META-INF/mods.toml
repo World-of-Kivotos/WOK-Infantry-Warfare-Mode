@@ -36,3 +36,17 @@ mandatory=false
 versionRange="[0.0.1,)"
 ordering="NONE"
 side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="superbwarfare"
+mandatory=false
+versionRange="[0,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="locknar_doorkick"
+mandatory=false
+versionRange="[0,)"
+ordering="NONE"
+side="BOTH"

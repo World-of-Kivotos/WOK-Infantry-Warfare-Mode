@@ -2,7 +2,7 @@
 
 面向 Minecraft 1.20.1 / Forge 47.4.22 的七部位血量模组。
 
-当前版本 `0.1.0-beta.9`；产物为 `build/libs/wok_body_health-0.1.0-beta.9.jar`。
+当前版本 `0.1.0-beta.10`；产物为 `build/libs/wok_body_health-0.1.0-beta.10.jar`。
 
 - 头部 35、胸部 85、腹部 70
 - 左右手臂各 60、左右腿各 65
@@ -13,6 +13,7 @@
 - 已损毁的腹部或四肢再次承伤时，默认将 80% 伤害传递给其他未损毁部位
 - 玩家击杀玩家时，会按最初命中的部位随机显示枪弹、普通攻击或扩散击杀文本，并保留自定义武器名称；扩散致死不会改记为最终损毁的头部或胸部
 - 命中部位：TaCZ 子弹按命中坐标判定；其他弹射物按飞行轨迹与碰撞箱的交点判定；玩家近战按准星位置判定；怪物近战落在胸部（72%）或腹部（28%）
+- 趴姿分段命中：趴下或爬行的玩家被 TaCZ 或卓越前线（SBW）子弹射击时，按头、躯干、四肢六段模型判定是否命中和命中部位，只有头段算爆头；移动碰撞箱不变。详见 [`docs/PRONE_HITBOX.md`](docs/PRONE_HITBOX.md)
 - 虚空与 `/kill` 这类无视无敌的伤害分摊到全身，头或胸归零即死亡
 - 断腿降低跳跃高度（一条 65%、两条 35%）在客户端生效，断腿降低移速由服务端属性生效
 - 原版红心由七部位 HUD 取代；原版生命恢复与饱食度自然回血不作用于部位血量（有意设计）
@@ -65,9 +66,19 @@ destroyedPartDamageTransferMultiplier = 0.8
 
 [armor_compatibility]
 enableArmorBodyPartResistance = true
+
+[prone_hitbox]
+enableSegmentedProneHitbox = true
+headMargin = 0.0625
+torsoMargin = 0.03125
+limbMargin = 0.015625
+transitionLagTicks = 0
+vanillaCrawlModel = "AUTO"
+sbwLegSegmentsAreLegShots = true
+debugLogging = false
 ```
 
-修改最大血量后，已初始化玩家按原血量百分比换算到新上限。`destroyedPartDamageTransferMultiplier` 只作用于命中前已经损毁的非致命部位；首次将部位打至 0 仍使用该部位原有溢出规则。关闭 `enableArmorBodyPartResistance` 或未安装独立护甲时，双方均保持各自原有逻辑并可单独运行。等离子护盾始终是全身能量屏障，不受该开关限制。
+修改最大血量后，已初始化玩家按原血量百分比换算到新上限。`destroyedPartDamageTransferMultiplier` 只作用于命中前已经损毁的非致命部位；首次将部位打至 0 仍使用该部位原有溢出规则。关闭 `enableArmorBodyPartResistance` 或未安装独立护甲时，双方均保持各自原有逻辑并可单独运行。等离子护盾始终是全身能量屏障，不受该开关限制。`prone_hitbox` 组的各项含义、调试命令 `/wokbodyhealth prone_hitbox` 和验收清单见 [`docs/PRONE_HITBOX.md`](docs/PRONE_HITBOX.md)；关闭 `enableSegmentedProneHitbox` 后与 0.1.0-beta.9 的判定相同。
 
 ## 构建与验收
 
