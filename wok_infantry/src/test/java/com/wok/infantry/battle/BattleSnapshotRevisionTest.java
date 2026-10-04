@@ -1,5 +1,6 @@
 package com.wok.infantry.battle;
 
+import com.wok.infantry.client.ClientBattleState;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -73,6 +74,42 @@ class BattleSnapshotRevisionTest {
         assertEquals(BattleRules.SQUAD_CAPACITY, shapes.get(0).capacity());
         assertEquals(List.of(), BattleSnapshotRevision.rosterStructure(List.of()));
         assertEquals(List.of(), BattleSnapshotRevision.rosterStructure(null));
+    }
+
+    @Test
+    void healthHeartbeatRefreshesClientRatioWithoutRebuildingScreens() {
+        SquadView healthy = squad(
+                member(LEADER, true, MemberState.DEPLOYED, 20.0F, 1.0F),
+                member(RIFLEMAN, false, MemberState.DEPLOYED, 20.0F, 1.0F));
+        SquadView wounded = squad(
+                member(LEADER, true, MemberState.DEPLOYED, 20.0F, 1.0F),
+                member(RIFLEMAN, false, MemberState.DEPLOYED, 6.0F, 0.3F));
+        SquadView downed = squad(
+                member(LEADER, true, MemberState.DEPLOYED, 20.0F, 1.0F),
+                member(RIFLEMAN, false, MemberState.DOWNED, 1.0F, 0.05F));
+        try {
+            ClientBattleState.update(clientSnapshot(healthy, 1_000L));
+            long generation = ClientBattleState.generation();
+
+            ClientBattleState.update(clientSnapshot(wounded, 2_000L));
+            assertEquals(generation, ClientBattleState.generation(),
+                    "a health-only heartbeat must not rebuild squad or map screens");
+            assertEquals(0.3F, ClientBattleState.member(RIFLEMAN).healthRatio(),
+                    "the newest ratio is still readable at render time");
+
+            ClientBattleState.update(clientSnapshot(downed, 3_000L));
+            assertEquals(generation + 1L, ClientBattleState.generation(),
+                    "a state change rebuilds exactly once");
+            assertEquals(MemberState.DOWNED, ClientBattleState.member(RIFLEMAN).state());
+        } finally {
+            ClientBattleState.clear();
+        }
+    }
+
+    private static BattleSnapshot clientSnapshot(SquadView squad, long serverTimeMillis) {
+        return new BattleSnapshot(LEADER, Faction.BLUE, SquadCallsign.ALPHA, true, false, 2, 3,
+                BattleRules.FACTION_CAPACITY, BattleRules.SQUAD_CAPACITY, List.of(squad),
+                List.of(), List.of(), PERMISSIONS, QUOTAS, serverTimeMillis, revision(squad));
     }
 
     private static long revision(SquadView squad) {
