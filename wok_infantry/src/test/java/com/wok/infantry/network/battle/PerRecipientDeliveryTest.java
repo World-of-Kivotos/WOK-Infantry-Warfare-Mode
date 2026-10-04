@@ -4,12 +4,16 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PerRecipientDeliveryTest {
+    private static final long WINDOW = PerRecipientDelivery.REPORT_WINDOW_MILLIS;
+
     @Test
     void oneFailingRecipientDoesNotStopTheRestOfTheBroadcast() {
         List<String> delivered = new ArrayList<>();
@@ -50,7 +54,7 @@ class PerRecipientDeliveryTest {
     }
 
     @Test
-    void eachFailureSignatureIsReportedOnlyOnce() {
+    void eachFailureSignatureIsReportedOnlyOnceInsideTheWindow() {
         PerRecipientDelivery delivery = new PerRecipientDelivery();
         IllegalArgumentException crash = new IllegalArgumentException("mission without option");
 
@@ -62,12 +66,50 @@ class PerRecipientDeliveryTest {
     }
 
     @Test
-    void distinctSignaturesStopBeingReportedAfterTheCap() {
+    void numbersAndUuidsInTheMessageDoNotMakeANewSignature() {
+        PerRecipientDelivery delivery = new PerRecipientDelivery();
+
+        assertTrue(delivery.shouldReport(new IllegalArgumentException(
+                "Invalid member health range: 13.5/20.0"), 0L));
+        for (int second = 1; second <= 120; second++) {
+            assertFalse(delivery.shouldReport(new IllegalArgumentException(
+                    "Invalid member health range: " + (second % 20) + ".25/20.0"),
+                    second * 1000L), "NET-4: a changing health value is still the same fault");
+        }
+        assertEquals(PerRecipientDelivery.signature(new IllegalStateException(
+                        "Unknown player " + UUID.randomUUID() + " in squad 3")),
+                PerRecipientDelivery.signature(new IllegalStateException(
+                        "Unknown player " + UUID.randomUUID() + " in squad 12")));
+        assertNotEquals(PerRecipientDelivery.signature(new IllegalStateException("member state")),
+                PerRecipientDelivery.signature(new IllegalStateException("support option")));
+    }
+
+    @Test
+    void aRepeatingFaultIsReportedAgainAfterTheWindow() {
+        PerRecipientDelivery delivery = new PerRecipientDelivery();
+        IllegalStateException crash = new IllegalStateException("snapshot invariant");
+
+        assertTrue(delivery.shouldReport(crash, 1_000L));
+        assertFalse(delivery.shouldReport(crash, 1_000L + WINDOW - 1L));
+        assertTrue(delivery.shouldReport(crash, 1_000L + WINDOW),
+                "a fault that keeps happening shows up again in the default log");
+        assertFalse(delivery.shouldReport(crash, 1_000L + WINDOW + 1L));
+    }
+
+    @Test
+    void aNewFaultIsNotSilencedForeverOnceManySignaturesWereSeen() {
         PerRecipientDelivery delivery = new PerRecipientDelivery();
         for (int index = 0; index < PerRecipientDelivery.MAX_REPORTED_SIGNATURES; index++) {
-            assertTrue(delivery.firstReport(new IllegalStateException("failure " + index)));
+            assertTrue(delivery.shouldReport(new IllegalStateException("failure " + "x".repeat(index)),
+                    0L));
         }
-        assertFalse(delivery.firstReport(new IllegalStateException("one more")));
+
+        assertTrue(delivery.shouldReport(new IllegalStateException("support invariant"), 10L),
+                "a burst of distinct faults still logs one more line through the overflow slot");
+        assertFalse(delivery.shouldReport(new IllegalStateException("another new fault"), 20L),
+                "the overflow slot is limited to one line per window");
+        assertTrue(delivery.shouldReport(new IllegalStateException("support invariant"),
+                WINDOW + 30L), "after the window the tracked faults expire and the new one logs");
     }
 
     @Test

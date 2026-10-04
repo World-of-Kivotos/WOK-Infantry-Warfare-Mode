@@ -333,8 +333,8 @@ public final class BattleNetwork {
         String playerName = player.getGameProfile().getName();
         if (SNAPSHOT_FAILURES.firstReport(failure)) {
             LOGGER.error("Could not send the battle snapshot to {}; the other players in this "
-                    + "pass still received theirs. Repeats of this failure are logged at debug "
-                    + "level only.", playerName, failure);
+                    + "pass still received theirs. Repeats of this failure within five minutes "
+                    + "are logged at debug level only.", playerName, failure);
         } else {
             LOGGER.debug("Battle snapshot for {} failed again: {}", playerName,
                     PerRecipientDelivery.signature(failure));

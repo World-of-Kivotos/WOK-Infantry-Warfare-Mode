@@ -19,7 +19,7 @@
 - 第二级是固定的 `FormationCategory`：`infantry`、`armored`、`motorized`、`mechanized`、`special`。类别只负责组织目录，实际规则全部写在具体编制上。
 - 第三级是该公开阵营下的 `FormationDefinition.id`。同名具体编制可以分别出现在不同阵营下；查找时始终携带所属战斗侧。
 - 阵营投票框架按 blue/red 分开保存候选、选票、票数、是否允许改票与锁定结果；胜出结果属于整个阵营。底层 ledger 不擅自决定截止、最高票或同票规则，而由之后确认的比赛流程显式触发。
-- 玩家选择阵营后可以保留“已有阵营、尚无编制”的存档状态；此时不能加入小队、选择配装或部署。管理员锁定结果后，服务端一次性给当时该阵营的所有成员应用同一个具体编制。核心 0.3.0-beta.8 起，锁定后才加入的玩家直接获得锁定编制和默认兵种并进入部署（阵营人数同时受锁定编制容量约束，超出时整笔拒绝）；锁定前加入、登录时已锁定的“有阵营无编制”成员在登录时补继承。锁定结果本局不可重开，只有战局重置会清空。
+- 玩家选择阵营后可以保留“已有阵营、尚无编制”的存档状态；此时不能加入小队、选择配装或部署。管理员锁定结果后，服务端一次性给当时该阵营的所有成员应用同一个具体编制。核心 0.3.0-beta.8 起，锁定后才加入的玩家直接获得锁定编制和默认兵种并进入部署（阵营人数同时受锁定编制容量约束，超出时整笔拒绝）；锁定前加入、登录时已锁定的“有阵营无编制”成员在登录时补继承；补继承时锁定编制已经满员（例如旧存档里锁定后才加入、只拿到阵营的玩家），该玩家退出这个阵营并收到说明，回到阵营选择，不会卡在“既不能部署也不能换阵营”的状态。锁定结果本局不可重开，只有战局重置会清空。
 - 投票候选、个人选票和锁定结果保存在主世界 `SavedData` 中，服务器重启不丢失；目录热重载会移除失效候选和选票，锁定结果失效时整张票失败关闭；战局重置清空双方投票。
 - 客户端只提交目录代数、公开阵营 ID 与编制 ID。服务端重新查目录、依赖、人数和锁定状态，客户端不能提交内部战斗侧、容量、兵种配额或物品。
 - 投票准入统一按 `FormationVotePolicy.voteBlock` 判定，顺序为：是否本阵营成员 → 投票是否开放 → 是否候选 → 编制容量是否小于阵营人数 → 是否允许改票；服务端通过后再由投票 ledger 记录（ledger 自身的检查保留）。阵营满员只影响新玩家加入，不影响成员投票；容量小于阵营人数的编制在投票时就被拒绝，不会等到锁定才失败。
@@ -361,7 +361,7 @@ TaCZ 枪械条目本身放在 `loadouts.json`：
 管理员命令（权限等级 2）：
 
 - `/battle admin formation reload`：重读并规范化 `formations.json`、提高 generation，调和失效/超容量选择、已删除或缩容小队、兵种删除/降额以及当前 session 的旧载具 allocation，并向在线玩家推送新目录；被清理选择的玩家回到三级选择/投票等待，其他 roster 变化会使存活玩家撤回旧配装并回到部署等待。解析失败时不提高 generation，也不改文件或生效状态。
-- `/battle admin formation assign <player> <publicFactionId> <formationId>`：通过与普通选择相同的目录、启用状态和可选 MOD availability 校验恢复或强制改派指定玩家。核心 0.3.0-beta.8 起遵守投票：该阵营已锁定时只能分配锁定编制（其他编制被拒绝）；尚未锁定时只分配阵营，编制等锁定后统一下发。
+- `/battle admin formation assign <player> <publicFactionId> <formationId>`：通过与普通选择相同的目录、启用状态和可选 MOD availability 校验恢复或强制改派指定玩家。核心 0.3.0-beta.8 起遵守投票：该阵营已锁定时只能分配锁定编制（其他编制被拒绝）；尚未锁定时只分配阵营，编制等锁定后统一下发。目标已在该阵营时不做任何改动（保留其已有编制、小队和指挥官身份，回执写“已在…，未做改动”），只有跨阵营改派才会清除旧阵营的小队、指挥官和编制。分配确实改变了目标时，目标收到用公开阵营名和编制名写给本人的回执，新旧两个阵营的在线成员刷新目录；管理员的投票页页脚也显示回执。
 - `/battle admin formation vote open <publicFactionId> <allowVoteChange>`：使用当前全部有效具体编制开启或重开该阵营投票；布尔参数显式决定本轮能否改票，避免框架猜测。已锁定的投票不能重开（核心 0.3.0-beta.8 起），需先重置战局。
 - `/battle admin formation vote lock <publicFactionId> <formationId>`：显式锁定由比赛流程选出的结果，并原子地把同阵营全部玩家同步到该编制。当前不会自行猜测截止时机、最高票或同票处理；管理员不必先替自己投票。锁定后只向该阵营推送编制，客户端在战斗终端或无界面时打开部署页，其他 MOD 界面开着时只显示 HUD 锁定通知。
 - `/battle deployment vehicle place <blue|red> <dimension> <x> <y> <z> [yaw]`：原子放置/重定向并绑定该内部战斗侧唯一的载具部署箭头；省略 yaw 时采用命令源朝向。
@@ -388,7 +388,9 @@ TaCZ 枪械条目本身放在 `loadouts.json`：
 | 选择网络编解码、畸形/超限数据拒绝、客户端视图不泄露内部战斗侧 | `FormationSelectionCodecTest` |
 | 双方独立投票、改票策略、候选调和、畸形/超限投票存档拒绝 | `FormationVoteLedgerTest`、`FormationVoteSavedDataTest` |
 | 投票准入顺序、满员成员仍可投票、容量不足拒票、晚加入容量、管理员分配与登录补继承规则，以及 `voteBlock` 与 ledger 判定一致 | `FormationVotePolicyTest` |
-| 加入阵营（锁定前只占阵营名额、锁定后直接进锁定编制）、登录补继承、管理员分配三种分支的路由，以及拒票回执的代码与文案 | `FormationServiceRoutingTest` |
+| 加入阵营（锁定前只占阵营名额、锁定后直接进锁定编制）、登录补继承（锁定编制已满时退出阵营）、管理员分配三种分支的路由，重复加入与分配回执，以及拒票回执的代码与文案 | `FormationServiceRoutingTest` |
+| 加入、投票、分配请求只有真正改变阵营、编制或本人选票时才刷新新旧阵营队友的目录 | `FormationSeatStateTest` |
+| 同阵营的待定分配不清除已有编制，满员锁定阵营里无编制成员的释放 | `BattleServicePendingFactionTest` |
 | 结构化编制详情（兵种中文名、载具合并计数）与超界数值夹紧后仍可编码 | `FormationServiceDetailViewTest` |
 | 编制投票页的状态模型（分步说明、按键可用性与原因、Esc、到达路由）与多档布局 | `FormationVoteModelTest`、`FormationScreenLayoutTest`、`FormationDetailPanelTest` |
 | 同 callsign 跨编制存档隔离、旧 leader 修复、小队删除/缩容与兵种删除/降额的确定性调和 | `BattleSavedDataFormationTest`、`FormationServiceRosterReconciliationTest` |

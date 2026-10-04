@@ -22,6 +22,7 @@ import com.wok.infantry.network.ServerRequestLimiter;
 import com.wok.infantry.network.battle.BattleNetwork;
 import com.wok.infantry.network.battle.packet.s2c.OpenWeaponTuningPacket;
 import com.wok.infantry.network.formation.FormationNetwork;
+import com.wok.infantry.network.formation.FormationSeatState;
 import com.wok.infantry.registry.InfantryBlocks;
 import com.wok.infantry.stamina.StaminaEvents;
 import com.wok.infantry.stamina.StaminaRules;
@@ -44,6 +45,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.item.ItemStack;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.function.Function;
@@ -701,10 +703,11 @@ public final class BattleCommands {
             source.sendFailure(Component.literal("阵营编制服务尚未启动"));
             return 0;
         }
+        FormationSeatState before = FormationSeatState.of(player);
         ActionResult result = service.select(player, service.generation(), factionId,
                 formationId);
         if (FormationNetwork.isInitialized()) {
-            FormationNetwork.finishSelection(player, result);
+            FormationNetwork.finishSelection(player, result, before);
         }
         return sendResult(source, result);
     }
@@ -722,9 +725,10 @@ public final class BattleCommands {
             source.sendFailure(Component.literal("阵营编制服务尚未启动"));
             return 0;
         }
+        FormationSeatState before = FormationSeatState.of(player);
         ActionResult result = service.selectFaction(player, service.generation(), factionId);
         if (FormationNetwork.isInitialized()) {
-            FormationNetwork.finishFactionSelection(player, result);
+            FormationNetwork.finishFactionSelection(player, result, before);
         }
         return sendResult(source, result);
     }
@@ -742,9 +746,10 @@ public final class BattleCommands {
             source.sendFailure(Component.literal("阵营编制服务尚未启动"));
             return 0;
         }
+        FormationSeatState before = FormationSeatState.of(player);
         ActionResult result = service.castVote(player, service.generation(), formationId);
         if (FormationNetwork.isInitialized()) {
-            FormationNetwork.finishVote(player, result);
+            FormationNetwork.finishVote(player, result, before);
         }
         return sendResult(source, result);
     }
@@ -759,13 +764,14 @@ public final class BattleCommands {
         ActionResult result = service.reload();
         boolean applied = service.generation() != previousGeneration;
         if (applied && FormationNetwork.isInitialized()) {
-            source.getServer().getPlayerList().getPlayers().forEach(player -> {
-                boolean required = service.snapshotFor(player).selectionRequired();
-                if (required && BattleNetwork.isInitialized()) {
-                    BattleNetwork.sendClearToPlayer(player);
-                }
-                FormationNetwork.sendSnapshotToPlayer(player, required);
-            });
+            FormationNetwork.forEachRecipient(
+                    List.copyOf(source.getServer().getPlayerList().getPlayers()), player -> {
+                        boolean required = service.snapshotFor(player).selectionRequired();
+                        if (required && BattleNetwork.isInitialized()) {
+                            BattleNetwork.sendClearToPlayer(player);
+                        }
+                        FormationNetwork.sendSnapshotToPlayer(player, required);
+                    });
         }
         return sendResult(source, result);
     }
@@ -779,13 +785,25 @@ public final class BattleCommands {
             return 0;
         }
         ServerPlayer administrator = source.getPlayerOrException();
+        FormationSeatState before = FormationSeatState.of(target);
         // vote-02: after the lock only the locked formation, before it only the faction.
         ActionResult result = formations.adminAssign(administrator, target, factionId,
                 formationId);
-        if (result.success() && FormationNetwork.isInitialized()) {
-            FormationNetwork.finishSelection(target, result);
-        }
+        finishAssignment(source, target, result, before);
         return sendResult(source, result);
+    }
+
+    /**
+     * Administrator assignment answered: the administrator's vote page footer shows the receipt
+     * like the vote commands do; the target and both factions' members are updated only when
+     * the target's faction or formation really changed.
+     */
+    private static void finishAssignment(CommandSourceStack source, ServerPlayer target,
+                                         ActionResult result, FormationSeatState before) {
+        sendFormationReceipt(source, result);
+        if (result.success() && FormationNetwork.isInitialized()) {
+            FormationNetwork.finishAdminAssignment(target, before);
+        }
     }
 
     private static int openFormationVote(CommandSourceStack source, String factionId,
@@ -840,12 +858,13 @@ public final class BattleCommands {
         if (!FormationNetwork.isInitialized()) {
             return;
         }
-        source.getServer().getPlayerList().getPlayers().forEach(player -> {
-            Faction playerSide = BattleService.get(player)
-                    .flatMap(battle -> battle.factionOf(player.getUUID())).orElse(null);
-            FormationNetwork.sendSnapshotToPlayer(player, playerSide == null
-                    || playerSide == side);
-        });
+        FormationNetwork.forEachRecipient(
+                List.copyOf(source.getServer().getPlayerList().getPlayers()), player -> {
+                    Faction playerSide = BattleService.get(player)
+                            .flatMap(battle -> battle.factionOf(player.getUUID())).orElse(null);
+                    FormationNetwork.sendSnapshotToPlayer(player, playerSide == null
+                            || playerSide == side);
+                });
     }
 
     /**
@@ -858,16 +877,17 @@ public final class BattleCommands {
         if (!FormationNetwork.isInitialized()) {
             return;
         }
-        source.getServer().getPlayerList().getPlayers().forEach(player -> {
-            Faction playerSide = BattleService.get(player)
-                    .flatMap(battle -> battle.factionOf(player.getUUID())).orElse(null);
-            if (side != null && playerSide == side
-                    && formations.selectedFormation(player.getUUID()).isPresent()) {
-                FormationNetwork.sendFormationApplied(player);
-            } else {
-                FormationNetwork.sendSnapshotToPlayer(player, false);
-            }
-        });
+        FormationNetwork.forEachRecipient(
+                List.copyOf(source.getServer().getPlayerList().getPlayers()), player -> {
+                    Faction playerSide = BattleService.get(player)
+                            .flatMap(battle -> battle.factionOf(player.getUUID())).orElse(null);
+                    if (side != null && playerSide == side
+                            && formations.selectedFormation(player.getUUID()).isPresent()) {
+                        FormationNetwork.sendFormationApplied(player);
+                    } else {
+                        FormationNetwork.sendSnapshotToPlayer(player, false);
+                    }
+                });
     }
 
     private static int assignFaction(CommandSourceStack source, ServerPlayer target,
@@ -885,11 +905,10 @@ public final class BattleCommands {
         }
         // vote-03: the side's public faction under the vote rules, no hard-coded "default".
         ServerPlayer administrator = source.getPlayerOrException();
+        FormationSeatState before = FormationSeatState.of(target);
         ActionResult result = formations.adminAssignBattleSide(administrator, target,
                 battleSide);
-        if (result.success() && FormationNetwork.isInitialized()) {
-            FormationNetwork.finishSelection(target, result);
-        }
+        finishAssignment(source, target, result, before);
         return sendResult(source, result);
     }
 
@@ -944,12 +963,13 @@ public final class BattleCommands {
             ActionResult result = service.resetBattle(administrator);
             int response = sendResult(source, result);
             if (result.success() && FormationNetwork.isInitialized()) {
-                source.getServer().getPlayerList().getPlayers().forEach(player -> {
-                    if (BattleNetwork.isInitialized()) {
-                        BattleNetwork.sendClearToPlayer(player);
-                    }
-                    FormationNetwork.sendSnapshotToPlayer(player, true);
-                });
+                FormationNetwork.forEachRecipient(
+                        List.copyOf(source.getServer().getPlayerList().getPlayers()), player -> {
+                            if (BattleNetwork.isInitialized()) {
+                                BattleNetwork.sendClearToPlayer(player);
+                            }
+                            FormationNetwork.sendSnapshotToPlayer(player, true);
+                        });
             }
             return response;
         });

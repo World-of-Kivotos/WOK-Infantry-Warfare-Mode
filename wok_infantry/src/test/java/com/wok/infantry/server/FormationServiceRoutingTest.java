@@ -2,6 +2,7 @@ package com.wok.infantry.server;
 
 import com.wok.infantry.battle.ActionResult;
 import com.wok.infantry.battle.Faction;
+import com.wok.infantry.battle.PlayerRecord;
 import com.wok.infantry.formation.FactionDefinition;
 import com.wok.infantry.formation.FormationCategory;
 import com.wok.infantry.formation.FormationClassRule;
@@ -16,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -39,9 +41,21 @@ class FormationServiceRoutingTest {
             FormationService.AdminSeat {
         private final List<String> calls = new ArrayList<>();
         private final ActionResult answer;
+        private final boolean releases;
 
         RecordingSeat(ActionResult answer) {
+            this(answer, false);
+        }
+
+        RecordingSeat(ActionResult answer, boolean releases) {
             this.answer = answer;
+            this.releases = releases;
+        }
+
+        @Override
+        public boolean releasePendingFaction(Faction side) {
+            calls.add("release:" + side.id());
+            return releases;
         }
 
         @Override
@@ -161,7 +175,99 @@ class FormationServiceRoutingTest {
         assertTrue(untouched.calls.isEmpty());
     }
 
+    @Test
+    void aMemberLeftOverInAFullLockedFactionIsReleasedToChooseAgain() {
+        RecordingSeat full = new RecordingSeat(ActionResult.failure(
+                ActionResult.Code.FACTION_FULL, "本阵营已锁定编制，最多 30 人"), true);
+
+        Optional<ActionResult> inherited = FormationService.routeInheritance(ACADEMY,
+                vote(FormationVotePhase.LOCKED, "mobile"), false, formation -> true, full);
+
+        assertTrue(inherited.isPresent());
+        assertFalse(inherited.get().success());
+        assertEquals(ActionResult.Code.FACTION_FULL, inherited.get().code());
+        assertEquals("学院军本局已锁定编制“机动部队”，最多 30 人，已经满员；你已退出学院军，"
+                + "请重新选择阵营", inherited.get().message());
+        assertEquals(List.of("shared:blue:40:mobile:30", "release:blue"), full.calls,
+                "NET-8: no longer stuck in a faction it can neither deploy in nor leave");
+    }
+
+    @Test
+    void otherInheritanceFailuresKeepTheMemberWhereItIs() {
+        RecordingSeat refused = new RecordingSeat(ActionResult.failure(
+                ActionResult.Code.NOT_ASSIGNED, "你未获准加入当前战局"), true);
+        Optional<ActionResult> notAdmitted = FormationService.routeInheritance(ACADEMY,
+                vote(FormationVotePhase.LOCKED, "mobile"), false, formation -> true, refused);
+        RecordingSeat cannotRelease = new RecordingSeat(ActionResult.failure(
+                ActionResult.Code.FACTION_FULL, "本阵营已锁定编制，最多 30 人"), false);
+        Optional<ActionResult> stillFull = FormationService.routeInheritance(ACADEMY,
+                vote(FormationVotePhase.LOCKED, "mobile"), false, formation -> true,
+                cannotRelease);
+
+        assertEquals("你未获准加入当前战局", notAdmitted.orElseThrow().message());
+        assertEquals(List.of("shared:blue:40:mobile:30"), refused.calls);
+        assertEquals("本阵营已锁定编制，最多 30 人", stillFull.orElseThrow().message(),
+                "a release that did not happen is not reported as one");
+    }
+
+    // ---- repeated faction choice (NET-1) -----------------------------------------------------
+
+    @Test
+    void choosingTheFactionOnceMoreSaysThePlayerIsAlreadyThere() {
+        assertEquals("你已在学院军，等待编制投票",
+                FormationService.alreadyInFaction(ACADEMY, "").message());
+        assertEquals("你已在学院军，本局编制：机动部队",
+                FormationService.alreadyInFaction(ACADEMY, "mobile").message());
+        assertEquals("你已在学院军，本局编制：legacy",
+                FormationService.alreadyInFaction(ACADEMY, "legacy").message());
+        assertTrue(FormationService.alreadyInFaction(ACADEMY, null).success());
+    }
+
+    @Test
+    void sameSeatComparesFactionAndFormationOnly() {
+        UUID player = UUID.randomUUID();
+        PlayerRecord pending = record(player, Faction.BLUE, null, "assault");
+        PlayerRecord pendingOtherClass = record(player, Faction.BLUE, "", "medic");
+        PlayerRecord inMobile = record(player, Faction.BLUE, "mobile", "assault");
+        PlayerRecord red = record(player, Faction.RED, null, "assault");
+
+        assertTrue(FormationService.sameSeat(pending, pendingOtherClass));
+        assertFalse(FormationService.sameSeat(pending, inMobile));
+        assertFalse(FormationService.sameSeat(pending, red));
+        assertFalse(FormationService.sameSeat(null, pending), "a new record is a change");
+        assertFalse(FormationService.sameSeat(pending, null));
+    }
+
     // ---- administrator assignment (adminAssign, vote-02/03) ----------------------------------
+
+    @Test
+    void theAssignedPlayersReceiptUsesPublicNamesOnly() {
+        assertEquals("管理员已将你分配到学院军，本局编制：机动部队",
+                FormationService.adminAssignmentReceipt("学院军", "机动部队"));
+        assertEquals("管理员已将你分配到学院军，编制等待投票锁定",
+                FormationService.adminAssignmentReceipt("学院军", ""));
+        assertEquals("管理员调整了你的阵营分配",
+                FormationService.adminAssignmentReceipt("", "机动部队"));
+        assertEquals("管理员调整了你的阵营分配",
+                FormationService.adminAssignmentReceipt(null, null));
+    }
+
+    @Test
+    void aLockedAssignmentAnswersWithThePublicFactionAndFormation() {
+        RecordingSeat seat = new RecordingSeat(ActionResult.ok("已将目标分配至 blue/mobile"));
+        RecordingSeat full = new RecordingSeat(ActionResult.failure(
+                ActionResult.Code.FORMATION_FULL, "目标编制已满"));
+
+        ActionResult assigned = FormationService.routeAdminAssignment(ACADEMY,
+                vote(FormationVotePhase.LOCKED, "mobile"), "", "Alice", seat);
+        ActionResult refused = FormationService.routeAdminAssignment(ACADEMY,
+                vote(FormationVotePhase.LOCKED, "mobile"), "", "Alice", full);
+
+        assertEquals("已将 Alice 分配到学院军，本局编制：机动部队", assigned.message(),
+                "NET-6: no internal blue/red side in the receipt");
+        assertFalse(assigned.message().contains("blue"));
+        assertEquals("目标编制已满", refused.message());
+    }
 
     @Test
     void afterTheLockAdministratorsAssignOnlyTheLockedFormation() {
@@ -246,6 +352,11 @@ class FormationServiceRoutingTest {
         assertEquals(ActionResult.Code.NOT_AUTHORIZED, change.code());
         assertEquals(ActionResult.Code.FORMATION_NOT_FOUND, candidate.code());
         assertFalse(change.success());
+    }
+
+    private static PlayerRecord record(UUID player, Faction faction, String formationId,
+                                       String classId) {
+        return new PlayerRecord(player, "Alice", faction, formationId, null, classId, 1L, 2L);
     }
 
     private static FormationVoteSnapshot vote(FormationVotePhase phase, String lockedId) {

@@ -616,7 +616,10 @@ public final class BattleService {
     /**
      * Administrator assignment while the faction is still voting (vote-02/03): moves the target
      * into {@code targetFaction} without a formation (it follows the faction's lock), leaving any
-     * squad, command and formation of a previous faction. Within {@code factionCapacity}.
+     * squad, command and formation of a previous faction. Within {@code factionCapacity}. A
+     * target already admitted to {@code targetFaction} keeps everything it has there, including
+     * a formation, squad and command from an older save (NET-5); only a move between factions
+     * clears them.
      */
     public synchronized ActionResult forceAssignFactionPending(ServerPlayer administrator,
                                                                UUID targetId,
@@ -636,8 +639,9 @@ public final class BattleService {
         if (target == null) {
             return ActionResult.failure(ActionResult.Code.TARGET_NOT_FOUND, "目标玩家不在战局记录中");
         }
-        if (target.admitted && target.faction == targetFaction && target.formationId == null) {
-            return ActionResult.ok("目标已在该阵营等待编制投票");
+        if (keepsPendingAssignment(target, targetFaction)) {
+            return ActionResult.ok(target.formationId == null
+                    ? "目标已在该阵营等待编制投票" : "目标已在该阵营，保留其现有编制");
         }
         int targetFactionSize = factionSize(targetFaction)
                 - (target.faction == targetFaction ? 1 : 0);
@@ -661,6 +665,51 @@ public final class BattleService {
         DeploymentService.get(server).ifPresent(service ->
                 service.onRosterChanged(target.playerId));
         return ActionResult.ok("已将目标分配至阵营，编制等待投票锁定");
+    }
+
+    /**
+     * Whether a pending (faction-only) administrator assignment leaves {@code target} as it is:
+     * it is already admitted to {@code targetFaction}, whatever formation it holds there.
+     */
+    static boolean keepsPendingAssignment(BattleSavedData.StoredPlayer target,
+                                          Faction targetFaction) {
+        return target != null && targetFaction != null && target.admitted
+                && target.faction == targetFaction;
+    }
+
+    /**
+     * Takes a member of {@code faction} without a formation out of the faction, so it can choose
+     * again. Used at login when the faction's locked formation is already full (a member left
+     * over from an older save that joined after the lock without receiving the formation).
+     * Members with a formation are never touched.
+     *
+     * @return whether the player was released
+     */
+    public synchronized boolean releasePendingFaction(UUID playerId, Faction faction) {
+        if (!releasePendingFactionState(data, playerId, faction)) {
+            return false;
+        }
+        data.changed();
+        DeploymentService.get(server).ifPresent(service -> service.onRosterChanged(playerId));
+        return true;
+    }
+
+    /** State change of {@link #releasePendingFaction}, apart from the server for unit tests. */
+    static boolean releasePendingFactionState(BattleSavedData data, UUID playerId,
+                                              Faction faction) {
+        BattleSavedData.StoredPlayer player = playerId == null || faction == null ? null
+                : data.player(playerId);
+        if (player == null || player.faction != faction || player.formationId != null) {
+            return false;
+        }
+        if (playerId.equals(data.commander(faction))) {
+            data.setCommander(faction, null);
+        }
+        player.faction = null;
+        player.squad = null;
+        player.squadJoinedAtMillis = 0L;
+        player.assignedClassId = BattleRules.DEFAULT_CLASS_ID;
+        return true;
     }
 
     public synchronized Optional<SquadCallsign> squadOf(UUID playerId) {
