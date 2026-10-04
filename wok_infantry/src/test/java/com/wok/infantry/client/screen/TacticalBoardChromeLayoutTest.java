@@ -92,6 +92,19 @@ class TacticalBoardChromeLayoutTest {
         assertTrue(plan.textY() + 8 <= header.bottom() - 2);
     }
 
+    @ParameterizedTest(name = "{0}x{1}")
+    @CsvSource({"320, 240", "640, 336", "480, 360", "960, 540"})
+    void headerTabLabelsShareTheTitleBaseline(int width, int height) {
+        HeaderPlan plan = plan(width, height, 96, 200, 150, 0);
+
+        // The preview draws tab labels on the title's baseline, above the 2px bottom rule.
+        assertEquals(plan.textY(),
+                TacticalTabStrip.labelTextY(TacticalTabStrip.Skin.HEADER, plan.tabs()));
+        UiRect key = UiRect.ofSize(0, 0, 60, 18);
+        assertEquals(5, TacticalTabStrip.labelTextY(TacticalTabStrip.Skin.BOARD, key),
+                "board keys centre the glyphs like TacticalButtonStyle");
+    }
+
     @Test
     void footerDropsTrailingHintsAndCapsTheReceipt() {
         UiRect footer = TacticalShellLayout.compute(320, 240).footer();

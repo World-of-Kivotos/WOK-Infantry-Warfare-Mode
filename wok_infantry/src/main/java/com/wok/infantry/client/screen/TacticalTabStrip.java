@@ -470,9 +470,19 @@ public final class TacticalTabStrip extends AbstractWidget {
         return renderLabel(graphics, font, cell, label, tab, textColor, darkFill);
     }
 
+    /**
+     * Text baseline of a label in {@code cell}. Header tabs end on the header's 2px bottom rule, so
+     * their labels sit on the title's baseline ({@code (h − 10) / 2}, as in the preview's
+     * {@code UI.shell}); board keys centre the 8px glyphs.
+     */
+    static int labelTextY(Skin skin, UiRect cell) {
+        int room = cell.height() - (skin == Skin.HEADER ? 10 : 8);
+        return cell.top() + Math.max(0, room / 2);
+    }
+
     private boolean renderLabel(GuiGraphics graphics, Font font, UiRect cell, Component label,
                                 Tab tab, int textColor, boolean darkFill) {
-        int textY = cell.top() + Math.max(0, (cell.height() - 8) / 2);
+        int textY = labelTextY(skin, cell);
         int right = cell.right() - 3;
         int badge = badgeWidth(font, tab);
         if (badge > 0) {
@@ -533,7 +543,7 @@ public final class TacticalTabStrip extends AbstractWidget {
                     key.bottom(), Component.empty(), look, TacticalButtonStyle.Options.DEFAULT);
             textColor = TacticalButtonStyle.palette(look).text();
         }
-        int textY = key.top() + Math.max(0, (key.height() - 8) / 2);
+        int textY = labelTextY(skin, key);
         TextFit.draw(graphics, font, glyph, key.left(), textY, key.width(), textColor,
                 TextFit.Align.CENTER);
     }
