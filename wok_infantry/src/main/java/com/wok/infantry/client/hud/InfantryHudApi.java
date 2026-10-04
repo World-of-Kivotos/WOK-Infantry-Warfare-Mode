@@ -13,7 +13,9 @@ import com.wok.infantry.client.screen.UiRect;
  * <ul>
  *     <li>{@value #TOP_CENTER_NEXT}: the first free area under the core's top-centre plates
  *     (battle strip, notices, ballot), as wide as the strip column, down to the screen's middle;
- *     meant for WOK步战附属-占点's panel.</li>
+ *     meant for WOK步战附属-占点's panel. A capture panel placed here must also be reported by
+ *     {@code CaptureHudApi.panelRect} (as null), or the core keeps moving its plates out of the
+ *     way of where 0.1.0-alpha.3 drew the panel (see {@code CaptureHudBridge}).</li>
  *     <li>{@value #CENTER_LOW}: a 200-wide (narrower on small screens) area from 16px under the
  *     screen's middle, clear of the action bar; meant for the downed panel. Asking for it
  *     reserves it: from the next frame on, as long as it is asked for every frame, the squad
