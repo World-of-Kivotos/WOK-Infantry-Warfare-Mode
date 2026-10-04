@@ -17,4 +17,18 @@ final class AdminLoadoutSessionStateTest {
         assertEquals("squad_leader", restored.classId());
         assertEquals("primary", restored.slotId());
     }
+
+    @Test
+    void clearForgetsTheEditContextWhenLeavingAServer() {
+        AdminLoadoutSessionState.remember("academy", "millennium_seminar_mobile",
+                "squad_leader", "secondary");
+
+        AdminLoadoutSessionState.clear();
+
+        AdminLoadoutSessionState.Selection restored = AdminLoadoutSessionState.load();
+        assertEquals("", restored.factionId());
+        assertEquals("", restored.formationId());
+        assertEquals("", restored.classId());
+        assertEquals("primary", restored.slotId());
+    }
 }

@@ -45,8 +45,47 @@ File networkSelectorFallbackDir = layout.projectDirectory
         .dir('run/network-test/.selector-tcp-fallback/not-created').asFile.canonicalFile
 File uiTestResultFile = layout.projectDirectory
         .file('run/ui-test/ui-test-results/wok_ui_acceptance.txt').asFile.canonicalFile
+// Written on every harness phase change, so a client that exits without a result still shows
+// how far it got.
+File uiTestProgressFile = layout.projectDirectory
+        .file('run/ui-test/ui-test-results/wok_ui_progress.txt').asFile.canonicalFile
+File uiTestOptionsFile = layout.projectDirectory
+        .file('run/ui-test/options.txt').asFile.canonicalFile
 File uiSelectorFallbackDir = layout.projectDirectory
         .dir('run/ui-test/.selector-tcp-fallback/not-created').asFile.canonicalFile
+// UI acceptance runs in the language players actually use unless -PuiLang says otherwise.
+String uiLanguage = (project.findProperty('uiLang') ?: 'zh_cn').toString().trim()
+        .toLowerCase(Locale.ROOT)
+// Only guards the options.txt line. Vanilla 1.20.1 also ships codes such as lzh, esan and
+// zlm_arab; whether the code is really provided is checked by the harness after login.
+if (!(uiLanguage ==~ /[a-z]{2,8}(_[a-z]{2,8})?/)) {
+    throw new GradleException("uiLang must be a Minecraft language code such as zh_cn or en_us: ${uiLanguage}")
+}
+// UI acceptance case selection (see UiRuntimeAcceptanceHarness): -PuiCases=kit,legacy picks groups,
+// surfaces or case ids (empty: all; without "legacy" the live flow is skipped), -PuiTiers=320x240,...
+// limits the tiers and -PuiLayoutStrict=false only reports layout violations of migrated screens.
+// List items may be separated by , ; or + (the last two survive wrappers that split on commas).
+String uiCases = (project.findProperty('uiCases') ?: '').toString().trim()
+String uiTiers = (project.findProperty('uiTiers') ?: '').toString().trim()
+String uiLayoutStrict = (project.findProperty('uiLayoutStrict') ?: 'true').toString().trim()
+if (!(uiCases ==~ /[A-Za-z0-9_.,;+-]*/) || !(uiTiers ==~ /[0-9x,;+]*/)) {
+    throw new GradleException("uiCases/uiTiers contain unexpected characters: ${uiCases} / ${uiTiers}")
+}
+if (!(uiLayoutStrict in ['true', 'false'])) {
+    throw new GradleException("uiLayoutStrict must be true or false: ${uiLayoutStrict}")
+}
+// The layout preview's PNGs (ui-preview/shots next to the repository) for the side-by-side
+// index.html of the acceptance results; -PuiPreviewShots overrides the lookup.
+String uiPreviewShots = (project.findProperty('uiPreviewShots') ?: '').toString().trim()
+if (uiPreviewShots.isEmpty()) {
+    for (File probe = project.projectDir.canonicalFile; probe != null; probe = probe.parentFile) {
+        File candidate = new File(probe, 'ui-preview/shots')
+        if (candidate.isDirectory()) {
+            uiPreviewShots = candidate.absolutePath
+            break
+        }
+    }
+}
 if (!networkTestRoot.toPath().startsWith(layout.projectDirectory.asFile.canonicalFile.toPath())
         || !networkTestResultsDir.toPath().startsWith(networkTestRoot.toPath())
         || !networkSelectorFallbackDir.toPath().startsWith(networkTestRoot.toPath())) {
@@ -79,7 +118,9 @@ sourceSets {
     }
     uiTest {
         java.srcDir 'src/uiTest/java'
-        resources.srcDir 'src/uiTest/resources'
+        // Set, not added: src/uiTest/resources is already the convention directory, and adding it
+        // twice makes processUiTestResources fail on the duplicate uiTest language files.
+        resources.srcDirs = ['src/uiTest/resources']
         compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
         runtimeClasspath += output + sourceSets.main.runtimeClasspath
     }
@@ -178,7 +219,15 @@ minecraft {
             workingDirectory project.file('run/ui-test')
             singleInstance true
             jvmArgs "-Djdk.net.unixdomain.tmpdir=${uiSelectorFallbackDir.absolutePath}"
-            args '--quickPlaySingleplayer', 'wok_ui_test', '--width', '960', '--height', '720'
+            // Userdev does not read the JAR manifest's MixinConfigs, so the core mixins must be
+            // named here or the UI acceptance runs without them (same as the other client runs).
+            args '--mixin', 'wok_infantry.mixins.json',
+                    '--quickPlaySingleplayer', 'wok_ui_test', '--width', '960', '--height', '720'
+            property 'wok.ui.expectedLanguage', uiLanguage
+            property 'wok.ui.cases', uiCases
+            property 'wok.ui.tiers', uiTiers
+            property 'wok.ui.layoutStrict', uiLayoutStrict
+            property 'wok.ui.previewShots', uiPreviewShots
             property 'wok.ui.expectedTerrainProvider',
                     (project.findProperty('uiExpectedTerrainProvider') ?: 'journeymap').toString()
             property 'wok.ui.expectedJourneyMapLoaded',
@@ -532,6 +581,35 @@ def prepareUiTestLoadouts = tasks.register('prepareUiTestLoadouts', Copy) {
     rename { 'loadouts.json' }
 }
 
+def prepareUiTestOptions = tasks.register('prepareUiTestOptions') {
+    description = 'Pins the UI acceptance language (-PuiLang, default zh_cn) and resets WOK keys to their defaults.'
+    inputs.property('uiLang', uiLanguage)
+    outputs.upToDateWhen { false }
+    doLast {
+        File uiRoot = layout.projectDirectory.dir('run/ui-test').asFile.canonicalFile
+        if (uiTestOptionsFile.parentFile.canonicalFile != uiRoot) {
+            throw new GradleException("Refusing to manage unexpected UI options path: ${uiTestOptionsFile}")
+        }
+        uiRoot.mkdirs()
+        List<String> lines = uiTestOptionsFile.isFile() ? uiTestOptionsFile.readLines('UTF-8') : []
+        // Minecraft writes every key binding back to options.txt. Dropping the WOK entries makes
+        // each run use the mod's current default keys instead of whatever an older build saved.
+        List<String> kept = lines.findAll {
+            !it.startsWith('lang:') && !it.startsWith('key_key.wok_infantry.')
+        }
+        if (!kept.any { it.startsWith('version:') }) {
+            // 1.20.1 data version; without it Minecraft would run every options data fixer.
+            kept.add(0, 'version:3465')
+        }
+        if (!kept.any { it.startsWith('onboardAccessibility:') }) {
+            kept.add('onboardAccessibility:false')
+        }
+        kept.add("lang:${uiLanguage}".toString())
+        uiTestOptionsFile.setText(kept.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle("UI acceptance language: ${uiLanguage}")
+    }
+}
+
 def prepareNetworkTestWorld = tasks.register('prepareNetworkTestWorld', Sync) {
     description = 'Rebuilds the isolated loopback network-test host world from the clean seed.'
     from layout.projectDirectory.dir('run/world')
@@ -584,7 +662,7 @@ tasks.matching { it.name == 'runGameTestServer' }.configureEach {
 }
 
 tasks.matching { it.name == 'runUiTestClient' }.configureEach {
-    dependsOn prepareUiTestWorld, prepareUiTestLoadouts
+    dependsOn prepareUiTestWorld, prepareUiTestLoadouts, prepareUiTestOptions
     doFirst {
         if (uiJourneyMapJar == null || !uiJourneyMapJar.isFile()) {
             throw new GradleException(
@@ -601,17 +679,121 @@ tasks.matching { it.name == 'runUiTestClient' }.configureEach {
         if (uiTestResultFile.exists() && !uiTestResultFile.delete()) {
             throw new GradleException("Could not remove stale UI acceptance result: ${uiTestResultFile}")
         }
+        if (uiTestProgressFile.parentFile.canonicalFile != uiTestResultFile.parentFile.canonicalFile) {
+            throw new GradleException("Refusing to manage unexpected UI progress path: ${uiTestProgressFile}")
+        }
+        if (uiTestProgressFile.exists() && !uiTestProgressFile.delete()) {
+            throw new GradleException("Could not remove stale UI acceptance progress: ${uiTestProgressFile}")
+        }
+        // Layout report of the previous run (written by UiResultWriter next to the result file).
+        ['wok_ui_layout.json', 'wok_ui_manifest.json', 'index.html'].each { name ->
+            File stale = new File(uiTestResultFile.parentFile, name)
+            if (stale.exists() && !stale.delete()) {
+                throw new GradleException("Could not remove stale UI layout report: ${stale}")
+            }
+        }
     }
     doLast {
         if (!uiTestResultFile.isFile()) {
-            throw new GradleException('UI acceptance client exited without writing a result')
+            String reached = 'no progress file'
+            if (uiTestProgressFile.isFile()) {
+                List<String> progress = uiTestProgressFile.readLines('UTF-8')
+                reached = progress.findAll {
+                    it.startsWith('phase=') || it.startsWith('totalTicks=')
+                            || it.startsWith('screen=') || it.startsWith('failure=')
+                }.join(', ')
+            }
+            throw new GradleException('UI acceptance client exited without writing a result; '
+                    + "last progress: ${reached} (${uiTestProgressFile})")
         }
         List<String> resultLines = uiTestResultFile.readLines('UTF-8')
         String status = resultLines.find { it.startsWith('status=') }
+        String captures = resultLines.find { it.startsWith('captures=') }
+        File layoutIndex = new File(uiTestResultFile.parentFile, 'index.html')
+        logger.lifecycle("UI acceptance ${status ?: 'status=?'} ${captures ?: ''}")
+        if (layoutIndex.isFile()) {
+            logger.lifecycle("UI layout report: ${layoutIndex}")
+        }
         if (status != 'status=PASS') {
             String failure = resultLines.find { it.startsWith('failure=') }
             throw new GradleException("UI acceptance failed: ${failure ?: status ?: 'missing status'}")
         }
+        // A PASS must come with its manifest: every capture listed with its screenshot, so the
+        // archive (archiveUiAcceptance) and the side-by-side index.html are complete.
+        File manifest = new File(uiTestResultFile.parentFile, 'wok_ui_manifest.json')
+        if (!manifest.isFile()) {
+            throw new GradleException("UI acceptance passed without a manifest: ${manifest}")
+        }
+        def captureList = new groovy.json.JsonSlurper().parse(manifest, 'UTF-8').captures
+        File shots = layout.projectDirectory.dir('run/ui-test/screenshots').asFile
+        List<String> missingShots = captureList.collect { it.file }.findAll {
+            it && !new File(shots, it.toString()).isFile()
+        }
+        if (!missingShots.isEmpty()) {
+            throw new GradleException("UI acceptance manifest lists missing screenshots: ${missingShots}")
+        }
+        logger.lifecycle("UI acceptance manifest: ${captureList.size()} capture(s) (${manifest})")
+    }
+}
+
+// Copies the last runUiTestClient run (the screenshots its manifest lists, the result file, the
+// layout report and the side-by-side index.html) into the infantry test installation, where the
+// user reviews it: D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<version>\<label>\.
+// The label defaults to the language the run used, so the zh_cn run and the en_us report run of
+// one round sit side by side; -PuiArchiveLabel / -PuiArchiveDate override. Nothing outside the
+// ui-acceptance folder is touched and an existing folder is never overwritten.
+tasks.register('archiveUiAcceptance') {
+    group = 'verification'
+    description = 'Archives the last UI acceptance run into the infantry test installation.'
+    doLast {
+        File allowedRoot = new File('D:/WOK步战测试/1.20.1-Forge_47.4.22/ui-acceptance')
+                .canonicalFile
+        String date = (project.findProperty('uiArchiveDate')
+                ?: new Date().format('yyyyMMdd')).toString().trim()
+        // The language the archived run really used (its result file), so an en_us report run is
+        // never filed under zh_cn by an archive call without -PuiLang.
+        String ranLanguage = uiTestResultFile.isFile() ? uiTestResultFile.readLines('UTF-8')
+                .find { it.startsWith('languageCode=') }?.substring('languageCode='.length())
+                ?.split(' ')?.getAt(0)?.trim() : null
+        String label = (project.findProperty('uiArchiveLabel') ?: ranLanguage ?: uiLanguage)
+                .toString().trim()
+        if (!(date ==~ /\d{8}/) || !(label ==~ /[A-Za-z0-9_.-]{1,40}/)) {
+            throw new GradleException("uiArchiveDate must be yyyyMMdd and uiArchiveLabel a plain name: ${date} / ${label}")
+        }
+        File target = new File(allowedRoot, "${date}-${project.version}/${label}").canonicalFile
+        if (!target.toPath().startsWith(allowedRoot.toPath()) || target == allowedRoot) {
+            throw new GradleException("Refusing to archive outside ${allowedRoot}: ${target}")
+        }
+        if (target.exists()) {
+            throw new GradleException("UI acceptance archive already exists, choose another -PuiArchiveLabel: ${target}")
+        }
+        File results = uiTestResultFile.parentFile
+        File manifest = new File(results, 'wok_ui_manifest.json')
+        if (!uiTestResultFile.isFile() || !manifest.isFile()) {
+            throw new GradleException("No UI acceptance run to archive; run runUiTestClient first (${results})")
+        }
+        File shots = layout.projectDirectory.dir('run/ui-test/screenshots').asFile
+        Set<String> files = new groovy.json.JsonSlurper().parse(manifest, 'UTF-8').captures
+                .collect { it.file?.toString() }.findAll { it } as Set
+        List<String> missing = files.findAll { !new File(shots, it).isFile() }.sort()
+        if (!missing.isEmpty()) {
+            throw new GradleException("Screenshots listed in the manifest are missing: ${missing}")
+        }
+        project.copy {
+            from shots
+            include files
+            into new File(target, 'screenshots')
+        }
+        project.copy {
+            from results
+            include 'wok_ui_acceptance.txt', 'wok_ui_progress.txt', 'wok_ui_layout.json',
+                    'wok_ui_manifest.json', 'index.html'
+            into new File(target, 'ui-test-results')
+        }
+        String status = uiTestResultFile.readLines('UTF-8').find { it.startsWith('status=') }
+        logger.lifecycle("Archived UI acceptance (${status ?: 'status=?'}, ${files.size()} screenshot(s), "
+                + "lang=${ranLanguage ?: '?'}) to ${target}")
+        logger.lifecycle("Open ${new File(target, 'ui-test-results/index.html')}")
     }
 }
 

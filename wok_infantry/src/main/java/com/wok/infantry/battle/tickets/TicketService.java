@@ -62,11 +62,23 @@ public final class TicketService {
 
     private static void sync(MinecraftServer server) {
         TicketSavedData data = TicketSavedData.get(server);
+        int blue = data.remaining(Faction.BLUE);
+        int red = data.remaining(Faction.RED);
+        int max = barMaximum(BattleGameplayConfig.INITIAL_TICKETS.get(), blue, red);
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            TicketNetwork.send(player, new TicketNetwork.Snapshot(data.remaining(Faction.BLUE),
-                    data.remaining(Faction.RED), BattleService.get(player).flatMap(service ->
+            TicketNetwork.send(player, new TicketNetwork.Snapshot(blue, red, max,
+                    BattleService.get(player).flatMap(service ->
                     service.factionOf(player.getUUID())).isPresent()));
         }
+    }
+
+    /**
+     * Full manpower bar sent to clients: the configured starting manpower, or a side's current
+     * value when that is higher (e.g. the setting was lowered mid-round), within the wire bounds.
+     */
+    static int barMaximum(int initialTickets, int blue, int red) {
+        int max = Math.max(initialTickets, Math.max(blue, red));
+        return Math.max(1, Math.min(TicketNetwork.MAX_TICKETS, max));
     }
 
     @SubscribeEvent public static void tick(TickEvent.ServerTickEvent event) {

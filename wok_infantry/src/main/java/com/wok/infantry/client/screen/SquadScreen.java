@@ -11,6 +11,7 @@ import com.wok.infantry.deployment.DeploymentPhase;
 import com.wok.infantry.deployment.DeploymentPoint;
 import com.wok.infantry.deployment.DeploymentPointKind;
 import com.wok.infantry.deployment.DeploymentView;
+import com.wok.infantry.network.formation.client.FormationClientNetworkBridge;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -72,6 +73,11 @@ public final class SquadScreen extends Screen {
         this.page = openDeployment ? Page.DEPLOYMENT : Page.SQUADS;
     }
 
+    /** Screen this page returns to (see {@link BattleTerminalNav#rootSkippingSquadPages}). */
+    Screen previousScreen() {
+        return previous;
+    }
+
     @Override
     protected void init() {
         observedGeneration = ClientBattleState.generation();
@@ -126,7 +132,8 @@ public final class SquadScreen extends Screen {
     private void initNavigation() {
         int buttonY = tabletLayout.topBarY();
         int utilityWidth = 22;
-        int tabCount = 5;
+        // Five battle pages plus the temporary "编制" key (the vote page, until 档 3 tabs).
+        int tabCount = 6;
         int tabGap = 3;
         int refreshX = tabletLayout.header().right() - 4 - utilityWidth;
         int available = Math.max(170, refreshX - leftX - 6);
@@ -184,6 +191,20 @@ public final class SquadScreen extends Screen {
         addRenderableWidget(BattleUiButton.builder(mapLabel, ignored ->
                         Minecraft.getInstance().setScreen(new TacticalMapScreen(this)))
                 .tooltip(Tooltip.create(Component.translatable("screen.wok_infantry.tab.map")))
+                .bounds(x, buttonY, tabWidth, 20).build());
+        x += tabWidth + 3;
+
+        // Temporary entry to the faction/formation vote page (player-08); 档 3 replaces the
+        // whole row with the shared terminal tab strip. The vote page replaces this page and
+        // returns to the terminal's root, so switching tabs there never stacks a second squad
+        // page under it.
+        Component formationLabel = fittedButtonLabel("screen.wok_infantry.tab.formation",
+                "screen.wok_infantry.tab.formation_short", tabWidth);
+        addRenderableWidget(BattleUiButton.builder(formationLabel, ignored ->
+                        FormationClientNetworkBridge.openFromTerminal(
+                                BattleTerminalNav.rootSkippingSquadPages(previous)))
+                .tooltip(Tooltip.create(Component.translatable(
+                        "screen.wok_infantry.tab.formation")))
                 .bounds(x, buttonY, tabWidth, 20).build());
 
         addRenderableWidget(BattleUiButton.builder(Component.literal("R"), ignored ->
@@ -587,8 +608,8 @@ public final class SquadScreen extends Screen {
         }
         super.render(graphics, mouseX, mouseY, partialTick);
         TacticalMapLayout.Rect footer = tabletLayout.footer();
-        BattleUiTheme.feedback(graphics, font, footer.left(), footer.right(),
-                footer.top() + 5);
+        BattleUiTheme.feedback(graphics, font, footer.left(), footer.top(), footer.right(),
+                footer.bottom());
     }
 
     private void renderSquadPage(GuiGraphics graphics, BattleSnapshot snapshot) {
@@ -599,7 +620,7 @@ public final class SquadScreen extends Screen {
         TacticalBoardTheme.sectionHeader(graphics, font,
                 Component.translatable("screen.wok_infantry.squad_list"),
                 leftX + 4, contentTop + 4, leftX + leftWidth - 4,
-                TacticalBoardTheme.SELECTED);
+                TacticalBoardTheme.SECTION);
 
         SquadView selected = ClientBattleState.squad(selectedSquad);
         MutableComponent heading = selectedSquad == null
@@ -666,7 +687,7 @@ public final class SquadScreen extends Screen {
             TacticalBoardTheme.sectionHeader(graphics, font,
                     Component.translatable("screen.wok_infantry.deployment_status"),
                     leftX + 4, contentTop + 4, leftX + leftWidth - 4,
-                    TacticalBoardTheme.SELECTED);
+                    TacticalBoardTheme.SECTION);
             int y = contentTop + 32;
             MutableComponent squad = snapshot.ownSquad() == null
                     ? Component.translatable("screen.wok_infantry.status.none")

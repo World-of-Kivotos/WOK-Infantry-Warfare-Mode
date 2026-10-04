@@ -2,6 +2,8 @@ package com.wok.infantry.battle;
 
 import com.wok.infantry.WokInfantryMod;
 import com.wok.infantry.deployment.DeploymentService;
+import com.wok.infantry.integration.bodyhealth.BodyHealthServerBridge;
+import com.wok.infantry.integration.downed.DownedStateBridge;
 import com.wok.infantry.server.FormationService;
 import com.wok.infantry.support.SupportService;
 import com.wok.infantry.support.SupportView;
@@ -533,6 +535,181 @@ public final class BattleService {
         }
         return ActionResult.ok("已向 " + faction.id() + " 方应用共享编制 "
                 + normalizedFormation);
+    }
+
+    /**
+     * Joins a faction whose shared formation is already locked (vote-01): the faction slot, the
+     * locked formation and its default class are written in one step, so a late joiner never ends
+     * up "in a faction without a formation". A player who is already in this faction without a
+     * formation (reconnected after a release, cleared by reconciliation) receives it as well.
+     * After the lock the faction is bounded by the smaller of {@code factionCapacity} and the
+     * locked formation's {@code formationCapacity}; a join beyond it is rejected without any
+     * change. The caller resolves and validates the locked formation.
+     */
+    public synchronized ActionResult joinFactionWithSharedFormation(ServerPlayer actor,
+                                                                    Faction targetFaction,
+                                                                    int factionCapacity,
+                                                                    String formationId,
+                                                                    int formationCapacity) {
+        ActionResult actorCheck = validateActor(actor);
+        if (actorCheck != null) {
+            return actorCheck;
+        }
+        ActionResult ensured = ensurePlayerInternal(actor, false);
+        if (!ensured.success()) {
+            return ensured;
+        }
+        String normalizedFormation = normalizeFormationId(formationId);
+        if (targetFaction == null || normalizedFormation == null || factionCapacity < 1
+                || factionCapacity > BattleRules.FACTION_CAPACITY || formationCapacity < 1
+                || formationCapacity > BattleRules.FACTION_CAPACITY) {
+            return ActionResult.failure(ActionResult.Code.FORMATION_UNAVAILABLE,
+                    "阵营共享编制或容量配置无效");
+        }
+        BattleSavedData.StoredPlayer record = data.player(actor.getUUID());
+        if (record == null || !record.admitted) {
+            return ActionResult.failure(ActionResult.Code.NOT_ASSIGNED,
+                    "你未获准加入当前战局");
+        }
+        if (record.faction != null && record.faction != targetFaction) {
+            return ActionResult.failure(ActionResult.Code.FORMATION_LOCKED,
+                    "阵营在本轮确认后不能自行更换");
+        }
+        if (record.faction == targetFaction && record.formationId != null) {
+            return normalizedFormation.equals(record.formationId)
+                    ? ActionResult.ok("已在使用本阵营共享编制")
+                    : ActionResult.failure(ActionResult.Code.FORMATION_LOCKED,
+                    "阵营与编制在本轮确认后不能自行更换");
+        }
+        int capacity = Math.min(factionCapacity, formationCapacity);
+        int others = factionSize(targetFaction) - (record.faction == targetFaction ? 1 : 0);
+        if (others >= capacity) {
+            return ActionResult.failure(ActionResult.Code.FACTION_FULL,
+                    "本阵营已锁定编制，最多 " + capacity + " 人");
+        }
+        if (record.squad != null) {
+            detachFromSquad(record);
+        }
+        record.faction = targetFaction;
+        record.formationId = normalizedFormation;
+        record.squad = null;
+        record.squadJoinedAtMillis = 0L;
+        record.assignedClassId = configuredDefaultClassId(targetFaction, normalizedFormation);
+        data.changed();
+        return ActionResult.ok("已加入并使用本阵营共享编制");
+    }
+
+    /** IDs of every player record currently in {@code faction} (vote tallies count only these). */
+    public synchronized Set<UUID> factionMemberIds(Faction faction) {
+        if (faction == null) {
+            return Set.of();
+        }
+        LinkedHashSet<UUID> members = new LinkedHashSet<>();
+        for (BattleSavedData.StoredPlayer player : data.players()) {
+            if (player.faction == faction) {
+                members.add(player.playerId);
+            }
+        }
+        return Collections.unmodifiableSet(members);
+    }
+
+    /**
+     * Administrator assignment while the faction is still voting (vote-02/03): moves the target
+     * into {@code targetFaction} without a formation (it follows the faction's lock), leaving any
+     * squad, command and formation of a previous faction. Within {@code factionCapacity}. A
+     * target already admitted to {@code targetFaction} keeps everything it has there, including
+     * a formation, squad and command from an older save (NET-5); only a move between factions
+     * clears them.
+     */
+    public synchronized ActionResult forceAssignFactionPending(ServerPlayer administrator,
+                                                               UUID targetId,
+                                                               Faction targetFaction,
+                                                               int factionCapacity) {
+        ActionResult actorCheck = validateActor(administrator);
+        if (actorCheck != null) {
+            return actorCheck;
+        }
+        if (!isAdministrator(administrator)) {
+            return ActionResult.failure(ActionResult.Code.NOT_AUTHORIZED, "需要服务端管理员权限");
+        }
+        if (targetId == null || targetFaction == null) {
+            return ActionResult.failure(ActionResult.Code.INVALID_TARGET, "目标玩家或阵营缺失");
+        }
+        BattleSavedData.StoredPlayer target = data.player(targetId);
+        if (target == null) {
+            return ActionResult.failure(ActionResult.Code.TARGET_NOT_FOUND, "目标玩家不在战局记录中");
+        }
+        if (keepsPendingAssignment(target, targetFaction)) {
+            return ActionResult.ok(target.formationId == null
+                    ? "目标已在该阵营等待编制投票" : "目标已在该阵营，保留其现有编制");
+        }
+        int targetFactionSize = factionSize(targetFaction)
+                - (target.faction == targetFaction ? 1 : 0);
+        if (factionCapacity < 1 || factionCapacity > BattleRules.FACTION_CAPACITY
+                || targetFactionSize >= factionCapacity) {
+            return ActionResult.failure(ActionResult.Code.FACTION_FULL, "目标阵营已满");
+        }
+        if (target.squad != null) {
+            detachFromSquad(target);
+        }
+        if (target.faction != null && target.playerId.equals(data.commander(target.faction))) {
+            data.setCommander(target.faction, null);
+        }
+        target.faction = targetFaction;
+        target.formationId = null;
+        target.squad = null;
+        target.squadJoinedAtMillis = 0L;
+        target.admitted = true;
+        target.assignedClassId = BattleRules.DEFAULT_CLASS_ID;
+        data.changed();
+        DeploymentService.get(server).ifPresent(service ->
+                service.onRosterChanged(target.playerId));
+        return ActionResult.ok("已将目标分配至阵营，编制等待投票锁定");
+    }
+
+    /**
+     * Whether a pending (faction-only) administrator assignment leaves {@code target} as it is:
+     * it is already admitted to {@code targetFaction}, whatever formation it holds there.
+     */
+    static boolean keepsPendingAssignment(BattleSavedData.StoredPlayer target,
+                                          Faction targetFaction) {
+        return target != null && targetFaction != null && target.admitted
+                && target.faction == targetFaction;
+    }
+
+    /**
+     * Takes a member of {@code faction} without a formation out of the faction, so it can choose
+     * again. Used at login when the faction's locked formation is already full (a member left
+     * over from an older save that joined after the lock without receiving the formation).
+     * Members with a formation are never touched.
+     *
+     * @return whether the player was released
+     */
+    public synchronized boolean releasePendingFaction(UUID playerId, Faction faction) {
+        if (!releasePendingFactionState(data, playerId, faction)) {
+            return false;
+        }
+        data.changed();
+        DeploymentService.get(server).ifPresent(service -> service.onRosterChanged(playerId));
+        return true;
+    }
+
+    /** State change of {@link #releasePendingFaction}, apart from the server for unit tests. */
+    static boolean releasePendingFactionState(BattleSavedData data, UUID playerId,
+                                              Faction faction) {
+        BattleSavedData.StoredPlayer player = playerId == null || faction == null ? null
+                : data.player(playerId);
+        if (player == null || player.faction != faction || player.formationId != null) {
+            return false;
+        }
+        if (playerId.equals(data.commander(faction))) {
+            data.setCommander(faction, null);
+        }
+        player.faction = null;
+        player.squad = null;
+        player.squadJoinedAtMillis = 0L;
+        player.assignedClassId = BattleRules.DEFAULT_CLASS_ID;
+        return true;
     }
 
     public synchronized Optional<SquadCallsign> squadOf(UUID playerId) {
@@ -1278,14 +1455,20 @@ public final class BattleService {
                     boolean online = onlinePlayer != null;
                     boolean deployed = deployments == null
                             || deployments.isActive(member.playerId);
-                    boolean alive = online && deployed && onlinePlayer.isAlive();
+                    boolean entityAlive = online && onlinePlayer.isAlive();
+                    boolean alive = entityAlive && deployed;
+                    MemberState state = MemberState.resolve(online, entityAlive, deployed,
+                            alive && DownedStateBridge.isDowned(onlinePlayer));
                     float health = alive ? onlinePlayer.getHealth() : 0.0F;
                     float maxHealth = online ? onlinePlayer.getMaxHealth() : 20.0F;
+                    float healthRatio = state.hasVitals()
+                            ? BodyHealthServerBridge.ratio(onlinePlayer)
+                            : MemberView.UNKNOWN_HEALTH_RATIO;
                     memberViews.add(new MemberView(member.playerId, member.lastKnownName,
                             online, alive, health, maxHealth,
                             member.playerId.equals(data.leader(faction, formationId, callsign)),
                             member.playerId.equals(data.commander(faction)), callsign,
-                            member.assignedClassId));
+                            member.assignedClassId, state, healthRatio));
                 }
                 squads.add(new SquadView(callsign, data.leader(faction, formationId, callsign),
                         memberViews, configuredCapacity));
@@ -1326,9 +1509,10 @@ public final class BattleService {
         SupportView support = SupportService.get(server)
                 .map(service -> service.viewFor(viewer))
                 .orElseGet(SupportView::unavailable);
-        long visibleRevision = Integer.toUnsignedLong(Objects.hash(faction, formationId, ownSquad, leader,
-                commander, factionCount, enemyCount, squads, markers, permissions, quotas,
-                support.structuralRevision()));
+        // Structural projection only: per-heartbeat health changes must not rebuild client UIs.
+        long visibleRevision = BattleSnapshotRevision.visible(faction, formationId, ownSquad,
+                leader, commander, factionCount, enemyCount, squads, markers, permissions,
+                quotas, support.structuralRevision());
         return new BattleSnapshot(viewer.getUUID(), faction, ownSquad, leader, commander,
                 factionCount, enemyCount, BattleRules.FACTION_CAPACITY,
                 Math.max(1, formationSquadCapacity),

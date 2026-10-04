@@ -13,31 +13,17 @@ import com.wok.infantry.client.ClientBattleState;
 import com.wok.infantry.client.ClientFormationState;
 import com.wok.infantry.client.map.TacticalMapTerrainRequest;
 import com.wok.infantry.client.map.TacticalMapTerrainRegistry;
-import com.wok.infantry.client.map.TacticalSupportMapPresentation;
 import com.wok.infantry.client.map.TacticalSupportMapPresentationRegistry;
-import com.wok.infantry.client.screen.AdminLoadoutScreen;
-import com.wok.infantry.client.screen.FormationSelectionScreen;
 import com.wok.infantry.client.screen.PlayerLoadoutScreen;
 import com.wok.infantry.client.screen.SquadScreen;
 import com.wok.infantry.client.screen.TacticalMapScreen;
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
+import com.wok.infantry.client.ui.probe.UiLayoutReport;
 import com.wok.infantry.integration.journeymap.JourneyMapUiPolicy;
 import com.wok.infantry.deployment.DeploymentPoint;
 import com.wok.infantry.deployment.DeploymentPhase;
 import com.wok.infantry.deployment.DeploymentService;
 import com.wok.infantry.deployment.KitProvenance;
-import com.wok.infantry.formation.FormationConfigData;
-import com.wok.infantry.formation.FormationClassEditAction;
-import com.wok.infantry.formation.FormationClassEditor;
-import com.wok.infantry.formation.selection.FactionSelectionView;
-import com.wok.infantry.formation.selection.FormationSelectionSnapshot;
-import com.wok.infantry.formation.selection.FormationSelectionView;
-import com.wok.infantry.formation.vote.FormationVotePhase;
-import com.wok.infantry.loadout.LoadoutConfigData;
-import com.wok.infantry.loadout.LoadoutClassDefinition;
-import com.wok.infantry.loadout.LoadoutInventoryTarget;
-import com.wok.infantry.loadout.LoadoutSlotDefinition;
-import com.wok.infantry.loadout.LoadoutSnapshot;
-import com.wok.infantry.loadout.PlayerLoadoutData;
 import com.wok.infantry.loadout.LoadoutSlot;
 import com.wok.infantry.network.battle.BattleNetwork;
 import com.wok.infantry.network.battle.BattleOpenTarget;
@@ -46,14 +32,13 @@ import com.wok.infantry.registry.InfantryItems;
 import com.wok.infantry.server.FormationService;
 import com.wok.infantry.support.adapter.SupportIntelContact;
 import com.wok.infantry.support.SupportMissionView;
-import com.wok.infantry.support.SupportOptionView;
-import com.wok.infantry.support.SupportTargetMode;
 import com.wok.infantry.support.SupportView;
-import com.mojang.blaze3d.platform.InputConstants;
+import com.wok.infantry.uitest.cases.UiCaseCatalog;
+import com.wok.infantry.uitest.fixtures.DeploymentFixtures;
+import com.wok.infantry.uitest.fixtures.ServerFixtures;
+import com.wok.infantry.uitest.fixtures.SupportFixtures;
 import com.mojang.blaze3d.platform.NativeImage;
-import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.Screenshot;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
@@ -66,12 +51,10 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -85,21 +68,32 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Development-only, real-client acceptance harness for the tactical UI.
  *
  * <p>The class lives in {@code src/uiTest}; default builds and the production JAR cannot see it.
- * It enters an integrated world, drives the same server-bound intent bridge as K/M, captures the
- * rendered framebuffer, writes a semantic result file and exits the client.</p>
+ * It enters an integrated world and runs the live flow (deployment screen after login, the battle
+ * terminal and tactical map opened through their real key bindings and network packets, squad and
+ * commander actions, deployment, markers, JourneyMap terrain), capturing the 14 baseline
+ * screenshots. It then hands over to {@link UiCaseRunner}, which runs the cases of
+ * {@link UiCaseCatalog} — the legacy formation and administrator captures first, then every
+ * surface case — on each tier, with the layout probe ({@link UiLayoutProbe}) checking every frame.
+ * Finally it writes {@code wok_ui_acceptance.txt} (first line {@code status=PASS|FAIL}), a progress
+ * file, {@code wok_ui_layout.json}, {@code wok_ui_manifest.json} and {@code index.html}, and exits.
+ *
+ * <p>System properties (set by {@code build.gradle}): {@code wok.ui.cases} selects cases by group,
+ * surface or id (empty: all; without {@code legacy} the live flow is skipped);
+ * {@code wok.ui.tiers} limits tiers ({@code 320x240,960x720,…}); {@code wok.ui.layoutStrict=false}
+ * reports layout violations of migrated surfaces without failing the run.
  */
 @Mod.EventBusSubscriber(modid = WokInfantryMod.MOD_ID, value = Dist.CLIENT,
         bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -127,29 +121,49 @@ public final class UiRuntimeAcceptanceHarness {
             BattleClientActions.MarkerTool.DEFEND,
             BattleClientActions.MarkerTool.RALLY,
             BattleClientActions.MarkerTool.ATTACK_DIRECTION);
-    private static final int GLOBAL_TIMEOUT_TICKS = 2_400;
+    /** Budget of the live flow; the cases add their own ({@link UiCaseRunner#budgetTicks}). */
+    private static final int LIVE_FLOW_TIMEOUT_TICKS = 2_400;
+    private static final int CASES_ONLY_BASE_TICKS = 900;
     private static final int PHASE_TIMEOUT_TICKS = 400;
-    private static final int SCREEN_SETTLE_TICKS = 8;
-    private static final double PAVEWAY_FIXTURE_RADIUS = 80.0D;
-    private static final double PAVEWAY_FIXTURE_GUIDANCE_RADIUS = 64.0D;
+    private static final int SCREEN_SETTLE_TICKS = UiCaseRunner.SETTLE_TICKS;
     private static final String EXPECTED_TERRAIN_PROVIDER = System.getProperty(
             "wok.ui.expectedTerrainProvider", "journeymap").trim()
-            .toLowerCase(java.util.Locale.ROOT);
+            .toLowerCase(Locale.ROOT);
     private static final String EXPECTED_JOURNEYMAP_LOADED_RAW = System.getProperty(
-            "wok.ui.expectedJourneyMapLoaded", "true").trim().toLowerCase(
-            java.util.Locale.ROOT);
+            "wok.ui.expectedJourneyMapLoaded", "true").trim().toLowerCase(Locale.ROOT);
     private static final boolean EXPECTED_JOURNEYMAP_LOADED =
             EXPECTED_JOURNEYMAP_LOADED_RAW.equals("true");
+    /** Set by build.gradle from -PuiLang; empty means "do not assert the language". */
+    private static final String EXPECTED_LANGUAGE = System.getProperty(
+            "wok.ui.expectedLanguage", "").trim().toLowerCase(Locale.ROOT);
+    /** -PuiCases: groups, surfaces or case ids (comma separated); empty runs everything. */
+    private static final String CASE_FILTER = System.getProperty("wok.ui.cases", "").trim();
+    /** -PuiTiers: tier ids such as 320x240,960x720; empty keeps each case's tiers. */
+    private static final String TIER_FILTER = System.getProperty("wok.ui.tiers", "").trim();
+    /** -PuiLayoutStrict=false reports violations of migrated surfaces without failing. */
+    private static final boolean LAYOUT_STRICT = !"false".equalsIgnoreCase(
+            System.getProperty("wok.ui.layoutStrict", "true").trim());
+    /** Directory of the layout preview's PNGs for index.html, if found by build.gradle. */
+    private static final String PREVIEW_SHOTS = System.getProperty("wok.ui.previewShots", "")
+            .trim();
+    private static final String MAP_KEY_MAPPING = "key.wok_infantry.open_tactical_map";
+    private static final String SQUAD_KEY_MAPPING = "key.wok_infantry.open_squad";
+    private static final String RESULT_DIRECTORY = "ui-test-results";
+    private static final String PROGRESS_FILE = "wok_ui_progress.txt";
+    private static final int PROGRESS_HISTORY_LIMIT = 200;
 
     private static final Map<String, Long> screenshotBaselines = new LinkedHashMap<>();
-    private static final Map<String, String> screenshotCallbacks = new ConcurrentHashMap<>();
     private static final List<String> observations = new ArrayList<>();
+    private static final List<UiCaseResult> liveCaptures = new ArrayList<>();
 
     private static Phase phase = Phase.WAIT_FOR_LOGIN;
     private static int totalTicks;
     private static int phaseTicks;
-    private static PendingCapture pendingCapture;
-    private static PendingCapture renderedCapture;
+    private static int globalTimeoutTicks = LIVE_FLOW_TIMEOUT_TICKS;
+    private static boolean runLiveFlow = true;
+    private static List<UiCase> selectedCases = List.of();
+    private static UiCaseRunner caseRunner;
+    private static String lastRunnerPosition = "";
     private static String waitingForCapture;
     private static boolean initialized;
     private static boolean worldOpenRequested;
@@ -186,9 +200,7 @@ public final class UiRuntimeAcceptanceHarness {
     private static boolean administratorToolFinalizeQueued;
     private static volatile boolean administratorToolTemporaryOperator;
     private static volatile String administratorToolResult;
-    private static boolean formationAdministratorSetupQueued;
-    private static volatile boolean formationAdministratorReady;
-    private static Boolean formationScreenCompact;
+    private static volatile String temporaryOperatorCleanup;
     private static int nextMarkerIndex;
     private static BattleClientActions.MarkerTool pendingMarker;
     private static int pendingMarkerSentTick = -1;
@@ -210,6 +222,8 @@ public final class UiRuntimeAcceptanceHarness {
     private static volatile boolean cleanupFinished;
     private static boolean resultWritten;
     private static String failureReason;
+    private static final List<String> progressHistory = new ArrayList<>();
+    private static boolean progressWriteFailed;
 
     private UiRuntimeAcceptanceHarness() {
     }
@@ -227,40 +241,6 @@ public final class UiRuntimeAcceptanceHarness {
         }
     }
 
-    @SubscribeEvent
-    public static void onScreenRendered(ScreenEvent.Render.Post event) {
-        PendingCapture capture = pendingCapture;
-        if (capture == null || event.getScreen() != capture.screen()) {
-            return;
-        }
-        // ScreenEvent.Render.Post fires before GuiGraphics.flush() in 1.20.1. Defer the actual
-        // framebuffer read until RenderTick END, after GameRenderer has flushed every UI batch.
-        renderedCapture = capture;
-    }
-
-    @SubscribeEvent
-    public static void onRenderTick(TickEvent.RenderTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) {
-            return;
-        }
-        PendingCapture capture = renderedCapture;
-        if (capture == null || capture != pendingCapture) {
-            return;
-        }
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.screen != capture.screen()) {
-            renderedCapture = null;
-            return;
-        }
-        renderedCapture = null;
-        pendingCapture = null;
-        WokInfantryMod.LOGGER.info("[UI ACCEPTANCE] Capturing {} at logical {}x{}",
-                capture.fileName(), capture.screen().width, capture.screen().height);
-        Screenshot.grab(minecraft.gameDirectory, capture.fileName(),
-                minecraft.getMainRenderTarget(), component ->
-                        screenshotCallbacks.put(capture.fileName(), component.getString()));
-    }
-
     private static void tick(Minecraft minecraft) throws IOException {
         totalTicks++;
         phaseTicks++;
@@ -271,13 +251,14 @@ public final class UiRuntimeAcceptanceHarness {
                 || phase == Phase.OPEN_LARGE_MAP || phase == Phase.CAPTURE_LARGE_MAP) {
             installCommanderSupportFixture(minecraft);
         }
-        if (totalTicks > GLOBAL_TIMEOUT_TICKS && phase != Phase.FINISH
+        if (totalTicks > globalTimeoutTicks && phase != Phase.FINISH
                 && phase != Phase.FAIL) {
-            fail("Global timeout in phase " + phase);
+            fail("Global timeout in phase " + phase
+                    + (caseRunner == null ? "" : " at " + caseRunner.position()));
         }
         if (phaseTicks > PHASE_TIMEOUT_TICKS && phase != Phase.WAIT_FOR_LOGIN
-                && phase != Phase.WAIT_FOR_FILES && phase != Phase.FINISH
-                && phase != Phase.FAIL) {
+                && phase != Phase.RUN_CASES && phase != Phase.WAIT_FOR_FILES
+                && phase != Phase.FINISH && phase != Phase.FAIL) {
             fail("Phase timeout in " + phase + feedbackSuffix());
         }
 
@@ -318,26 +299,8 @@ public final class UiRuntimeAcceptanceHarness {
                     PlayerLoadoutScreen.class, SCREENSHOTS[8], Phase.OPEN_LARGE_MAP);
             case OPEN_LARGE_MAP -> openLargeMap(minecraft);
             case CAPTURE_LARGE_MAP -> captureScreen(minecraft, TacticalMapScreen.class,
-                    SCREENSHOTS[5], Phase.OPEN_COMPACT_FORMATION);
-            case OPEN_COMPACT_FORMATION -> openFormationVote(minecraft, true);
-            case CAPTURE_COMPACT_FORMATION -> captureScreen(minecraft,
-                    FormationSelectionScreen.class, SCREENSHOTS[9],
-                    Phase.OPEN_LARGE_FORMATION);
-            case OPEN_LARGE_FORMATION -> openFormationVote(minecraft, false);
-            case CAPTURE_LARGE_FORMATION -> captureScreen(minecraft,
-                    FormationSelectionScreen.class, SCREENSHOTS[10],
-                    Phase.OPEN_COMPACT_ADMIN_LOADOUT);
-            case OPEN_COMPACT_ADMIN_LOADOUT -> openAdminLoadout(minecraft, true);
-            case CAPTURE_COMPACT_ADMIN_LOADOUT -> captureScreen(minecraft,
-                    AdminLoadoutScreen.class, SCREENSHOTS[11],
-                    Phase.OPEN_COMPACT_ADMIN_CLASS_SETTINGS);
-            case OPEN_COMPACT_ADMIN_CLASS_SETTINGS -> openCompactAdminClassSettings(minecraft);
-            case CAPTURE_COMPACT_ADMIN_CLASS_SETTINGS -> captureScreen(minecraft,
-                    AdminLoadoutScreen.class, SCREENSHOTS[13],
-                    Phase.OPEN_LARGE_ADMIN_LOADOUT);
-            case OPEN_LARGE_ADMIN_LOADOUT -> openAdminLoadout(minecraft, false);
-            case CAPTURE_LARGE_ADMIN_LOADOUT -> captureScreen(minecraft,
-                    AdminLoadoutScreen.class, SCREENSHOTS[12], Phase.WAIT_FOR_FILES);
+                    SCREENSHOTS[5], Phase.RUN_CASES);
+            case RUN_CASES -> runCases(minecraft);
             case WAIT_FOR_FILES -> waitForFiles(minecraft);
             case FINISH -> finish(minecraft, true);
             case FAIL -> finish(minecraft, false);
@@ -348,18 +311,47 @@ public final class UiRuntimeAcceptanceHarness {
 
     private static void initializeArtifacts(Minecraft minecraft) throws IOException {
         initialized = true;
+        UiLayoutProbe.enable();
         // Automated windows are intentionally not focused. Keep the integrated server ticking
         // after deployment/respawn packets close or replace screens, matching the dedicated
         // network harness and a real multiplayer server.
         minecraft.options.pauseOnLostFocus = false;
+        runLiveFlow = CASE_FILTER.isEmpty() || List.of(CASE_FILTER.split(UiTier.LIST_SEPARATORS))
+                .stream().map(String::trim).anyMatch(UiCase.LEGACY_GROUP::equals);
+        List<UiCase> cases = new ArrayList<>();
+        if (runLiveFlow) {
+            cases.addAll(UiCaseCatalog.legacy());
+        }
+        for (UiCase uiCase : UiCaseCatalog.surfaces()) {
+            if (uiCase.selectedBy(CASE_FILTER)) {
+                cases.add(uiCase);
+            }
+        }
+        selectedCases = List.copyOf(cases);
+        globalTimeoutTicks = (runLiveFlow ? LIVE_FLOW_TIMEOUT_TICKS : CASES_ONLY_BASE_TICKS)
+                + UiCaseRunner.budgetTicks(selectedCases, TIER_FILTER);
+
         Path screenshots = minecraft.gameDirectory.toPath().resolve("screenshots");
         Files.createDirectories(screenshots);
-        for (String fileName : SCREENSHOTS) {
+        List<String> expectedFiles = new ArrayList<>(List.of(SCREENSHOTS));
+        for (UiCase uiCase : selectedCases) {
+            // Legacy cases ignore the tier filter (see UiCase.selectedTiers): the live flow always
+            // waits for all 14 baseline screenshots.
+            for (UiTier tier : uiCase.selectedTiers(TIER_FILTER)) {
+                expectedFiles.add(uiCase.fileName(tier));
+            }
+        }
+        for (String fileName : expectedFiles) {
             Path file = screenshots.resolve(fileName);
             screenshotBaselines.put(fileName, Files.isRegularFile(file)
                     ? Files.getLastModifiedTime(file).toMillis() : -1L);
         }
         observations.add("harness=src/uiTest (excluded from production JAR)");
+        observations.add("uiCases=" + (CASE_FILTER.isEmpty() ? "all" : CASE_FILTER)
+                + " liveFlow=" + runLiveFlow + " cases=" + selectedCases.size());
+        observations.add("uiTiers=" + (TIER_FILTER.isEmpty() ? "per-case" : TIER_FILTER)
+                + " layoutStrict=" + LAYOUT_STRICT);
+        observations.add("globalTimeoutTicks=" + globalTimeoutTicks);
         boolean journeyMapLoaded = ModList.get().isLoaded("journeymap");
         observations.add("journeymapLoaded=" + journeyMapLoaded
                 + " expected=" + EXPECTED_JOURNEYMAP_LOADED);
@@ -375,6 +367,17 @@ public final class UiRuntimeAcceptanceHarness {
             fail("JourneyMap loaded state mismatch: expected "
                     + EXPECTED_JOURNEYMAP_LOADED + ", got " + journeyMapLoaded);
         }
+        // options.txt is read before the first tick, so this is the code prepareUiTestOptions
+        // wrote. Whether a resource pack actually provides it is checked after login, once the
+        // resource reload has finished (see languageAvailable in waitForLogin).
+        String language = minecraft.getLanguageManager().getSelected();
+        observations.add("languageCode=" + language + " expected="
+                + (EXPECTED_LANGUAGE.isEmpty() ? "any" : EXPECTED_LANGUAGE));
+        if (!EXPECTED_LANGUAGE.isEmpty() && !EXPECTED_LANGUAGE.equals(language)) {
+            fail("UI acceptance language mismatch: expected " + EXPECTED_LANGUAGE
+                    + ", got " + language);
+        }
+        recordProgress("armed " + phase);
         WokInfantryMod.LOGGER.info("[UI ACCEPTANCE] Harness armed; waiting for integrated login");
     }
 
@@ -432,8 +435,8 @@ public final class UiRuntimeAcceptanceHarness {
                 // The synthetic integrated-server vote can complete while the client is still on
                 // ReceivingLevelScreen. That loading screen replaces the deployment screen sent by
                 // the normal S2C snapshot, so reopen the already-authorized state once the world is
-                // visibly stable.
-                minecraft.setScreen(new SquadScreen(null));
+                // visibly stable — on its deployment page, as the server opened it.
+                minecraft.setScreen(new SquadScreen(null, true));
                 observations.add("fixtureDeploymentScreenReopenedAfterWorldSync=true");
                 return;
             }
@@ -446,6 +449,15 @@ public final class UiRuntimeAcceptanceHarness {
         if (stableDeploymentScreenTicks < 20) {
             return;
         }
+        // Minecraft keeps an unknown lang code selected but silently renders English, so a
+        // mistyped -PuiLang would otherwise produce English captures labelled as another language.
+        String language = minecraft.getLanguageManager().getSelected();
+        if (minecraft.getLanguageManager().getLanguage(language) == null) {
+            fail("UI acceptance language " + language
+                    + " is not provided by any loaded resource pack");
+            return;
+        }
+        observations.add("languageAvailable=" + language);
         autoDeploymentObserved = true;
         minecraft.getTutorial().setStep(TutorialSteps.NONE);
         minecraft.getToasts().clear();
@@ -454,7 +466,7 @@ public final class UiRuntimeAcceptanceHarness {
         setGuiScale(minecraft, 3);
         observations.add("autoDeploymentScreen=true");
         observations.add("compactLogicalSize=" + logicalSize(minecraft));
-        transition(Phase.CAPTURE_DEPLOYMENT);
+        transition(runLiveFlow ? Phase.CAPTURE_DEPLOYMENT : Phase.RUN_CASES);
     }
 
     private static void selectFormationFixtureWhenRequired(Minecraft minecraft) {
@@ -535,7 +547,9 @@ public final class UiRuntimeAcceptanceHarness {
             minecraft.setScreen(null);
         }
         if (!compactSquadKeySent && phaseTicks >= 2 && minecraft.screen == null) {
-            clickBoundKey(GLFW.GLFW_KEY_K);
+            if (!pressMappedKey(minecraft, SQUAD_KEY_MAPPING, "squad", true)) {
+                return;
+            }
             compactSquadKeySent = true;
         }
         if (minecraft.screen instanceof SquadScreen && phaseTicks >= SCREEN_SETTLE_TICKS) {
@@ -550,6 +564,8 @@ public final class UiRuntimeAcceptanceHarness {
             return;
         }
         if (!classTabClicked && phaseTicks >= 2) {
+            // Real mouse click on the class tab. SquadScreen is rebuilt by the squad batch (B8),
+            // which can switch this to a uiId click ("terminal.tabs/classes").
             int utilityWidth = 22;
             int tabCount = 5;
             int tabGap = 3;
@@ -766,7 +782,7 @@ public final class UiRuntimeAcceptanceHarness {
                 }
                 deploymentPreflightQueued = true;
                 server.execute(() -> deploymentPreflightResult =
-                        describeDeploymentFixture(server, point));
+                        DeploymentFixtures.describe(server, point));
             }
             return;
         }
@@ -784,7 +800,7 @@ public final class UiRuntimeAcceptanceHarness {
                 deploymentInventorySeedQueued = true;
                 java.util.UUID playerId = minecraft.player.getUUID();
                 server.execute(() -> deploymentInventorySeedResult =
-                        seedDeploymentInventory(server, playerId));
+                        DeploymentFixtures.seedInventory(server, playerId));
             }
             return;
         }
@@ -825,7 +841,7 @@ public final class UiRuntimeAcceptanceHarness {
                 deploymentInventoryCheckQueued = true;
                 java.util.UUID playerId = minecraft.player.getUUID();
                 server.execute(() -> deploymentInventoryCheckResult =
-                        verifyDeploymentInventoryPolicy(server, playerId));
+                        DeploymentFixtures.verifyInventoryPolicy(server, playerId));
             }
             return;
         }
@@ -946,7 +962,7 @@ public final class UiRuntimeAcceptanceHarness {
                 baseSetupResult = "ERROR: Integrated overworld is unavailable";
                 return;
             }
-            BlockPos spawn = prepareSafeBaseFixture(overworld);
+            BlockPos spawn = DeploymentFixtures.prepareSafeBase(overworld);
             boolean temporaryOperator = !server.getPlayerList().isOp(player.getGameProfile());
             ActionResult result;
             try {
@@ -978,92 +994,6 @@ public final class UiRuntimeAcceptanceHarness {
             baseSetupResult = "ERROR: Base setup exception: " + throwable;
             WokInfantryMod.LOGGER.error("[UI ACCEPTANCE] Base setup failed", throwable);
         }
-    }
-
-    /**
-     * The UI seed is copied from the latest GameTest world and therefore must not assume that the
-     * shared spawn still has solid terrain. Build a tiny deterministic platform in the isolated
-     * copy so this acceptance run validates the real safe-spawn check instead of depending on
-     * stale fixture geometry.
-     */
-    private static BlockPos prepareSafeBaseFixture(ServerLevel level) {
-        BlockPos sharedSpawn = level.getSharedSpawnPos();
-        int minimumFeetY = level.getMinBuildHeight() + 2;
-        int maximumFeetY = level.getMaxBuildHeight() - 2;
-        // The copied GameTest seed can place shared spawn below sea level. Clearing only two
-        // water blocks creates a momentary air pocket that refills before the deploy packet is
-        // processed. Put the deterministic fixture above sea level so the second safety scan
-        // validates stable terrain rather than a transient fluid update.
-        int requestedFeetY = Math.max(sharedSpawn.getY(), level.getSeaLevel() + 4);
-        int feetY = Math.max(minimumFeetY, Math.min(maximumFeetY, requestedFeetY));
-        BlockPos feet = new BlockPos(sharedSpawn.getX(), feetY, sharedSpawn.getZ());
-        level.getChunkAt(feet);
-        for (int x = -2; x <= 2; x++) {
-            for (int z = -2; z <= 2; z++) {
-                BlockPos column = feet.offset(x, 0, z);
-                level.setBlockAndUpdate(column.below(), Blocks.STONE.defaultBlockState());
-                level.setBlockAndUpdate(column, Blocks.AIR.defaultBlockState());
-                level.setBlockAndUpdate(column.above(), Blocks.AIR.defaultBlockState());
-            }
-        }
-        return feet;
-    }
-
-    private static String describeDeploymentFixture(MinecraftServer server,
-                                                     DeploymentPoint point) {
-        ServerLevel level = server.getLevel(Level.OVERWORLD);
-        if (level == null || !Level.OVERWORLD.location().equals(point.dimension())) {
-            return "ERROR:unexpectedDimension=" + point.dimension();
-        }
-        BlockPos feet = point.position();
-        BlockPos floor = feet.below();
-        return "floor=" + level.getBlockState(floor)
-                + ",feet=" + level.getBlockState(feet)
-                + ",head=" + level.getBlockState(feet.above())
-                + ",floorFluid=" + level.getFluidState(floor)
-                + ",feetFluid=" + level.getFluidState(feet)
-                + ",headFluid=" + level.getFluidState(feet.above());
-    }
-
-    private static String seedDeploymentInventory(MinecraftServer server,
-                                                  java.util.UUID playerId) {
-        ServerPlayer player = server.getPlayerList().getPlayer(playerId);
-        if (player == null) {
-            return "ERROR: deployment inventory fixture player is offline";
-        }
-        player.getInventory().setItem(20, new ItemStack(Items.DIRT, 7));
-        player.getInventory().setItem(36, new ItemStack(Items.IRON_BOOTS));
-        player.getInventory().setItem(40, new ItemStack(Items.STICK, 3));
-        player.getEnderChestInventory().clearContent();
-        player.getEnderChestInventory().setItem(0, new ItemStack(Items.DIAMOND, 2));
-        player.getInventory().setChanged();
-        player.getEnderChestInventory().setChanged();
-        player.inventoryMenu.broadcastChanges();
-        return "OK: seeded body items and an isolated Ender Chest sentinel";
-    }
-
-    private static String verifyDeploymentInventoryPolicy(MinecraftServer server,
-                                                          java.util.UUID playerId) {
-        ServerPlayer player = server.getPlayerList().getPlayer(playerId);
-        if (player == null) {
-            return "ERROR: deployment inventory verification player is offline";
-        }
-        for (int slot : new int[]{20, 36, 40}) {
-            ItemStack stack = player.getInventory().getItem(slot);
-            if (!stack.isEmpty() && !KitProvenance.isIssued(stack)) {
-                return "ERROR: personal body item survived deployment at inventory slot " + slot;
-            }
-        }
-        ItemStack sentinel = player.getEnderChestInventory().getItem(0);
-        if (!sentinel.is(Items.DIAMOND) || sentinel.getCount() != 2) {
-            return "ERROR: deployment changed the Ender Chest sentinel";
-        }
-        for (int slot = 1; slot < player.getEnderChestInventory().getContainerSize(); slot++) {
-            if (!player.getEnderChestInventory().getItem(slot).isEmpty()) {
-                return "ERROR: deployment inserted a body item into Ender Chest slot " + slot;
-            }
-        }
-        return "OK: body items cleared and Ender Chest remained untouched";
     }
 
     private static void createMarkers() {
@@ -1185,7 +1115,9 @@ public final class UiRuntimeAcceptanceHarness {
             minecraft.setScreen(null);
         }
         if (!compactMapKeySent && phaseTicks >= 2 && minecraft.screen == null) {
-            clickBoundKey(GLFW.GLFW_KEY_M);
+            if (!pressMappedKey(minecraft, MAP_KEY_MAPPING, "map", false)) {
+                return;
+            }
             compactMapKeySent = true;
         }
         if (!(minecraft.screen instanceof TacticalMapScreen tacticalMapScreen)
@@ -1267,21 +1199,17 @@ public final class UiRuntimeAcceptanceHarness {
                 return;
             }
             supportButton.onPress();
-            if (!supportButtonPresent(tacticalMapScreen,
-                    new ResourceLocation("wok_commander_support",
-                            "millennium_f15ex_jdam_1000lb"))) {
+            if (!supportButtonPresent(tacticalMapScreen, SupportFixtures.JDAM_ID)) {
                 fail("Compact tactical map did not render the F-15EX JDAM support button");
                 return;
             }
-            if (!supportButtonPresent(tacticalMapScreen,
-                    new ResourceLocation("wok_commander_support",
-                            "f16c_gbu12_paveway_500lb"))) {
+            if (!supportButtonPresent(tacticalMapScreen, SupportFixtures.PAVEWAY_ID)) {
                 fail("Compact tactical map did not render the F-16C Paveway support button");
                 return;
             }
             if (!pavewayGuidanceFixtureReady(snapshot)) {
                 fail("Compact tactical map has no executing F-16C call with a "
-                        + PAVEWAY_FIXTURE_GUIDANCE_RADIUS + "m designation zone");
+                        + SupportFixtures.PAVEWAY_GUIDANCE_RADIUS + "m designation zone");
                 return;
             }
             compactSupportModeSelected = true;
@@ -1289,8 +1217,8 @@ public final class UiRuntimeAcceptanceHarness {
             observations.add("compactJdamSupportVisible=true");
             observations.add("compactPavewaySupportVisible=true");
             observations.add("compactPavewayGuidanceZone=R"
-                    + (int) PAVEWAY_FIXTURE_GUIDANCE_RADIUS + "/R"
-                    + (int) PAVEWAY_FIXTURE_RADIUS);
+                    + (int) SupportFixtures.PAVEWAY_GUIDANCE_RADIUS + "/R"
+                    + (int) SupportFixtures.PAVEWAY_RADIUS);
             return;
         }
 
@@ -1486,28 +1414,24 @@ public final class UiRuntimeAcceptanceHarness {
         if (minecraft.screen instanceof TacticalMapScreen tacticalMapScreen
                 && phaseTicks >= SCREEN_SETTLE_TICKS
                 && fullTerrainCoverageReady(tacticalMapScreen, SCREENSHOTS[5])) {
-            if (!supportButtonPresent(tacticalMapScreen,
-                    new ResourceLocation("wok_commander_support",
-                            "millennium_f15ex_jdam_1000lb"))) {
+            if (!supportButtonPresent(tacticalMapScreen, SupportFixtures.JDAM_ID)) {
                 fail("Large tactical map did not render the F-15EX JDAM support button");
                 return;
             }
-            if (!supportButtonPresent(tacticalMapScreen,
-                    new ResourceLocation("wok_commander_support",
-                            "f16c_gbu12_paveway_500lb"))) {
+            if (!supportButtonPresent(tacticalMapScreen, SupportFixtures.PAVEWAY_ID)) {
                 fail("Large tactical map did not render the F-16C Paveway support button");
                 return;
             }
             if (!pavewayGuidanceFixtureReady(ClientBattleState.snapshot())) {
                 fail("Large tactical map has no executing F-16C call with a "
-                        + PAVEWAY_FIXTURE_GUIDANCE_RADIUS + "m designation zone");
+                        + SupportFixtures.PAVEWAY_GUIDANCE_RADIUS + "m designation zone");
                 return;
             }
             observations.add("largeJdamSupportVisible=true");
             observations.add("largePavewaySupportVisible=true");
             observations.add("largePavewayGuidanceZone=R"
-                    + (int) PAVEWAY_FIXTURE_GUIDANCE_RADIUS + "/R"
-                    + (int) PAVEWAY_FIXTURE_RADIUS);
+                    + (int) SupportFixtures.PAVEWAY_GUIDANCE_RADIUS + "/R"
+                    + (int) SupportFixtures.PAVEWAY_RADIUS);
             transition(Phase.CAPTURE_LARGE_MAP);
         }
     }
@@ -1522,65 +1446,29 @@ public final class UiRuntimeAcceptanceHarness {
         if (snapshot == null) {
             return;
         }
-        ResourceLocation jdamId = new ResourceLocation("wok_commander_support",
-                "millennium_f15ex_jdam_1000lb");
-        ResourceLocation reconId = new ResourceLocation(
-                "wok_commander_support", "recon_satellite");
-        ResourceLocation pavewayId = new ResourceLocation(
-                "wok_commander_support", "f16c_gbu12_paveway_500lb");
-        TacticalSupportMapPresentationRegistry.register(reconId,
-                TacticalSupportMapPresentation.INTELLIGENCE);
-        TacticalSupportMapPresentationRegistry.register(jdamId,
-                TacticalSupportMapPresentation.OFFENSIVE);
-        TacticalSupportMapPresentationRegistry.register(pavewayId,
-                TacticalSupportMapPresentation.OFFENSIVE);
-        TacticalSupportMapPresentationRegistry.registerGuidanceRadius(pavewayId,
-                PAVEWAY_FIXTURE_GUIDANCE_RADIUS);
+        SupportFixtures.registerPresentations();
         boolean largeMap = phase == Phase.OPEN_LARGE_MAP || phase == Phase.CAPTURE_LARGE_MAP;
-        if (supportFixtureInstalled(snapshot, jdamId, largeMap)) {
+        if (supportFixtureInstalled(snapshot, largeMap)) {
             return;
         }
         FixtureAnchor anchor = fixtureAnchor(minecraft, snapshot);
         if (anchor == null) {
             return;
         }
-        List<SupportOptionView> options = List.of(
-                new SupportOptionView(
-                        reconId,
-                        "support.wok_commander_support.recon_satellite",
-                        "侦察卫星", "侦察卫星", SupportTargetMode.POINT, 150.0D,
-                        true, "", 0L, false),
-                new SupportOptionView(
-                        jdamId,
-                        "support.wok_commander_support.millennium_f15ex_jdam_1000lb",
-                        "千禧年 F-15EX 杰达姆 1000磅空袭", "F-15EX JDAM空袭",
-                        SupportTargetMode.POINT, 32.0D,
-                        true, "", 0L, true),
-                new SupportOptionView(
-                        pavewayId,
-                        "support.wok_commander_support.f16c_gbu12_paveway_500lb",
-                        "F-16C GBU-12 宝石路 II 500磅精准空袭", "F-16C 宝石路空袭",
-                        SupportTargetMode.POINT, PAVEWAY_FIXTURE_RADIUS,
-                        true, "", 0L, true));
         // A 320x240 map cannot hold two mission cards beside an R80 area, so the compact capture
         // keeps the JDAM call active on another dimension (its button and the active count are
         // unchanged) and leaves the F-16C zone alone on the map. In each capture the offsets keep
         // the F-16C rings and labels clear of the JDAM card, the fixed test markers, the scale
         // bar and the compass.
-        double jdamX = anchor.x() - 20.0D;
-        double jdamZ = anchor.z() - 80.0D;
-        SupportMissionView activeJdam = new SupportMissionView(
-                UUID.fromString("a9185f44-0dbd-4b0f-8ba7-d62f4397a14c"),
-                jdamId, largeMap ? anchor.dimension() : Level.NETHER.location(),
-                jdamX, jdamZ, jdamX, jdamZ, snapshot.support().serverGameTick() + 80L, 5);
-        double pavewayX = anchor.x() + (largeMap ? 0.0D : -48.0D);
-        double pavewayZ = anchor.z() + (largeMap ? 320.0D : -24.0D);
-        SupportMissionView executingPaveway = new SupportMissionView(
-                UUID.fromString("5b0c6f1e-7d42-4f0e-9a51-3c8e2f6d7b19"),
-                pavewayId, anchor.dimension(), pavewayX, pavewayZ, pavewayX, pavewayZ,
-                snapshot.support().serverGameTick(), 40);
-        SupportView support = new SupportView(options, List.of(activeJdam, executingPaveway),
-                snapshot.support().serverGameTick(),
+        long tick = snapshot.support().serverGameTick();
+        SupportMissionView activeJdam = SupportFixtures.jdamMission(
+                largeMap ? anchor.dimension() : Level.NETHER.location(),
+                anchor.x() - 20.0D, anchor.z() - 80.0D, tick);
+        SupportMissionView executingPaveway = SupportFixtures.pavewayMission(anchor.dimension(),
+                anchor.x() + (largeMap ? 0.0D : -48.0D),
+                anchor.z() + (largeMap ? 320.0D : -24.0D), tick);
+        SupportView support = new SupportView(SupportFixtures.options(),
+                List.of(activeJdam, executingPaveway), tick,
                 snapshot.support().structuralRevision() + 1L, true, "");
         ClientBattleState.update(snapshot.withSupport(support));
         if (minecraft.screen instanceof TacticalMapScreen tacticalMapScreen) {
@@ -1594,13 +1482,13 @@ public final class UiRuntimeAcceptanceHarness {
      * for the large capture and off it for the compact one; a server snapshot that replaced the
      * support view, or a switch between the two map sizes, installs it again.
      */
-    private static boolean supportFixtureInstalled(BattleSnapshot snapshot,
-                                                   ResourceLocation jdamId, boolean largeMap) {
-        if (snapshot.support().options().stream().noneMatch(option -> option.id().equals(jdamId))) {
+    private static boolean supportFixtureInstalled(BattleSnapshot snapshot, boolean largeMap) {
+        if (snapshot.support().options().stream()
+                .noneMatch(option -> option.id().equals(SupportFixtures.JDAM_ID))) {
             return false;
         }
         return snapshot.support().activeMissions().stream()
-                .filter(mission -> mission.supportId().equals(jdamId))
+                .filter(mission -> mission.supportId().equals(SupportFixtures.JDAM_ID))
                 .anyMatch(mission -> mission.dimension().equals(Level.NETHER.location())
                         != largeMap);
     }
@@ -1620,17 +1508,16 @@ public final class UiRuntimeAcceptanceHarness {
     }
 
     private static boolean pavewayGuidanceFixtureReady(BattleSnapshot snapshot) {
-        ResourceLocation pavewayId = new ResourceLocation("wok_commander_support",
-                "f16c_gbu12_paveway_500lb");
-        if (snapshot == null || TacticalSupportMapPresentationRegistry.guidanceRadius(pavewayId)
-                .orElse(0.0D) != PAVEWAY_FIXTURE_GUIDANCE_RADIUS) {
+        if (snapshot == null || TacticalSupportMapPresentationRegistry.guidanceRadius(
+                        SupportFixtures.PAVEWAY_ID).orElse(0.0D)
+                != SupportFixtures.PAVEWAY_GUIDANCE_RADIUS) {
             return false;
         }
         boolean outerRadiusMatches = snapshot.support().options().stream()
-                .anyMatch(option -> option.id().equals(pavewayId)
-                        && option.radius() == PAVEWAY_FIXTURE_RADIUS);
+                .anyMatch(option -> option.id().equals(SupportFixtures.PAVEWAY_ID)
+                        && option.radius() == SupportFixtures.PAVEWAY_RADIUS);
         return outerRadiusMatches && snapshot.support().activeMissions().stream()
-                .anyMatch(mission -> mission.supportId().equals(pavewayId));
+                .anyMatch(mission -> mission.supportId().equals(SupportFixtures.PAVEWAY_ID));
     }
 
     private static boolean supportButtonPresent(TacticalMapScreen screen,
@@ -1660,192 +1547,28 @@ public final class UiRuntimeAcceptanceHarness {
         }
     }
 
-    private static void openFormationVote(Minecraft minecraft, boolean compact) {
-        if (!formationAdministratorReady) {
-            MinecraftServer server = minecraft.getSingleplayerServer();
-            if (!formationAdministratorSetupQueued && server != null
-                    && minecraft.player != null) {
-                formationAdministratorSetupQueued = true;
-                java.util.UUID playerId = minecraft.player.getUUID();
-                server.execute(() -> {
-                    ServerPlayer player = server.getPlayerList().getPlayer(playerId);
-                    if (player != null) {
-                        server.getPlayerList().op(player.getGameProfile());
-                        formationAdministratorReady = true;
-                    }
-                });
-            }
-            return;
+    // ---- cases ----------------------------------------------------------------------------------
+
+    /** Runs the selected cases (legacy formation/administrator captures first, then surfaces). */
+    private static void runCases(Minecraft minecraft) {
+        if (caseRunner == null) {
+            caseRunner = new UiCaseRunner(selectedCases, TIER_FILTER,
+                    minecraft.getLanguageManager().getSelected(), LAYOUT_STRICT,
+                    observations::add);
+            WokInfantryMod.LOGGER.info("[UI ACCEPTANCE] Running {} case(s)", selectedCases.size());
         }
-        if (minecraft.player == null || !minecraft.player.hasPermissions(
-                BattleRules.ADMIN_PERMISSION_LEVEL)) {
-            return;
+        boolean done = caseRunner.tick(minecraft);
+        String position = caseRunner.position();
+        if (!position.equals(lastRunnerPosition)) {
+            lastRunnerPosition = position;
+            recordProgress("case " + position);
         }
-        if (!Objects.equals(formationScreenCompact, compact)) {
-            formationScreenCompact = compact;
-            setGuiScale(minecraft, compact ? 3 : 1);
-            minecraft.setScreen(new FormationSelectionScreen(
-                    formationVoteVisualFixture(compact), null));
-            return;
-        }
-        if (minecraft.screen instanceof FormationSelectionScreen formationScreen
-                && phaseTicks >= SCREEN_SETTLE_TICKS) {
-            boolean administratorVoteActionVisible = formationScreen.children().stream()
-                    .filter(Button.class::isInstance)
-                    .map(Button.class::cast)
-                    .anyMatch(button -> (compact ? "管理员开启投票" : "管理员锁定").equals(
-                            button.getMessage().getString()) && button.visible);
-            if (!administratorVoteActionVisible) {
-                fail("Formation vote screen omitted the administrator "
-                        + (compact ? "open" : "lock") + " control");
-                return;
-            }
-            observations.add((compact ? "compact" : "large")
-                    + "FormationLogicalSize=" + logicalSize(minecraft));
-            observations.add((compact ? "compact" : "large")
-                    + "FormationAdministratorLockVisible=true");
-            transition(compact ? Phase.CAPTURE_COMPACT_FORMATION
-                    : Phase.CAPTURE_LARGE_FORMATION);
+        if (done) {
+            transition(Phase.WAIT_FOR_FILES);
         }
     }
 
-    private static void openAdminLoadout(Minecraft minecraft, boolean compact) {
-        if (phaseTicks == 1) {
-            setGuiScale(minecraft, compact ? 3 : 1);
-            minecraft.setScreen(new AdminLoadoutScreen(adminLoadoutVisualFixture()));
-        }
-        if (minecraft.screen instanceof AdminLoadoutScreen
-                && phaseTicks >= SCREEN_SETTLE_TICKS) {
-            AdminLoadoutScreen screen = (AdminLoadoutScreen) minecraft.screen;
-            boolean addSlot = screen.children().stream().filter(Button.class::isInstance)
-                    .map(Button.class::cast)
-                    .anyMatch(button -> "+槽位".equals(button.getMessage().getString()));
-            boolean editSlot = screen.children().stream().filter(Button.class::isInstance)
-                    .map(Button.class::cast)
-                    .anyMatch(button -> "设置".equals(button.getMessage().getString()));
-            if (!addSlot || !editSlot) {
-                fail("Administrator loadout omitted dynamic slot controls");
-                return;
-            }
-            observations.add((compact ? "compact" : "large")
-                    + "AdminLoadoutLogicalSize=" + logicalSize(minecraft));
-            observations.add((compact ? "compact" : "large")
-                    + "AdminDynamicSlotControls=true");
-            transition(compact ? Phase.CAPTURE_COMPACT_ADMIN_LOADOUT
-                    : Phase.CAPTURE_LARGE_ADMIN_LOADOUT);
-        }
-    }
-
-    private static void openCompactAdminClassSettings(Minecraft minecraft) {
-        if (phaseTicks == 1 && minecraft.screen instanceof AdminLoadoutScreen screen) {
-            Button manage = screen.children().stream().filter(Button.class::isInstance)
-                    .map(Button.class::cast)
-                    .filter(button -> "职业管理".equals(button.getMessage().getString()))
-                    .findFirst().orElse(null);
-            if (manage == null) {
-                fail("Compact administrator screen has no profession-management button");
-                return;
-            }
-            manage.onPress();
-        }
-        if (minecraft.screen instanceof AdminLoadoutScreen
-                && phaseTicks >= SCREEN_SETTLE_TICKS) {
-            observations.add("compactAdminProfessionSettings=true");
-            transition(Phase.CAPTURE_COMPACT_ADMIN_CLASS_SETTINGS);
-        }
-    }
-
-    private static LoadoutSnapshot adminLoadoutVisualFixture() {
-        LoadoutConfigData loadouts = LoadoutConfigData.defaultConfig();
-        loadouts.findClass("assault").orElseThrow().addSlot(new LoadoutSlotDefinition(
-                "helmet", "防弹头盔", LoadoutInventoryTarget.ARMOR_HEAD, false));
-        loadouts.classes().add(new LoadoutClassDefinition(
-                "custom_visual_medic", "战斗医疗员", true, 1));
-        FormationConfigData formations = FormationClassEditor.apply(
-                FormationConfigData.defaultConfig(), "academy", "default",
-                "assault", "突破手", 8, FormationClassEditAction.UPDATE);
-        formations = FormationClassEditor.apply(formations, "academy", "default",
-                "custom_visual_medic", "战斗医疗员", 1,
-                FormationClassEditAction.CREATE);
-        return new LoadoutSnapshot(loadouts, new PlayerLoadoutData(), true, formations);
-    }
-
-    /** Display-only fixture exercising all five fixed categories without inventing game values. */
-    private static FormationSelectionSnapshot formationVoteVisualFixture(
-            boolean awaitingAdministratorOpen) {
-        List<FormationSelectionView> academy = List.of(
-                new FormationSelectionView("millennium_seminar_mobile",
-                        "千禧年研讨会机动部队",
-                        "由千禧年研讨会统一组建的先头力量，承担快速部署与快速反应任务。"
-                                + "她们以多型斯特赖克（Stryker）轮式战车为核心，在航空兵支援下可于战斗初期"
-                                + "投入大量轻型装甲载具；但后劲不足、单兵装备较为平庸，不擅长长时间消耗战。",
-                        "wok_infantry:textures/gui/formations/"
-                                + "millennium_seminar_mobile.png",
-                        "mechanized", "机械化步兵营", 0, 40, true, "",
-                        List.of("突击兵", "支援兵", "工程兵", "侦察兵"),
-                        List.of("Alpha–Echo，每队 8 人"),
-                        List.of("M1296 龙骑兵 ×3（不可再生）",
-                                "M1128 MGS ×2（不可再生）",
-                                "悍马 M2 ×2（5分钟）", "小鸟 机枪版（10分钟）"),
-                        List.of("支援：无")),
-                visualFormation("academy_light_infantry", "学院轻步兵营", "轻步兵框架",
-                        "infantry", "步兵营", List.of("多兵站能力：待具体编制配置",
-                                "队包冷却：待具体编制配置", "支援：未配置")),
-                visualFormation("academy_armored", "学院装甲营", "装甲框架",
-                        "armored", "装甲营", List.of("兵站上限：待具体编制配置",
-                                "坦克补充时间：待配置", "支援：未配置")),
-                visualFormation("academy_motorized", "学院摩步营", "摩托化框架",
-                        "motorized", "摩步营", List.of("固定兵站：待配置",
-                                "载具运输增援", "移动重生载具：未配置")),
-                visualFormation("academy_special", "学院特种编制", "特种编制框架",
-                        "special", "特种编制", List.of("能力：待具体编制配置",
-                                "支援：未配置")));
-        List<FormationSelectionView> caesar = List.of(
-                visualFormation("caesar_infantry", "凯撒步兵营", "步兵框架",
-                        "infantry", "步兵营", List.of("兵站：待配置", "支援：未配置")),
-                visualFormation("caesar_armored", "凯撒装甲营", "装甲框架",
-                        "armored", "装甲营", List.of("坦克数量：待配置", "支援：未配置")),
-                visualFormation("caesar_motorized", "凯撒摩步营", "摩托化框架",
-                        "motorized", "摩步营", List.of("载具：待配置")),
-                new FormationSelectionView("caesar_234_mechanized",
-                        "234机械化作战单元",
-                        "凯撒重工是凯撒公司旗下的重型军事生产企业，战争前几乎包揽了整个基沃托斯的"
-                                + "军火与军用车辆生产，234机械化作战单元则是其核心作战力量之一。"
-                                + "该单元以CV90步兵战车伴随推进，并配备略显过时的豹2A4主战坦克，"
-                                + "作战职能偏向机动轻步兵。其装备水平尚可，擅长在复杂战线中进行混战缠斗；"
-                                + "但重型载具数量有限、战损补充缓慢，一旦脱离步兵协同或分散投入，"
-                                + "便容易失去进攻节奏。",
-                        "mechanized", "机械化步兵营", 0, 40, true, "",
-                        List.of("突击兵", "支援兵", "工程兵", "侦察兵"),
-                        List.of("Alpha–Echo，每队 8 人"),
-                        List.of("豹2A4 ×1（15分钟）", "CV90 ×2（15分钟）",
-                                "装甲无武装 HMMWV ×2（5分钟）"),
-                        List.of("支援：通用编制支援")),
-                visualFormation("caesar_special", "凯撒特种编制", "特种编制框架",
-                        "special", "特种编制", List.of("能力：待配置")));
-        return new FormationSelectionSnapshot(1L, true, "academy", "",
-                awaitingAdministratorOpen ? FormationVotePhase.NOT_STARTED
-                        : FormationVotePhase.OPEN,
-                true, awaitingAdministratorOpen ? "" : "millennium_seminar_mobile", "",
-                awaitingAdministratorOpen ? Map.of()
-                        : Map.of("millennium_seminar_mobile", 5,
-                        "academy_light_infantry", 4, "academy_armored", 3,
-                        "academy_motorized", 2, "academy_special", 1),
-                List.of(new FactionSelectionView("academy", "学院军", "蓝队", 15, 40,
-                                true, academy),
-                        new FactionSelectionView("caesar", "凯撒军", "红队", 14, 40,
-                                true, caesar)));
-    }
-
-    private static FormationSelectionView visualFormation(String id, String name,
-                                                           String description,
-                                                           String categoryId,
-                                                           String categoryName,
-                                                           List<String> capabilities) {
-        return new FormationSelectionView(id, name, description, categoryId, categoryName,
-                0, 40, true, "", List.of("待配置"), List.of("待配置"),
-                List.of("待配置"), capabilities);
-    }
+    // ---- captures -------------------------------------------------------------------------------
 
     private static void captureScreen(Minecraft minecraft, Class<? extends Screen> expected,
                                       String fileName, Phase next) throws IOException {
@@ -1854,8 +1577,8 @@ public final class UiRuntimeAcceptanceHarness {
         // evaluating the next live screen.
         if (fileName.equals(waitingForCapture)) {
             if (fileUpdated(minecraft, fileName)) {
-                observations.add(fileName + "=" + screenshotCallbacks.getOrDefault(fileName,
-                        "written"));
+                String saved = UiCapture.saveMessage(fileName);
+                observations.add(fileName + "=" + (saved.isEmpty() ? "written" : saved));
                 waitingForCapture = null;
                 transition(next);
             }
@@ -1874,12 +1597,25 @@ public final class UiRuntimeAcceptanceHarness {
         if (!buttonsFit(minecraft, minecraft.screen)) {
             return;
         }
-        if (waitingForCapture == null && pendingCapture == null
+        if (waitingForCapture == null && !UiCapture.busy()
                 && phaseTicks >= SCREEN_SETTLE_TICKS) {
             waitingForCapture = fileName;
-            pendingCapture = new PendingCapture(fileName, minecraft.screen);
-            return;
+            String language = minecraft.getLanguageManager().getSelected();
+            UiCapture.arm(fileName, minecraft.screen,
+                    result -> liveCaptures.add(liveResult(fileName, result, language)));
         }
+    }
+
+    /** A live-flow capture: probed and reported, never failing the run on layout. */
+    private static UiCaseResult liveResult(String fileName, UiCapture.Result capture,
+                                           String language) {
+        String stem = fileName.substring(0, fileName.length() - ".png".length());
+        String tier = stem.substring(stem.lastIndexOf('_') + 1);
+        return new UiCaseResult("legacy." + stem.substring("wok_ui_".length()), "legacy",
+                stem.substring("wok_ui_".length()), "legacy", tier, tier, fileName, false, false,
+                false, capture.screen().getClass().getSimpleName(), capture.layoutWidth(),
+                capture.layoutHeight(), capture.baseScale(), capture.guiScale(), capture.frame(),
+                UiLayoutReport.check(capture.frame(), UiLayoutReport.Options.of(language)), null);
     }
 
     private static boolean fileUpdated(Minecraft minecraft, String fileName) throws IOException {
@@ -1891,15 +1627,19 @@ public final class UiRuntimeAcceptanceHarness {
         return Files.getLastModifiedTime(file).toMillis() > baseline;
     }
 
+    /**
+     * Vanilla-style buttons of the live screens must fit their label. WOK keys
+     * (TacticalBoardButton, BattleUiButton) ellipsize and offer the full label as a tooltip; the
+     * layout probe checks those instead (control-truncated-no-tip, control-text-overflow).
+     */
     private static boolean buttonsFit(Minecraft minecraft, Screen screen) {
         for (Button button : screen.children().stream()
                 .filter(Button.class::isInstance).map(Button.class::cast).toList()) {
             if (!button.visible) {
                 continue;
             }
-            // TacticalBoardButton deliberately clips its displayed label to the exact inner
-            // width. Its full narration component can therefore be wider without visual overflow.
-            if (button.getClass().getSimpleName().equals("TacticalBoardButton")) {
+            String type = button.getClass().getSimpleName();
+            if (type.equals("TacticalBoardButton") || type.equals("BattleUiButton")) {
                 continue;
             }
             int available = Math.max(1, button.getWidth() - 6);
@@ -1914,9 +1654,23 @@ public final class UiRuntimeAcceptanceHarness {
     }
 
     private static void waitForFiles(Minecraft minecraft) throws IOException {
-        for (String fileName : SCREENSHOTS) {
-            if (!fileUpdated(minecraft, fileName)) {
+        if (runLiveFlow) {
+            for (String fileName : SCREENSHOTS) {
+                if (!fileUpdated(minecraft, fileName)) {
+                    return;
+                }
+            }
+        }
+        List<UiCaseResult> caseResults = caseRunner == null ? List.of() : caseRunner.results();
+        for (UiCaseResult result : caseResults) {
+            if (!result.fileName().isEmpty() && !fileUpdated(minecraft, result.fileName())) {
                 return;
+            }
+        }
+        for (UiCaseResult result : caseResults) {
+            if (!result.fileName().isEmpty()) {
+                String saved = UiCapture.saveMessage(result.fileName());
+                observations.add(result.fileName() + "=" + (saved.isEmpty() ? "written" : saved));
             }
         }
         BattleSnapshot snapshot = requireSnapshot();
@@ -1930,6 +1684,15 @@ public final class UiRuntimeAcceptanceHarness {
         observations.add("finalActiveMarkers=" + ClientBattleState.activeMarkers().size());
         observations.add("framebuffer=" + minecraft.getWindow().getWidth() + "x"
                 + minecraft.getWindow().getHeight());
+        List<UiCaseResult> failures = caseRunner == null ? List.of() : caseRunner.failures();
+        if (!failures.isEmpty()) {
+            fail("UI case(s) failed: " + String.join("; ", failures.stream()
+                    .map(result -> result.caseId() + "@" + result.tier()
+                            + (result.failure() != null ? " " + result.failure()
+                            : " " + result.violations().size() + " layout violation(s)"))
+                    .toList()));
+            return;
+        }
         transition(Phase.FINISH);
     }
 
@@ -1939,8 +1702,12 @@ public final class UiRuntimeAcceptanceHarness {
             return;
         }
         if (!resultWritten) {
+            if (temporaryOperatorCleanup != null) {
+                observations.add("temporaryOperatorCleanup=" + temporaryOperatorCleanup);
+            }
             writeResult(minecraft, success);
             resultWritten = true;
+            recordProgress("result=" + (success ? "PASS" : "FAIL"));
             WokInfantryMod.LOGGER.info("[UI ACCEPTANCE] {}: {}",
                     success ? "PASS" : "FAIL", success ? "all captures written" : failureReason);
             phaseTicks = 0;
@@ -1948,6 +1715,7 @@ public final class UiRuntimeAcceptanceHarness {
         }
         if (phaseTicks >= 20) {
             phase = Phase.STOPPED;
+            UiLayoutProbe.disable();
             minecraft.stop();
         }
     }
@@ -1957,6 +1725,7 @@ public final class UiRuntimeAcceptanceHarness {
             return;
         }
         cleanupQueued = true;
+        UiCapture.cancel();
         MinecraftServer server = minecraft.getSingleplayerServer();
         java.util.UUID playerId = minecraft.player == null ? null : minecraft.player.getUUID();
         if (server == null || playerId == null) {
@@ -1965,6 +1734,8 @@ public final class UiRuntimeAcceptanceHarness {
         }
         server.execute(() -> {
             ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+            boolean temporaryOperator = administratorToolTemporaryOperator
+                    || ServerFixtures.temporaryOperatorGranted();
             if (player != null) {
                 if (player.getInventory().getItem(6)
                         .is(InfantryItems.DEPLOYMENT_BEACON.get())) {
@@ -1974,22 +1745,41 @@ public final class UiRuntimeAcceptanceHarness {
                         || player.getInventory().getItem(7).is(Items.RED_DYE)) {
                     player.getInventory().setItem(7, ItemStack.EMPTY);
                 }
-                if (administratorToolTemporaryOperator
+                // Every OP grant the fixture made (beacon tools, formation administrator view)
+                // is revoked here; a player who was already an operator keeps the status.
+                boolean revoked = false;
+                if (temporaryOperator
                         && server.getPlayerList().isOp(player.getGameProfile())) {
                     server.getPlayerList().deop(player.getGameProfile());
+                    revoked = true;
                 }
+                temporaryOperatorCleanup = !temporaryOperator ? "none"
+                        : revoked ? "revoked" : "alreadyRevoked";
                 player.getInventory().setChanged();
                 player.inventoryMenu.broadcastChanges();
             }
             administratorToolTemporaryOperator = false;
+            ServerFixtures.clearTemporaryOperator();
             cleanupFinished = true;
         });
     }
 
     private static void writeResult(Minecraft minecraft, boolean success) throws IOException {
-        Path resultDirectory = minecraft.gameDirectory.toPath().resolve("ui-test-results");
+        Path resultDirectory = minecraft.gameDirectory.toPath().resolve(RESULT_DIRECTORY);
         Files.createDirectories(resultDirectory);
         Path result = resultDirectory.resolve("wok_ui_acceptance.txt");
+        List<UiCaseResult> captures = new ArrayList<>(liveCaptures);
+        if (caseRunner != null) {
+            captures.addAll(caseRunner.results());
+        }
+        int violations = 0;
+        int strictViolations = 0;
+        for (UiCaseResult capture : captures) {
+            violations += capture.violations().size();
+            if (capture.strict()) {
+                strictViolations += capture.violations().size();
+            }
+        }
         List<String> lines = new ArrayList<>();
         lines.add("status=" + (success ? "PASS" : "FAIL"));
         lines.add("autoDeploymentObserved=" + autoDeploymentObserved);
@@ -1997,10 +1787,20 @@ public final class UiRuntimeAcceptanceHarness {
         if (!success) {
             lines.add("failure=" + Objects.requireNonNullElse(failureReason, "unknown"));
         }
+        lines.add("captures=" + captures.size() + " layoutViolations=" + violations
+                + " strictLayoutViolations=" + strictViolations);
         lines.addAll(observations);
         Files.write(result, lines, StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
                 StandardOpenOption.WRITE);
+        try {
+            UiResultWriter.write(resultDirectory, captures, success ? "PASS" : "FAIL",
+                    minecraft.getLanguageManager().getSelected(),
+                    PREVIEW_SHOTS.isEmpty() ? null : Path.of(PREVIEW_SHOTS));
+        } catch (IOException | RuntimeException exception) {
+            WokInfantryMod.LOGGER.warn("[UI ACCEPTANCE] Could not write the layout report",
+                    exception);
+        }
     }
 
     private static BattleSnapshot requireSnapshot() {
@@ -2026,8 +1826,20 @@ public final class UiRuntimeAcceptanceHarness {
         minecraft.resizeDisplay();
     }
 
-    private static void clickBoundKey(int glfwKey) {
-        KeyMapping.click(InputConstants.Type.KEYSYM.getOrCreate(glfwKey));
+    /**
+     * Presses the key a WOK mapping is bound to (see {@link UiInputDriver#clickMappedKey}) and
+     * records the mapping, its key and its conflicts; fails the run when it cannot be pressed.
+     */
+    private static boolean pressMappedKey(Minecraft minecraft, String mappingName, String label,
+                                          boolean terminalFallback) {
+        UiInputDriver.KeyPress press = UiInputDriver.clickMappedKey(minecraft, mappingName,
+                terminalFallback);
+        if (!press.ok()) {
+            fail(press.failure());
+            return false;
+        }
+        observations.add(label + "KeyMapping=" + press.describe());
+        return true;
     }
 
     private static String logicalSize(Minecraft minecraft) {
@@ -2042,11 +1854,11 @@ public final class UiRuntimeAcceptanceHarness {
 
     private static void transition(Phase next) {
         WokInfantryMod.LOGGER.info("[UI ACCEPTANCE] {} -> {}", phase, next);
+        Phase previous = phase;
         phase = next;
         phaseTicks = 0;
-        pendingCapture = null;
-        renderedCapture = null;
         waitingForCapture = null;
+        recordProgress(previous + " -> " + next);
     }
 
     private static void fail(String reason) {
@@ -2055,17 +1867,57 @@ public final class UiRuntimeAcceptanceHarness {
         }
         failureReason = reason;
         WokInfantryMod.LOGGER.error("[UI ACCEPTANCE] FAIL in {}: {}", phase, reason);
+        Phase failedPhase = phase;
         phase = Phase.FAIL;
         phaseTicks = 0;
-        pendingCapture = null;
-        renderedCapture = null;
+        UiCapture.cancel();
         waitingForCapture = null;
+        recordProgress("FAIL in " + failedPhase);
+    }
+
+    /**
+     * Rewrites {@code ui-test-results/wok_ui_progress.txt}. If the client exits before
+     * {@link #writeResult} runs, Gradle reports the last phase from this file.
+     */
+    private static void recordProgress(String event) {
+        if (progressHistory.size() >= PROGRESS_HISTORY_LIMIT) {
+            progressHistory.remove(0);
+        }
+        progressHistory.add("t=" + totalTicks + " " + event);
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null || minecraft.gameDirectory == null) {
+            return;
+        }
+        List<String> lines = new ArrayList<>();
+        lines.add("phase=" + phase);
+        lines.add("totalTicks=" + totalTicks);
+        lines.add("screen=" + (minecraft.screen == null ? "world"
+                : minecraft.screen.getClass().getSimpleName()));
+        if (caseRunner != null) {
+            lines.add("case=" + caseRunner.position());
+        }
+        lines.add("updatedAt=" + Instant.now());
+        if (failureReason != null) {
+            lines.add("failure=" + failureReason);
+        }
+        lines.add("history:");
+        lines.addAll(progressHistory);
+        try {
+            Path directory = minecraft.gameDirectory.toPath().resolve(RESULT_DIRECTORY);
+            Files.createDirectories(directory);
+            Files.write(directory.resolve(PROGRESS_FILE), lines, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE);
+        } catch (IOException | RuntimeException exception) {
+            if (!progressWriteFailed) {
+                progressWriteFailed = true;
+                WokInfantryMod.LOGGER.warn("[UI ACCEPTANCE] Could not write progress file",
+                        exception);
+            }
+        }
     }
 
     private record FixtureAnchor(ResourceLocation dimension, double x, double z) {
-    }
-
-    private record PendingCapture(String fileName, Screen screen) {
     }
 
     private record TerrainCoverage(int loaded, int desired) {
@@ -2100,16 +1952,8 @@ public final class UiRuntimeAcceptanceHarness {
         CAPTURE_LARGE_LOADOUT,
         OPEN_LARGE_MAP,
         CAPTURE_LARGE_MAP,
-        OPEN_COMPACT_FORMATION,
-        CAPTURE_COMPACT_FORMATION,
-        OPEN_LARGE_FORMATION,
-        CAPTURE_LARGE_FORMATION,
-        OPEN_COMPACT_ADMIN_LOADOUT,
-        CAPTURE_COMPACT_ADMIN_LOADOUT,
-        OPEN_COMPACT_ADMIN_CLASS_SETTINGS,
-        CAPTURE_COMPACT_ADMIN_CLASS_SETTINGS,
-        OPEN_LARGE_ADMIN_LOADOUT,
-        CAPTURE_LARGE_ADMIN_LOADOUT,
+        /** Legacy formation/administrator captures and every surface case. */
+        RUN_CASES,
         WAIT_FOR_FILES,
         FINISH,
         FAIL,

@@ -4,6 +4,7 @@ import com.wok.infantry.battle.BattleSnapshot;
 import com.wok.infantry.battle.ClassQuotaView;
 import com.wok.infantry.battle.Faction;
 import com.wok.infantry.battle.MemberPosition;
+import com.wok.infantry.battle.MemberState;
 import com.wok.infantry.battle.MemberView;
 import com.wok.infantry.battle.PermissionView;
 import com.wok.infantry.battle.SquadCallsign;
@@ -177,6 +178,9 @@ public final class BattleSnapshotCodec {
     }
 
     private static void writeMember(FriendlyByteBuf buffer, MemberView member) {
+        requireMemberHealthRange(member.health(), member.maxHealth());
+        requireMemberState(member.online(), member.alive(), member.state());
+        requireHealthRatio(member.healthRatio());
         buffer.writeUUID(member.playerId());
         buffer.writeUtf(member.name(), BattleNetworkLimits.MAX_PLAYER_NAME_LENGTH);
         buffer.writeBoolean(member.online());
@@ -187,6 +191,8 @@ public final class BattleSnapshotCodec {
         buffer.writeBoolean(member.commander());
         writeNullableEnumId(buffer, member.squad(), SquadCallsign::id);
         buffer.writeUtf(member.classId(), BattleNetworkLimits.MAX_CLASS_ID_LENGTH);
+        buffer.writeUtf(member.state().id(), BattleNetworkLimits.MAX_ENUM_ID_LENGTH);
+        buffer.writeFloat(member.healthRatio());
     }
 
     private static MemberView readMember(FriendlyByteBuf buffer) {
@@ -196,15 +202,45 @@ public final class BattleSnapshotCodec {
         boolean alive = buffer.readBoolean();
         float health = readFiniteFloat(buffer, "member health");
         float maxHealth = readFiniteFloat(buffer, "member max health");
-        if (health < 0.0F || maxHealth < 1.0F || health > maxHealth * 100.0F) {
-            throw invalid("member health range", health + "/" + maxHealth);
-        }
+        requireMemberHealthRange(health, maxHealth);
         boolean leader = buffer.readBoolean();
         boolean commander = buffer.readBoolean();
         SquadCallsign squad = readNullableEnumId(buffer, SquadCallsign::byId, "member squad");
         String classId = buffer.readUtf(BattleNetworkLimits.MAX_CLASS_ID_LENGTH);
+        MemberState state = readRequiredEnumId(buffer, MemberState::byId, "member state");
+        requireMemberState(online, alive, state);
+        float healthRatio = buffer.readFloat();
+        requireHealthRatio(healthRatio);
         return new MemberView(playerId, name, online, alive, health, maxHealth,
-                leader, commander, squad, classId);
+                leader, commander, squad, classId, state, healthRatio);
+    }
+
+    private static void requireMemberHealthRange(float health, float maxHealth) {
+        if (!Float.isFinite(health) || !Float.isFinite(maxHealth)
+                || health < 0.0F || maxHealth < 1.0F || health > maxHealth * 100.0F) {
+            throw invalid("member health range", health + "/" + maxHealth);
+        }
+    }
+
+    /**
+     * The state must agree with the legacy booleans it refines: offline exactly when not online,
+     * and a body in the battle (deployed or downed) exactly when online and alive.
+     */
+    private static void requireMemberState(boolean online, boolean alive, MemberState state) {
+        if (state == null || (state == MemberState.OFFLINE) == online
+                || state.hasVitals() != (online && alive)) {
+            throw invalid("member state", state + " online=" + online + " alive=" + alive);
+        }
+    }
+
+    /** A health ratio is either exactly unknown (-1) or a finite value in [0, 1]. */
+    private static void requireHealthRatio(float ratio) {
+        if (ratio == MemberView.UNKNOWN_HEALTH_RATIO) {
+            return;
+        }
+        if (!Float.isFinite(ratio) || ratio < 0.0F || ratio > 1.0F) {
+            throw invalid("member health ratio", ratio);
+        }
     }
 
     private static void writePosition(FriendlyByteBuf buffer, MemberPosition position) {
@@ -443,10 +479,9 @@ public final class BattleSnapshotCodec {
             if (optionsById.putIfAbsent(option.id(), option) != null) {
                 throw invalid("duplicate support option", option.id());
             }
+            // "Active but unavailable" is the read-only option of a mission the viewer's
+            // formation does not open (SupportOptionView#readOnlyMission); same wire layout.
             if (option.active()) {
-                if (!option.providerAvailable()) {
-                    throw invalid("active unavailable support option", option.id());
-                }
                 activeOptionIds.add(option.id());
             }
             writeSupportId(buffer, option.id());
@@ -535,9 +570,6 @@ public final class BattleSnapshotCodec {
             long readyAt = readNonNegativeLong(buffer, "support ready tick");
             boolean active = buffer.readBoolean();
             if (active) {
-                if (!providerAvailable) {
-                    throw invalid("active unavailable support option", id);
-                }
                 activeOptionIds.add(id);
             }
             SupportOptionView option = new SupportOptionView(id, translationKey, fallbackName,

@@ -1,5 +1,6 @@
 package com.wok.infantry.network.battle;
 
+import com.mojang.logging.LogUtils;
 import com.wok.infantry.WokInfantryMod;
 import com.wok.infantry.battle.ActionResult;
 import com.wok.infantry.battle.BattleRules;
@@ -39,7 +40,9 @@ import net.minecraftforge.network.NetworkDirection;
 import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
+import org.slf4j.Logger;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Map;
 
@@ -47,7 +50,8 @@ import java.util.Map;
 public final class BattleNetwork {
     public static final ResourceLocation CHANNEL_NAME =
             ResourceLocation.fromNamespaceAndPath(WokInfantryMod.MOD_ID, "battle");
-    public static final String PROTOCOL_VERSION = "18";
+    /** 19: squad members carry a {@code MemberState} and a trusted health ratio. */
+    public static final String PROTOCOL_VERSION = "19";
 
     public static final int C2S_OPEN_ID = 0;
     public static final int C2S_SNAPSHOT_REQUEST_ID = 1;
@@ -80,6 +84,8 @@ public final class BattleNetwork {
             .simpleChannel();
 
     private static boolean initialized;
+    private static final Logger LOGGER = LogUtils.getLogger();
+    private static final PerRecipientDelivery SNAPSHOT_FAILURES = new PerRecipientDelivery();
 
     private BattleNetwork() {
     }
@@ -290,8 +296,10 @@ public final class BattleNetwork {
         if (service.server() != server) {
             throw new IllegalArgumentException("BattleService belongs to a different server");
         }
-        runOnServer(server, () -> server.getPlayerList().getPlayers().forEach(player ->
-                sendSnapshotToPlayer(service, player, BattleOpenTarget.NONE)));
+        runOnServer(server, () -> PerRecipientDelivery.deliverEach(
+                List.copyOf(server.getPlayerList().getPlayers()),
+                player -> sendSnapshotToPlayer(service, player, BattleOpenTarget.NONE),
+                BattleNetwork::reportSnapshotFailure));
     }
 
     /**
@@ -311,12 +319,26 @@ public final class BattleNetwork {
                 sendSnapshotToPlayer(service, actor, BattleOpenTarget.NONE);
                 return;
             }
-            server.getPlayerList().getPlayers().stream()
-                    .filter(player -> service.factionOf(player.getUUID())
-                            .filter(faction::equals).isPresent())
-                    .forEach(player -> sendSnapshotToPlayer(service, player,
-                            BattleOpenTarget.NONE));
+            PerRecipientDelivery.deliverEach(server.getPlayerList().getPlayers().stream()
+                            .filter(player -> service.factionOf(player.getUUID())
+                                    .filter(faction::equals).isPresent())
+                            .toList(),
+                    player -> sendSnapshotToPlayer(service, player, BattleOpenTarget.NONE),
+                    BattleNetwork::reportSnapshotFailure);
         });
+    }
+
+    /** One player's snapshot failed; everyone else in the same pass still receives theirs. */
+    private static void reportSnapshotFailure(ServerPlayer player, RuntimeException failure) {
+        String playerName = player.getGameProfile().getName();
+        if (SNAPSHOT_FAILURES.firstReport(failure)) {
+            LOGGER.error("Could not send the battle snapshot to {}; the other players in this "
+                    + "pass still received theirs. Repeats of this failure within five minutes "
+                    + "are logged at debug level only.", playerName, failure);
+        } else {
+            LOGGER.debug("Battle snapshot for {} failed again: {}", playerName,
+                    PerRecipientDelivery.signature(failure));
+        }
     }
 
     /** Shared result routing for deployment intents handled on the server main thread. */

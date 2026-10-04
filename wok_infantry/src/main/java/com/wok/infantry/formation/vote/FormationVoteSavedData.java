@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 /** World-persistent formation ballots. Match policy remains outside this storage boundary. */
 public final class FormationVoteSavedData extends SavedData {
@@ -96,6 +97,12 @@ public final class FormationVoteSavedData extends SavedData {
 
     public FormationVoteSnapshot snapshot(Faction faction, UUID viewerId) {
         return ledger.snapshot(faction, viewerId);
+    }
+
+    /** Snapshot whose tally only counts {@code eligibleVoter}s (current faction members). */
+    public FormationVoteSnapshot snapshot(Faction faction, UUID viewerId,
+                                          Predicate<UUID> eligibleVoter) {
+        return ledger.snapshot(faction, viewerId, eligibleVoter);
     }
 
     public void clear(Faction faction) {

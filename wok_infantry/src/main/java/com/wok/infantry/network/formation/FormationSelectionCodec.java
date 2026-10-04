@@ -1,15 +1,25 @@
 package com.wok.infantry.network.formation;
 
+import com.wok.infantry.formation.FormationSupportPolicy;
 import com.wok.infantry.formation.selection.FactionSelectionView;
+import com.wok.infantry.formation.selection.FormationDetailView;
 import com.wok.infantry.formation.selection.FormationSelectionSnapshot;
 import com.wok.infantry.formation.selection.FormationSelectionView;
+import com.wok.infantry.formation.selection.FormationSupportLabel;
 import com.wok.infantry.formation.vote.FormationVotePhase;
 import net.minecraft.network.FriendlyByteBuf;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/** Strict bounded codec for the public selection catalog. */
+/**
+ * Strict bounded codec for the public selection catalog.
+ *
+ * <p>Formation protocol 5 appends, per faction, its ballot phase and locked formation (sent to
+ * every viewer, without the tally), per formation the structured {@link FormationDetailView}, and
+ * at the end the support name table. Display text is clipped with {@link #clip} like every other
+ * catalog string, so an overlong admin-authored name can never make the snapshot unencodable.
+ */
 public final class FormationSelectionCodec {
     public static final int MAX_ID = 64;
     public static final int MAX_DISPLAY_NAME = 40;
@@ -19,6 +29,19 @@ public final class FormationSelectionCodec {
     public static final int MAX_FACTIONS = 16;
     public static final int MAX_FORMATIONS = 32;
     public static final int MAX_SUMMARIES = 64;
+    /** Entries per structured detail list (classes, vehicles, squads, mobile spawns, supports). */
+    public static final int MAX_DETAIL_ENTRIES = 64;
+    /** Support name table size (the support registry itself holds at most 32). */
+    public static final int MAX_SUPPORT_LABELS = 64;
+    /** Upper bound of a vehicle replenishment cooldown on the wire (one week). */
+    public static final int MAX_COOLDOWN_SECONDS = 604_800;
+    /** Upper bound of a formation respawn delay on the wire. */
+    public static final int MAX_RESPAWN_SECONDS = 3_600;
+    /** Upper bound of outposts and rally packs on the wire. */
+    public static final int MAX_DEPLOYABLES = 64;
+    /** Upper bound of a class quota, a vehicle group's count and a squad capacity on the wire. */
+    public static final int MAX_DETAIL_COUNT = 128;
+    private static final int MAX_PHASE = 16;
 
     private FormationSelectionCodec() {
     }
@@ -28,7 +51,7 @@ public final class FormationSelectionCodec {
         buffer.writeBoolean(snapshot.selectionRequired());
         buffer.writeUtf(snapshot.selectedFactionId(), MAX_ID);
         buffer.writeUtf(snapshot.selectedFormationId(), MAX_ID);
-        buffer.writeUtf(snapshot.votePhase().name(), 16);
+        buffer.writeUtf(snapshot.votePhase().name(), MAX_PHASE);
         buffer.writeBoolean(snapshot.voteChangeAllowed());
         buffer.writeUtf(snapshot.ownVoteFormationId(), MAX_ID);
         buffer.writeUtf(snapshot.lockedFormationId(), MAX_ID);
@@ -48,6 +71,13 @@ public final class FormationSelectionCodec {
             buffer.writeVarInt(faction.population());
             buffer.writeVarInt(faction.capacity());
             buffer.writeBoolean(faction.available());
+            if ((faction.votePhase() == FormationVotePhase.LOCKED)
+                    == faction.lockedFormationId().isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Faction ballot phase and locked formation disagree");
+            }
+            buffer.writeUtf(faction.votePhase().name(), MAX_PHASE);
+            buffer.writeUtf(requireId(faction.lockedFormationId(), false), MAX_ID);
             writeCount(buffer, faction.formations().size(), MAX_FORMATIONS, "formations");
             for (FormationSelectionView formation : faction.formations()) {
                 buffer.writeUtf(formation.id(), MAX_ID);
@@ -64,7 +94,14 @@ public final class FormationSelectionCodec {
                 writeStrings(buffer, formation.squads());
                 writeStrings(buffer, formation.vehicles());
                 writeStrings(buffer, formation.capabilities());
+                writeDetail(buffer, formation.detail());
             }
+        }
+        writeCount(buffer, snapshot.supportLabels().size(), MAX_SUPPORT_LABELS, "support labels");
+        for (FormationSupportLabel label : snapshot.supportLabels()) {
+            buffer.writeUtf(clip(label.id(), MAX_SUMMARY), MAX_SUMMARY);
+            buffer.writeUtf(clip(label.translationKey(), MAX_SUMMARY), MAX_SUMMARY);
+            buffer.writeUtf(clip(label.fallbackName(), MAX_SUMMARY), MAX_SUMMARY);
         }
     }
 
@@ -76,12 +113,7 @@ public final class FormationSelectionCodec {
         boolean required = buffer.readBoolean();
         String selectedFaction = buffer.readUtf(MAX_ID);
         String selectedFormation = buffer.readUtf(MAX_ID);
-        FormationVotePhase votePhase;
-        try {
-            votePhase = FormationVotePhase.valueOf(buffer.readUtf(16));
-        } catch (IllegalArgumentException invalidPhase) {
-            throw new IllegalArgumentException("Invalid formation vote phase", invalidPhase);
-        }
+        FormationVotePhase votePhase = readPhase(buffer);
         boolean voteChangeAllowed = buffer.readBoolean();
         String ownVote = buffer.readUtf(MAX_ID);
         String lockedFormation = buffer.readUtf(MAX_ID);
@@ -103,6 +135,12 @@ public final class FormationSelectionCodec {
             int population = readBoundedPopulation(buffer, "faction population");
             int capacity = readBoundedCapacity(buffer, "faction capacity");
             boolean available = buffer.readBoolean();
+            FormationVotePhase factionPhase = readPhase(buffer);
+            String factionLocked = requireId(buffer.readUtf(MAX_ID), false);
+            if ((factionPhase == FormationVotePhase.LOCKED) == factionLocked.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Faction ballot phase and locked formation disagree");
+            }
             int formationCount = readCount(buffer, MAX_FORMATIONS, "formations");
             List<FormationSelectionView> formations = new ArrayList<>(formationCount);
             for (int formationIndex = 0; formationIndex < formationCount; formationIndex++) {
@@ -121,13 +159,20 @@ public final class FormationSelectionCodec {
                 List<String> squads = readStrings(buffer);
                 List<String> vehicles = readStrings(buffer);
                 List<String> capabilities = readStrings(buffer);
+                FormationDetailView detail = readDetail(buffer);
                 formations.add(new FormationSelectionView(formationId, formationName,
                         formationDescription, formationIcon, categoryId, categoryDisplayName,
                         formationPopulation, formationCapacity, formationAvailable, reason,
-                        classes, squads, vehicles, capabilities));
+                        classes, squads, vehicles, capabilities, detail));
             }
             factions.add(new FactionSelectionView(factionId, displayName, description,
-                    population, capacity, available, formations));
+                    population, capacity, available, formations, factionPhase, factionLocked));
+        }
+        int labelCount = readCount(buffer, MAX_SUPPORT_LABELS, "support labels");
+        List<FormationSupportLabel> labels = new ArrayList<>(labelCount);
+        for (int index = 0; index < labelCount; index++) {
+            labels.add(new FormationSupportLabel(buffer.readUtf(MAX_SUMMARY),
+                    buffer.readUtf(MAX_SUMMARY), buffer.readUtf(MAX_SUMMARY)));
         }
         if (!selectedFaction.isEmpty()) {
             requireId(selectedFaction, false);
@@ -143,7 +188,7 @@ public final class FormationSelectionCodec {
         }
         return new FormationSelectionSnapshot(generation, required, selectedFaction,
                 selectedFormation, votePhase, voteChangeAllowed, ownVote, lockedFormation,
-                voteTally, factions);
+                voteTally, factions, labels);
     }
 
     public static String requireId(String value, boolean required) {
@@ -165,6 +210,90 @@ public final class FormationSelectionCodec {
             }
         }
         return value;
+    }
+
+    private static void writeDetail(FriendlyByteBuf buffer, FormationDetailView detail) {
+        writeCount(buffer, detail.classQuotas().size(), MAX_DETAIL_ENTRIES, "class quotas");
+        for (FormationDetailView.ClassQuota quota : detail.classQuotas()) {
+            buffer.writeUtf(clip(quota.displayName(), MAX_DISPLAY_NAME), MAX_DISPLAY_NAME);
+            writeBounded(buffer, quota.squadLimit(), 0, MAX_DETAIL_COUNT, "class squad limit");
+        }
+        writeCount(buffer, detail.vehicles().size(), MAX_DETAIL_ENTRIES, "vehicles");
+        for (FormationDetailView.Vehicle vehicle : detail.vehicles()) {
+            buffer.writeUtf(clip(vehicle.displayName(), MAX_DISPLAY_NAME), MAX_DISPLAY_NAME);
+            writeBounded(buffer, vehicle.count(), 1, MAX_DETAIL_COUNT, "vehicle count");
+            writeBounded(buffer, vehicle.cooldownSeconds(), FormationDetailView.Vehicle.NEVER,
+                    MAX_COOLDOWN_SECONDS, "vehicle cooldown");
+        }
+        writeCount(buffer, detail.squads().size(), MAX_DETAIL_ENTRIES, "squads");
+        for (FormationDetailView.Squad squad : detail.squads()) {
+            buffer.writeUtf(clip(squad.displayName(), MAX_DISPLAY_NAME), MAX_DISPLAY_NAME);
+            writeBounded(buffer, squad.capacity(), 1, MAX_DETAIL_COUNT, "squad capacity");
+        }
+        writeBounded(buffer, detail.outpostMax(), 0, MAX_DEPLOYABLES, "outposts");
+        writeBounded(buffer, detail.rallyMax(), 0, MAX_DEPLOYABLES, "rally packs");
+        writeBounded(buffer, detail.respawnDelaySeconds(), FormationDetailView.INHERIT_RESPAWN,
+                MAX_RESPAWN_SECONDS, "respawn delay");
+        writeCount(buffer, detail.mobileSpawnVehicles().size(), MAX_DETAIL_ENTRIES,
+                "mobile spawn vehicles");
+        detail.mobileSpawnVehicles().forEach(name ->
+                buffer.writeUtf(clip(name, MAX_DISPLAY_NAME), MAX_DISPLAY_NAME));
+        buffer.writeUtf(detail.supportMode().name(), MAX_PHASE);
+        writeCount(buffer, detail.supportIds().size(), MAX_DETAIL_ENTRIES, "support ids");
+        detail.supportIds().forEach(id -> buffer.writeUtf(clip(id, MAX_SUMMARY), MAX_SUMMARY));
+    }
+
+    private static FormationDetailView readDetail(FriendlyByteBuf buffer) {
+        int classCount = readCount(buffer, MAX_DETAIL_ENTRIES, "class quotas");
+        List<FormationDetailView.ClassQuota> classes = new ArrayList<>(classCount);
+        for (int index = 0; index < classCount; index++) {
+            classes.add(new FormationDetailView.ClassQuota(buffer.readUtf(MAX_DISPLAY_NAME),
+                    readBounded(buffer, 0, MAX_DETAIL_COUNT, "class squad limit")));
+        }
+        int vehicleCount = readCount(buffer, MAX_DETAIL_ENTRIES, "vehicles");
+        List<FormationDetailView.Vehicle> vehicles = new ArrayList<>(vehicleCount);
+        for (int index = 0; index < vehicleCount; index++) {
+            vehicles.add(new FormationDetailView.Vehicle(buffer.readUtf(MAX_DISPLAY_NAME),
+                    readBounded(buffer, 1, MAX_DETAIL_COUNT, "vehicle count"),
+                    readBounded(buffer, FormationDetailView.Vehicle.NEVER, MAX_COOLDOWN_SECONDS,
+                            "vehicle cooldown")));
+        }
+        int squadCount = readCount(buffer, MAX_DETAIL_ENTRIES, "squads");
+        List<FormationDetailView.Squad> squads = new ArrayList<>(squadCount);
+        for (int index = 0; index < squadCount; index++) {
+            squads.add(new FormationDetailView.Squad(buffer.readUtf(MAX_DISPLAY_NAME),
+                    readBounded(buffer, 1, MAX_DETAIL_COUNT, "squad capacity")));
+        }
+        int outposts = readBounded(buffer, 0, MAX_DEPLOYABLES, "outposts");
+        int rally = readBounded(buffer, 0, MAX_DEPLOYABLES, "rally packs");
+        int respawn = readBounded(buffer, FormationDetailView.INHERIT_RESPAWN,
+                MAX_RESPAWN_SECONDS, "respawn delay");
+        int mobileCount = readCount(buffer, MAX_DETAIL_ENTRIES, "mobile spawn vehicles");
+        List<String> mobile = new ArrayList<>(mobileCount);
+        for (int index = 0; index < mobileCount; index++) {
+            mobile.add(buffer.readUtf(MAX_DISPLAY_NAME));
+        }
+        FormationSupportPolicy.Mode mode;
+        try {
+            mode = FormationSupportPolicy.Mode.valueOf(buffer.readUtf(MAX_PHASE));
+        } catch (IllegalArgumentException invalidMode) {
+            throw new IllegalArgumentException("Invalid formation support mode", invalidMode);
+        }
+        int supportCount = readCount(buffer, MAX_DETAIL_ENTRIES, "support ids");
+        List<String> supports = new ArrayList<>(supportCount);
+        for (int index = 0; index < supportCount; index++) {
+            supports.add(buffer.readUtf(MAX_SUMMARY));
+        }
+        return new FormationDetailView(classes, vehicles, squads, outposts, rally, respawn,
+                mobile, mode, supports);
+    }
+
+    private static FormationVotePhase readPhase(FriendlyByteBuf buffer) {
+        try {
+            return FormationVotePhase.valueOf(buffer.readUtf(MAX_PHASE));
+        } catch (IllegalArgumentException invalidPhase) {
+            throw new IllegalArgumentException("Invalid formation vote phase", invalidPhase);
+        }
     }
 
     private static void writeStrings(FriendlyByteBuf buffer, List<String> values) {
@@ -209,6 +338,23 @@ public final class FormationSelectionCodec {
             throw new IllegalArgumentException("Invalid " + name + " count: " + count);
         }
         return count;
+    }
+
+    private static void writeBounded(FriendlyByteBuf buffer, int value, int minimum, int maximum,
+                                     String name) {
+        if (value < minimum || value > maximum) {
+            throw new IllegalArgumentException("Invalid " + name + ": " + value);
+        }
+        buffer.writeVarInt(value);
+    }
+
+    private static int readBounded(FriendlyByteBuf buffer, int minimum, int maximum,
+                                   String name) {
+        int value = buffer.readVarInt();
+        if (value < minimum || value > maximum) {
+            throw new IllegalArgumentException("Invalid " + name + ": " + value);
+        }
+        return value;
     }
 
     private static int readBoundedPopulation(FriendlyByteBuf buffer, String name) {

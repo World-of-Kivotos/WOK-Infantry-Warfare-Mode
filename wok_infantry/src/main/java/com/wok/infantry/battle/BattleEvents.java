@@ -80,6 +80,12 @@ public final class BattleEvents {
         if (event.getEntity() instanceof ServerPlayer player) {
             BattleService.get(player).ifPresent(service -> {
                 ActionResult admission = service.onPlayerConnected(player);
+                if (admission.success()) {
+                    // vote-01: a faction member without a formation who logs in after the
+                    // faction's lock receives the locked formation and goes to deployment.
+                    FormationService.get(player).ifPresent(formations ->
+                            formations.inheritLockedFormation(player));
+                }
                 DeploymentService deployment = DeploymentService.get(player).orElse(null);
                 boolean participant = admission.success()
                         && service.factionOf(player.getUUID()).isPresent()
@@ -103,6 +109,12 @@ public final class BattleEvents {
                             && !deployment.isActive(player.getUUID())
                             ? BattleOpenTarget.DEPLOYMENT : BattleOpenTarget.NONE;
                     BattleNetwork.sendSnapshotToPlayer(service, player, target);
+                }
+                if (participant && FormationNetwork.isInitialized()) {
+                    // The client keeps no catalog across logins: send it once without opening
+                    // anything, so the terminal's "编制" tab shows the locked result at once
+                    // instead of waiting for it.
+                    FormationNetwork.sendSnapshotToPlayer(player, false);
                 }
             });
         }

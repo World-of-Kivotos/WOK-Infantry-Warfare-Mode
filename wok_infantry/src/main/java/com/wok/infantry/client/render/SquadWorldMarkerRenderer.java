@@ -5,9 +5,10 @@ import com.wok.infantry.battle.BattleSnapshot;
 import com.wok.infantry.battle.MemberView;
 import com.wok.infantry.battle.SquadCallsign;
 import com.wok.infantry.client.ClientBattleState;
-import com.wok.infantry.client.screen.SquadScreen;
+import com.wok.infantry.client.screen.SquadLabels;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.entity.player.Player;
@@ -15,9 +16,15 @@ import net.minecraftforge.client.event.RenderPlayerEvent;
 
 import java.util.UUID;
 
-/** Local-only squad badge; it never changes vanilla team or global glowing state. */
+/**
+ * Local-only squad badge; it never changes vanilla team or global glowing state. Hidden with F1
+ * like the rest of the HUD and drawn full-bright, so it reads the same at night and in caves.
+ */
 public final class SquadWorldMarkerRenderer {
     private static final double MAX_DISTANCE_SQUARED = 96.0D * 96.0D;
+    /** Same cyan as the own squad on the tactical map. */
+    private static final int LABEL_COLOR = 0xFF7FE8FF;
+    private static final int LABEL_BACKGROUND = 0x66081012;
 
     private SquadWorldMarkerRenderer() {
     }
@@ -27,7 +34,7 @@ public final class SquadWorldMarkerRenderer {
         Player viewer = minecraft.player;
         Player target = event.getEntity();
         BattleSnapshot snapshot = ClientBattleState.snapshot();
-        if (viewer == null || snapshot == null) {
+        if (viewer == null || snapshot == null || minecraft.options.hideGui) {
             return;
         }
 
@@ -39,13 +46,11 @@ public final class SquadWorldMarkerRenderer {
 
         MutableComponent label = Component.literal("◆ ")
                 .append(member.name()).append(" · ")
-                .append(SquadScreen.callsign(snapshot.ownSquad()))
-                .append(" · ").append(SquadScreen.className(snapshot, member.classId()));
-        if (member.commander()) {
-            label.append(" ").append(Component.translatable(
-                    "hud.wok_infantry.role.commander_short"));
-        } else if (member.leader()) {
-            label.append(" ").append(Component.translatable("hud.wok_infantry.role.leader_short"));
+                .append(SquadLabels.callsign(snapshot.ownSquad()))
+                .append(" · ").append(SquadLabels.className(snapshot, member.classId()));
+        MutableComponent roles = roleSuffix(member);
+        if (roles != null) {
+            label.append(" ").append(roles);
         }
 
         PoseStack poseStack = event.getPoseStack();
@@ -56,10 +61,18 @@ public final class SquadWorldMarkerRenderer {
 
         Font font = minecraft.font;
         float x = -font.width(label) / 2.0F;
-        font.drawInBatch(label, x, 0.0F, 0xFF7FE8FF, false,
+        font.drawInBatch(label, x, 0.0F, LABEL_COLOR, false,
                 poseStack.last().pose(), event.getMultiBufferSource(),
-                Font.DisplayMode.NORMAL, 0x66081012, event.getPackedLight());
+                Font.DisplayMode.NORMAL, LABEL_BACKGROUND, LightTexture.FULL_BRIGHT);
         poseStack.popPose();
+    }
+
+    /**
+     * Role tags after the label: squad leader, faction commander, or both ("队长·指挥") for a
+     * member who holds both; null for a plain member.
+     */
+    static MutableComponent roleSuffix(MemberView member) {
+        return member == null ? null : SquadLabels.roleShort(member.leader(), member.commander());
     }
 
     /**

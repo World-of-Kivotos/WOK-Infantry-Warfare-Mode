@@ -19,14 +19,21 @@ import com.wok.infantry.formation.FormationDefinition;
 import com.wok.infantry.formation.FormationLoadoutEditAction;
 import com.wok.infantry.formation.FormationLoadoutRuleEditor;
 import com.wok.infantry.formation.FormationSquadDefinition;
+import com.wok.infantry.formation.FormationSupportPolicy;
 import com.wok.infantry.formation.FormationVehicleDefinition;
 import com.wok.infantry.formation.vote.FormationVotePhase;
+import com.wok.infantry.formation.vote.FormationVotePolicy;
 import com.wok.infantry.formation.vote.FormationVoteResult;
 import com.wok.infantry.formation.vote.FormationVoteSavedData;
 import com.wok.infantry.formation.vote.FormationVoteSnapshot;
 import com.wok.infantry.formation.selection.FactionSelectionView;
+import com.wok.infantry.formation.selection.FormationDetailView;
 import com.wok.infantry.formation.selection.FormationSelectionSnapshot;
 import com.wok.infantry.formation.selection.FormationSelectionView;
+import com.wok.infantry.formation.selection.FormationSupportLabel;
+import com.wok.infantry.network.formation.FormationSelectionCodec;
+import com.wok.infantry.support.SupportDefinition;
+import com.wok.infantry.support.SupportService;
 import com.wok.infantry.formation.vehicle.FormationVehicleProvider;
 import com.wok.infantry.formation.vehicle.SuperbWarfareVehicleGate;
 import com.wok.infantry.formation.vehicle.SuperbWarfareVehicleService;
@@ -37,6 +44,7 @@ import com.wok.infantry.formation.vehicle.VehicleOwnership;
 import com.wok.infantry.formation.vehicle.VehiclePersistentData;
 import com.wok.infantry.formation.vehicle.VehicleRemovalObservation;
 import com.wok.infantry.formation.vehicle.VehicleReplenishmentSavedData;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -55,8 +63,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
+import java.util.function.Predicate;
 
 /** Server-authoritative catalog and atomic faction/formation selection coordinator. */
 public final class FormationService {
@@ -373,10 +383,17 @@ public final class FormationService {
             return ActionResult.failure(ActionResult.Code.FORMATION_UNAVAILABLE,
                     "编制投票存档尚未就绪");
         }
-        return voteResult(voteData.open(faction.battleSide(), candidates, allowVoteChange));
+        ActionResult opened = voteResult(voteData.open(faction.battleSide(), candidates,
+                allowVoteChange));
+        return opened.success()
+                ? ActionResult.ok(faction.displayName() + "编制投票已开启") : opened;
     }
 
-    /** Player's first-step faction choice while formation assignment waits for the shared result. */
+    /**
+     * Player's faction choice. While the faction still votes only the faction slot is reserved;
+     * once its shared formation is locked the player joins straight into the locked formation
+     * with its default class (vote-01), bounded by the locked formation's capacity.
+     */
     public ActionResult selectFaction(ServerPlayer player, long clientGeneration,
                                       String publicFactionId) {
         if (player == null || player.server != server) {
@@ -397,14 +414,207 @@ public final class FormationService {
             return ActionResult.failure(ActionResult.Code.FORMATION_UNAVAILABLE,
                     "战局服务尚未就绪");
         }
-        ActionResult joined = battle.selectFaction(player, faction.battleSide(),
-                faction.maxPlayers());
+        Faction side = faction.battleSide();
+        FormationVoteSnapshot vote = voteData == null ? null : voteData.snapshot(side, null);
+        PlayerRecord before = battle.playerRecord(player.getUUID()).orElse(null);
+        ActionResult joined = routeFactionChoice(faction, vote,
+                formation -> availability(faction, formation).available(),
+                new FactionSeat() {
+                    @Override
+                    public ActionResult joinFaction(Faction target, int factionCapacity) {
+                        return battle.selectFaction(player, target, factionCapacity);
+                    }
+
+                    @Override
+                    public ActionResult joinShared(Faction target, int factionCapacity,
+                                                   String formationId, int formationCapacity) {
+                        return battle.joinFactionWithSharedFormation(player, target,
+                                factionCapacity, formationId, formationCapacity);
+                    }
+                });
         if (!joined.success()) {
             return joined;
         }
         DeploymentService.get(server).ifPresent(deployment ->
                 deployment.onPlayerConnected(player));
-        return joined;
+        PlayerRecord after = battle.playerRecord(player.getUUID()).orElse(null);
+        return sameSeat(before, after) ? alreadyInFaction(faction, after.formationId()) : joined;
+    }
+
+    /** Whether a request left the player's faction and formation exactly as they were. */
+    static boolean sameSeat(PlayerRecord before, PlayerRecord after) {
+        return before != null && after != null && before.faction() == after.faction()
+                && before.formationId().equals(after.formationId());
+    }
+
+    /**
+     * Answer to choosing the faction the player is already in: says so instead of "已加入…", and
+     * the network layer then answers only the sender (NET-1).
+     */
+    static ActionResult alreadyInFaction(FactionDefinition faction, String formationId) {
+        String formationName = formationId == null || formationId.isBlank() ? ""
+                : faction.findFormation(formationId).map(FormationDefinition::displayName)
+                .orElse(formationId);
+        return ActionResult.ok("你已在" + faction.displayName()
+                + (formationName.isEmpty() ? "，等待编制投票" : "，本局编制：" + formationName));
+    }
+
+    /**
+     * Seat operations of a faction choice; the battle service in production, a recording stand-in
+     * in unit tests ({@link #routeFactionChoice}, {@link #routeInheritance}).
+     */
+    interface FactionSeat {
+        /** Reserves only the faction slot (the formation follows the faction's lock). */
+        ActionResult joinFaction(Faction side, int factionCapacity);
+
+        /** Joins straight into the faction's shared formation with its default class. */
+        ActionResult joinShared(Faction side, int factionCapacity, String formationId,
+                                int formationCapacity);
+
+        /**
+         * Takes a member without a formation out of {@code side} so it can choose again; used
+         * when the faction's locked formation is already full at login. Returns whether the
+         * player was released.
+         */
+        default boolean releasePendingFaction(Faction side) {
+            return false;
+        }
+    }
+
+    /**
+     * Routing of {@link #selectFaction}, apart from the server singletons so it is unit-tested:
+     * while the faction votes only the faction slot is reserved; once its ballot is locked the
+     * player joins straight into the locked formation, bounded by its capacity (vote-01), and an
+     * unusable locked formation refuses the join instead of leaving the player without one.
+     */
+    static ActionResult routeFactionChoice(FactionDefinition faction, FormationVoteSnapshot vote,
+                                           Predicate<FormationDefinition> available,
+                                           FactionSeat seat) {
+        Faction side = faction.battleSide();
+        if (vote == null || vote.phase() != FormationVotePhase.LOCKED) {
+            ActionResult joined = seat.joinFaction(side, faction.maxPlayers());
+            return joined.success()
+                    ? ActionResult.ok("已加入" + faction.displayName() + "，等待编制投票")
+                    : joined;
+        }
+        FormationDefinition locked = faction.findFormation(vote.lockedFormationId())
+                .orElse(null);
+        if (locked == null || !available.test(locked)) {
+            return ActionResult.failure(ActionResult.Code.FORMATION_UNAVAILABLE,
+                    faction.displayName() + "本局锁定的编制当前不可用，请联系管理员");
+        }
+        ActionResult joined = seat.joinShared(side, faction.maxPlayers(), locked.id(),
+                locked.capacity());
+        if (!joined.success() && joined.code() == ActionResult.Code.FACTION_FULL) {
+            int capacity = FormationVotePolicy.joinCapacity(faction.maxPlayers(),
+                    FormationVotePhase.LOCKED, locked.capacity());
+            return ActionResult.failure(ActionResult.Code.FACTION_FULL,
+                    faction.displayName() + "本局已锁定编制“" + locked.displayName()
+                            + "”，最多 " + capacity + " 人");
+        }
+        return joined.success()
+                ? ActionResult.ok("已加入" + faction.displayName() + "，本局编制："
+                + locked.displayName())
+                : joined;
+    }
+
+    /**
+     * Gives a faction member without a formation the faction's locked formation (vote-01): a
+     * player who joined, was released or was reconciled before the lock and comes back after it
+     * goes straight to deployment. Called on login before participation is decided.
+     *
+     * @return whether the locked formation was applied
+     */
+    public boolean inheritLockedFormation(ServerPlayer player) {
+        if (player == null || player.server != server || voteData == null) {
+            return false;
+        }
+        BattleService battle = BattleService.get(server).orElse(null);
+        PlayerRecord record = battle == null ? null
+                : battle.playerRecord(player.getUUID()).orElse(null);
+        if (record == null || record.faction() == null) {
+            return false;
+        }
+        FactionDefinition faction = catalog.findFaction(record.faction()).orElse(null);
+        if (faction == null || !faction.enabled()) {
+            return false;
+        }
+        FormationVoteSnapshot vote = voteData.snapshot(record.faction(), null);
+        Optional<ActionResult> inherited = routeInheritance(faction, vote,
+                !record.formationId().isBlank(),
+                formation -> availability(faction, formation).available(),
+                new FactionSeat() {
+                    @Override
+                    public ActionResult joinFaction(Faction side, int factionCapacity) {
+                        return ActionResult.failure(ActionResult.Code.INVALID_TARGET,
+                                "登录补继承只会下发锁定编制");
+                    }
+
+                    @Override
+                    public ActionResult joinShared(Faction side, int factionCapacity,
+                                                   String formationId, int formationCapacity) {
+                        return battle.joinFactionWithSharedFormation(player, side,
+                                factionCapacity, formationId, formationCapacity);
+                    }
+
+                    @Override
+                    public boolean releasePendingFaction(Faction side) {
+                        return battle.releasePendingFaction(player.getUUID(), side);
+                    }
+                });
+        if (inherited.isEmpty()) {
+            return false;
+        }
+        if (!inherited.get().success()) {
+            if (battle.factionOf(player.getUUID()).isEmpty()) {
+                // Released from a full locked faction (a member left over from an older save):
+                // the login continues as a player without a faction, who chooses again.
+                WokInfantryMod.LOGGER.info("Released {} from {}: its locked formation {} is full",
+                        player.getGameProfile().getName(), faction.id(),
+                        vote.lockedFormationId());
+                player.sendSystemMessage(Component.literal(inherited.get().message()));
+            } else {
+                WokInfantryMod.LOGGER.warn("Could not give {} the locked formation {}/{}: {}",
+                        player.getGameProfile().getName(), faction.id(),
+                        vote.lockedFormationId(), inherited.get().message());
+            }
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Routing of {@link #inheritLockedFormation} (unit-tested): a member of {@code faction}
+     * without a formation joins the locked formation when the ballot is locked and that
+     * formation is usable; otherwise nothing happens (empty). When the locked formation is
+     * already full the member is released from the faction instead of staying in it without a
+     * formation, unable to deploy or to choose another faction (NET-8).
+     */
+    static Optional<ActionResult> routeInheritance(FactionDefinition faction,
+                                                   FormationVoteSnapshot vote,
+                                                   boolean hasFormation,
+                                                   Predicate<FormationDefinition> available,
+                                                   FactionSeat seat) {
+        FormationVotePhase phase = vote == null ? FormationVotePhase.NOT_STARTED : vote.phase();
+        FormationDefinition locked = phase == FormationVotePhase.LOCKED
+                ? faction.findFormation(vote.lockedFormationId()).orElse(null) : null;
+        boolean lockedAvailable = locked != null && available.test(locked);
+        if (!FormationVotePolicy.inheritsLockedFormation(true, hasFormation, phase,
+                lockedAvailable)) {
+            return Optional.empty();
+        }
+        ActionResult joined = seat.joinShared(faction.battleSide(), faction.maxPlayers(),
+                locked.id(), locked.capacity());
+        if (!joined.success() && joined.code() == ActionResult.Code.FACTION_FULL
+                && seat.releasePendingFaction(faction.battleSide())) {
+            int capacity = FormationVotePolicy.joinCapacity(faction.maxPlayers(),
+                    FormationVotePhase.LOCKED, locked.capacity());
+            return Optional.of(ActionResult.failure(ActionResult.Code.FACTION_FULL,
+                    faction.displayName() + "本局已锁定编制“" + locked.displayName() + "”，最多 "
+                            + capacity + " 人，已经满员；你已退出" + faction.displayName()
+                            + "，请重新选择阵营"));
+        }
+        return Optional.of(joined);
     }
 
     /** Casts one server-validated vote; the caller explicitly owns the change-vote policy. */
@@ -434,7 +644,49 @@ public final class FormationService {
             return ActionResult.failure(ActionResult.Code.FORMATION_UNAVAILABLE,
                     "编制投票存档尚未就绪");
         }
-        return voteResult(voteData.cast(record.faction(), player.getUUID(), formation.id()));
+        // One admission rule for server and client (FormationVotePolicy.voteBlock): a full
+        // faction does not stop its own members from voting (vote-08); a formation that cannot
+        // hold the whole faction is refused before it could win (vote-11). The ledger still
+        // records the vote and keeps its own checks.
+        int members = battle.factionSize(record.faction());
+        FormationVoteSnapshot vote = voteData.snapshot(record.faction(), player.getUUID());
+        ActionResult refused = voteRefusal(FormationVotePolicy.voteBlock(true, vote.phase(),
+                        vote.candidates().contains(formation.id()), formation.capacity(), members,
+                        vote.ownVote(), formation.id(), vote.voteChangeAllowed()),
+                vote.phase(), faction, formation, members);
+        if (refused != null) {
+            return refused;
+        }
+        ActionResult cast = voteResult(voteData.cast(record.faction(), player.getUUID(),
+                formation.id()));
+        return cast.success()
+                ? ActionResult.ok(cast.message() + "：" + formation.displayName()) : cast;
+    }
+
+    /**
+     * Server answer to a refused vote ({@code null} when {@code block} is NONE). Codes and texts
+     * match what the ballot ledger answered before the shared rule was used here; a locked
+     * ballot now says that it is locked instead of "not open yet".
+     */
+    static ActionResult voteRefusal(FormationVotePolicy.VoteBlock block, FormationVotePhase phase,
+                                    FactionDefinition faction, FormationDefinition formation,
+                                    int members) {
+        return switch (block) {
+            case NONE -> null;
+            case NOT_MEMBER -> ActionResult.failure(ActionResult.Code.FORMATION_NOT_FOUND,
+                    "只能为自己当前阵营的有效具体编制投票");
+            case NOT_OPEN -> ActionResult.failure(ActionResult.Code.FORMATION_LOCKED,
+                    phase == FormationVotePhase.LOCKED ? faction.displayName()
+                            + "本局编制已锁定，投票已结束" : "该阵营的编制投票尚未开启");
+            case NOT_CANDIDATE -> ActionResult.failure(ActionResult.Code.FORMATION_NOT_FOUND,
+                    "具体编制不在当前候选列表中");
+            case CAPACITY_SHORTFALL -> ActionResult.failure(ActionResult.Code.FORMATION_FULL,
+                    "“" + formation.displayName() + "”最多容纳 " + formation.capacity()
+                            + " 人，" + faction.displayName() + "已有 " + members
+                            + " 人，不能作为共享编制");
+            case CHANGE_NOT_ALLOWED -> ActionResult.failure(ActionResult.Code.NOT_AUTHORIZED,
+                    "当前投票规则不允许改票");
+        };
     }
 
     /** Locks an explicit result without inventing a winner or tie-break rule. */
@@ -604,6 +856,15 @@ public final class FormationService {
 
     public ActionResult select(ServerPlayer player, long clientGeneration,
                                String publicFactionId, String formationId) {
+        FactionDefinition target = catalog.findFaction(publicFactionId).orElse(null);
+        FormationVoteSnapshot targetVote = target == null || voteData == null ? null
+                : voteData.snapshot(target.battleSide(), null);
+        if (targetVote != null && targetVote.phase() == FormationVotePhase.LOCKED
+                && !targetVote.lockedFormationId().equals(formationId)) {
+            // Checked before joining, so a refused request never changes the faction.
+            return ActionResult.failure(ActionResult.Code.FORMATION_LOCKED,
+                    "阵营共享编制已经锁定，不能提交其他编制");
+        }
         ActionResult joined = selectFaction(player, clientGeneration, publicFactionId);
         if (!joined.success()) {
             return joined;
@@ -637,6 +898,13 @@ public final class FormationService {
         if (!resolved.result().success()) {
             return resolved.result();
         }
+        FormationVoteSnapshot vote = voteData == null ? null
+                : voteData.snapshot(resolved.faction().battleSide(), null);
+        if (vote != null && vote.phase() == FormationVotePhase.LOCKED
+                && !vote.lockedFormationId().equals(resolved.formation().id())) {
+            return ActionResult.failure(ActionResult.Code.FORMATION_LOCKED,
+                    lockedOnlyMessage(resolved.faction(), vote.lockedFormationId()));
+        }
         BattleService battle = BattleService.get(server).orElse(null);
         if (battle == null) {
             return ActionResult.failure(ActionResult.Code.FORMATION_UNAVAILABLE,
@@ -650,6 +918,157 @@ public final class FormationService {
                     deployment.onPlayerConnected(target));
         }
         return result;
+    }
+
+    /**
+     * Administrator assignment of {@code /battle admin formation assign} (vote-02): after the
+     * faction's lock only the locked formation can be assigned; before it only the faction is
+     * assigned and the formation follows the lock, so nobody is placed into a formation the
+     * faction did not vote for. {@code formationId} may be blank ("whatever is locked").
+     */
+    public ActionResult adminAssign(ServerPlayer administrator, ServerPlayer target,
+                                    String publicFactionId, String formationId) {
+        if (administrator == null || target == null || administrator.server != server
+                || target.server != server) {
+            return ActionResult.failure(ActionResult.Code.NOT_AUTHORIZED,
+                    "操作者或目标玩家不属于当前服务器");
+        }
+        FactionDefinition faction = catalog.findFaction(publicFactionId).orElse(null);
+        if (faction == null || !faction.enabled()) {
+            return ActionResult.failure(ActionResult.Code.FORMATION_NOT_FOUND,
+                    "阵营不存在或已停用");
+        }
+        FormationVoteSnapshot vote = voteData == null ? null
+                : voteData.snapshot(faction.battleSide(), null);
+        BattleService currentBattle = BattleService.get(server).orElse(null);
+        PlayerRecord before = currentBattle == null ? null
+                : currentBattle.playerRecord(target.getUUID()).orElse(null);
+        String targetName = target.getGameProfile().getName();
+        ActionResult result = routeAdminAssignment(faction, vote, formationId,
+                targetName, new AdminSeat() {
+                    @Override
+                    public ActionResult assignFormation(String lockedFormationId) {
+                        return forceAssign(administrator, target, faction.id(),
+                                lockedFormationId);
+                    }
+
+                    @Override
+                    public ActionResult assignFactionOnly(Faction side, int factionCapacity) {
+                        BattleService battle = BattleService.get(server).orElse(null);
+                        if (battle == null) {
+                            return ActionResult.failure(
+                                    ActionResult.Code.FORMATION_UNAVAILABLE, "战局服务尚未就绪");
+                        }
+                        return battle.forceAssignFactionPending(administrator,
+                                target.getUUID(), side, factionCapacity);
+                    }
+                });
+        PlayerRecord after = currentBattle == null ? null
+                : currentBattle.playerRecord(target.getUUID()).orElse(null);
+        if (result.success() && sameSeat(before, after)) {
+            return ActionResult.ok(targetName + " 已在" + faction.displayName()
+                    + selectedFormationName(faction, after.formationId()) + "，未做改动");
+        }
+        return result;
+    }
+
+    private static String selectedFormationName(FactionDefinition faction, String formationId) {
+        if (formationId == null || formationId.isBlank()) {
+            return "";
+        }
+        return "·" + faction.findFormation(formationId).map(FormationDefinition::displayName)
+                .orElse(formationId);
+    }
+
+    /**
+     * Receipt for a player whom an administrator just assigned, in the player's own words and
+     * with public names only (the internal battle side is never shown).
+     */
+    public String assignmentReceipt(UUID playerId) {
+        return adminAssignmentReceipt(
+                selectedFaction(playerId).map(FactionDefinition::displayName).orElse(""),
+                selectedFormation(playerId).map(FormationDefinition::displayName).orElse(""));
+    }
+
+    /** Text of {@link #assignmentReceipt}; blank names leave their part out. */
+    public static String adminAssignmentReceipt(String factionName, String formationName) {
+        if (factionName == null || factionName.isBlank()) {
+            return "管理员调整了你的阵营分配";
+        }
+        return "管理员已将你分配到" + factionName
+                + (formationName == null || formationName.isBlank()
+                ? "，编制等待投票锁定" : "，本局编制：" + formationName);
+    }
+
+    /** Assignment operations of {@link #adminAssign}; a recording stand-in in unit tests. */
+    interface AdminSeat {
+        /** Assigns the faction's locked formation (full catalog and capacity checks). */
+        ActionResult assignFormation(String lockedFormationId);
+
+        /** Assigns only the faction; the formation follows the faction's lock. */
+        ActionResult assignFactionOnly(Faction side, int factionCapacity);
+    }
+
+    /**
+     * Routing of {@link #adminAssign} (vote-02/03, unit-tested): after the faction's lock only
+     * the locked formation can be assigned ({@code formationId} blank = "whatever is locked"),
+     * any other is refused; before the lock only the faction is assigned.
+     */
+    static ActionResult routeAdminAssignment(FactionDefinition faction, FormationVoteSnapshot vote,
+                                             String formationId, String targetName,
+                                             AdminSeat seat) {
+        boolean formationGiven = formationId != null && !formationId.isBlank();
+        FormationDefinition requested = formationGiven
+                ? faction.findFormation(formationId).orElse(null) : null;
+        if (formationGiven && requested == null) {
+            return ActionResult.failure(ActionResult.Code.FORMATION_NOT_FOUND,
+                    "阵营或编制不存在");
+        }
+        FormationVotePhase phase = vote == null ? FormationVotePhase.NOT_STARTED : vote.phase();
+        String lockedId = vote == null ? "" : vote.lockedFormationId();
+        return switch (FormationVotePolicy.adminAssign(phase, lockedId,
+                requested == null ? null : requested.id())) {
+            case REJECT_NOT_LOCKED_FORMATION -> ActionResult.failure(
+                    ActionResult.Code.FORMATION_LOCKED, lockedOnlyMessage(faction, lockedId));
+            case ASSIGN_LOCKED -> {
+                ActionResult result = seat.assignFormation(lockedId);
+                // The battle service answers with internal side and formation ids; the receipt
+                // names the public faction and formation instead.
+                yield result.success()
+                        ? ActionResult.ok("已将 " + targetName + " 分配到" + faction.displayName()
+                        + "，本局编制：" + faction.findFormation(lockedId)
+                        .map(FormationDefinition::displayName).orElse(lockedId))
+                        : result;
+            }
+            case FACTION_ONLY -> {
+                ActionResult result = seat.assignFactionOnly(faction.battleSide(),
+                        faction.maxPlayers());
+                yield result.success()
+                        ? ActionResult.ok("已将 " + targetName + " 分配到"
+                        + faction.displayName() + "；本阵营编制尚未锁定，锁定后统一下发")
+                        : result;
+            }
+        };
+    }
+
+    /**
+     * {@code /battle admin assign <player> <blue|red>} (vote-03): the side's public faction under
+     * the same rule as {@link #adminAssign}, instead of a hard-coded {@code default} formation.
+     */
+    public ActionResult adminAssignBattleSide(ServerPlayer administrator, ServerPlayer target,
+                                              Faction side) {
+        FactionDefinition faction = side == null ? null : catalog.findFaction(side).orElse(null);
+        if (faction == null || !faction.enabled()) {
+            return ActionResult.failure(ActionResult.Code.FORMATION_NOT_FOUND,
+                    "该战斗方没有启用的公开阵营");
+        }
+        return adminAssign(administrator, target, faction.id(), null);
+    }
+
+    private static String lockedOnlyMessage(FactionDefinition faction, String lockedId) {
+        String lockedName = faction.findFormation(lockedId)
+                .map(FormationDefinition::displayName).orElse(lockedId);
+        return faction.displayName() + "本局已锁定编制“" + lockedName + "”，只能分配到该编制";
     }
 
     /** Repairs every persisted roster entry against the current authoritative catalog. */
@@ -960,44 +1379,66 @@ public final class FormationService {
         String selectedFormation = selected == null ? "" : selected.formationId();
         String selectedPublicFaction = selectedSide == null ? ""
                 : active.findFaction(selectedSide).map(FactionDefinition::id).orElse("");
+        List<String> registeredSupports = registeredSupportIds();
         List<FactionSelectionView> factions = active.factions().stream()
-                .map(faction -> factionView(battle, faction)).toList();
+                .map(faction -> factionView(battle, faction, registeredSupports)).toList();
         boolean required = selectedSide == null || selectedFormation.isBlank()
                 || selectedPublicFaction.isBlank();
+        // Only current members count, so released or reassigned voters drop out (vote-10).
+        Set<UUID> members = selectedSide == null ? Set.of()
+                : battle.factionMemberIds(selectedSide);
         FormationVoteSnapshot vote = selectedSide == null || voteData == null ? null
-                : voteData.snapshot(selectedSide, player.getUUID());
+                : voteData.snapshot(selectedSide, player.getUUID(), members::contains);
         return new FormationSelectionSnapshot(activeGeneration, required, selectedPublicFaction,
                 selectedFormation,
                 vote == null ? FormationVotePhase.NOT_STARTED : vote.phase(),
                 vote != null && vote.voteChangeAllowed(),
                 vote == null ? "" : vote.ownVote(),
                 vote == null ? "" : vote.lockedFormationId(),
-                vote == null ? Map.of() : vote.tally(), factions);
+                vote == null ? Map.of() : vote.tally(), factions,
+                supportLabels(active, registeredSupports));
     }
 
-    private FactionSelectionView factionView(BattleService battle, FactionDefinition faction) {
+    /**
+     * Public faction view (formation protocol 5): the ballot phase and locked formation go to
+     * every viewer, "available" means "a new player may join" (after the lock bounded by the
+     * locked formation's capacity), and formation availability is candidate validity only.
+     */
+    private FactionSelectionView factionView(BattleService battle, FactionDefinition faction,
+                                             List<String> registeredSupports) {
         int population = battle.factionSize(faction.battleSide());
+        FormationVoteSnapshot vote = voteData == null ? null
+                : voteData.snapshot(faction.battleSide(), null);
+        FormationVotePhase phase = vote == null ? FormationVotePhase.NOT_STARTED : vote.phase();
+        String lockedId = phase == FormationVotePhase.LOCKED ? vote.lockedFormationId() : "";
+        FormationDefinition locked = lockedId.isEmpty() ? null
+                : faction.findFormation(lockedId).orElse(null);
+        if (phase == FormationVotePhase.LOCKED && locked == null) {
+            // A lock whose formation left the catalog is cleared on reload; show it as not started.
+            phase = FormationVotePhase.NOT_STARTED;
+            lockedId = "";
+        }
         List<FormationSelectionView> formations = faction.formations().stream()
-                .map(formation -> formationView(battle, faction, formation)).toList();
-        boolean available = faction.enabled() && population < faction.maxPlayers()
+                .map(formation -> formationView(battle, faction, formation, registeredSupports))
+                .toList();
+        int joinCapacity = FormationVotePolicy.joinCapacity(faction.maxPlayers(), phase,
+                locked == null ? 0 : locked.capacity());
+        boolean lockedUsable = locked == null || availability(faction, locked).available();
+        boolean available = faction.enabled() && lockedUsable
+                && FormationVotePolicy.canJoin(population, joinCapacity)
                 && formations.stream().anyMatch(FormationSelectionView::available);
         return new FactionSelectionView(faction.id(), faction.displayName(),
-                faction.description(), population, faction.maxPlayers(), available, formations);
+                faction.description(), population, faction.maxPlayers(), available, formations,
+                phase, lockedId);
     }
 
     private FormationSelectionView formationView(BattleService battle, FactionDefinition faction,
-                                                  FormationDefinition formation) {
+                                                  FormationDefinition formation,
+                                                  List<String> registeredSupports) {
+        // Candidate validity only: a full faction or a formation smaller than the faction is
+        // judged by the client against the faction population (vote-08, vote-11).
         Availability availability = availability(faction, formation);
         int population = battle.formationSize(faction.battleSide(), formation.id());
-        boolean selectable = availability.available() && population < formation.capacity()
-                && battle.factionSize(faction.battleSide()) < faction.maxPlayers();
-        String reason = availability.reason();
-        if (reason.isBlank() && population >= formation.capacity()) {
-            reason = "编制人数已满";
-        } else if (reason.isBlank()
-                && battle.factionSize(faction.battleSide()) >= faction.maxPlayers()) {
-            reason = "阵营人数已满";
-        }
         List<String> classes = formation.classes().stream()
                 .map(FormationClassRule::classId).toList();
         List<String> squads = formation.squads().stream()
@@ -1006,8 +1447,117 @@ public final class FormationService {
         List<String> capabilities = capabilitySummaries(formation);
         return new FormationSelectionView(formation.id(), formation.displayName(),
                 formation.description(), formation.icon(), formation.category().id(),
-                formation.category().displayName(), population, formation.capacity(), selectable,
-                reason, classes, squads, vehicles, capabilities);
+                formation.category().displayName(), population, formation.capacity(),
+                availability.available(), availability.reason(), classes, squads, vehicles,
+                capabilities, detailView(formation, registeredSupports));
+    }
+
+    /**
+     * Structured composition with public names (player-09): profession display names instead of
+     * class IDs, grouped vehicles with their replenishment, squads, deployables, respawn and
+     * support IDs (named by the snapshot's support labels).
+     */
+    static FormationDetailView detailView(FormationDefinition formation,
+                                          List<String> registeredSupports) {
+        // Every number is clamped to the codec's wire bounds: an out-of-range value from a hand
+        // edited catalog must never make the whole catalog unencodable (as with clipped text).
+        List<FormationDetailView.ClassQuota> classes = formation.classes().stream()
+                .map(rule -> new FormationDetailView.ClassQuota(
+                        rule.displayName() == null || rule.displayName().isBlank()
+                                ? rule.classId() : rule.displayName(),
+                        Math.min(rule.squadLimit(), FormationSelectionCodec.MAX_DETAIL_COUNT)))
+                .limit(FormationSelectionCodec.MAX_DETAIL_ENTRIES)
+                .toList();
+        LinkedHashMap<VehicleSummaryKey, Integer> counts = new LinkedHashMap<>();
+        for (FormationVehicleDefinition vehicle : formation.vehicles()) {
+            counts.merge(new VehicleSummaryKey(vehicle.displayName(), vehicle.entityId(),
+                    vehicle.replenishmentCooldownSeconds()), 1, Integer::sum);
+        }
+        List<FormationDetailView.Vehicle> vehicles = new ArrayList<>(counts.size());
+        counts.forEach((key, count) -> vehicles.add(new FormationDetailView.Vehicle(
+                key.displayName(), Math.min(count, FormationSelectionCodec.MAX_DETAIL_COUNT),
+                key.cooldownSeconds() < 0
+                ? FormationDetailView.Vehicle.NEVER
+                : Math.min(key.cooldownSeconds(), FormationSelectionCodec.MAX_COOLDOWN_SECONDS))));
+        List<FormationDetailView.Squad> squads = formation.squads().stream()
+                .map(squad -> new FormationDetailView.Squad(squad.displayName(),
+                        Math.min(squad.capacity(), FormationSelectionCodec.MAX_DETAIL_COUNT)))
+                .limit(FormationSelectionCodec.MAX_DETAIL_ENTRIES)
+                .toList();
+        FormationCapabilityProfile capabilities = formation.capabilities();
+        int outposts = capabilities.outpost().enabled()
+                ? Math.min(capabilities.outpost().maxActive(),
+                FormationSelectionCodec.MAX_DEPLOYABLES) : 0;
+        int rally = capabilities.rally().enabled()
+                ? Math.min(capabilities.rally().maxActive(),
+                FormationSelectionCodec.MAX_DEPLOYABLES) : 0;
+        int respawn = capabilities.respawn().inheritsGlobalDelay()
+                ? FormationDetailView.INHERIT_RESPAWN
+                : Math.min(capabilities.respawn().delaySeconds(),
+                FormationSelectionCodec.MAX_RESPAWN_SECONDS);
+        List<String> mobile = capabilities.respawn().mobileSpawnVehicleIds().stream()
+                .map(id -> formation.findVehicle(id)
+                        .map(FormationVehicleDefinition::displayName).orElse(id))
+                .limit(FormationSelectionCodec.MAX_DETAIL_ENTRIES)
+                .toList();
+        FormationSupportPolicy support = capabilities.support();
+        List<String> supportIds = switch (support.mode()) {
+            case ALL -> registeredSupports;
+            case NONE -> List.of();
+            case ALLOW_LIST -> support.allowList();
+        };
+        return new FormationDetailView(classes, vehicles.stream()
+                .limit(FormationSelectionCodec.MAX_DETAIL_ENTRIES).toList(), squads, outposts,
+                rally, respawn, mobile, support.mode(), supportIds.stream()
+                .limit(FormationSelectionCodec.MAX_DETAIL_ENTRIES).toList());
+    }
+
+    private List<String> registeredSupportIds() {
+        try {
+            return SupportService.get(server).map(service -> service.registeredSupportIds()
+                    .stream().map(ResourceLocation::toString).toList()).orElse(List.of());
+        } catch (RuntimeException | LinkageError exception) {
+            WokInfantryMod.LOGGER.debug("Support registry unavailable for the formation catalog",
+                    exception);
+            return List.of();
+        }
+    }
+
+    /**
+     * Names of every support the catalog's details mention: registered definitions first, then
+     * unknown allow-list IDs (named by their ID), at most the codec's table size.
+     */
+    private List<FormationSupportLabel> supportLabels(FormationConfigData active,
+                                                      List<String> registeredSupports) {
+        LinkedHashMap<String, FormationSupportLabel> labels = new LinkedHashMap<>();
+        SupportService supports;
+        try {
+            supports = SupportService.get(server).orElse(null);
+        } catch (RuntimeException | LinkageError exception) {
+            supports = null;
+        }
+        for (String id : registeredSupports) {
+            if (labels.size() >= FormationSelectionCodec.MAX_SUPPORT_LABELS) {
+                break;
+            }
+            ResourceLocation key = ResourceLocation.tryParse(id);
+            SupportDefinition definition = supports == null || key == null ? null
+                    : supports.definition(key).orElse(null);
+            labels.put(id, definition == null ? new FormationSupportLabel(id, "", id)
+                    : new FormationSupportLabel(id, definition.translationKey(),
+                    definition.fallbackName()));
+        }
+        for (FactionDefinition faction : active.factions()) {
+            for (FormationDefinition formation : faction.formations()) {
+                for (String id : formation.capabilities().support().allowList()) {
+                    if (labels.size() >= FormationSelectionCodec.MAX_SUPPORT_LABELS) {
+                        return List.copyOf(labels.values());
+                    }
+                    labels.putIfAbsent(id, new FormationSupportLabel(id, "", id));
+                }
+            }
+        }
+        return List.copyOf(labels.values());
     }
 
     private static List<String> vehicleSummaries(FormationDefinition formation) {
