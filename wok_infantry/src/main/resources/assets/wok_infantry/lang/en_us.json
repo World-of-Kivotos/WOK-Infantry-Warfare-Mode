@@ -45,6 +45,7 @@
   "screen.wok_infantry.list.more_above": "%s more above",
   "screen.wok_infantry.list.unavailable": "Unavailable: %s",
   "screen.wok_infantry.list.position": "%1$s, item %2$s of %3$s",
+  "screen.wok_infantry.stepper.usage": "Use left or right to adjust, hold Shift for 5 steps",
   "screen.wok_infantry.faction_population": "Allies %s/%s",
   "screen.wok_infantry.enemy_population": "Enemy %s/%s",
   "screen.wok_infantry.squad_list": "Squad List",
