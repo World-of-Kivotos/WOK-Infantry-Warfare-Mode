@@ -2,6 +2,7 @@ package com.wok.infantry.client.hud;
 
 import com.wok.infantry.client.screen.TacticalBoardTheme;
 import com.wok.infantry.client.screen.UiRect;
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -19,6 +20,8 @@ import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 public final class SquadHudOverlay {
     /** Overlay id {@code wok_infantry:squad_roster}; kept so packs can hide it by id. */
     public static final String ID = "squad_roster";
+    /** Layout-probe box of the roster (uiTest only). */
+    public static final String PROBE_BOX = "hud.roster";
 
     public static final IGuiOverlay INSTANCE =
             (gui, graphics, partialTick, width, height) -> render(graphics, width, height);
@@ -50,14 +53,18 @@ public final class SquadHudOverlay {
                      boolean tight, boolean collapsed) {
         int left = rect.left();
         int top = rect.top();
+        // Layout-probe box of the roster (no-op outside the uiTest probe): its texts must stay
+        // inside it and it must not overlap the other HUD parts.
+        UiLayoutProbe.begin(graphics, PROBE_BOX, left, top, rect.right(), rect.bottom(), true);
         TacticalHud.plate(graphics, left, top, rect.right(), rect.bottom(), TacticalHud.Edge.LEFT,
                 TacticalBoardTheme.HUD_FRIENDLY, false);
         int titleY = top + 2 + (tight ? 0 : 1);
-        graphics.drawString(font, roster.title(), left + SquadRosterModel.TITLE_X, titleY,
-                TacticalBoardTheme.SECTION_B, false);
+        TacticalHud.readout(graphics, font, roster.title(), left + SquadRosterModel.TITLE_X,
+                titleY, TacticalBoardTheme.SECTION_B);
         TacticalHud.readout(graphics, font, roster.count(), left + roster.countX(), titleY,
                 TacticalBoardTheme.LIGHT_MUTED);
         if (collapsed) {
+            UiLayoutProbe.end(graphics);
             return;
         }
         int header = tight ? WokHudLayout.HEADER_HEIGHT_TIGHT : WokHudLayout.HEADER_HEIGHT;
@@ -71,17 +78,17 @@ public final class SquadHudOverlay {
             }
             TacticalHud.statusDot(graphics, left + SquadRosterModel.DOT_X, textY + 2,
                     row.dotColor(), row.hollow());
-            graphics.drawString(font, String.valueOf(row.number()),
-                    left + SquadRosterModel.NUMBER_X, textY, TacticalBoardTheme.LIGHT_MUTED, false);
+            TacticalHud.readout(graphics, font, String.valueOf(row.number()),
+                    left + SquadRosterModel.NUMBER_X, textY, TacticalBoardTheme.LIGHT_MUTED);
             if (!row.role().isEmpty()) {
-                graphics.drawString(font, row.role(), left + SquadRosterModel.NAME_X, textY,
-                        TacticalBoardTheme.SECTION_B, false);
+                TacticalHud.readout(graphics, font, row.role(), left + SquadRosterModel.NAME_X,
+                        textY, TacticalBoardTheme.SECTION_B);
             }
-            graphics.drawString(font, row.name(), left + row.nameX(), textY, row.nameColor(),
-                    false);
+            TacticalHud.readout(graphics, font, row.name(), left + row.nameX(), textY,
+                    row.nameColor());
             if (row.hasTag()) {
-                graphics.drawString(font, row.tag(), left + roster.barLeft(), textY,
-                        row.tagColor(), false);
+                TacticalHud.readout(graphics, font, row.tag(), left + roster.barLeft(), textY,
+                        row.tagColor());
                 continue;
             }
             if (row.healthBar()) {
@@ -89,8 +96,9 @@ public final class SquadHudOverlay {
                         left + roster.barRight(), textY + 5, row.healthRatio(),
                         TacticalHud.healthColor(row.healthRatio()));
             }
-            graphics.drawString(font, row.className(), left + roster.columnLeft(), textY,
-                    TacticalBoardTheme.LIGHT_MUTED, false);
+            TacticalHud.readout(graphics, font, row.className(), left + roster.columnLeft(),
+                    textY, TacticalBoardTheme.LIGHT_MUTED);
         }
+        UiLayoutProbe.end(graphics);
     }
 }

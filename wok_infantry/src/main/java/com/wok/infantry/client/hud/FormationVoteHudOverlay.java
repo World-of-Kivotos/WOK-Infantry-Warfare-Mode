@@ -2,6 +2,7 @@ package com.wok.infantry.client.hud;
 
 import com.wok.infantry.client.screen.TacticalBoardTheme;
 import com.wok.infantry.client.screen.UiRect;
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -17,6 +18,8 @@ import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 public final class FormationVoteHudOverlay {
     /** Overlay id {@code wok_infantry:formation_vote}. */
     public static final String ID = "formation_vote";
+    /** Layout-probe box of the ballot plate (uiTest only). */
+    public static final String PROBE_BOX = "hud.vote";
     /** Icon and first text row 5px under the top edge; second row 10px further down. */
     static final int TEXT_TOP = 5;
     static final int SECOND_LINE = 15;
@@ -48,6 +51,16 @@ public final class FormationVoteHudOverlay {
 
     static void draw(GuiGraphics graphics, Font font, UiRect rect,
                      FormationVoteHudModel.Plate plate) {
+        HudPaint.probeBox(graphics, PROBE_BOX, rect);
+        try {
+            drawPlate(graphics, font, rect, plate);
+        } finally {
+            UiLayoutProbe.end(graphics);
+        }
+    }
+
+    private static void drawPlate(GuiGraphics graphics, Font font, UiRect rect,
+                                  FormationVoteHudModel.Plate plate) {
         TacticalHud.plate(graphics, rect.left(), rect.top(), rect.right(), rect.bottom(),
                 TacticalHud.Edge.TOP, plate.accent(), plate.solid());
         if (plate.hasEmblem()) {
