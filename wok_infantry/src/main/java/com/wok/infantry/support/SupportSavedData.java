@@ -156,6 +156,32 @@ public final class SupportSavedData extends SavedData {
         return true;
     }
 
+    /**
+     * Compare-and-set used to refund a consumed cooldown. Writes {@code restoredReadyAt} (a
+     * non-positive value removes the entry) only while the stored value still equals
+     * {@code expectedReadyAt}; an absent entry compares as {@code 0}. An administrator who
+     * cleared or reset the cooldown in between therefore keeps the last word.
+     *
+     * @return {@code true} when the stored value matched and now equals the restored value;
+     *         {@code false} when it no longer matched, or when restoring would need a new entry
+     *         while storage is at capacity (refunds never throw)
+     */
+    public boolean restoreIfUnchanged(Faction faction, ResourceLocation supportId,
+                                      long expectedReadyAt, long restoredReadyAt) {
+        Objects.requireNonNull(faction, "faction");
+        Objects.requireNonNull(supportId, "supportId");
+        LinkedHashMap<ResourceLocation, Long> bySupport = readyTicks.get(faction);
+        if (bySupport.getOrDefault(supportId, 0L) != Math.max(0L, expectedReadyAt)) {
+            return false;
+        }
+        if (restoredReadyAt > 0L && !bySupport.containsKey(supportId)
+                && totalCooldownEntries() >= MAX_COOLDOWN_ENTRIES) {
+            return false;
+        }
+        setReadyAt(faction, supportId, restoredReadyAt);
+        return true;
+    }
+
     /** Removes cooldowns that can no longer affect a request and returns the number removed. */
     public int pruneExpired(long currentGameTick) {
         long now = Math.max(0L, currentGameTick);

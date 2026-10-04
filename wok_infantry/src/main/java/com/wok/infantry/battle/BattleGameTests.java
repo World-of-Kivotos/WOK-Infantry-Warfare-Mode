@@ -2,12 +2,16 @@ package com.wok.infantry.battle;
 
 import com.mojang.authlib.GameProfile;
 import com.wok.infantry.WokInfantryMod;
+import com.wok.infantry.deployment.DeploymentService;
+import com.wok.infantry.support.adapter.SupportIntelContact;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
@@ -375,6 +379,77 @@ public final class BattleGameTests {
 
     @GameTest(templateNamespace = WokInfantryMod.MOD_ID,
             template = "wok_empty", timeoutTicks = 200)
+    public static void reconContactsAreSupportOnlyAndFollowTheFactionAcrossDimensions(
+            GameTestHelper helper) {
+        BattleService service = isolatedService(helper);
+        ServerPlayer commander = player(helper, 700);
+        ServerPlayer redObserver = player(helper, 701);
+        helper.assertTrue(assignDefaultFormation(service, commander, Faction.BLUE).success(),
+                "情报测试蓝方指挥官阵营/编制选择失败");
+        helper.assertTrue(assignDefaultFormation(service, redObserver, Faction.RED).success(),
+                "情报测试红方观察者阵营/编制选择失败");
+        helper.assertTrue(service.createSquad(commander, SquadCallsign.ALPHA).success(),
+                "情报测试应能创建蓝方 Alpha");
+        helper.assertTrue(service.claimCommander(commander).success(),
+                "情报测试队长应能担任蓝方指挥官");
+
+        ResourceKey<Level> battleDimension = commander.serverLevel().dimension();
+        Vec3 origin = Vec3.atCenterOf(helper.absolutePos(new BlockPos(1, 1, 1)));
+        ActionResult manualRecon = service.createMarker(commander,
+                TacticalMarkerType.RECON_CONTACT, battleDimension, origin, origin,
+                BattleRules.DEFAULT_MARKER_TTL_MILLIS);
+        helper.assertFalse(manualRecon.success(), "指挥官不得手动发布卫星侦察红点");
+        helper.assertTrue(manualRecon.code() == ActionResult.Code.INVALID_MARKER,
+                "手动发布卫星红点必须返回 INVALID_MARKER");
+        helper.assertTrue(service.snapshotFor(commander).markers().isEmpty(),
+                "被拒绝的手动红点不得进入快照");
+
+        // Respawn and dimension travel hand the service a different ServerPlayer for the same
+        // UUID. Rebuild the commander in every other loaded level, including the internal
+        // waiting dimensions, and keep refreshing the same accepted call's original target.
+        UUID callId = UUID.randomUUID();
+        SupportIntelContact contact = new SupportIntelContact(UUID.randomUUID(),
+                origin.x + 24.0D, origin.y, origin.z);
+        int relocations = 0;
+        for (ServerLevel otherLevel : helper.getLevel().getServer().getAllLevels()) {
+            if (otherLevel.dimension().equals(battleDimension)) {
+                continue;
+            }
+            ServerPlayer relocatedCommander = player(helper, otherLevel, 700);
+            ActionResult published = service.publishSupportIntel(relocatedCommander, callId,
+                    Faction.BLUE, battleDimension, List.of(contact), 20 * 60);
+            helper.assertTrue(published.success(), "指挥官位于 "
+                    + otherLevel.dimension().location()
+                    + " 时，已受理的侦察任务仍应能向原目标维度发布情报：" + published.message());
+            relocations++;
+        }
+        helper.assertTrue(relocations > 0, "测试服务器必须至少提供一个可切换的其他维度");
+
+        BattleSnapshot blueView = service.snapshotFor(commander);
+        helper.assertTrue(blueView.markers().size() == 1
+                        && blueView.markers().get(0).type() == TacticalMarkerType.RECON_CONTACT
+                        && blueView.markers().get(0).dimension()
+                        .equals(battleDimension.location()),
+                "同一呼叫的多次刷新只能在原目标维度保留1个卫星红点");
+        helper.assertTrue(service.snapshotFor(redObserver).markers().isEmpty(),
+                "敌对阵营不得看到蓝方卫星红点");
+
+        for (ResourceKey<Level> waitingDimension : List.of(DeploymentService.HOLDING_LEVEL,
+                DeploymentService.LOBBY_LEVEL)) {
+            ActionResult rejected = service.publishSupportIntel(commander, UUID.randomUUID(),
+                    Faction.BLUE, waitingDimension, List.of(contact), 20 * 60);
+            helper.assertFalse(rejected.success(),
+                    "目标为内部等待维度的情报必须被拒绝：" + waitingDimension.location());
+            helper.assertTrue(rejected.code() == ActionResult.Code.INVALID_MARKER,
+                    "等待维度情报拒绝必须返回 INVALID_MARKER");
+        }
+        helper.assertTrue(service.snapshotFor(commander).markers().size() == 1,
+                "被拒绝的等待维度情报不得改变蓝方快照");
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = WokInfantryMod.MOD_ID,
+            template = "wok_empty", timeoutTicks = 200)
     public static void squadLifecycleReleasesAuthorityAndClassSlots(GameTestHelper helper) {
         BattleService service = isolatedService(helper);
         List<ServerPlayer> bluePlayers = new ArrayList<>();
@@ -528,8 +603,11 @@ public final class BattleGameTests {
     }
 
     private static ServerPlayer player(GameTestHelper helper, int index) {
-        ServerLevel level = helper.getLevel();
-        MinecraftServer server = level.getServer();
+        return player(helper, helper.getLevel(), index);
+    }
+
+    private static ServerPlayer player(GameTestHelper helper, ServerLevel level, int index) {
+        MinecraftServer server = helper.getLevel().getServer();
         return new ServerPlayer(server, level, new GameProfile(
                 UUID.nameUUIDFromBytes(("wok-infantry-gametest-" + index)
                         .getBytes(java.nio.charset.StandardCharsets.UTF_8)),

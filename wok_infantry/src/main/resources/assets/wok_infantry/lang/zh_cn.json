@@ -114,6 +114,7 @@
   "screen.wok_infantry.map.support.mission.active": "支援进行中",
   "screen.wok_infantry.map.support.impact_radius": "波及半径 R%sm",
   "screen.wok_infantry.map.support.scan_radius": "扫描半径 R%sm",
+  "screen.wok_infantry.map.support.guidance_radius": "照射许可 R%sm",
   "screen.wok_infantry.map.support.point_hint": "左键选择支援落点 · 右键取消",
   "screen.wok_infantry.map.support.direction_start_hint": "左键选择航线起点 · 右键取消",
   "screen.wok_infantry.map.support.direction_finish_hint": "左键选择方向终点 · 右键取消",

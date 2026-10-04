@@ -8,6 +8,7 @@ import com.wok.infantry.support.SupportDefinition;
 import com.wok.infantry.support.SupportTarget;
 import com.wok.infantry.support.adapter.ProviderAvailability;
 import com.wok.infantry.support.adapter.SupportSpawnContext;
+import com.wok.infantry.support.adapter.SupportSpawnException;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -82,6 +83,8 @@ public final class JdamProductionAcceptanceHarness {
             }
             SupportTarget target = SupportTarget.point(level.dimension().location(),
                     targetX, targetZ);
+            // Runs first on the same provider: the real mission below then proves no circuit trip.
+            validateLostShellEndsOnlyItsMission(level, owner, provider, definition, target);
             provider.executeStep(new SupportSpawnContext(level, owner, callId,
                     definition, target, 0, Faction.BLUE));
             Entity shell = level.getEntity(callId);
@@ -183,6 +186,8 @@ public final class JdamProductionAcceptanceHarness {
                                 + "\ngroundedDelayObserved=true"
                                 + "\nexplodedAndRemoved=true"
                                 + "\nexplosionAffectedTargetWitness=true"
+                                + "\nlostShellEndsMissionOnly=true"
+                                + "\nproviderUsableAfterLostShell=true"
                                 + "\npavewayAlliedIndicator=true"
                                 + "\npavewayMovingEntityTracked=true"
                                 + "\npavewayReleaseBreaksGuidance=true");
@@ -210,6 +215,44 @@ public final class JdamProductionAcceptanceHarness {
         String message = failure.getMessage();
         return failure.getClass().getSimpleName()
                 + (message == null || message.isBlank() ? "" : ": " + message);
+    }
+
+    /** Counterexample: a shell removed after release ends that mission without a circuit trip. */
+    private static void validateLostShellEndsOnlyItsMission(ServerLevel level, Entity owner,
+                                                            MillenniumJdamProvider provider,
+                                                            SupportDefinition definition,
+                                                            SupportTarget target)
+            throws SupportSpawnException {
+        UUID lostCallId = UUID.randomUUID();
+        provider.executeStep(new SupportSpawnContext(level, owner, lostCallId,
+                definition, target, 0, Faction.BLUE));
+        Entity lostShell = level.getEntity(lostCallId);
+        if (lostShell == null) {
+            throw new IllegalStateException("counterexample shell was not spawned");
+        }
+        lostShell.discard();
+        for (int step = 1; step <= 2; step++) {
+            SupportSpawnException failure = null;
+            try {
+                provider.executeStep(new SupportSpawnContext(level, owner, lostCallId,
+                        definition, target, step, Faction.BLUE));
+            } catch (SupportSpawnException expected) {
+                failure = expected;
+            }
+            if (failure == null) {
+                throw new IllegalStateException("step " + step
+                        + " succeeded after the shell was removed");
+            }
+            if (failure.providerBroken() || failure.refundCooldown()) {
+                throw new IllegalStateException("lost shell at step " + step
+                        + " must only end the mission: " + failure.getMessage());
+            }
+        }
+        ProviderAvailability availability = provider.availability();
+        if (!availability.available()) {
+            throw new IllegalStateException("provider tripped after a lost shell: "
+                    + availability.reason());
+        }
     }
 
     private static void validatePavewayDesignation(MinecraftServer server,

@@ -1,17 +1,20 @@
 package com.wok.infantry.support.adapter;
 
-import com.mojang.logging.LogUtils;
 import net.minecraft.resources.ResourceLocation;
-import org.slf4j.Logger;
 
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Per-provider circuit breaker: one broken integration cannot destabilize the framework. */
+/**
+ * Per-provider circuit breaker: one broken integration cannot destabilize the framework.
+ *
+ * <p>Subclasses report ordinary mission outcomes with {@link SupportSpawnException#endMission}
+ * or {@link SupportSpawnException#notDelivered}; those never trip the circuit. Reflection,
+ * runtime and linkage faults, and explicit {@link SupportSpawnException#providerBroken}
+ * failures disable the provider until the server restarts. The trip is logged once by the
+ * mandatory {@link GuardedSupportProvider} wrapper, not here, so one fault is one log entry.</p>
+ */
 public abstract class AbstractSoftSupportProvider implements SupportProvider {
-    private static final Logger LOGGER = LogUtils.getLogger();
     private final ResourceLocation supportId;
-    private final AtomicBoolean failureLogged = new AtomicBoolean();
     private volatile ProviderAvailability probed;
     private volatile String circuitReason;
 
@@ -53,22 +56,34 @@ public abstract class AbstractSoftSupportProvider implements SupportProvider {
     @Override
     public final void executeStep(SupportSpawnContext context) throws SupportSpawnException {
         if (context == null || !supportId.equals(context.definition().id())) {
-            throw new SupportSpawnException("支援任务与适配器不匹配");
+            throw SupportSpawnException.endMission("支援任务与适配器不匹配");
         }
         ProviderAvailability available = availability();
         if (!available.available()) {
-            throw new SupportSpawnException(available.reason());
+            throw SupportSpawnException.endMission(available.reason());
         }
+        runStep(() -> doExecuteStep(context));
+    }
+
+    /**
+     * Runs one subclass step and applies the circuit policy. Ordinary
+     * {@link SupportSpawnException}s pass through unchanged; reflection, runtime and linkage
+     * faults become non-refunding provider-broken failures. Package-private so the policy can be
+     * verified without a {@link net.minecraft.server.level.ServerLevel}.
+     */
+    final void runStep(StepAction action) throws SupportSpawnException {
         try {
-            doExecuteStep(context);
-        } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
-            String reason = "适配器已熔断: " + concise(failure);
-            circuitReason = reason;
-            if (failureLogged.compareAndSet(false, true)) {
-                LOGGER.error("Support provider {} tripped its circuit breaker",
-                        supportId, failure);
+            action.run();
+        } catch (SupportSpawnException failure) {
+            if (failure.providerBroken()) {
+                String message = failure.getMessage();
+                trip(message == null || message.isBlank() ? "执行失败" : message);
             }
-            throw new SupportSpawnException(reason, failure);
+            throw failure;
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
+            trip(concise(failure));
+            throw SupportSpawnException.providerBroken(
+                    SupportSpawnException.PROVIDER_FAULT_MESSAGE, failure, false);
         }
     }
 
@@ -76,11 +91,21 @@ public abstract class AbstractSoftSupportProvider implements SupportProvider {
             throws ReflectiveOperationException;
 
     protected abstract void doExecuteStep(SupportSpawnContext context)
-            throws ReflectiveOperationException;
+            throws ReflectiveOperationException, SupportSpawnException;
+
+    /** Records the circuit state only; the rethrown failure carries the stack to the guard. */
+    private void trip(String summary) {
+        circuitReason = ProviderAvailability.unavailable("适配器已熔断: " + summary).reason();
+    }
 
     private static String concise(Throwable failure) {
         String message = failure.getMessage();
         return failure.getClass().getSimpleName()
                 + (message == null || message.isBlank() ? "" : " - " + message);
+    }
+
+    @FunctionalInterface
+    interface StepAction {
+        void run() throws ReflectiveOperationException, SupportSpawnException;
     }
 }

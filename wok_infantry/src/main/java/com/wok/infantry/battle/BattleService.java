@@ -1022,6 +1022,10 @@ public final class BattleService {
         if (type == null || dimension == null || position == null || endPosition == null) {
             return ActionResult.failure(ActionResult.Code.INVALID_MARKER, "标记类型、维度或坐标缺失");
         }
+        if (type == TacticalMarkerType.RECON_CONTACT) {
+            return ActionResult.failure(ActionResult.Code.INVALID_MARKER,
+                    "卫星侦察目标只能由侦察支援自动生成，不能手动发布");
+        }
         if (dimension.equals(DeploymentService.HOLDING_LEVEL)
                 || dimension.equals(DeploymentService.LOBBY_LEVEL)) {
             return ActionResult.failure(ActionResult.Code.INVALID_MARKER,
@@ -1105,6 +1109,8 @@ public final class BattleService {
     /**
      * Replaces one accepted support call's short-lived contacts for the caller's faction.
      * This path is intentionally separate from player-created markers and never persists data.
+     * 情报属于阵营而不是指挥官本人：指挥官中途换维度（例如阵亡后进入等待区）不影响
+     * 已受理任务继续刷新目标；只拒绝目标落在内部等待区/大厅维度的批次。
      */
     public synchronized ActionResult publishSupportIntel(ServerPlayer actor, UUID callId,
                                                          Faction acceptedFaction,
@@ -1122,10 +1128,14 @@ public final class BattleService {
         }
         if (callId == null || dimension == null || contacts == null
                 || contacts.size() > BattleRules.MAX_MARKERS_PER_FACTION
-                || ttlTicks < 20 || ttlTicks > 20 * 60 * 10
-                || !actor.serverLevel().dimension().equals(dimension)) {
+                || ttlTicks < 20 || ttlTicks > 20 * 60 * 10) {
             return ActionResult.failure(ActionResult.Code.INVALID_MARKER,
                     "临时情报批次、维度、数量或持续时间无效");
+        }
+        if (dimension.equals(DeploymentService.HOLDING_LEVEL)
+                || dimension.equals(DeploymentService.LOBBY_LEVEL)) {
+            return ActionResult.failure(ActionResult.Code.INVALID_MARKER,
+                    "内部等待维度不能发布临时情报");
         }
         ServerLevel level = server.getLevel(dimension);
         if (level == null) {
@@ -1294,17 +1304,20 @@ public final class BattleService {
                         onlinePlayer.serverLevel().dimension().location(),
                         position.x, position.y, position.z, onlinePlayer.getYRot()));
             }
-            supportIntelMarkers.entrySet().stream()
+            // 卫星红点按发布顺序（呼叫首次发布的先后、批次内顺序）排列，手工标记按创建时间；
+            // 两者各保底一半显示名额，用不完的让给另一方，避免一次大范围侦察挤掉全部手工标记。
+            // 手工标记超出名额时保留最新的，刚放下的标记一定能出现在地图上。
+            List<TacticalMarker> intel = supportIntelMarkers.entrySet().stream()
                     .filter(entry -> entry.getKey().faction() == faction)
                     .flatMap(entry -> entry.getValue().stream())
                     .filter(marker -> !marker.expiredAt(now))
-                    .sorted(Comparator.comparing(TacticalMarker::id))
-                    .limit(BattleRules.MAX_MARKERS_PER_FACTION)
-                    .forEach(markers::add);
-            data.markers().stream().filter(marker -> marker.faction() == faction)
+                    .toList();
+            List<TacticalMarker> manual = data.markers().stream()
+                    .filter(marker -> marker.faction() == faction)
+                    .filter(marker -> marker.type() != TacticalMarkerType.RECON_CONTACT)
                     .sorted(Comparator.comparingLong(TacticalMarker::createdAtMillis))
-                    .limit(Math.max(0, BattleRules.MAX_MARKERS_PER_FACTION - markers.size()))
-                    .forEach(markers::add);
+                    .toList();
+            markers.addAll(BattleRules.mergeSnapshotMarkers(intel, manual));
         }
 
         PermissionView permissions = permissionView(viewer, self);

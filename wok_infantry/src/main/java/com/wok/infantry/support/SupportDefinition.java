@@ -10,6 +10,12 @@ import java.util.Objects;
  * <p>The namespaced id is the only durable identity used by packets, cooldown data and active
  * missions. Optional integrations may register definitions without adding enum constants to the
  * core.</p>
+ *
+ * <p>{@code requiresLoadedFootprint} keeps the default fail-closed rule that every chunk under
+ * the support footprint must already be loaded, both at acceptance and before each step. A
+ * provider that never reads blocks or heights in its footprint (for example a scan of loaded
+ * entities only) may opt out; the scheduler then validates only coordinates, the world border
+ * and the target dimension, and still never force-loads or generates chunks.</p>
  */
 public record SupportDefinition(
         ResourceLocation id,
@@ -21,7 +27,8 @@ public record SupportDefinition(
         long inboundTicks,
         int stepCount,
         int stepIntervalTicks,
-        double radius
+        double radius,
+        boolean requiresLoadedFootprint
 ) {
     /** Must stay aligned with the bounded battle protocol support-id field. */
     public static final int MAX_ID_LENGTH = 128;
@@ -53,6 +60,15 @@ public record SupportDefinition(
             throw new IllegalArgumentException("Support radius must be finite and between 0 and "
                     + MAX_RADIUS);
         }
+    }
+
+    /** Source-compatible constructor: the whole footprint must stay loaded. */
+    public SupportDefinition(ResourceLocation id, String translationKey, String fallbackName,
+                             String shortName, SupportTargetMode targetMode,
+                             long cooldownTicks, long inboundTicks, int stepCount,
+                             int stepIntervalTicks, double radius) {
+        this(id, translationKey, fallbackName, shortName, targetMode, cooldownTicks,
+                inboundTicks, stepCount, stepIntervalTicks, radius, true);
     }
 
     public boolean directional() {

@@ -1,5 +1,172 @@
 # 更新日志
 
+## WOK步战核心 0.3.0-beta.6 — 2026-10-04
+
+### 新增
+- `SupportProvider` 新增默认空实现的受理回调 `accepted(SupportSpawnContext)`。`SupportService.requestSupport` 在任务放进任务表、受理回执记下之后，返回受理结果之前调用一次；`context.stepIndex()` 为 0，`owner` 为受理时的指挥官，`level` 为目标维度，`callId` 与之后 `executeStep` / `abandon` 收到的相同，`faction` 为受理阵营。回调只用于声音和提示（例如榴弹炮击受理时就响第一波炮声），不得放实体、改方块或读未加载区块。同一请求 ID 重发、校验失败或冷却中都不调用；已熔断的 provider 不调用。
+- `GuardedSupportProvider` 显式转发 `accepted`：熔断后不转发；回调抛出的 `Exception`（含直接实现偷偷抛出的受检异常）和 `LinkageError` 只记 warn，不熔断、不外抛。`SupportService` 再兜一层，构造上下文失败同样只记日志。回调失败不撤销受理、不返还冷却、不取消任务；`VirtualMachineError` 照常抛出。
+### 修改
+- 默认编制支援白名单：`millennium_seminar_mobile`（千禧年研讨会机动部队）加入 `wok_commander_support:recon_drone`，现为侦察卫星、无人机侦察、F-15EX JDAM、F-16C；`millennium_seminar_cavalry_corps`（研讨会骑兵军团）不再与 `default` 共用能力配置，改用自己的一份，支援白名单为侦察卫星、无人机侦察、F-16C，`outpost`、`rally`、`respawn` 与 `default` 相同。两阵营 `default` 与 `caesar_234_mechanized` 不变。
+### 修复
+- 无。
+### 兼容性
+- 扩展 API 按签名兼容：`accepted` 是默认空方法，不覆写的扩展行为不变；`SupportDefinition`、`SupportSpawnException`、`SupportProvider` 的其他方法都没有改动。未用旧附属 JAR 实测。
+- 本轮没有改动任何网络协议版本：战局协议仍为 `18`（`BattleNetwork.PROTOCOL_VERSION`），编制协议 `4`、体力协议 `2` 不变。
+- WOK步战附属-指挥官支援 0.1.0-beta.3 要求本版本或更高。
+### 配置/存档影响
+- 无新增配置项。
+- 默认白名单新增无人机侦察（见“修改”），只影响新生成的 `config/wok_infantry/formations.json`。已有文件不会被改写：老存档要用无人机侦察，需要管理员把 `wok_commander_support:recon_drone` 加进对应编制的 `support.allowList`。三种榴弹炮击不在任何默认白名单里。
+- 存档格式不变：`wok_infantry_support.dat` 的数据版本与字段不变（新技能的冷却照原格式按（阵营, 支援 ID）记录），`wok_infantry_battle.dat`、`wok_infantry_deployment.dat` 不变。
+- 网络协议版本不变（战局协议 `18`）。
+### 测试结果
+- `wok_infantry` 下 `.\gradlew.bat clean build compileUiTestJava --console=plain` BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 374 项（90 个测试类）全部通过，0 失败、0 错误、0 跳过。新增 `SupportServiceAcceptanceCueTest`（5 项）；`GuardedSupportProviderTest` 新增 4 项（转发一次、失败只记日志不熔断、熔断后不转发、`VirtualMachineError` 不吞）；`FormationConfigDataTest` 新增对 5 个默认编制支援白名单的精确断言（含 Gson 往返）。`compileUiTestJava` 只有 uiTest 中原有的 8 条过时 API 警告。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_infantry-0.3.0-beta.6.jar` PASS，强制依赖只有 `forge`、`minecraft`。
+- `tools/verify_versions.ps1`：完整运行在第一个模块 `wok_trauma` 处因其 JAR 未构建而退出（本轮只构建核心与指挥官支援）；限定为这两个模块运行 PASS（源码版本、README/VERSIONING 版本表、模块 README、CHANGELOG 标题、JAR 名、modId 与内部版本一致）。
+- `SupportService` 中“入表 → 记回执 → `accepted` → 返回”的顺序没有端到端单元测试（项目没有 `MinecraftServer` / `ServerPlayer` 测试替身），可测部分已抽成包内静态方法 `announceAccepted` 并测过，顺序本身需游戏内确认。
+- 未运行：`runGameTestServer`、`runUiTestClient`（本版核心没有改界面）。
+- 已部署到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，替换 0.3.0-beta.5（旧包备份为 `.bak`）。
+- 游戏内验收：待用户在测试端验收（测试端白名单已临时调整，验收后恢复）。要确认受理后立刻响第一波炮声；`accepted` 出错时只有 warn 日志，冷却和任务都不受影响。
+- 敌方红点、敌方防空击落无人机：需双人，待验证。
+
+## WOK步战附属-指挥官支援 0.1.0-beta.3 — 2026-10-04
+
+### 新增
+- 无人机侦察 `wok_commander_support:recon_drone`（短名“无人机侦察”）：点目标，冷却 5 分钟（6000 tick，以《步战模式公示表》为准），受理后立即起飞。侦察无人机在目标上空以半径 24 格盘旋约 2 分钟（60 步 × 40 tick），每 10 秒以目标为中心扫描半径 96 格一次（共 12 次，复用侦察卫星扫描器），红点保留 12 秒；第 59 步飞离，约 5 秒后消失。起飞前要求盘旋区的区块已加载完成并处于实体 tick 状态（只用 `getChunkNow` 检查，不加载区块），否则不起飞并返还冷却；扫描区本身不要求已加载（`requiresLoadedFootprint=false`）。
+- 侦察无人机实体 `wok_commander_support:recon_drone`：继承原版 `Entity`（不是生物，也不是弹射物），血量 200；飞行高度取“目标地表 + 64”与“盘旋圈最高地表 + 40”中较大的一个，不超过建筑上限 − 16；航迹由同步参数和游戏时间确定性推算，客户端同算，飞行平滑。只有爆炸类伤害（`#minecraft:is_explosion`）和卓越前线弹体直击 `superbwarfare:projectile_hit`（导弹、防空炮弹直接命中）能扣血，子弹、近战、摔落等无效；同阵营玩家（含驾驶载具时）的伤害被忽略。击落后空中爆炸，带前冲惯性坠落冒烟（最多 100 tick），落地或超时再爆一次后消失，不破坏方块、不伤实体、不掉落物品，任务以“侦察无人机已被击落”结束。无人机消失或所在区块不再 tick 时，任务以“侦察无人机信号丢失”结束。实体类型 `noSave`；起飞 + 2460 tick 到期自毁；不是由任务起飞的无人机（例如 `/summon`）第一个 tick 就消失。到期自毁另有服务端兜底巡检 `ReconDroneWatchdog`（`@Mod.EventBusSubscriber` 自注册，每个服务端 tick 结束时运行，只弱引用、不写存档），不依赖无人机自己的 tick：已起飞的无人机过了到期时间（坠落中的残骸除外），或连续超过 20 tick 没被服务端 tick（区块仍加载但已在模拟距离之外，或所在维度无人而停止实体 tick），就直接移除。战局重置、任务在附属之外异常结束、离场或坠落途中失去 tick 时，无人机都不会悬停残留。敌方战术地图不显示无人机。
+- 无人机外观与声音：用原版 `EntityModel` 手写的固定翼长航时侦察无人机模型（翼展 12 格、细长机身、机头下方光电球、平直主翼、倒 V 尾加腹鳍、推进式螺旋桨带旋转动画，盘旋时整机压坡度），左红右绿翼尖航灯、尾部频闪与腹部信标；自行生成的灰色系贴图 `textures/entity/recon_drone.png`（256×64）。客户端渲染上限 320 格，但实际可见范围受实体追踪距离 16 区块（256 格，再乘 `entity-broadcast-range-percentage`）与服务器视距（× 16 格）共同限制，按水平距离计算：默认视距 10 时约 160 格，视距 16 及以上最远约 256 格；超出范围的玩家收不到实体，看不到也听不到。客户端循环引擎声，音调 1.5，可听距离 = 离地高度 + 64 格；击落与落地各有一次爆炸声。没有新增 GeckoLib 依赖。
+- 三种榴弹炮击，共用一套实现，不生成炮弹实体，每发在落点直接调用卓越前线 `CustomExplosion`（直接来源是不加入世界的原版 marker，攻击者为呼叫的指挥官）：
+  - 三连发榴弹炮击 `howitzer_3round_barrage`（短名“三连发炮击”）：冷却 3 分钟；5 波 × 3 发，波间隔 5 秒，预备 10 秒；散布 R_area 30、σ 7、上限 18；单发伤害 250、爆炸半径 10、粒子 `LARGE`；危险区 58 格；155 级炮声。
+  - 快速三连发105毫米榴弹炮打击 `howitzer_105mm_rapid_3round_barrage`（短名“105快速三连发”）：冷却 2 分钟；3 波 × 3 发，波间隔 3 秒，预备 3 秒；散布 R_area 10、σ 3.5、上限 9；单发 150、半径 7、`MEDIUM`；危险区 26 格；105 级炮声。
+  - 五连发105毫米榴弹炮打击 `howitzer_105mm_5round_barrage`（短名“105五连发”）：冷却 5 分钟；4 波 × 5 发，波间隔 4 秒，预备 6 秒；散布与快速三连发相同；单发 150、半径 7、`MEDIUM`；危险区 26 格；105 级炮声。
+- 炮击时序：受理时（核心新增的 `accepted` 回调）立刻响第 0 波炮声，并把其余各波炮声一次排进延迟炮声调度器（服务端 tick 驱动、按 callId 分组、不写存档，用 `@Mod.EventBusSubscriber` 自注册）。每波先响炮声（声数等于发数，155 级相隔 6 tick、105 级相隔 3 tick），过“预备时间”第一发落地，同波各发相隔 0.5 秒；每发落地前 1.5 秒在落点上空 20 格播放来袭呼啸。核心在途时间为预备时间 − 30 tick，每步 10 tick（在途 170 / 30 / 90 tick，步数 46 / 18 / 32）。第 0 步只预检卓越前线爆炸接口与粒子档并开始第一发呼啸，不落弹。
+- 炮击散布：每波的瞄准点在半径 R_area 的圆内均匀随机，每发再加每轴标准差 σ 的高斯偏移，超过上限就重抽，所有落点距目标不超过 R_area + 上限；随机种子由 callId 的高低两半、波序、发序派生，同一次呼叫可复现。落点高度为 `MOTION_BLOCKING_NO_LEAVES` 地表 + 0.25，只读已加载区块；单发落点超出世界边界或所在列未加载时跳过这一发，任务继续。
+- 炮声来自虚拟炮阵地：从目标朝指挥官受理时所在位置的水平方向偏移 180 格（155 级）或 120 格（105 级），高度为已知地表 + 40，不读未加载区块。炮声敌我都能听到，可听距离覆盖到危险区远端再往外 64 格（契约测试锁定）。来袭呼啸装了 CBC 时用 CBC 音效，否则用卓越前线音效，音量 0.7，音调 155 级 0.95、105 级 1.15。
+- 6 个新声音事件，都在 `sounds.json` 里用 `"type": "event"` 按注册 ID 包装第三方声音：`howitzer_155_report`（包装 `superbwarfare:plz_05_veryfar`，音量 20）、`howitzer_105_report`（`superbwarfare:mk_42_veryfar`，音量 14）、`artillery_incoming_cbc`（`createbigcannons:shell_flying`）、`artillery_incoming_sbw`（`superbwarfare:shell_fly`）、`recon_drone_engine`（`superbwarfare:ju_87_engine`）、`recon_drone_destroyed`（`superbwarfare:explosion_air`，音量 16）；服务端广播半径依次为 384、384、128、128、160、256 格。新增 6 条中英字幕，以及 4 个技能名和无人机实体名的语言键。
+- 战术地图表现：无人机侦察按情报（`INTELLIGENCE`）显示，三种炮击按攻击（`OFFENSIVE`）显示，危险区半径 = R_area + 上限 + 爆炸半径。
+- 数据包 tag `data/vvp/tags/entity_types/pantsir_air_target.json`（`replace: false`，只含 `wok_commander_support:recon_drone`），让 vvp 的铠甲（Pantsir）防空系统把侦察无人机当作空中目标。
+### 修改
+- 最低核心版本提高到 `0.3.0-beta.6`（`mods.toml` 中 `wok_infantry` 的 `versionRange="[0.3.0-beta.6,)"`）：炮击用核心本版新增的 `accepted` 回调在受理时播放炮声。
+- `SuperbWarfareExplosionAdapter` 改为 public 供炮击共用：`available()` 与 6 参数 `explode()` 公开，新增只解析反射绑定和粒子档、不产生爆炸的 `verify(String)`。原方法体没有改，JDAM 与 F-16C 的行为不变。
+- `mod_description` 改为涵盖卫星与无人机侦察、空袭和榴弹炮击；仓库与 JAR 内的两份 `THIRD_PARTY_NOTICES.md` 补充说明 6 个声音事件只按注册 ID 引用卓越前线和 CBC 的声音，未打包任何第三方声音、贴图、模型或代码。
+- 原有三个技能（侦察卫星、F-15EX JDAM、F-16C）的 ID、数值和行为不变。
+### 修复
+- 无。
+### 兼容性
+- 需要 WOK步战核心 `0.3.0-beta.6` 或更高；更早的核心不能加载本版本。
+- 新声音只按注册 ID 软联动卓越前线与 Create Big Cannons，未打包第三方音频；对应 MOD 未安装时这些声音静音，模块照常加载。卓越前线 `0.8.9+` 与 Create Big Cannons `5.11.4` 至 `6.0.0` 之前仍是可选依赖（`mandatory=false`）。
+- 三种炮击需要卓越前线（`CustomExplosion` 接口可用），不需要 CBC；缺卓越前线时显示不可用。是否破坏方块跟随卓越前线服务端 `EXPLOSION_DESTROY` 配置，与 JDAM、F-16C 一致。
+- 无人机侦察不需要 CBC 或卓越前线；未装卓越前线时引擎声和击落声静音，也只有原版爆炸能伤到它。
+- 无人机实体 `noSave`，不写区块存档；卸载本附属后存档里不会残留无人机。
+- vvp 铠甲雷达兼容 tag 只追加本模块的无人机（`replace: false`）；未装 vvp 时不起作用。
+- 卓越前线分不清 WOK 阵营：我方防空也能锁定我方无人机，但同阵营伤害被忽略；卓越前线近防炮、激光塔的自动模式不会主动攻击它。
+- 成品类中没有第三方类型引用，第三方只经注册 ID、反射字符串和 tag 访问。仍不满足完全脱离核心独立安装，属于 0.1.0-beta.1 已记录的既有限制。
+- 已知限制：核心在第 0 步之前取消炮击任务（会返还冷却）时不通知附属，在途期内本该响的后续炮声仍会响完，之后的炮声在租约到期（过了预期的第 0 步时刻 20 tick）时丢弃。要彻底取消，核心需要新增按 callId 查询任务或在此时通知 provider 的接口。
+### 配置/存档影响
+- 无新增配置项。
+- 新技能的冷却仍保存在核心的 `<世界>/data/wok_infantry_support.dat`，按（阵营, 支援 ID）记录，存档格式不变。
+- 无人机不写存档，兜底巡检只在内存里弱引用无人机；炮击不生成实体，延迟炮声只在内存里；两者都在开服前和停服后清空，重启后不残留。
+- 默认编制白名单由核心 0.3.0-beta.6 提供：千禧年研讨会机动部队与研讨会骑兵军团新增无人机侦察，只影响新生成的 `formations.json`；已有文件不会被改写，老存档需要管理员手动加入 `wok_commander_support:recon_drone`。三种炮击不在任何默认白名单里：《步战模式公示表》中拥有它们的编制（格赫娜风纪委员、万魔殿、正义实现委员会、圣三一茶话会、凯撒第17装甲作战单元）在代码里还没有，需要时由管理员加白名单。
+- 公示表中格赫娜风纪委员的无人机侦察冷却“5+2 分钟”没有实现：框架每个技能只有一个全局冷却，代码里也还没有该编制。
+- 网络协议版本不变（核心战局协议仍为 `18`）。
+### 测试结果
+- 先构建核心 0.3.0-beta.6（见上一条），再在 `wok_commander_support` 下 `..\gradlew.bat clean build --console=plain`，BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 163 项（26 个测试类）全部通过，0 失败、0 错误、0 跳过。核心与本模块合计 537 项、0 失败。编译只有一条既有警告（`FMLJavaModLoadingContext.get()` 已过时，HEAD 中就有）。
+- 新增 `drone` 包 7 个测试类 49 项（盘旋航迹与高度、伤害规则、任务步骤与失败分类、定义数值、引擎声衰减、机体几何与贴图一致性、兜底巡检的到期与停摆判定）和 `artillery` 包 7 个测试类 47 项（参数与时序、散布分布与可复现、炮声时刻表与炮阵地、延迟炮声队列与租约、失败分类、可听距离契约）；`CommanderSupportDefinitionContractTest` 按 7 个技能重写（冷却按公示表、时序与覆盖范围、命名空间与翻译键、中英语言键、vvp tag 与贴图、核心依赖范围）；`SoundAssetContractTest` 新增 4 项（包装事件、炮声与呼啸可听距离、无人机声音覆盖）；`CommanderSupportClientTest` 新增地图表现断言。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_commander_support-0.1.0-beta.3.jar` PASS，强制依赖只有 `forge`、`minecraft`、`wok_infantry`，Create Big Cannons 与卓越前线仍为可选。成品 60 个类中扫描不到 `com/atsuishio`、`rbasamoyai`、`superbwarfare/`、`createbigcannons/`、`geckolib` 的类型引用。
+- JAR 内容核对：`mods.toml` 版本 `0.1.0-beta.3`、核心依赖 `[0.3.0-beta.6,)`；`sounds.json` 共 10 个事件；中英语言键一一对应；含无人机贴图与 vvp tag。
+- `tools/verify_versions.ps1`：完整运行在第一个模块 `wok_trauma` 处因其 JAR 未构建而退出（本轮只构建核心与指挥官支援）；限定为这两个模块运行 PASS（源码版本、README/VERSIONING 版本表、模块 README、CHANGELOG 标题、JAR 名、modId 与内部版本一致）。
+- 未运行：`JdamRuntimeGameTests` 等 GameTest、`tools/run_commander_support_production_gametest.ps1`、`runUiTestClient`。
+- 无人机模型离线预览：用真实 `ReconDroneModel.createBodyLayer()` 与 jar 内贴图渲染俯视、侧视、正视、斜视、仰视和压坡仰望 6 张图，外形可辨认为固定翼长航时侦察无人机，贴图无错位、拉伸或透明面。
+- 已与核心 0.3.0-beta.6 一起部署到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`（旧包备份为 `.bak`）；测试端 `formations.json` 已备份并临时给学院军常规编制加三种炮击、凯撒常规编制加三连发与无人机、研讨会机动部队加无人机，验收后恢复。
+- 游戏内验收：待用户在测试端验收。待看：无人机模型、贴图、航灯和盘旋，引擎声听距，击落与坠毁；无人机实际可见距离（按服务器视距核对，默认视距 10 时约 160 格，不按渲染上限 320 格验收）；模拟距离小于视距时战局重置后无人机能否约 1 秒内消失；导弹、防空炮弹与 vvp 铠甲能否击落无人机（卓越前线防空炮弹的近炸引信是否认得这种实体，代码里无法确认）；受理即响第 0 波炮声，各波炮声与呼啸，落弹节奏与散布，炮声远端可听（155 级约 300 格、105 级约 210 格）；没装卓越前线时三种炮击显示不可用；支援页 4 个新按钮在 320×240 与 960×720 下有无越界。
+- 敌方红点、敌方防空击落无人机：需双人，待验证。
+
+## WOK步战核心 0.3.0-beta.5 — 2026-10-03
+
+### 新增
+- 支援失败分三类，由扩展在 `SupportSpawnException` 上声明：`endMission`（只结束本次任务，冷却照扣，技能照常可用）、`notDelivered`（没有投送出去，结束本次并返还冷却）、`providerBroken`（适配器本身损坏，该技能停用到服务器重启，是否返还由调用方声明）。message 是玩家可见的中文短句，cause 只写日志。
+- `SupportDefinition` 末尾新增组件 `requiresLoadedFootprint`。为 `false` 的支援在受理和执行期间不要求覆盖范围内的区块已加载，只校验坐标范围、世界边界和维度；受理时遇到未加载的列不读高度，核心不会因此同步加载区块。区块数上限 1024 只在为 `true` 时检查，半径仍受定义上限约束。原 10 参数构造器保留，默认 `true`。
+- 战术地图"照射许可"内圈：客户端接口 `TacticalSupportMapPresentationRegistry.registerGuidanceRadius` / `guidanceRadius`（另有 `unregisterGuidanceRadius`）。注册了内圈的支援在选点预览、在途和执行中三种状态下，都会在红色危险区内再画一圈琥珀色虚线（圆心为目标起点），并在两圈下方标注"照射许可 R{n}m"：标签整体放在外圈和内圈（含深色描边）中更靠外的那一圈下方，不压住任一圈；外圈太小、标签会压住准星时，文字并入原有的波及半径标签或任务卡片。新增语言键 `screen.wok_infantry.map.support.guidance_radius`（zh_cn"照射许可 R%sm"，en_us"Designation zone R%sm"）。
+- 支援任务没有完成就结束时，给呼叫者发一条聊天提示："[支援] 名称 未能投送：原因，冷却已返还"；要求返还但冷却已被管理员改过时为"[支援] 名称 未能投送：原因"；其余为"[支援] 名称 任务中止：原因"。正常完成不提示。
+- `SupportProvider` 新增默认空实现的 `abandon(SupportSpawnContext)`：第 0 步执行过之后核心自己取消任务（呼叫者已不在受理阵营、覆盖区块卸载或超出世界边界、适配器不可用）时，核心调用它一次，让扩展撤回已经放进世界的东西；适配器已熔断时照样调用，`context.stepIndex()` 为不再执行的那一步。`GuardedSupportProvider` 透传，清理失败只记警告日志。目标维度已不可用时不调用。
+### 修改
+- 熔断只针对适配器本身损坏：只有 `providerBroken`，以及 `RuntimeException`、`LinkageError` 和反射异常（统一按不返还的 `providerBroken` 处理）会让该技能停用到服务器重启；普通 `SupportSpawnException` 原样结束本次任务，下次仍可呼叫。原有两个构造器保留，语义改为"只结束本次"；`AbstractSoftSupportProvider.doExecuteStep` 改为同时声明 `throws SupportSpawnException`。
+- 打不出去就返还冷却：第 0 步完成前，适配器报告 `notDelivered`（或声明返还的 `providerBroken`），或核心自己取消任务（呼叫者已不在受理阵营、目标维度不可用、覆盖区块卸载或超出世界边界、适配器不可用），受理时扣下的冷却都会返还，可以立刻再呼叫；第 0 步执行过之后一律不返还。返还是比对写回：只有存档里该阵营、该支援的到期时间仍等于受理时写入的值才清零，管理员中途清除或改过冷却则保持现状。不另加防刷限制。
+- 任务 callId 改由服务端 `UUID.randomUUID()` 生成，客户端请求 ID 只用于回执幂等。扩展可能把 callId 用作实体 UUID，不能由客户端决定。
+- 临时情报属于阵营：`BattleService.publishSupportIntel` 不再要求指挥官当前所在维度等于目标维度，侦察期间指挥官阵亡进入等待区或换维度，扫描照常刷新；目标维度是等待区或大厅时拒绝。受理阵营、维度存在、批次数量、TTL、坐标、高度和世界边界校验保留。发布者不要求仍是指挥官，与执行期间只校验阵营一致，但必须是呼叫者当前在线的那个会话：阵亡后停在死亡界面仍算在线（原版会在 1 秒后移除尸体实体，不能只看 `isRemoved`）；已下线，或拿到的是重生前的旧实体，则本次侦察结束、不返还。
+- 临时情报发布器的失败分类：批次本身不合法（数量、TTL、空目标、超出扫描区或高度）视为适配器缺陷，熔断且不返还；发布者不是在线会话、战局服务不可用或发布被拒只结束本次。
+- 快照里卫星红点与手工标记各保底 32 个显示名额（`BattleRules.RESERVED_SUPPORT_INTEL_SNAPSHOT_SLOTS`），一方用不完的让给另一方，合计仍不超过 64。卫星红点改按发布顺序排列（呼叫首次发布的先后、批次内顺序），原来按标记 UUID 排序，名额不够时保留较早发布的目标；手工标记按创建时间排列，名额不够时保留最新的，刚放下（服务端已回复创建成功）的标记一定出现在地图上，最早的先让位。
+- 执行期间传给适配器的 `owner` 优先使用呼叫者当前在线的会话，离线时退回受理时的实体（只用于归属；发布临时情报时另按上面"临时情报属于阵营"一条校验当前会话）。
+- 每 tick 4 次的支援执行预算改为统计全部适配器回调（含失败的），原来只统计成功的。
+- 熔断日志只记一次：`AbstractSoftSupportProvider` 不再自己打印堆栈，只记录熔断状态，由必经的 `GuardedSupportProvider` 对每个适配器记录第一次熔断的完整堆栈。
+- 战术地图支援标签排布：任务卡片和波及半径标签整块放在危险区与许可内圈（含描边）上方，不再压住圈顶；许可标签和任务卡片碰到比例尺或指北针时沿原行横向让开；所有任务先画范围、后画标签，后一个任务的虚线圈不再划过前一个任务的卡片文字。
+### 修复
+- 侦察期间指挥官阵亡、换维度或下线时临时情报发布被拒，原实现把这当成适配器故障，侦察卫星被熔断到服务器重启。
+- 适配器的任何一次普通执行失败都会让该技能熔断到服务器重启。
+- 小队长或指挥官可以用构造的标记请求手工发布 `RECON_CONTACT`（卫星红点）类型的标记（正常客户端的标记工具里没有这一项）。`BattleService.createMarker` 与 `CreateMarkerPacket` 现在拒绝该类型，它只能由侦察支援自动生成；读档时丢弃存档里已有的 `RECON_CONTACT` 标记。
+- 卫星红点原先优先占满 64 个快照名额，一次大范围侦察会把己方手工标记全部挤出地图。
+- 支援调度改为遍历任务表快照，并为每个任务兜住调度器自身的运行时异常；适配器回调中重入修改任务表（例如战局重置）不再打断整轮调度。
+- 第 0 步之后核心取消任务时，适配器没有收尾的机会，已经放进世界的弹体只能留在原处（惰性炮弹或不再修正的航弹）；现在先调用 `SupportProvider.abandon`。
+- 同一次适配器熔断会由 `AbstractSoftSupportProvider` 与 `GuardedSupportProvider` 各记一份完整堆栈，看起来像两次独立故障。
+### 兼容性
+- 本轮没有改动任何网络协议版本，战局协议仍为 `18`；`CreateMarkerPacket` 字节格式不变，只是解码时拒绝 `RECON_CONTACT`。
+- 扩展 API 按签名保持兼容：`SupportDefinition` 的 10 参数构造器、`SupportSpawnException` 的两个构造器都保留，`doExecuteStep` 只多声明一个受检异常，`SupportProvider.abandon` 是默认空实现；未用旧附属 JAR 实测。行为差异：旧构造器抛出的异常不再熔断；`TacticalSupportMapPresentationRegistry.unregister(id)` 现在同时清掉内圈。
+- WOK步战附属-指挥官支援 0.1.0-beta.2 要求本版本或更高。
+### 配置/存档影响
+- 无新增配置项。
+- 存档格式不变：`wok_infantry_support.dat` 的数据版本与字段不变；`wok_infantry_battle.dat` 格式不变，读档时丢弃 `RECON_CONTACT` 类型的标记（正常游玩不会产生）。
+- 编制白名单不变：JAR 内置默认分配与已有 `formations.json` 都没有改动。
+- 网络协议版本不变（战局协议 `18`）。
+### 测试结果
+- `wok_infantry` 下 `.\gradlew.bat build compileUiTestJava`（含 `reobfJar`）通过；JUnit 364 项（89 个测试类）全部通过，0 失败、0 跳过。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_infantry-0.3.0-beta.5.jar` PASS，强制依赖只有 `forge`、`minecraft`。
+- `tools/verify_versions.ps1`：完整运行在第一个模块 `wok_trauma` 处因其 JAR 未构建而退出（本轮只构建核心与指挥官支援）；限定为这两个模块运行 PASS（源码版本、README/VERSIONING 版本表、模块 README、CHANGELOG 标题、JAR 名、modId 与内部版本一致）。
+- 未运行：`runGameTestServer`（含本轮新增的 `BattleGameTests` 用例）。
+- 界面双分辨率自动验收：`runUiTestClient`（JourneyMap 6.0.2 地形）PASS，320×240 与 960×720 下 F-16C 的 R80 危险区、R64 琥珀色许可内圈、任务卡片和许可标签都完整可见、互不压盖，不碰比例尺和指北针；结果与 14 张截图在 `D:\WOK步战测试\1.20.1-Forge_47.4.22\commander-support-acceptance\20261003-0.1.0-beta.2\`。前两次运行客户端在锁定编制后约 0.5 秒自行退出、没写结果（无崩溃报告，疑为窗口被外部关闭），之后连续 3 次 PASS。
+- 游戏内验收（JDAM 组合服伤害链、F-16C 照射与返还、侦察、冷却）：待用户在测试端验收。
+- 敌方红点、其他队友照射：需双人，待验证。
+
+## WOK步战附属-指挥官支援 0.1.0-beta.2 — 2026-10-03
+
+### 新增
+- F-16C 宝石路空袭加入音效：声音事件 `paveway_f16_approach`（释放时，字幕"F-16C 从高空掠过"）与 `paveway_bomb_tail`（命中时，字幕"宝石路航弹爆炸回响"）。两者复用 F-15EX 的同两段 DVIDS 公有领域 F-15E 靶场实录，音调 1.1，不是 F-16C 原声，没有另外打包音频；来源见 `THIRD_PARTY_NOTICES.md`。
+- F-16C 在战术地图上注册"照射许可"内圈 R64，外圈红色危险区为 R80（使用核心 0.3.0-beta.5 的内圈接口）。
+- F-16C 释放点改为四个对角候选（光斑周围 (±96, +120, ±96)），先试离制导员最近的一个，选第一个区块已完成加载的；四个都没加载才不释放并返还冷却，原因写"释放航线区块未加载，需有友军靠近目标外围"。原来释放点固定在光斑西北方，且不检查该处区块是否已加载。
+- 两种空袭实现核心新增的 `SupportProvider.abandon`：释放之后核心取消任务（呼叫者已不在受理阵营、覆盖区块卸载、适配器被熔断等）时，按 callId 找到弹体并移除。
+- 孤儿弹体清理：本附属释放的 JDAM / 宝石路弹体若随区块存盘、之后又从区块存档读回（区块卸载时任务已被取消，或服务器重启），在进入世界时直接丢弃，不会作为惰性炮弹留在目标点或在区块重新加载时冒出来。
+### 修改
+- 三个技能的冷却统一为 10 分钟（12000 tick），以《步战模式公示表》阵营表为准：F-15EX JDAM 与 F-16C 由 15 分钟改为 10 分钟，侦察卫星保持 10 分钟。每个技能只有一个全局冷却，不按编制区分，不加点数或次数限制。
+- F-16C 的定义半径由 64 改为 80（新常量 `F16C_PAVEWAY_DANGER_RADIUS` = 照射许可 64 + 爆炸半径 16），地图红色危险区覆盖到最远可能的毁伤边缘；受理和执行期间要求已加载的区块范围随之扩大到 80 格。照射判定仍只认 64 格许可区。
+- 打不出去就返还冷却：F-16C 释放时许可区内没有友军持续照射，任务直接结束并返还冷却（原因"许可区内没有友军持续照射"），可以立刻再次呼叫，不再空转剩余的制导步骤。JDAM 释放时目标点已超出世界边界、空袭弹体未能进入世界、F-16C 四个释放点区块都未加载，同样返还。释放前 Create Big Cannons 炮弹接口不可用时，该技能停用到服务器重启并返还冷却。
+- F-16C 没有照射时的动作栏提示仍是"宝石路航弹未释放：许可区内没有友军持续照射"，不写冷却是否返还；动作栏在核心比对写回之前发出，是否真的返还以核心的"[支援] …"聊天提示为准（管理员在途期间改过冷却时不返还）。
+- 释放之后不再返还：弹体在命中前消失只结束本次；释放后 Create Big Cannons 接口不可用或 F-16C 制导出现未预期异常时，先撤回弹体，再停用该技能到服务器重启。
+- 侦察卫星不再要求 150 格扫描区内的区块全部已加载（`requiresLoadedFootprint=false`），受理和执行期间只校验坐标、世界边界和维度。扫描只读取已加载的实体，未加载区域里没有可报告的目标。
+- 侦察首次扫描失败（地图上什么都没出现）时返还冷却，接口损坏或未预期异常时同时停用技能。首次扫描之后，普通失败（指挥官下线、发布被拒）只结束本次、不返还；未预期的运行时异常或不合法的情报批次（数量、持续时间、空目标、超出扫描区或高度）会让侦察卫星停用到服务器重启，也不返还。侦察期间指挥官阵亡（包括停在死亡界面）、进入等待区或换维度，扫描照常刷新到 30 秒结束；指挥官离开受理阵营时跳过该次扫描，由核心在下一步前取消任务。
+- F-16C 照射射线的水平射程改为许可区远端再加 16 格（最多 512 格），只有真正打到方块或射线前方的实体才算光斑，指向天空不再算有效照射。
+- 两种空袭的失败分类集中到 `AirstrikeFailures`，侦察的失败分类集中到 `ReconFailurePolicy`；音效与进度日志失败只记日志，不影响任务结果。
+### 修复
+- F-16C 制导员的照射射线会在穿过未加载区块时同步加载区块；现在遇到第一个未加载区块即停止，被截断的射线不算有效照射。区块判定改用 `getChunkNow`，只认已经完成加载的区块：原来的 `hasChunkAt` 只看票据等级，挂了票据但仍在读盘或生成的区块也算"已加载"，随后读取方块会让主线程卡住等它加载完。F-16C 释放点也按同样方式判断，不会把航弹放进还没加载完的区块里成为找不到的哑弹。
+- JDAM 弹体在命中前消失时抛出运行时异常，使该技能熔断到服务器重启；现在只结束本次任务。F-16C 航弹在飞行途中消失时原先静默空转剩余的制导步骤，现在同样结束本次任务。
+- 侦察期间指挥官阵亡、换维度或下线会让侦察卫星熔断到服务器重启（随核心 0.3.0-beta.5 修复）。
+- 释放之后核心取消任务时，弹体留在原处：卓越前线模式下 JDAM 落地后没有 CBC 引信，会作为惰性炮弹永久留在目标点并随区块存盘；F-16C 航弹失去修正，按最后速度飞成哑弹。现在先撤回弹体（见"新增"）。
+- F-15EX 接近音在地面上听不到：它只在目标正上方 200 格的释放点播放一次，原版默认衰减距离 16 格 × 音量 3 只覆盖 48 格，字幕也不出现。`sounds.json` 中 `jdam_f15_approach` 加入 `attenuation_distance: 96`，可听范围 288 格；本轮新增的 `paveway_f16_approach`（释放点在光斑斜上方约 181 格）同样设置。服务端发包范围仍为 256 格。
+### 兼容性
+- 最低核心版本提高到 `0.3.0-beta.5`（`mods.toml` 中 `wok_infantry` 的 `versionRange="[0.3.0-beta.5,)"`），依赖核心本轮新增的失败分级、冷却返还、`requiresLoadedFootprint` 与照射许可内圈接口；更早的核心不能加载本版本。
+- 技能 ID 不变；Create Big Cannons `5.11.4` 至 `6.0.0` 之前与卓越前线 `0.8.9+` 仍是可选依赖。
+- 仍不满足完全脱离核心独立安装，属于 0.1.0-beta.1 已记录的既有限制。
+### 配置/存档影响
+- 无新增配置项。存档格式不变，冷却仍保存在核心的 `<世界>/data/wok_infantry_support.dat`。
+- 升级前已开始的 15 分钟冷却按旧到期时间走完；需要立即生效时，管理员可用 `/battle admin support cooldown clear <blue|red> <支援ID>` 清除。
+- 编制白名单不变：JAR 内置默认分配与已有 `formations.json` 都没有改动。
+- 网络协议版本不变（核心战局协议仍为 `18`）。
+### 测试结果
+- 先构建核心 0.3.0-beta.5，再在 `wok_commander_support` 下 `..\gradlew.bat clean build` 通过；JUnit 56 项（12 个测试类）全部通过，0 失败、0 跳过。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_commander_support-0.1.0-beta.2.jar` PASS，强制依赖只有 `forge`、`minecraft`、`wok_infantry`，Create Big Cannons 与卓越前线仍为可选。
+- `tools/verify_versions.ps1`：完整运行在第一个模块 `wok_trauma` 处因其 JAR 未构建而退出（本轮只构建核心与指挥官支援）；限定为这两个模块运行 PASS。
+- 未运行：`JdamRuntimeGameTests` 等 GameTest 与 `tools/run_commander_support_production_gametest.ps1`。
+- 界面双分辨率自动验收（核心 `runUiTestClient`，用假技能目录，不加载本附属）：PASS，F-16C 的 R80/R64 显示见核心 0.3.0-beta.5 条目。
+- 游戏内验收（JDAM 组合服伤害链、F-16C 照射与返还、侦察、冷却）：待用户在测试端验收。
+- 敌方红点、其他队友照射：需双人，待验证。
+
 ## WOK步战核心 0.3.0-beta.4 — 2026-10-03
 
 ### 新增

@@ -104,6 +104,66 @@ public final class JdamRuntimeGameTests {
     }
 
     @GameTest(templateNamespace = "wok_infantry", template = "wok_empty",
+            timeoutTicks = 20)
+    public static void jdamShellRemovedAfterReleaseEndsOnlyThatMission(
+            GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos targetBlock = helper.absolutePos(new BlockPos(2, 2, 2));
+        int surfaceY = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                targetBlock.getX(), targetBlock.getZ());
+        ArmorStand owner = new ArmorStand(level, targetBlock.getX() + 40.5D,
+                surfaceY + 0.25D, targetBlock.getZ() + 0.5D);
+        helper.assertTrue(level.addFreshEntity(owner), "测试指挥官实体必须成功生成");
+
+        MillenniumJdamProvider provider = new MillenniumJdamProvider();
+        ProviderAvailability availability = provider.availability();
+        helper.assertTrue(availability.available(),
+                "CBC JDAM 适配器应可用: " + availability.reason());
+        SupportDefinition definition = WokCommanderSupportMod.millenniumJdamDefinition();
+        SupportTarget target = SupportTarget.point(level.dimension().location(),
+                targetBlock.getX() + 0.5D, targetBlock.getZ() + 0.5D);
+
+        UUID lostCallId = UUID.randomUUID();
+        execute(helper, provider, new SupportSpawnContext(level, owner, lostCallId,
+                definition, target, 0, Faction.BLUE));
+        Entity lostShell = level.getEntity(lostCallId);
+        helper.assertTrue(lostShell != null, "第 0 步必须先投下 CBC HE 炮弹");
+        lostShell.discard();
+
+        for (int step = 1; step <= 2; step++) {
+            SupportSpawnException failure = expectMissionEnd(helper, provider,
+                    new SupportSpawnContext(level, owner, lostCallId, definition,
+                            target, step, Faction.BLUE));
+            helper.assertTrue(!failure.providerBroken() && !failure.refundCooldown(),
+                    "第 " + step + " 步弹体丢失只能结束本次任务，不熔断也不返还冷却");
+            helper.assertTrue(failure.getMessage() != null
+                            && !failure.getMessage().isBlank(),
+                    "弹体丢失必须给呼叫者可读的中文原因");
+        }
+        SupportSpawnContext detonation = new SupportSpawnContext(level, owner, lostCallId,
+                definition, target, 3, Faction.BLUE);
+        if (SuperbWarfareExplosionAdapter.available()) {
+            SupportSpawnException failure = expectMissionEnd(helper, provider, detonation);
+            helper.assertTrue(!failure.providerBroken() && !failure.refundCooldown(),
+                    "卓越前线引爆模式下弹体丢失只能结束本次任务");
+        } else {
+            // CBC fallback: a missing shell at the fuse step is its native delayed explosion.
+            execute(helper, provider, detonation);
+        }
+        helper.assertTrue(provider.availability().available(),
+                "弹体丢失后适配器不得熔断: " + provider.availability().reason());
+
+        UUID nextCallId = UUID.randomUUID();
+        execute(helper, provider, new SupportSpawnContext(level, owner, nextCallId,
+                definition, target, 0, Faction.BLUE));
+        Entity nextShell = level.getEntity(nextCallId);
+        helper.assertTrue(nextShell != null && !nextShell.isRemoved(),
+                "上一枚炸弹丢失后，同一适配器必须仍能投下下一枚");
+        nextShell.discard();
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = "wok_infantry", template = "wok_empty",
             timeoutTicks = 40)
     public static void alliedArtilleryIndicatorTracksMovingEntityAndStopsOnRelease(
             GameTestHelper helper) {
@@ -179,5 +239,17 @@ public final class JdamRuntimeGameTests {
         } catch (SupportSpawnException failure) {
             helper.fail("JDAM provider execution failed: " + failure.getMessage());
         }
+    }
+
+    private static SupportSpawnException expectMissionEnd(GameTestHelper helper,
+                                                          MillenniumJdamProvider provider,
+                                                          SupportSpawnContext context) {
+        try {
+            provider.executeStep(context);
+        } catch (SupportSpawnException failure) {
+            return failure;
+        }
+        helper.fail("JDAM 第 " + context.stepIndex() + " 步在弹体丢失后仍然成功");
+        throw new IllegalStateException("unreachable");
     }
 }

@@ -141,6 +141,75 @@ class SupportSavedDataTest {
         assertTrue(data.setReadyAt(Faction.RED, FUTURE, 200L));
     }
 
+    @Test
+    void refundRestoresOnlyTheValueWrittenAtAcceptance() {
+        SupportSavedData data = new SupportSavedData();
+        assertTrue(data.setReadyAt(Faction.BLUE, FUTURE, 12_000L));
+        assertTrue(data.setReadyAt(Faction.RED, FUTURE, 9_000L));
+        long blueRevision = data.structuralRevision(Faction.BLUE);
+        long redRevision = data.structuralRevision(Faction.RED);
+
+        assertFalse(data.restoreIfUnchanged(Faction.BLUE, FUTURE, 11_999L, 0L));
+        assertEquals(12_000L, data.readyAt(Faction.BLUE, FUTURE));
+        assertEquals(blueRevision, data.structuralRevision(Faction.BLUE));
+
+        assertTrue(data.restoreIfUnchanged(Faction.BLUE, FUTURE, 12_000L, 0L));
+        assertEquals(0L, data.readyAt(Faction.BLUE, FUTURE));
+        assertFalse(data.cooldowns(Faction.BLUE).containsKey(FUTURE));
+        assertTrue(data.structuralRevision(Faction.BLUE) > blueRevision);
+        assertTrue(data.isDirty());
+        assertEquals(9_000L, data.readyAt(Faction.RED, FUTURE));
+        assertEquals(redRevision, data.structuralRevision(Faction.RED));
+
+        assertTrue(data.restoreIfUnchanged(Faction.RED, FUTURE, 9_000L, 4_000L));
+        assertEquals(4_000L, data.readyAt(Faction.RED, FUTURE));
+    }
+
+    @Test
+    void refundAfterAdministratorClearKeepsTheAdministratorDecision() {
+        SupportSavedData data = new SupportSavedData();
+        assertTrue(data.setReadyAt(Faction.BLUE, FUTURE, 12_000L));
+        assertTrue(data.setReadyAt(Faction.BLUE, FUTURE, 0L));
+        long revision = data.structuralRevision(Faction.BLUE);
+
+        assertFalse(data.restoreIfUnchanged(Faction.BLUE, FUTURE, 12_000L, 0L));
+        assertFalse(data.restoreIfUnchanged(Faction.BLUE, FUTURE, 12_000L, 500L));
+        assertEquals(0L, data.readyAt(Faction.BLUE, FUTURE));
+        assertTrue(data.cooldowns(Faction.BLUE).isEmpty());
+        assertEquals(revision, data.structuralRevision(Faction.BLUE));
+
+        data.resetAll();
+        assertFalse(data.restoreIfUnchanged(Faction.BLUE, OTHER, 1L, 0L));
+        // An absent entry compares as zero; restoring zero over it is a matched no-op.
+        assertTrue(data.restoreIfUnchanged(Faction.BLUE, OTHER, 0L, 0L));
+        assertTrue(data.cooldowns(Faction.BLUE).isEmpty());
+    }
+
+    @Test
+    void refundNeverThrowsWhenCooldownStorageIsFull() {
+        SupportSavedData data = new SupportSavedData();
+        ResourceLocation first = null;
+        for (int index = 0; index < SupportSavedData.MAX_COOLDOWN_ENTRIES; index++) {
+            ResourceLocation id = ResourceLocation.fromNamespaceAndPath(
+                    "capacity_test", "support_" + index);
+            if (first == null) {
+                first = id;
+            }
+            assertTrue(data.setReadyAt(Faction.BLUE, id, 100L));
+        }
+
+        // Removing or replacing an existing entry never needs a new slot.
+        assertTrue(data.restoreIfUnchanged(Faction.BLUE, first, 100L, 0L));
+        assertEquals(0L, data.readyAt(Faction.BLUE, first));
+        assertTrue(data.setReadyAt(Faction.BLUE, first, 100L));
+        assertTrue(data.restoreIfUnchanged(Faction.BLUE, first, 100L, 50L));
+        assertEquals(50L, data.readyAt(Faction.BLUE, first));
+
+        // Creating a new entry at capacity is declined instead of throwing.
+        assertFalse(data.restoreIfUnchanged(Faction.RED, FUTURE, 0L, 200L));
+        assertEquals(0L, data.readyAt(Faction.RED, FUTURE));
+    }
+
     private static CompoundTag cooldown(String faction, String supportId, long readyAt) {
         CompoundTag tag = new CompoundTag();
         tag.putString("Faction", faction);

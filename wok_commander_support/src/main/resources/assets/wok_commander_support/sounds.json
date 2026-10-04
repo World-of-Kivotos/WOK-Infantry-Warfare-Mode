@@ -4,6 +4,7 @@
     "sounds": [
       {
         "name": "wok_commander_support:jdam_f15_approach",
+        "attenuation_distance": 96,
         "stream": false,
         "preload": true
       }
@@ -16,6 +17,86 @@
         "name": "wok_commander_support:jdam_bomb_tail",
         "stream": false,
         "preload": true
+      }
+    ]
+  },
+  "paveway_f16_approach": {
+    "subtitle": "subtitles.wok_commander_support.paveway_f16_approach",
+    "sounds": [
+      {
+        "name": "wok_commander_support:jdam_f15_approach",
+        "pitch": 1.1,
+        "attenuation_distance": 96,
+        "stream": false,
+        "preload": true
+      }
+    ]
+  },
+  "paveway_bomb_tail": {
+    "subtitle": "subtitles.wok_commander_support.paveway_bomb_tail",
+    "sounds": [
+      {
+        "name": "wok_commander_support:jdam_bomb_tail",
+        "pitch": 1.1,
+        "stream": false,
+        "preload": true
+      }
+    ]
+  },
+  "howitzer_155_report": {
+    "subtitle": "subtitles.wok_commander_support.howitzer_155_report",
+    "sounds": [
+      {
+        "type": "event",
+        "name": "superbwarfare:plz_05_veryfar",
+        "volume": 20.0
+      }
+    ]
+  },
+  "howitzer_105_report": {
+    "subtitle": "subtitles.wok_commander_support.howitzer_105_report",
+    "sounds": [
+      {
+        "type": "event",
+        "name": "superbwarfare:mk_42_veryfar",
+        "volume": 14.0
+      }
+    ]
+  },
+  "artillery_incoming_cbc": {
+    "subtitle": "subtitles.wok_commander_support.artillery_incoming_cbc",
+    "sounds": [
+      {
+        "type": "event",
+        "name": "createbigcannons:shell_flying"
+      }
+    ]
+  },
+  "artillery_incoming_sbw": {
+    "subtitle": "subtitles.wok_commander_support.artillery_incoming_sbw",
+    "sounds": [
+      {
+        "type": "event",
+        "name": "superbwarfare:shell_fly"
+      }
+    ]
+  },
+  "recon_drone_engine": {
+    "subtitle": "subtitles.wok_commander_support.recon_drone_engine",
+    "sounds": [
+      {
+        "type": "event",
+        "name": "superbwarfare:ju_87_engine"
+      }
+    ]
+  },
+  "recon_drone_destroyed": {
+    "subtitle": "subtitles.wok_commander_support.recon_drone_destroyed",
+    "sounds": [
+      {
+        "type": "event",
+        "name": "superbwarfare:explosion_air",
+        "volume": 16.0
       }
     ]
   }

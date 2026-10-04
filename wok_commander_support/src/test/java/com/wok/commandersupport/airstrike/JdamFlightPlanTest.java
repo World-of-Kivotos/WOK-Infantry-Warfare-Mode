@@ -17,7 +17,7 @@ class JdamFlightPlanTest {
 
         assertEquals(WokCommanderSupportMod.MILLENNIUM_JDAM_ID, definition.id());
         assertEquals(SupportTargetMode.POINT, definition.targetMode());
-        assertEquals(18_000L, definition.cooldownTicks());
+        assertEquals(12_000L, definition.cooldownTicks());
         assertEquals(200L, definition.inboundTicks());
         assertEquals(4, definition.stepCount());
         assertEquals(20, definition.stepIntervalTicks());

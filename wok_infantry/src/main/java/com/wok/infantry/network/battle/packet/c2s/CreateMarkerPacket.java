@@ -29,6 +29,10 @@ public record CreateMarkerPacket(TacticalMarkerType type, ResourceLocation dimen
     public CreateMarkerPacket {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(dimension, "dimension");
+        // 卫星红点只能由侦察支援在服务端生成；客户端意图里出现它一律视为非法包。
+        if (type == TacticalMarkerType.RECON_CONTACT) {
+            throw new IllegalArgumentException("Recon contacts cannot be created by players");
+        }
         requireCoordinate(x, "x");
         requireCoordinate(z, "z");
         requireCoordinate(endX, "end x");

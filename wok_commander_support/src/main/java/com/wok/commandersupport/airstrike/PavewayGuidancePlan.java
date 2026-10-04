@@ -2,6 +2,10 @@ package com.wok.commandersupport.airstrike;
 
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+
 /** Pure flight geometry for the visible three-second diagonal Paveway approach. */
 record PavewayGuidancePlan(Vec3 spawn, int flightTicks) {
     static final double CBC_LINEAR_DRAG = 0.01D;
@@ -22,6 +26,36 @@ record PavewayGuidancePlan(Vec3 spawn, int flightTicks) {
         }
         return new PavewayGuidancePlan(designation.add(SPAWN_OFFSET_X,
                 SPAWN_OFFSET_Y, SPAWN_OFFSET_Z), flightTicks);
+    }
+
+    /**
+     * The four diagonal release points around a designation, the one horizontally nearest to
+     * {@code preferNear} first (the designator: chunks around a player are the likeliest to be
+     * loaded). Ties, and a missing or non-finite {@code preferNear}, keep the original
+     * north-west approach first, then north-east, south-west and south-east.
+     */
+    static List<PavewayGuidancePlan> releaseCandidates(Vec3 designation, Vec3 preferNear,
+                                                       int flightTicks) {
+        if (designation == null || !finite(designation) || flightTicks <= 0) {
+            throw new IllegalArgumentException("Invalid Paveway designation");
+        }
+        List<PavewayGuidancePlan> candidates = new ArrayList<>(4);
+        for (double signZ : new double[]{1.0D, -1.0D}) {
+            for (double signX : new double[]{1.0D, -1.0D}) {
+                candidates.add(new PavewayGuidancePlan(designation.add(
+                        SPAWN_OFFSET_X * signX, SPAWN_OFFSET_Y, SPAWN_OFFSET_Z * signZ),
+                        flightTicks));
+            }
+        }
+        if (preferNear != null && finite(preferNear)) {
+            // List.sort is stable, so equal distances keep the fixed order above.
+            candidates.sort(Comparator.comparingDouble(plan -> {
+                double dx = plan.spawn().x - preferNear.x;
+                double dz = plan.spawn().z - preferNear.z;
+                return dx * dx + dz * dz;
+            }));
+        }
+        return List.copyOf(candidates);
     }
 
     static Vec3 guidancePoint(Vec3 designation) {
