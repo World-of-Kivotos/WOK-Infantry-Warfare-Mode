@@ -367,6 +367,158 @@ class WokHudLayoutTest {
         assertEquals(200 - 2 * 2 - 20, tiny.centerLow().width(), "never wider than the screen allows");
     }
 
+    /**
+     * 整体审查修正 compat-01: inside a capture point on a 240–255 high screen the roster, pushed
+     * under the capture panel, reached into WOK步战附属-部位血量's figure (drawn under the core
+     * HUD) and covered its head label. Real add-on geometry: body health 0.1.0-beta.10 puts the
+     * figure at h − 73 and the head chip one pixel higher; the companion slot sits 60 under the
+     * figure top.
+     */
+    @Test
+    void rosterEndsAboveTheBodyHealthFigureInsideACapturePoint() {
+        Layout reviewed = WokHudLayout.compute(inCapturePoint(427, 240)
+                .withAddonPanels(List.of(bodyHealthColumn(427, 240))));
+        assertEquals(83, reviewed.roster().top(), "still under the capture panel");
+        assertEquals(6, reviewed.rosterRows(), "two member rows give way to the figure");
+        assertEquals(UiRect.of(2, 83, 174, 83 + 11 + 6 * 10 + 2), reviewed.roster());
+        assertTrue(reviewed.roster().bottom() + reviewed.gap() <= 166, "head chip starts at y166");
+
+        assertEquals(6, WokHudLayout.compute(inCapturePoint(400, 240)
+                .withAddonPanels(List.of(bodyHealthColumn(400, 240)))).rosterRows());
+        assertEquals(7, WokHudLayout.compute(inCapturePoint(427, 250)
+                .withAddonPanels(List.of(bodyHealthColumn(427, 250)))).rosterRows());
+        for (int[] size : new int[][]{{455, 256}, {480, 270}, {640, 336}, {640, 360}}) {
+            Layout layout = WokHudLayout.compute(inCapturePoint(size[0], size[1])
+                    .withAddonPanels(List.of(bodyHealthColumn(size[0], size[1]))));
+            assertEquals(8, layout.rosterRows(), size[0] + "x" + size[1] + ": everyone fits");
+            assertEquals(WokHudLayout.compute(inCapturePoint(size[0], size[1])).roster(),
+                    layout.roster(), size[0] + "x" + size[1] + ": nothing moves");
+        }
+        Layout alone = WokHudLayout.compute(inCapturePoint(427, 240));
+        assertEquals(8, alone.rosterRows(), "without body health the roster keeps every row");
+        assertEquals(UiRect.of(2, 83, 174, 176), alone.roster());
+        Layout outside = WokHudLayout.compute(Input.screen(427, 240, 1).withRoster(8, false)
+                .withStrip(true).withAddonPanels(List.of(bodyHealthColumn(427, 240))));
+        assertEquals(8, outside.rosterRows(), "outside a capture point the figure is far below");
+        Layout collapsed = WokHudLayout.compute(Input.screen(427, 240, 1).withRoster(8, true)
+                .withStrip(true).withCapturePanel(CaptureHudBridge.mirroredPanel(427))
+                .withAddonPanels(List.of(bodyHealthColumn(427, 240))));
+        assertEquals(0, collapsed.rosterRows());
+        assertEquals(UiRect.of(2, 2, 174, 13), collapsed.roster(),
+                "the title row alone stays above the capture panel");
+    }
+
+    /**
+     * 整体审查修正 compat-01: WOK步战附属-倒地 0.1.0-alpha.3 draws its panel above all at the
+     * bottom centre while the viewer is down; at 427×240 it covered the roster's last row.
+     */
+    @Test
+    void rosterEndsAboveTheDownedPanelWhileTheViewerIsDown() {
+        UiRect panel = DownedHudBridge.mirroredPanel(427, 240);
+        Layout layout = WokHudLayout.compute(inCapturePoint(427, 240)
+                .withAddonPanels(List.of(panel)));
+        assertEquals(6, layout.rosterRows());
+        assertTrue(layout.roster().bottom() + layout.gap() <= panel.top(), layout.roster().toString());
+        // 21:9 (3440×1440 at GUI 6): the centre-low slot is clear of the roster, the panel is not
+        Layout ultrawide = WokHudLayout.compute(inCapturePoint(573, 240)
+                .withAddonPanels(List.of(DownedHudBridge.mirroredPanel(573, 240))));
+        assertEquals(6, ultrawide.rosterRows());
+        Layout both = WokHudLayout.compute(inCapturePoint(427, 240)
+                .withAddonPanels(List.of(bodyHealthColumn(427, 240), panel)));
+        assertEquals(6, both.rosterRows(), "the higher of the two decides");
+    }
+
+    /**
+     * 整体审查修正 compat-01/05: an add-on that asks for the centre-low slot (the slot the core
+     * offers the downed panel) gets it clear of the roster, also under a capture panel.
+     */
+    @Test
+    void rosterEndsAboveTheCentreLowSlotWhileAnAddOnUsesIt() {
+        Layout free = WokHudLayout.compute(inCapturePoint(427, 240));
+        assertTrue(free.roster().intersects(free.centerLow()),
+                "premise: under the capture panel the full roster reaches into the slot");
+        Layout used = WokHudLayout.compute(inCapturePoint(427, 240).withCenterLowInUse(true));
+        assertEquals(free.centerLow(), used.centerLow(), "the slot itself does not move");
+        assertEquals(3, used.rosterRows());
+        assertTrue(used.roster().bottom() + used.gap() <= used.centerLow().top());
+        Layout top = WokHudLayout.compute(Input.screen(427, 240, 1).withRoster(8, false)
+                .withStrip(true).withCenterLowInUse(true));
+        assertEquals(8, top.rosterRows(), "a roster at the top is clear of the slot anyway");
+        assertTrue(HudFrame.centerLowInUse(5, 5), "asked this frame");
+        assertTrue(HudFrame.centerLowInUse(5, 4), "asked last frame (laid out before the ask)");
+        assertFalse(HudFrame.centerLowInUse(5, 3), "no longer asked");
+        assertFalse(HudFrame.centerLowInUse(0, -1), "never asked");
+    }
+
+    @Test
+    void rosterGivesUpRowsThenItsMembersThenEverything() {
+        assertEquals(8, WokHudLayout.rosterRowsAbove(83, 200, 8, true, false));
+        assertEquals(6, WokHudLayout.rosterRowsAbove(83, 163, 8, true, false));
+        assertEquals(1, WokHudLayout.rosterRowsAbove(83, 106, 8, true, false));
+        assertEquals(0, WokHudLayout.rosterRowsAbove(83, 105, 8, true, false), "title row only");
+        assertEquals(0, WokHudLayout.rosterRowsAbove(83, 94, 8, true, false));
+        assertEquals(-1, WokHudLayout.rosterRowsAbove(83, 93, 8, true, false), "not even the title");
+        assertEquals(0, WokHudLayout.rosterRowsAbove(83, 200, 8, true, true), "collapsed stays so");
+        assertEquals(7, WokHudLayout.rosterRowsAbove(84, 84 + 13 + 2 + 7 * 12, 8, false, false));
+
+        Layout hidden = WokHudLayout.compute(inCapturePoint(427, 240)
+                .withAddonPanels(List.of(UiRect.of(0, 90, 200, 240))));
+        assertNull(hidden.roster(), "a roster that cannot keep its title row clear is not drawn");
+        assertEquals(0, hidden.rosterRows());
+        assertEquals(Integer.MAX_VALUE, WokHudLayout.floorAbove(UiRect.of(2, 83, 174, 176),
+                List.of(UiRect.of(180, 100, 300, 240), UiRect.of(0, 10, 100, 60)), 3),
+                "panels beside or above the roster do not limit it");
+    }
+
+    /** Every tier, in and out of a capture point, with every add-on panel of the real add-ons. */
+    @Test
+    void everyTierKeepsTheRosterClearOfAddOnPanels() {
+        for (int[] tier : TIERS) {
+            for (boolean capture : new boolean[]{false, true}) {
+                for (boolean downed : new boolean[]{false, true}) {
+                    for (boolean centreLow : new boolean[]{false, true}) {
+                        List<UiRect> panels = new ArrayList<>();
+                        panels.add(bodyHealthColumn(tier[0], tier[1]));
+                        if (downed) {
+                            panels.add(DownedHudBridge.mirroredPanel(tier[0], tier[1]));
+                        }
+                        Input input = Input.screen(tier[0], tier[1], tier[2]).withRoster(8, false)
+                                .withStrip(true).withToasts(List.of(150, 60)).withEffects(3, 2)
+                                .withCapturePanel(capture
+                                        ? CaptureHudBridge.mirroredPanel(tier[0]) : null)
+                                .withAddonPanels(panels).withCenterLowInUse(centreLow);
+                        Layout layout = WokHudLayout.compute(input);
+                        String where = tier[0] + "x" + tier[1] + "@" + tier[2] + " capture="
+                                + capture + " downed=" + downed + " centreLow=" + centreLow;
+                        assertSound(input, layout, where);
+                        UiRect roster = layout.toGui(layout.roster());
+                        for (UiRect panel : panels) {
+                            assertFalse(roster.intersects(panel), where + ": " + roster + " vs "
+                                    + panel);
+                        }
+                        if (centreLow) {
+                            assertFalse(layout.roster().intersects(layout.centerLow()), where);
+                        }
+                        assertTrue(layout.rosterRows() >= 3, where + ": keeps most of the squad");
+                    }
+                }
+            }
+        }
+    }
+
+    private static Input inCapturePoint(int width, int height) {
+        return Input.screen(width, height, 1).withRoster(8, false).withStrip(true)
+                .withCapturePanel(CaptureHudBridge.mirroredPanel(width));
+    }
+
+    /** Body health 0.1.0-beta.10's column through the bridge, as its companion slot gives it. */
+    private static UiRect bodyHealthColumn(int width, int height) {
+        int figureX = 50;
+        int figureY = height - 48 - 25;
+        int[] slot = {figureX + 39 / 2 - 52 / 2, figureY + 48 + 25 - 11 - 2, 52, 11};
+        return BodyHealthHudBridge.columnAbove(slot, width, height);
+    }
+
     private static int rosterTopWithCapture(int width, int height) {
         return WokHudLayout.compute(Input.screen(width, height, 1).withRoster(8, false)
                 .withCapturePanel(CaptureHudBridge.mirroredPanel(width))).roster().top();
