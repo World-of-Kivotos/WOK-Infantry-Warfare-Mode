@@ -60,7 +60,17 @@ public final class UiCapture {
 
     /** Captures {@code screen} (screenshot {@code fileName}, or probe only when null). */
     public static void arm(String fileName, Screen screen, Consumer<Result> callback) {
-        armed = new Request(fileName, screen, screen == null, callback);
+        arm(fileName, screen, screen == null, callback);
+    }
+
+    /**
+     * Captures {@code screen}; with {@code hud} the recorded frame starts at the HUD
+     * ({@code RenderGuiEvent.Pre}) and, when a screen such as the chat is open over it, ends after
+     * that screen, so the HUD layout is checked with the screen that covers it.
+     */
+    public static void arm(String fileName, Screen screen, boolean hud,
+                           Consumer<Result> callback) {
+        armed = new Request(fileName, screen, hud || screen == null, callback);
         recordingFor = null;
         rendered = null;
     }
@@ -100,7 +110,8 @@ public final class UiCapture {
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onScreenRenderPost(ScreenEvent.Render.Post event) {
         Request request = recordingFor;
-        if (request != null && !request.hud() && event.getScreen() == request.screen()) {
+        if (request != null && request.screen() != null && event.getScreen() == request.screen()) {
+            // A HUD capture under a screen ends here too, after the screen covering the HUD.
             finish(request);
         }
     }
@@ -109,8 +120,8 @@ public final class UiCapture {
     public static void onGuiRenderPre(RenderGuiEvent.Pre event) {
         Request request = armed;
         Minecraft minecraft = Minecraft.getInstance();
-        if (request != null && request.hud() && minecraft.screen == null && recordingFor == null
-                && rendered == null) {
+        if (request != null && request.hud() && minecraft.screen == request.screen()
+                && recordingFor == null && rendered == null) {
             start(request, null);
         }
     }
@@ -118,7 +129,7 @@ public final class UiCapture {
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onGuiRenderPost(RenderGuiEvent.Post event) {
         Request request = recordingFor;
-        if (request != null && request.hud()) {
+        if (request != null && request.hud() && request.screen() == null) {
             finish(request);
         }
     }

@@ -2,6 +2,7 @@ package com.wok.infantry.client.hud;
 
 import com.wok.infantry.client.screen.TacticalBoardTheme;
 import com.wok.infantry.client.screen.UiRect;
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import com.wok.infantry.stamina.StaminaSnapshot;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -31,6 +32,8 @@ import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 public final class StaminaHudOverlay {
     /** Overlay id {@code wok_infantry:stamina}; kept so packs can hide it by id. */
     public static final String ID = "stamina";
+    /** Layout-probe box of the vitals plate (uiTest only). */
+    public static final String PROBE_BOX = "hud.vitals";
     public static final String ARMS_SHORT_KEY = "hud.wok_infantry.stamina.arms_short";
     public static final String LEGS_SHORT_KEY = "hud.wok_infantry.stamina.legs_short";
     /** Smallest labelled bar in the companion row. */
@@ -106,6 +109,7 @@ public final class StaminaHudOverlay {
             return;
         }
         HudPaint.begin(graphics, frame.factor());
+        HudPaint.probeBox(graphics, PROBE_BOX, plate);
         try {
             if (frame.layout().staminaRow()) {
                 drawRow(graphics, font, plate, stamina);
@@ -113,6 +117,7 @@ public final class StaminaHudOverlay {
                 drawStack(graphics, font, plate, stamina);
             }
         } finally {
+            UiLayoutProbe.end(graphics);
             HudPaint.end(graphics);
         }
     }
@@ -143,6 +148,7 @@ public final class StaminaHudOverlay {
         int top = slot[1];
         int right = left + slot[2];
         int bottom = top + slot[3];
+        UiLayoutProbe.begin(graphics, PROBE_BOX, left, top, right, bottom, true);
         TacticalHud.plate(graphics, left, top, right, bottom, TacticalHud.Edge.LEFT,
                 TacticalBoardTheme.NEUTRAL_B, false);
         Component arms = Component.translatable(ARMS_SHORT_KEY);
@@ -150,13 +156,14 @@ public final class StaminaHudOverlay {
         CompanionRow row = companionRow(left, top, slot[2], slot[3], font.width(arms),
                 font.width(legs), labelsAllowed);
         if (row.labelled()) {
-            graphics.drawString(font, arms, row.armsLabelX(), row.textY(),
-                    TacticalBoardTheme.LIGHT_MUTED, false);
-            graphics.drawString(font, legs, row.legsLabelX(), row.textY(),
-                    TacticalBoardTheme.LIGHT_MUTED, false);
+            TacticalHud.readout(graphics, font, arms, row.armsLabelX(), row.textY(),
+                    TacticalBoardTheme.LIGHT_MUTED);
+            TacticalHud.readout(graphics, font, legs, row.legsLabelX(), row.textY(),
+                    TacticalBoardTheme.LIGHT_MUTED);
         }
         bar(graphics, row.armsBar(), stamina.arms());
         bar(graphics, row.legsBar(), stamina.legs());
+        UiLayoutProbe.end(graphics);
     }
 
     static void drawStack(GuiGraphics graphics, Font font, UiRect plate,

@@ -7,6 +7,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
  * One UI acceptance case: a surface in one state of the layout preview, captured on a set of
@@ -50,6 +51,8 @@ public final class UiCase {
     private final List<Check> checks;
     private final Map<UiTier, String> fileNames;
     private final int budgetTicks;
+    private final boolean hudCapture;
+    private final List<Consumer<UiCaseContext>> cleanups;
 
     private UiCase(Builder builder) {
         this.surfaceId = builder.surfaceId;
@@ -63,6 +66,8 @@ public final class UiCase {
         this.checks = List.copyOf(builder.checks);
         this.fileNames = Map.copyOf(builder.fileNames);
         this.budgetTicks = builder.budgetTicks;
+        this.hudCapture = builder.hudCapture;
+        this.cleanups = List.copyOf(builder.cleanups);
     }
 
     public static Builder builder(String surfaceId, String stateId) {
@@ -123,6 +128,19 @@ public final class UiCase {
         return budgetTicks;
     }
 
+    /**
+     * Whether the capture records the HUD (from {@code RenderGuiEvent.Pre}) even though a screen
+     * such as the vanilla chat is open; the frame then ends after that screen.
+     */
+    public boolean hudCapture() {
+        return hudCapture;
+    }
+
+    /** Run once after the case's last tier (or its failed preparation), to restore client state. */
+    public List<Consumer<UiCaseContext>> cleanups() {
+        return cleanups;
+    }
+
     /** Screenshot of {@code tier}: a pinned legacy name or {@code wok_ui_<surface>_<state>_<tier>.png}. */
     public String fileName(UiTier tier) {
         String pinned = fileNames.get(tier);
@@ -157,6 +175,8 @@ public final class UiCase {
         private final List<Check> checks = new ArrayList<>();
         private final Map<UiTier, String> fileNames = new EnumMap<>(UiTier.class);
         private int budgetTicks = DEFAULT_BUDGET_TICKS;
+        private boolean hudCapture;
+        private final List<Consumer<UiCaseContext>> cleanups = new ArrayList<>();
 
         private Builder(String surfaceId, String stateId) {
             this.surfaceId = Objects.requireNonNull(surfaceId, "surfaceId");
@@ -214,6 +234,18 @@ public final class UiCase {
 
         public Builder budget(int ticks) {
             this.budgetTicks = Math.max(40, ticks);
+            return this;
+        }
+
+        /** Captures the HUD under the opened screen (the chat state of the HUD cases). */
+        public Builder hudCapture(boolean value) {
+            this.hudCapture = value;
+            return this;
+        }
+
+        /** Restores client state after the case (fixtures a case installed outside a screen). */
+        public Builder cleanup(Consumer<UiCaseContext> value) {
+            cleanups.add(value);
             return this;
         }
 

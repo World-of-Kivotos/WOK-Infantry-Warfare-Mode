@@ -3,6 +3,7 @@ package com.wok.infantry.client.hud;
 import com.mojang.blaze3d.platform.Window;
 import com.wok.infantry.client.screen.TacticalBoardTheme;
 import com.wok.infantry.client.screen.UiRect;
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -27,6 +28,9 @@ import java.util.List;
 public final class BattleStripOverlay {
     /** Overlay id {@code wok_infantry:tickets}; kept so packs can hide it by id. */
     public static final String ID = "tickets";
+    /** Layout-probe boxes of the strip and of each notice under it (uiTest only). */
+    public static final String PROBE_BOX = "hud.strip";
+    public static final String TOAST_PROBE_BOX = "hud.toast";
 
     public static final IGuiOverlay INSTANCE =
             (gui, graphics, partialTick, width, height) -> render(graphics, width, height);
@@ -57,8 +61,11 @@ public final class BattleStripOverlay {
             }
             List<HudFrame.Notice> notices = frame.notices();
             for (int i = 0; i < notices.size() && i < layout.toasts().size(); i++) {
-                HudPaint.toast(graphics, font, layout.toasts().get(i), notices.get(i).text(),
+                UiRect toast = layout.toasts().get(i);
+                HudPaint.probeBox(graphics, TOAST_PROBE_BOX, toast);
+                HudPaint.toast(graphics, font, toast, notices.get(i).text(),
                         notices.get(i).tone());
+                UiLayoutProbe.end(graphics);
             }
         } finally {
             HudPaint.end(graphics);
@@ -67,6 +74,16 @@ public final class BattleStripOverlay {
 
     static void drawStrip(GuiGraphics graphics, Font font, UiRect rect,
                           BattleStripModel.Sides sides) {
+        HudPaint.probeBox(graphics, PROBE_BOX, rect);
+        try {
+            drawStripContent(graphics, font, rect, sides);
+        } finally {
+            UiLayoutProbe.end(graphics);
+        }
+    }
+
+    private static void drawStripContent(GuiGraphics graphics, Font font, UiRect rect,
+                                         BattleStripModel.Sides sides) {
         TacticalHud.plate(graphics, rect.left(), rect.top(), rect.right(), rect.bottom(),
                 TacticalHud.Edge.TOP, TacticalBoardTheme.SECTION_B, false);
         BattleStripModel.Geometry geometry = BattleStripModel.geometry(rect,

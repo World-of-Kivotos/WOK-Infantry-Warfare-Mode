@@ -6,9 +6,12 @@ import com.wok.infantry.client.ClientBootstrap;
 import com.wok.infantry.client.ClientFormationState;
 import com.wok.infantry.client.KeyBindingDefaults;
 import com.wok.infantry.client.hud.TacticalHud;
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
+import com.wok.infantry.client.ui.probe.UiSurfaceInfo;
 import com.wok.infantry.formation.selection.FactionSelectionView;
 import com.wok.infantry.formation.selection.FormationSelectionSnapshot;
 import com.wok.infantry.formation.selection.FormationSelectionView;
+import com.wok.infantry.formation.vote.FormationVotePhase;
 import com.wok.infantry.network.battle.client.BattleClientNetworkBridge;
 import com.wok.infantry.network.formation.client.FormationClientNetworkBridge;
 import net.minecraft.client.gui.GuiGraphics;
@@ -34,9 +37,32 @@ import java.util.List;
  * 440 logical pixels, a list page and a detail page. Esc: an open dialog is cancelled first, the
  * narrow detail page goes back to the list, otherwise the page closes; without a faction the
  * action bar then says which key reopens it (user report 4).
+ *
+ * <p>For the UI acceptance the page reports its preview surface and state ({@link UiSurfaceInfo})
+ * and tags its keys with the {@code *_UI_ID} probe ids; both are inert outside the uiTest probe.
  */
 public final class FormationSelectionScreen extends TacticalScreen
-        implements BattleTerminalNav.Terminal {
+        implements BattleTerminalNav.Terminal, UiSurfaceInfo {
+    /** Preview surface id ({@code ui-preview/surfaces/45-formation.js}). */
+    public static final String SURFACE_ID = "formation";
+    /** Probe ids of the page's keys (the uiTest input driver clicks them by these ids). */
+    public static final String ADMIN_OPEN_UI_ID = "formation.admin.open";
+    public static final String ADMIN_LOCK_UI_ID = "formation.admin.lock";
+    public static final String JOIN_UI_ID = "formation.join";
+    public static final String VOTE_UI_ID = "formation.vote";
+    public static final String DETAILS_UI_ID = "formation.details";
+    public static final String BACK_UI_ID = "formation.back";
+    public static final String RETRY_UI_ID = "formation.retry";
+    public static final String LIST_UI_ID = "formation.list";
+    /** Faction keys are {@code formation.faction/<faction id>}. */
+    public static final String FACTION_UI_ID_PREFIX = "formation.faction/";
+    /** Probe boxes of the page's regions (texts must stay inside them). */
+    public static final String STRIP_BOX = "formation.strip";
+    public static final String LIST_BOX = "formation.list_panel";
+    public static final String DETAIL_BOX = "formation.detail";
+    public static final String CRUMB_BOX = "formation.crumb";
+    public static final String WAITING_BOX = "formation.waiting";
+
     /** How the page was opened, which decides what a settled snapshot does to it. */
     public enum Entry {
         /** Pushed by the server: closes once nothing is left to choose. */
@@ -97,6 +123,68 @@ public final class FormationSelectionScreen extends TacticalScreen
     /** The catalog shown, or {@code null} while waiting for it. */
     public FormationSelectionSnapshot snapshot() {
         return snapshot;
+    }
+
+    @Override
+    public String uiSurfaceId() {
+        return SURFACE_ID;
+    }
+
+    @Override
+    public String uiStateId() {
+        Boolean dangerDialog = modal() instanceof TacticalConfirmDialog dialog
+                ? dialog.danger() : null;
+        return uiStateId(model(), detailPage && layout != null
+                && layout.mode() == FormationScreenLayout.Mode.NARROW_DETAIL, dangerDialog);
+    }
+
+    /**
+     * Preview state ({@code 45-formation.js} states) of what the page shows: {@code waiting},
+     * {@code join}, {@code confirm}, {@code facfull}, {@code latejoin}, {@code lateconfirm},
+     * {@code pending}, {@code vote}, {@code detail}, {@code full}, {@code admintie},
+     * {@code admin} (lock confirmation) or {@code locked}.
+     *
+     * @param detailPage   the narrow detail page is shown
+     * @param dangerDialog {@code null} without a dialog, else whether it is the (dangerous) lock
+     *                     confirmation rather than the join confirmation
+     */
+    static String uiStateId(FormationVoteModel model, boolean detailPage, Boolean dangerDialog) {
+        FormationVoteModel.Stage stage = model.stage();
+        if (stage == FormationVoteModel.Stage.WAITING || stage == FormationVoteModel.Stage.EMPTY) {
+            return "waiting";
+        }
+        boolean browsingLocked = model.phase(model.browsing()) == FormationVotePhase.LOCKED;
+        if (dangerDialog != null) {
+            return dangerDialog ? "admin" : browsingLocked ? "lateconfirm" : "confirm";
+        }
+        switch (stage) {
+            case UNJOINED -> {
+                FormationVoteModel.JoinBlock block = model.joinAction().block();
+                if (block == FormationVoteModel.JoinBlock.FACTION_FULL
+                        || block == FormationVoteModel.JoinBlock.LOCKED_FULL) {
+                    return "facfull";
+                }
+                return browsingLocked ? "latejoin" : "join";
+            }
+            case NOT_STARTED -> {
+                return "pending";
+            }
+            case LOCKED -> {
+                return "locked";
+            }
+            default -> {
+                FormationSelectionView highlighted = model.highlighted();
+                if (highlighted != null && (!highlighted.available()
+                        || model.shortfall(model.browsing(), highlighted))) {
+                    return "full";
+                }
+                if (model.admin().visible() && model.leaders().tie()) {
+                    return "admintie";
+                }
+                return detailPage || !model.snapshot().ownVoteFormationId().isBlank()
+                        ? "detail" : "vote";
+            }
+        }
     }
 
     /** Shows a newer catalog in place: highlight, scroll position and list focus are kept. */
@@ -192,13 +280,14 @@ public final class FormationSelectionScreen extends TacticalScreen
                 }
             }
             case NARROW_DETAIL -> {
-                addRenderableWidget(BattleUiButton.builder(FormationText.listKey(), ignored -> {
+                addRenderableWidget(UiLayoutProbe.tag(BattleUiButton.builder(
+                                FormationText.listKey(), ignored -> {
                             detailPage = false;
                             requestRebuild();
                         }).icon(TacticalIcon.BACK)
                         .bounds(layout.crumbBack().left(), layout.crumbBack().top(),
                                 layout.crumbBack().width(), layout.crumbBack().height())
-                        .build());
+                        .build(), BACK_UI_ID));
                 addVoteKey(model, layout.detailAction(), layout.detailAction().left());
             }
         }
@@ -215,7 +304,7 @@ public final class FormationSelectionScreen extends TacticalScreen
                     FormationText.factionBadge(model, faction), model.factionLook(faction),
                     ignored -> browse(faction.id()));
             key.setTooltip(Tooltip.create(FormationText.factionTooltip(model, faction)));
-            addRenderableWidget(key);
+            addRenderableWidget(UiLayoutProbe.tag(key, FACTION_UI_ID_PREFIX + faction.id()));
         }
     }
 
@@ -234,12 +323,12 @@ public final class FormationSelectionScreen extends TacticalScreen
         key.active = join.enabled();
         key.setTooltip(Tooltip.create(join.enabled() ? labels.get(0)
                 : FormationText.step(model).get(0)));
-        addRenderableWidget(key);
+        addRenderableWidget(UiLayoutProbe.tag(key, JOIN_UI_ID));
     }
 
     private void addList(FormationVoteModel model, TacticalShellLayout.Metrics metrics) {
         list.update(model, metrics, layout.well());
-        addRenderableWidget(list.widget());
+        addRenderableWidget(UiLayoutProbe.tag(list.widget(), LIST_UI_ID));
     }
 
     private void addAdminKey(FormationVoteModel model) {
@@ -250,14 +339,18 @@ public final class FormationSelectionScreen extends TacticalScreen
         UiRect rect = layout.adminKey();
         Button key;
         if (admin.opening()) {
-            key = BattleUiButton.builder(FormationText.adminOpenKey(), ignored -> openVote())
+            key = UiLayoutProbe.tag(BattleUiButton.builder(FormationText.adminOpenKey(),
+                            ignored -> openVote())
                     .icon(TacticalIcon.UNLOCK)
-                    .bounds(rect.left(), rect.top(), rect.width(), rect.height()).build();
+                    .bounds(rect.left(), rect.top(), rect.width(), rect.height()).build(),
+                    ADMIN_OPEN_UI_ID);
             key.active = admin.openEnabled();
         } else {
-            key = BattleUiButton.builder(FormationText.adminLockKey(), ignored -> confirmLock())
+            key = UiLayoutProbe.tag(BattleUiButton.builder(FormationText.adminLockKey(),
+                            ignored -> confirmLock())
                     .kind(BattleUiButton.Kind.DANGER).icon(TacticalIcon.LOCK)
-                    .bounds(rect.left(), rect.top(), rect.width(), rect.height()).build();
+                    .bounds(rect.left(), rect.top(), rect.width(), rect.height()).build(),
+                    ADMIN_LOCK_UI_ID);
             key.active = admin.lockEnabled();
             if (!admin.lockEnabled()) {
                 key.setTooltip(Tooltip.create(FormationText.adminDetail(model).get(0)));
@@ -277,7 +370,7 @@ public final class FormationSelectionScreen extends TacticalScreen
                 }).icon(TacticalIcon.EYE)
                 .bounds(rect.left(), rect.top(), rect.width(), rect.height()).build();
         key.active = model.highlighted() != null;
-        addRenderableWidget(key);
+        addRenderableWidget(UiLayoutProbe.tag(key, DETAILS_UI_ID));
     }
 
     /** Vote key at the right of {@code bar}; the reason line takes the room left of it. */
@@ -306,14 +399,20 @@ public final class FormationSelectionScreen extends TacticalScreen
         builder.bounds(actionKey.left(), actionKey.top(), actionKey.width(), actionKey.height());
         Button key = builder.build();
         key.active = action.enabled();
-        addRenderableWidget(key);
+        if (!action.enabled()) {
+            // The reason is written beside the key; hovering the key says it too.
+            key.setTooltip(Tooltip.create(FormationText.reason(model, action).get(0)));
+        }
+        addRenderableWidget(UiLayoutProbe.tag(key, VOTE_UI_ID));
     }
 
     private void addRetryKey() {
         UiRect retry = waitingGeometry().retry();
-        addRenderableWidget(BattleUiButton.builder(FormationText.retryKey(), ignored -> retry())
+        addRenderableWidget(UiLayoutProbe.tag(BattleUiButton.builder(FormationText.retryKey(),
+                        ignored -> retry())
                 .kind(BattleUiButton.Kind.CONTROL).icon(TacticalIcon.REFRESH)
-                .bounds(retry.left(), retry.top(), retry.width(), retry.height()).build());
+                .bounds(retry.left(), retry.top(), retry.width(), retry.height()).build(),
+                RETRY_UI_ID));
     }
 
     // ---- actions ------------------------------------------------------------------------------------
@@ -489,26 +588,48 @@ public final class FormationSelectionScreen extends TacticalScreen
                 .withFeedback(footer(model));
         drawShell(graphics, spec);
         switch (layout.mode()) {
-            case WAITING -> renderWaiting(graphics, model);
+            case WAITING -> {
+                region(graphics, WAITING_BOX, layout.waitingPanel());
+                renderWaiting(graphics, model);
+                UiLayoutProbe.end(graphics);
+            }
             case WIDE -> {
+                region(graphics, STRIP_BOX, layout.strip());
                 renderStrip(graphics, model);
+                UiLayoutProbe.end(graphics);
+                region(graphics, LIST_BOX, layout.listPanel());
                 renderListPanel(graphics, model, false);
+                UiLayoutProbe.end(graphics);
+                region(graphics, DETAIL_BOX, layout.detailPanel());
                 detail.render(graphics, font, layout, model);
                 renderAction(graphics, model);
+                UiLayoutProbe.end(graphics);
             }
             case NARROW_LIST -> {
+                region(graphics, LIST_BOX, layout.listPanel());
                 renderListPanel(graphics, model, true);
                 if (model.joined()) {
                     renderAction(graphics, model);
                 }
+                UiLayoutProbe.end(graphics);
             }
             case NARROW_DETAIL -> {
+                region(graphics, CRUMB_BOX, layout.crumb());
                 renderCrumb(graphics, model, mouseX, mouseY);
+                UiLayoutProbe.end(graphics);
+                region(graphics, DETAIL_BOX, layout.detailPanel());
                 detail.render(graphics, font, layout, model);
                 renderAction(graphics, model);
+                UiLayoutProbe.end(graphics);
             }
         }
         renderWidgets(graphics, mouseX, mouseY, partialTick);
+    }
+
+    /** Opens the layout-probe box of a page region (no-op outside the uiTest probe). */
+    private static void region(GuiGraphics graphics, String id, UiRect rect) {
+        UiLayoutProbe.begin(graphics, id, rect.left(), rect.top(), rect.right(), rect.bottom(),
+                true);
     }
 
     private List<TacticalBoardChrome.KeyHint> hints(FormationVoteModel model) {
@@ -688,11 +809,15 @@ public final class FormationSelectionScreen extends TacticalScreen
                     FormationText.voteLabel(action));
         }
         int textY = actionBar.top() + Math.floorDiv(actionBar.height() - 8, 2);
-        FormationDetailPanel.drawReason(graphics, font, reasonLeft + 2, textY,
-                actionKey.left() - 6 - (reasonLeft + 2), action.icon(),
-                FormationText.reason(model, action),
+        int reasonWidth = actionKey.left() - 6 - (reasonLeft + 2);
+        FormationDetailPanel.drawReason(graphics, font, reasonLeft + 2, textY, reasonWidth,
+                action.icon(), FormationText.reason(model, action),
                 action.enabled() || action.mine() ? TacticalBoardTheme.MUTED
                         : TacticalBoardTheme.TEXT, TacticalBoardTheme.MUTED);
+        if (!action.enabled() && !action.mine() && reasonWidth >= 24) {
+            // A shortened reason is offered in full by the disabled vote key's tooltip.
+            UiLayoutProbe.tipped(graphics, reasonLeft + 2 + 12, textY);
+        }
     }
 
     private void renderCrumb(GuiGraphics graphics, FormationVoteModel model, int mouseX,

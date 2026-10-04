@@ -493,7 +493,8 @@ public final class FormationText {
             case SHORTFALL -> List.of(
                     key("reason.shortfall", formation.capacity(),
                             faction == null ? "" : faction.displayName(), population),
-                    key("reason.shortfall_short", formation.capacity(), population));
+                    key("reason.shortfall_short", formation.capacity(), population),
+                    key("reason.shortfall_tiny", formation.capacity(), population));
             case NOT_CANDIDATE -> List.of(key("reason.not_candidate"));
             case NO_CHANGE -> List.of(key("reason.no_change"));
             case NO_FORMATION -> List.of(key("reason.no_formation"));

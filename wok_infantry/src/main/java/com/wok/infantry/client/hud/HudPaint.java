@@ -4,6 +4,7 @@ import com.wok.infantry.client.screen.TacticalBoardTheme;
 import com.wok.infantry.client.screen.TacticalTextures;
 import com.wok.infantry.client.screen.TextFit;
 import com.wok.infantry.client.screen.UiRect;
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -35,6 +36,17 @@ public final class HudPaint {
 
     public static void end(GuiGraphics graphics) {
         graphics.pose().popPose();
+    }
+
+    /**
+     * Opens the layout-probe box of one HUD part (pair with {@link UiLayoutProbe#end}): the uiTest
+     * acceptance checks that its texts stay inside and that no two parts overlap. A no-op outside
+     * the probe; a null rectangle opens an empty box so begin and end stay paired.
+     */
+    public static void probeBox(GuiGraphics graphics, String id, UiRect rect) {
+        UiRect safe = rect == null ? UiRect.EMPTY : rect;
+        UiLayoutProbe.begin(graphics, id, safe.left(), safe.top(), safe.right(), safe.bottom(),
+                true);
     }
 
     /**

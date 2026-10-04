@@ -54,6 +54,7 @@ public final class UiCaseRunner {
     private int tierIndex;
     private Map<String, Object> caseState = new HashMap<>();
     private UiCaseContext context;
+    private boolean currentStarted;
     private int stepIndex;
     private int stageTicks;
     private int tierTicks;
@@ -155,6 +156,7 @@ public final class UiCaseRunner {
     }
 
     private void nextCase(Minecraft minecraft) {
+        finishCurrent();
         caseIndex++;
         if (caseIndex >= cases.size()) {
             current = null;
@@ -172,9 +174,27 @@ public final class UiCaseRunner {
         }
         WokInfantryMod.LOGGER.info("[UI ACCEPTANCE] Case {} on {}", current.id(), tiers);
         context = new UiCaseContext(minecraft, current, null, observer, caseState);
+        currentStarted = true;
         stepIndex = 0;
         context.startStep();
         to(Stage.PREPARE);
+    }
+
+    /** Runs the cleanups of the case that just ended (all tiers done, or preparation failed). */
+    private void finishCurrent() {
+        if (current == null || !currentStarted) {
+            return;
+        }
+        currentStarted = false;
+        for (Consumer<UiCaseContext> cleanup : current.cleanups()) {
+            try {
+                cleanup.accept(context);
+            } catch (RuntimeException | LinkageError exception) {
+                WokInfantryMod.LOGGER.error("[UI ACCEPTANCE] Cleanup of {} failed", current.id(),
+                        exception);
+                observer.accept("case[" + current.id() + "] cleanupFailure=" + exception);
+            }
+        }
     }
 
     private void prepare() throws Exception {
@@ -256,7 +276,7 @@ public final class UiCaseRunner {
     private void capture(Minecraft minecraft) {
         captured = null;
         UiCapture.arm(current.fileName(tiers.get(tierIndex)), minecraft.screen,
-                result -> captured = result);
+                minecraft.screen == null || current.hudCapture(), result -> captured = result);
         to(Stage.WAIT_CAPTURE);
     }
 

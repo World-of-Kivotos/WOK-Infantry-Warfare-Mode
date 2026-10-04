@@ -58,6 +58,17 @@ public final class UiInputDriver {
         held = false;
     }
 
+    /**
+     * Stops holding the mouse and puts it back on the window centre, where Minecraft keeps a
+     * grabbed cursor. Use it without a screen (HUD captures): a cursor left parked off the window
+     * would turn the camera by the whole distance on the next cursor event.
+     */
+    public static void releaseToCentre(Minecraft minecraft) {
+        held = false;
+        Window window = minecraft.getWindow();
+        setMouse(minecraft, window.getScreenWidth() / 2.0D, window.getScreenHeight() / 2.0D);
+    }
+
     /** Re-applies the held mouse position (no-op when nothing is held). */
     public static void applyHeld(Minecraft minecraft) {
         if (held && minecraft != null && minecraft.mouseHandler != null) {
@@ -103,6 +114,40 @@ public final class UiInputDriver {
         if (held) {
             holdParked(minecraft);
         }
+    }
+
+    /**
+     * Clicks the screen at layout coordinates (a {@code TacticalScreen}'s own coordinates, e.g. a
+     * list row's bounds), scaled back to GUI coordinates like {@link #clickWidget}.
+     */
+    public static void clickLayout(Minecraft minecraft, double layoutX, double layoutY) {
+        Screen screen = minecraft.screen;
+        if (screen == null) {
+            throw new IllegalStateException("No screen to click");
+        }
+        int factor = screen instanceof TacticalScreen tactical ? tactical.uiScale() : 1;
+        double x = layoutX * factor;
+        double y = layoutY * factor;
+        moveMouse(minecraft, x, y);
+        screen.mouseClicked(x, y, GLFW.GLFW_MOUSE_BUTTON_LEFT);
+        screen.mouseReleased(x, y, GLFW.GLFW_MOUSE_BUTTON_LEFT);
+        if (held) {
+            holdParked(minecraft);
+        }
+    }
+
+    /** Scrolls the wheel at GUI coordinates (x, y). */
+    public static boolean scrollAt(Minecraft minecraft, double guiX, double guiY, double delta) {
+        Screen screen = minecraft.screen;
+        if (screen == null) {
+            return false;
+        }
+        moveMouse(minecraft, guiX, guiY);
+        boolean handled = screen.mouseScrolled(guiX, guiY, delta);
+        if (held) {
+            holdParked(minecraft);
+        }
+        return handled;
     }
 
     /** Holds the mouse on the centre of {@code control} (hover, tooltips). */
