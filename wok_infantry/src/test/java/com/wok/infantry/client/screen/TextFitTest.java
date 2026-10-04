@@ -1,0 +1,161 @@
+package com.wok.infantry.client.screen;
+
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.function.ToIntFunction;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class TextFitTest {
+    /** Minecraft-like advances: space 4, ASCII 6, "…" 8, everything else (CJK) 9. */
+    private static final ToIntFunction<String> WIDTH = text -> text.codePoints()
+            .map(TextFitTest::advance).sum();
+
+    private static int advance(int codePoint) {
+        if (codePoint == ' ') {
+            return 4;
+        }
+        if (codePoint == 0x2026) {
+            return 8;
+        }
+        return codePoint < 0x80 ? 6 : 9;
+    }
+
+    @Test
+    void textThatFitsIsUnchanged() {
+        TextFit.Plain fitted = TextFit.fitPlain("ABC", 18, WIDTH);
+
+        assertEquals("ABC", fitted.text());
+        assertEquals(18, fitted.width());
+        assertFalse(fitted.truncated());
+    }
+
+    @Test
+    void overlongTextEndsInEllipsisWithinWidth() {
+        TextFit.Plain fitted = TextFit.fitPlain("ABCDEFGH", 30, WIDTH);
+
+        assertEquals("ABC…", fitted.text());
+        assertEquals(26, fitted.width());
+        assertTrue(fitted.truncated());
+    }
+
+    @Test
+    void chineseTextIsCutBetweenCharacters() {
+        TextFit.Plain fitted = TextFit.fitPlain("编制投票进行中", 40, WIDTH);
+
+        assertEquals("编制投…", fitted.text());
+        assertTrue(fitted.width() <= 40);
+        assertTrue(fitted.truncated());
+    }
+
+    @Test
+    void widthTooSmallForEllipsisDrawsNothing() {
+        TextFit.Plain fitted = TextFit.fitPlain("ABC", 5, WIDTH);
+
+        assertEquals("", fitted.text());
+        assertEquals(0, fitted.width());
+        assertTrue(fitted.truncated());
+    }
+
+    @Test
+    void emptyTextIsNeverReportedAsTruncated() {
+        TextFit.Plain fitted = TextFit.fitPlain("", -4, WIDTH);
+
+        assertEquals("", fitted.text());
+        assertFalse(fitted.truncated(), "an empty label needs no full-text tooltip");
+    }
+
+    @Test
+    void neverSplitsSurrogatePairs() {
+        String clef = new String(Character.toChars(0x1D11E));
+        TextFit.Plain fitted = TextFit.fitPlain("A" + clef + "B" + clef + "C", 25, WIDTH);
+
+        assertEquals("A" + clef + "…", fitted.text());
+    }
+
+    @Test
+    void trailingSpacesBeforeEllipsisAreDropped() {
+        assertEquals("AB…", TextFit.fitPlain("AB  CD", 26, WIDTH).text());
+    }
+
+    @Test
+    void leadingSpacesReservedForIconsAreKept() {
+        assertEquals("   Hostile", TextFit.fitPlain("   Hostile", 100, WIDTH).text());
+    }
+
+    @Test
+    void trailingStatusStaysCompleteWhileNameIsShortened() {
+        // name 58px + status 26px = 84px; only the name gives way.
+        TextFit.Plain fitted = TextFit.fitPlainWithTrailing("F-16C JDAM", "  12s", 66, WIDTH);
+
+        assertEquals("F-16C…  12s", fitted.text());
+        assertEquals(64, fitted.width());
+        assertTrue(fitted.truncated());
+    }
+
+    @Test
+    void twoPartLabelThatFitsIsUnchanged() {
+        TextFit.Plain fitted = TextFit.fitPlainWithTrailing("F-16C", "  12s", 100, WIDTH);
+
+        assertEquals("F-16C  12s", fitted.text());
+        assertFalse(fitted.truncated());
+    }
+
+    @Test
+    void statusAloneIsEllipsizedWhenEvenItDoesNotFit() {
+        TextFit.Plain fitted = TextFit.fitPlainWithTrailing("F-16C JDAM", "  12s", 15, WIDTH);
+
+        assertEquals("1…", fitted.text());
+        assertTrue(fitted.width() <= 15);
+        assertTrue(fitted.truncated());
+    }
+
+    @Test
+    void chineseWrapsBetweenAnyCharacters() {
+        assertEquals(List.of("一二三", "四五六"),
+                TextFit.wrapPlain("一二三四五六", 27, 0, WIDTH));
+    }
+
+    @Test
+    void latinWrapsAtSpaces() {
+        assertEquals(List.of("alpha beta", "gamma"),
+                TextFit.wrapPlain("alpha beta gamma", 60, 0, WIDTH));
+    }
+
+    @Test
+    void closingPunctuationNeverStartsALine() {
+        List<String> lines = TextFit.wrapPlain("一二三，四", 27, 0, WIDTH);
+
+        assertEquals(List.of("一二", "三，四"), lines);
+        lines.forEach(line -> assertFalse(line.startsWith("，"), line));
+    }
+
+    @Test
+    void wordsWiderThanALineAreHardBroken() {
+        assertEquals(List.of("ABCD", "EFGH", "IJ"),
+                TextFit.wrapPlain("ABCDEFGHIJ", 25, 0, WIDTH));
+    }
+
+    @Test
+    void lineLimitEndsTheLastKeptLineInEllipsis() {
+        List<String> lines = TextFit.wrapPlain("一二三四五六七八九", 27, 2, WIDTH);
+
+        assertEquals(List.of("一二三", "四五…"), lines);
+        assertTrue(WIDTH.applyAsInt(lines.get(1)) <= 27);
+    }
+
+    @Test
+    void explicitNewlinesStartNewLines() {
+        assertEquals(List.of("ab", "cd"), TextFit.wrapPlain("ab\ncd", 100, 0, WIDTH));
+    }
+
+    @Test
+    void alignmentPlacesTextInsideTheBox() {
+        assertEquals(10, TextFit.alignedX(10, 100, 40, TextFit.Align.LEFT));
+        assertEquals(40, TextFit.alignedX(10, 100, 40, TextFit.Align.CENTER));
+        assertEquals(70, TextFit.alignedX(10, 100, 40, TextFit.Align.RIGHT));
+    }
+}
