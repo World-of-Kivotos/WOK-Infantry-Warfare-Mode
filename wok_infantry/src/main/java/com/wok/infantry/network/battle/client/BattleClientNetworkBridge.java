@@ -7,6 +7,7 @@ import com.wok.infantry.battle.SquadCallsign;
 import com.wok.infantry.battle.TacticalMarkerType;
 import com.wok.infantry.client.BattleClientActions;
 import com.wok.infantry.client.ClientBattleState;
+import com.wok.infantry.client.screen.FormationSelectionScreen;
 import com.wok.infantry.client.screen.SquadScreen;
 import com.wok.infantry.client.screen.TacticalMapScreen;
 import com.wok.infantry.network.LoadoutNetwork;
@@ -84,6 +85,15 @@ public final class BattleClientNetworkBridge {
                     == com.wok.infantry.deployment.DeploymentPhase.ACTIVE;
             if (deploymentCompleted && current instanceof SquadScreen
                     && openTarget == BattleOpenTarget.NONE) {
+                minecraft.setScreen(null);
+                return;
+            }
+            // 0.4.0-beta.2: a test start sent from the formation page deploys straight from it
+            // (the viewer may have had no battle snapshot yet while waiting without a faction).
+            if (current instanceof FormationSelectionScreen formationScreen
+                    && FormationSelectionScreen.closesOnTestStartDeployment(
+                    formationScreen.awaitingTestStart(), snapshot.deployment().phase(),
+                    openTarget)) {
                 minecraft.setScreen(null);
                 return;
             }

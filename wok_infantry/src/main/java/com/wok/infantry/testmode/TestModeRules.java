@@ -205,6 +205,36 @@ public final class TestModeRules {
                 usable.get(0), false, true, "");
     }
 
+    // ---- room -----------------------------------------------------------------------------------
+
+    /**
+     * Whether a test start can seat the player in the faction and its (locked or about to be
+     * locked) formation, checked before anything changes so a full faction never leaves a lock
+     * behind without the player (审查修正). The faction then holds at most the smaller of its
+     * maximum and the formation's capacity, the same bound the administrator assignment and the
+     * lock apply.
+     *
+     * @param factionName       public faction name for the reason
+     * @param othersInFaction   members of the faction other than the player
+     * @param factionMax        the faction's maximum
+     * @param formationName     public formation name for the reason
+     * @param formationCapacity the formation's capacity
+     * @return blank when there is room, otherwise why not
+     */
+    public static String seatRefusal(String factionName, int othersInFaction, int factionMax,
+                                     String formationName, int formationCapacity) {
+        int limit = Math.min(factionMax, formationCapacity);
+        if (limit < 1) {
+            return factionName + "的编制“" + formationName + "”容量配置无效，无法加入";
+        }
+        if (othersInFaction < limit) {
+            return "";
+        }
+        return factionName + "已满：已有 " + othersInFaction + " 人，最多 " + limit + " 人"
+                + (formationCapacity < factionMax ? "（编制“" + formationName + "”容量 "
+                + formationCapacity + "）" : "") + "，未做任何改动";
+    }
+
     // ---- squad ----------------------------------------------------------------------------------
 
     /**
@@ -301,6 +331,18 @@ public final class TestModeRules {
      */
     public static float baseYaw(Faction side) {
         return side == Faction.RED ? 90.0F : 270.0F;
+    }
+
+    /**
+     * Facing of a base whose centre lies {@code offsetX} blocks east of the spawn: a red base
+     * that fell back west of the spawn ({@code offsetX < 0}) looks east towards the spawn instead
+     * of away from it (审查修正); otherwise {@link #baseYaw(Faction)}.
+     */
+    public static float baseYaw(Faction side, int offsetX) {
+        if (side == Faction.RED && offsetX < 0) {
+            return 270.0F;
+        }
+        return baseYaw(side);
     }
 
     /** Whether column ({@code x}, {@code z}) lies inside a border spanning the given bounds. */

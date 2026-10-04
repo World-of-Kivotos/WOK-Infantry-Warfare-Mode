@@ -336,25 +336,47 @@ public final class TestModeService {
     // ---- test start ---------------------------------------------------------------------------
 
     /**
+     * What a test start has changed so far. Every exit, the success and each failing step,
+     * publishes these changes like the matching administrator commands do (审查修正: a step that
+     * failed after the lock used to leave the faction's other members without their locked
+     * formation and every other client with the old ballot).
+     */
+    private static final class Progress {
+        FormationSeatState before = FormationSeatState.NONE;
+        Faction side;
+        boolean voteOpened;
+        boolean lockedNow;
+
+        boolean changed(ServerPlayer player) {
+            return voteOpened || lockedNow
+                    || player != null && before.seatChanged(FormationSeatState.of(player));
+        }
+    }
+
+    /**
      * {@code /battle admin test start [faction] [formation] [player]}: turns the test mode on and
      * takes {@code target} (the administrator when {@code null}) from the waiting space straight
      * to its side's main base. Every step is reported; a failing step stops there and says why.
-     * A refused deployment (an incomplete loadout, for example) leaves the player on the
-     * deployment page with the faction, formation and squad already set, which is a normal
-     * waiting state, never a half one.
+     * The faction, the formation and the room in that faction are checked before anything
+     * changes (审查修正), so a mistyped argument, an unusable formation or a full faction fails
+     * without turning the test mode on or opening or locking a ballot. A refused deployment (an
+     * incomplete loadout, for example) leaves the player on the deployment page with the
+     * faction, formation and squad already set, which is a normal waiting state, never a half
+     * one.
      */
     public Report testStart(ServerPlayer administrator, ServerPlayer target, String factionArg,
                             String formationArg) {
         List<String> lines = new ArrayList<>();
+        Progress progress = new Progress();
         if (administrator == null || administrator.server != server
                 || !administrator.hasPermissions(BattleRules.ADMIN_PERMISSION_LEVEL)) {
             return fail(lines, ActionResult.failure(ActionResult.Code.NOT_AUTHORIZED,
-                    "测试开局需要服务端管理员权限"), null, null);
+                    "测试开局需要服务端管理员权限"), null, null, false, progress);
         }
         ServerPlayer player = target == null ? administrator : target;
         if (player.server != server) {
             return fail(lines, ActionResult.failure(ActionResult.Code.TARGET_NOT_FOUND,
-                    "目标玩家不在当前服务器"), administrator, null);
+                    "目标玩家不在当前服务器"), administrator, null, false, progress);
         }
         String who = player == administrator ? "你" : player.getGameProfile().getName() + " ";
         FormationService formations = FormationService.get(server).orElse(null);
@@ -362,26 +384,18 @@ public final class TestModeService {
         DeploymentService deployment = DeploymentService.get(server).orElse(null);
         if (formations == null || battle == null || deployment == null) {
             return fail(lines, ActionResult.failure(ActionResult.Code.FORMATION_UNAVAILABLE,
-                    "战局、阵营编制或部署服务尚未就绪"), administrator, null);
+                    "战局、阵营编制或部署服务尚未就绪"), administrator, null, false, progress);
         }
         if (deployment.isVehicleTestMode(player.getUUID())) {
             return fail(lines, ActionResult.failure(ActionResult.Code.INVALID_TARGET,
                     who + "处于载具测试模式，请先执行 /battle admin test vehicle off"
                             + (player == administrator ? "" : " " + player.getGameProfile()
-                            .getName())), administrator, null);
+                            .getName())), administrator, null, false, progress);
         }
-        FormationSeatState before = FormationSeatState.of(player);
+        progress.before = FormationSeatState.of(player);
 
-        // 1. Test mode on (announces it, ends countdowns, adds missing main bases).
-        lines.addAll(setEnabled(true, administrator.getGameProfile().getName()).lines());
-
-        // 2. A battle record for the player (a removed player is re-admitted by the assignment).
-        ActionResult ensured = battle.ensurePlayer(player);
-        if (!ensured.success() && ensured.code() != ActionResult.Code.NOT_ASSIGNED) {
-            return fail(lines, ensured, administrator, null);
-        }
-
-        // 3. Faction: argument, else the current one, else the first public faction.
+        // 1. Plan before anything changes. Faction: argument, else the current one, else the
+        //    first public faction.
         FormationConfigData catalog = formations.catalog();
         List<String> enabledFactions = catalog.factions().stream()
                 .filter(FactionDefinition::enabled).map(FactionDefinition::id).toList();
@@ -393,21 +407,17 @@ public final class TestModeService {
                 current, enabledFactions);
         if (!factionChoice.ok()) {
             return fail(lines, ActionResult.failure(ActionResult.Code.FORMATION_NOT_FOUND,
-                    factionChoice.error()), administrator, null);
+                    factionChoice.error()), administrator, null, false, progress);
         }
         FactionDefinition faction = catalog.findFaction(factionChoice.factionId()).orElse(null);
         if (faction == null) {
             return fail(lines, ActionResult.failure(ActionResult.Code.FORMATION_NOT_FOUND,
-                    "阵营不存在或已停用"), administrator, null);
+                    "阵营不存在或已停用"), administrator, null, false, progress);
         }
         Faction side = faction.battleSide();
-        lines.add("阵营：" + faction.displayName() + "（" + switch (factionChoice.source()) {
-            case ARGUMENT -> "按参数";
-            case CURRENT -> "当前所在阵营";
-            case FIRST_PUBLIC -> "目录里第一个公开阵营";
-        } + "）");
+        progress.side = side;
 
-        // 4. Formation: argument, else the lock, else default, else the first candidate; an
+        //    Formation: argument, else the lock, else default, else the first candidate; an
         //    unlocked faction is locked to it, a locked one keeps its lock.
         FormationVoteSnapshot vote = formations.voteSnapshot(side, null);
         String lockedId = vote.phase() == FormationVotePhase.LOCKED ? vote.lockedFormationId() : "";
@@ -417,26 +427,68 @@ public final class TestModeService {
                 formationArg, lockedId, usable);
         if (!formationChoice.ok()) {
             return fail(lines, ActionResult.failure(ActionResult.Code.FORMATION_NOT_FOUND,
-                    faction.displayName() + "：" + formationChoice.error()), administrator, null);
+                    faction.displayName() + "：" + formationChoice.error()), administrator, null,
+                    false, progress);
         }
-        boolean lockedNow = false;
+        String formationId = formationChoice.effectiveId();
+        String formationName = formationName(faction, formationId);
+        ActionResult selectable = formations.validateSelection(faction.id(), formationId);
+        if (!selectable.success()) {
+            // A locked formation that is no longer usable (disabled, a mod missing).
+            return fail(lines, ActionResult.failure(selectable.code(), faction.displayName()
+                    + "编制“" + formationName + "”当前不能加入：" + selectable.message()),
+                    administrator, null, false, progress);
+        }
+
+        //    Room: the faction must still take the player (its maximum and the formation's
+        //    capacity), or nothing is changed at all.
+        boolean seatedBefore = record != null && record.faction() == side
+                && formationId.equals(record.formationId());
+        if (!seatedBefore) {
+            FormationDefinition joining = faction.findFormation(formationId).orElse(null);
+            int others = battle.factionSize(side) - (previousSide == side ? 1 : 0);
+            String refusal = TestModeRules.seatRefusal(faction.displayName(), Math.max(0, others),
+                    faction.maxPlayers(), formationName, joining == null ? 0 : joining.capacity());
+            if (!refusal.isEmpty()) {
+                return fail(lines, ActionResult.failure(ActionResult.Code.FACTION_FULL, refusal),
+                        administrator, null, false, progress);
+            }
+        }
+
+        // 2. Test mode on (announces it, ends countdowns, adds missing main bases).
+        lines.addAll(setEnabled(true, administrator.getGameProfile().getName()).lines());
+
+        // 3. A battle record for the player (a removed player is re-admitted by the assignment).
+        ActionResult ensured = battle.ensurePlayer(player);
+        if (!ensured.success() && ensured.code() != ActionResult.Code.NOT_ASSIGNED) {
+            return fail(lines, ensured, administrator, player, false, progress);
+        }
+        lines.add("阵营：" + faction.displayName() + "（" + switch (factionChoice.source()) {
+            case ARGUMENT -> "按参数";
+            case CURRENT -> "当前所在阵营";
+            case FIRST_PUBLIC -> "目录里第一个公开阵营";
+        } + "）");
+
+        // 4. The formation: lock it when the faction is not locked yet.
         if (formationChoice.needsLock()) {
             String chosen = formationChoice.chosenId();
             if (vote.phase() != FormationVotePhase.OPEN || !vote.candidates().contains(chosen)) {
                 boolean reopen = vote.phase() == FormationVotePhase.OPEN;
                 ActionResult opened = formations.openVote(administrator, faction.id(), true);
                 if (!opened.success()) {
-                    return fail(lines, opened, administrator, null);
+                    return fail(lines, opened, administrator, player, false, progress);
                 }
+                progress.voteOpened = true;
                 lines.add(reopen ? "已重开" + faction.displayName() + "编制投票以刷新候选"
                         : "已开启" + faction.displayName() + "编制投票");
             }
             ActionResult locked = formations.lockVote(administrator, faction.id(), chosen);
             if (!locked.success()) {
                 return fail(lines, ActionResult.failure(locked.code(),
-                        "锁定编制失败：" + locked.message()), administrator, null);
+                        "锁定编制失败：" + locked.message()), administrator, player, false,
+                        progress);
             }
-            lockedNow = true;
+            progress.lockedNow = true;
             lines.add("已锁定" + faction.displayName() + "编制：" + formationName(faction, chosen)
                     + "（" + switch (formationChoice.source()) {
                 case ARGUMENT -> "按参数";
@@ -445,13 +497,11 @@ public final class TestModeService {
                 case LOCKED -> "已锁定";
             } + "）");
         } else {
-            lines.add(faction.displayName() + "本局已锁定编制“"
-                    + formationName(faction, formationChoice.effectiveId()) + "”，未改动锁定结果"
+            lines.add(faction.displayName() + "本局已锁定编制“" + formationName
+                    + "”，未改动锁定结果"
                     + (formationChoice.lockKept() ? "（没有改用“"
                     + formationName(faction, formationChoice.chosenId()) + "”）" : ""));
         }
-        String formationId = formationChoice.effectiveId();
-        String formationName = formationName(faction, formationId);
 
         // 5. Seat: the faction and its locked formation (switching faction only here).
         record = battle.playerRecord(player.getUUID()).orElse(null);
@@ -465,7 +515,7 @@ public final class TestModeService {
             if (!assigned.success()) {
                 return fail(lines, ActionResult.failure(assigned.code(),
                         "加入" + faction.displayName() + "失败：" + assigned.message()),
-                        administrator, null);
+                        administrator, player, false, progress);
             }
             String switched = previousSide != null && previousSide != side
                     ? "（已从" + catalog.findFaction(previousSide).map(FactionDefinition::displayName)
@@ -482,21 +532,21 @@ public final class TestModeService {
         } else {
             ActionResult squad = joinOrCreateSquad(battle, player, side, formation, who, lines);
             if (!squad.success()) {
-                return fail(lines, squad, administrator, player);
+                return fail(lines, squad, administrator, player, true, progress);
             }
         }
 
         // 7. Already deployed: nothing more to do.
         if (deployment.isActive(player.getUUID())) {
             lines.add(who + "已处于部署状态，没有重复部署");
-            return finish(lines, administrator, player, side, lockedNow, before,
+            return finish(lines, administrator, player, progress,
                     ActionResult.ok(who + "已处于部署状态"));
         }
 
-        // 8. The side's main base (added in step 1 when it was missing).
+        // 8. The side's main base (added in step 2 when it was missing).
         DeploymentPoint base = deployment.mainBase(side).orElse(null);
         if (base == null) {
-            return stopAtDeployment(lines, administrator, player, ActionResult.failure(
+            return stopAtDeployment(lines, administrator, player, progress, ActionResult.failure(
                     ActionResult.Code.INVALID_DEPLOYMENT_POINT, faction.displayName()
                             + "没有主基地，无法部署；见上方补设主基地的原因"));
         }
@@ -504,11 +554,11 @@ public final class TestModeService {
         // 9. Deploy from the main base (survival, real kit).
         ActionResult selected = deployment.selectPoint(player, base.id());
         if (!selected.success()) {
-            return stopAtDeployment(lines, administrator, player, selected);
+            return stopAtDeployment(lines, administrator, player, progress, selected);
         }
         ActionResult deployed = deployment.deploy(player);
         if (!deployed.success()) {
-            return stopAtDeployment(lines, administrator, player, deployed);
+            return stopAtDeployment(lines, administrator, player, progress, deployed);
         }
         lines.add(who + "已从" + faction.displayName() + "主基地部署（生存模式，已发配装）："
                 + base.dimension() + " " + player.blockPosition().toShortString());
@@ -517,7 +567,7 @@ public final class TestModeService {
                     + administrator.getGameProfile().getName() + " 为你执行了测试开局，已部署到"
                     + faction.displayName() + "主基地"));
         }
-        return finish(lines, administrator, player, side, lockedNow, before,
+        return finish(lines, administrator, player, progress,
                 ActionResult.ok("测试开局完成：" + faction.displayName() + "·" + formationName));
     }
 
@@ -569,18 +619,21 @@ public final class TestModeService {
     // ---- outcome and network ----------------------------------------------------------------
 
     /**
-     * A step failed before the deployment page applies: the failure is the last line and the
-     * administrator's vote page footer shows it. When the player already has a faction and
-     * formation ({@code waitingPlayer}), it is sent to the deployment page as well.
+     * A step failed: the failure is the last line and the administrator's vote page footer shows
+     * it. With {@code deploymentPage} the player (already in its faction and formation) is sent
+     * to the deployment page; otherwise whatever the start changed before the failure (an opened
+     * or locked ballot, a new seat) is still published, so no client keeps a stale ballot.
      */
     private Report fail(List<String> lines, ActionResult failure, ServerPlayer administrator,
-                        ServerPlayer waitingPlayer) {
+                        ServerPlayer player, boolean deploymentPage, Progress progress) {
         lines.add(failure.message());
         if (administrator != null && online(administrator) && FormationNetwork.isInitialized()) {
             safely(() -> FormationNetwork.sendResult(administrator, failure));
         }
-        if (waitingPlayer != null) {
-            sendDeploymentPage(waitingPlayer, failure);
+        if (player != null && deploymentPage) {
+            sendDeploymentPage(player, failure, progress);
+        } else if (progress.changed(player)) {
+            publish(player, progress, BattleOpenTarget.NONE);
         }
         return new Report(failure, lines, lines.size() - 1);
     }
@@ -591,7 +644,8 @@ public final class TestModeService {
      * the report says how to continue.
      */
     private Report stopAtDeployment(List<String> lines, ServerPlayer administrator,
-                                    ServerPlayer player, ActionResult refused) {
+                                    ServerPlayer player, Progress progress,
+                                    ActionResult refused) {
         String hint = switch (refused.code()) {
             case LOADOUT_INCOMPLETE, INVALID_CLASS_ID -> "已停在部署页：请在部署页点“配装”补齐必需槽位"
                     + "（管理员可用 /loadoutadmin 给该编制的兵种配置装备），再点“部署”或重新执行测试开局";
@@ -607,7 +661,7 @@ public final class TestModeService {
         if (online(administrator) && FormationNetwork.isInitialized()) {
             safely(() -> FormationNetwork.sendResult(administrator, failure));
         }
-        sendDeploymentPage(player, failure);
+        sendDeploymentPage(player, failure, progress);
         if (player != administrator && online(player)) {
             player.sendSystemMessage(Component.literal("管理员为你执行了测试开局，但" + failure.message()
                     + "；" + hint));
@@ -617,19 +671,16 @@ public final class TestModeService {
 
     /** Success: refreshes everyone the start changed and answers the administrator's page. */
     private Report finish(List<String> lines, ServerPlayer administrator, ServerPlayer player,
-                          Faction side, boolean lockedNow, FormationSeatState before,
-                          ActionResult result) {
-        publish(player, side, lockedNow, before, BattleOpenTarget.NONE);
+                          Progress progress, ActionResult result) {
+        publish(player, progress, BattleOpenTarget.NONE);
         if (online(administrator) && FormationNetwork.isInitialized()) {
             safely(() -> FormationNetwork.sendResult(administrator, result));
         }
         return Report.success(result, lines);
     }
 
-    private void sendDeploymentPage(ServerPlayer player, ActionResult failure) {
-        BattleService battle = BattleService.get(server).orElse(null);
-        Faction side = battle == null ? null : battle.factionOf(player.getUUID()).orElse(null);
-        publish(player, side, false, FormationSeatState.NONE, BattleOpenTarget.DEPLOYMENT);
+    private void sendDeploymentPage(ServerPlayer player, ActionResult failure, Progress progress) {
+        publish(player, progress, BattleOpenTarget.DEPLOYMENT);
         if (!online(player) || !BattleNetwork.isInitialized()) {
             return;
         }
@@ -645,13 +696,12 @@ public final class TestModeService {
     /**
      * Network side of a test start, for connected players only (a GameTest player has no
      * connection). A lock is published like the administrator lock command (the faction's
-     * members get their formation, everyone else a catalog refresh); otherwise a changed seat
-     * refreshes the other players' catalogs. The player itself gets its battle snapshot (opening
-     * the deployment page when asked) and a catalog without the lock notice, so the client does
-     * not open another page on top of the deployment.
+     * members get their formation, everyone else a catalog refresh); an opened ballot or a
+     * changed seat refreshes the other players' catalogs. The player itself gets its battle
+     * snapshot (opening the deployment page when asked) and a catalog without the lock notice,
+     * so the client does not open another page on top of the deployment.
      */
-    private void publish(ServerPlayer player, Faction side, boolean lockedNow,
-                         FormationSeatState before, BattleOpenTarget openTarget) {
+    private void publish(ServerPlayer player, Progress progress, BattleOpenTarget openTarget) {
         if (!FormationNetwork.isInitialized() || !BattleNetwork.isInitialized()) {
             return;
         }
@@ -660,14 +710,15 @@ public final class TestModeService {
         if (battle == null || formations == null) {
             return;
         }
-        boolean seatChanged = before.seatChanged(FormationSeatState.of(player));
-        if (lockedNow || seatChanged) {
+        Faction side = progress.side;
+        if (progress.changed(player)) {
             List<ServerPlayer> others = server.getPlayerList().getPlayers().stream()
-                    .filter(other -> !other.getUUID().equals(player.getUUID())).toList();
+                    .filter(other -> player == null
+                            || !other.getUUID().equals(player.getUUID())).toList();
             FormationNetwork.forEachRecipient(others, other -> {
                 boolean sameSide = side != null && battle.factionOf(other.getUUID())
                         .filter(side::equals).isPresent();
-                if (lockedNow && sameSide
+                if (progress.lockedNow && sameSide
                         && formations.selectedFormation(other.getUUID()).isPresent()) {
                     FormationNetwork.sendFormationApplied(other);
                 } else {
@@ -675,7 +726,7 @@ public final class TestModeService {
                 }
             });
         }
-        if (online(player)) {
+        if (player != null && online(player)) {
             safely(() -> BattleNetwork.sendSnapshotToPlayer(battle, player, openTarget));
             safely(() -> FormationNetwork.sendSnapshotToPlayer(player, false));
         }

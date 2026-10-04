@@ -1337,15 +1337,19 @@ public final class DeploymentService {
                                 .Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
                         new BlockPos(column.x(), spawn.getY(), column.z()));
                 BlockPos feet = findSafeFeet(level, surface).orElse(null);
-                if (feet == null) {
+                // 审查修正: the surface heightmap skips leaves, so on normal terrain the bounded
+                // search could settle on a tree canopy; a provisioned base needs real ground.
+                if (feet == null || level.getBlockState(feet.below()).is(BlockTags.LEAVES)) {
                     floors.merge(String.valueOf(net.minecraftforge.registries.ForgeRegistries
-                            .BLOCKS.getKey(level.getBlockState(surface.below()).getBlock())),
+                            .BLOCKS.getKey(level.getBlockState(feet == null ? surface.below()
+                                    : feet.below()).getBlock())),
                             1, Integer::sum);
                     continue;
                 }
                 DeploymentPoint point = new DeploymentPoint(UUID.randomUUID(), faction,
                         level.dimension().location(), feet,
-                        normalizeYaw(TestModeRules.baseYaw(faction)),
+                        normalizeYaw(TestModeRules.baseYaw(faction,
+                                center.x() - spawn.getX())),
                         DeploymentPoint.DEFAULT_SUPPLY_RADIUS);
                 savedData.setMainBase(point);
                 return new MainBaseProvision(faction, true, point, column.label() + " "

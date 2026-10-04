@@ -226,6 +226,31 @@ class TestModeRulesTest {
     void basesFaceEachOther() {
         assertEquals(270.0F, TestModeRules.baseYaw(Faction.BLUE), "blue looks east");
         assertEquals(90.0F, TestModeRules.baseYaw(Faction.RED), "red looks west");
+        assertEquals(270.0F, TestModeRules.baseYaw(Faction.BLUE, 0));
+        assertEquals(90.0F, TestModeRules.baseYaw(Faction.RED, 64),
+                "red east of the spawn looks west towards it");
+        assertEquals(270.0F, TestModeRules.baseYaw(Faction.RED, -64),
+                "审查修正: red west of the spawn looks east towards it, not away");
+    }
+
+    // ---- room (审查修正) ----------------------------------------------------------------------
+
+    @Test
+    void roomIsCheckedAgainstTheFactionMaximumAndTheFormationCapacity() {
+        assertEquals("", TestModeRules.seatRefusal("学院军", 0, 40, "常规编制", 40),
+                "an empty faction takes the player");
+        assertEquals("", TestModeRules.seatRefusal("学院军", 39, 40, "常规编制", 40),
+                "the last free place is still a place");
+        String full = TestModeRules.seatRefusal("学院军", 40, 40, "常规编制", 40);
+        assertTrue(full.contains("学院军已满") && full.contains("最多 40 人")
+                && full.contains("未做任何改动"), full);
+        String small = TestModeRules.seatRefusal("学院军", 12, 40, "机动部队", 12);
+        assertTrue(small.contains("最多 12 人") && small.contains("机动部队")
+                        && small.contains("容量 12"),
+                "a formation smaller than the faction bounds it after the lock: " + small);
+        assertEquals("", TestModeRules.seatRefusal("学院军", 11, 40, "机动部队", 12));
+        assertFalse(TestModeRules.seatRefusal("学院军", 0, 40, "幽灵编制", 0).isEmpty(),
+                "a formation without capacity never takes anyone");
     }
 
     @Test

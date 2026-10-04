@@ -1,7 +1,9 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.deployment.DeploymentPhase;
 import com.wok.infantry.formation.selection.FormationSelectionSnapshot;
 import com.wok.infantry.formation.vote.FormationVotePhase;
+import com.wok.infantry.network.battle.BattleOpenTarget;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.Test;
@@ -128,6 +130,24 @@ class FormationTestStartTest {
     void testStartKeySendsTheFactionAndFormationIds() {
         assertEquals("battle admin test start academy millennium_seminar_mobile",
                 FormationSelectionScreen.administratorTestStartCommand(ACADEMY, MOBILE));
+    }
+
+    /**
+     * 审查修正: the page that sent the test start closes on the snapshot that reports the
+     * deployment, however it was opened; nothing else closes it.
+     */
+    @Test
+    void onlyTheDeploymentAfterASentTestStartClosesThePage() {
+        assertTrue(FormationSelectionScreen.closesOnTestStartDeployment(true,
+                DeploymentPhase.ACTIVE, BattleOpenTarget.NONE));
+        assertFalse(FormationSelectionScreen.closesOnTestStartDeployment(false,
+                DeploymentPhase.ACTIVE, BattleOpenTarget.NONE),
+                "a page that sent no test start stays open (the terminal tab shows the lock)");
+        assertFalse(FormationSelectionScreen.closesOnTestStartDeployment(true,
+                DeploymentPhase.READY, BattleOpenTarget.NONE), "not deployed yet");
+        assertFalse(FormationSelectionScreen.closesOnTestStartDeployment(true,
+                DeploymentPhase.WAITING, BattleOpenTarget.DEPLOYMENT),
+                "a refused deployment opens the deployment page instead");
     }
 
     // ---- layout -------------------------------------------------------------------------------

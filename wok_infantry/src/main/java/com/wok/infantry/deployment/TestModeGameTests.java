@@ -245,6 +245,77 @@ public final class TestModeGameTests {
         helper.succeed();
     }
 
+    /**
+     * 审查修正: the faction, the formation and the room are checked before anything changes, so
+     * a test start with a mistyped faction or formation neither turns the test mode on nor adds
+     * main bases nor touches a ballot or the player's seat.
+     */
+    @GameTest(templateNamespace = WokInfantryMod.MOD_ID,
+            template = "wok_empty", timeoutTicks = 100)
+    public static void testStartWithUnknownArgumentsChangesNothing(GameTestHelper helper) {
+        MinecraftServer server = helper.getLevel().getServer();
+        TestModeService testMode = TestModeService.get(server).orElseThrow();
+        DeploymentService deployment = DeploymentService.get(server).orElseThrow();
+        DeploymentSavedData savedData = DeploymentSavedData.get(server);
+        BattleService battle = BattleService.get(server).orElseThrow();
+        FormationService formations = FormationService.get(server).orElseThrow();
+        FactionDefinition faction = formations.catalog().factions().stream()
+                .filter(FactionDefinition::enabled).findFirst().orElse(null);
+        helper.assertTrue(faction != null, "GameTest 目录必须至少有一个启用的公开阵营");
+        DeploymentPoint previousBlue = deployment.mainBase(Faction.BLUE).orElse(null);
+        DeploymentPoint previousRed = deployment.mainBase(Faction.RED).orElse(null);
+        boolean wasEnabled = testMode.enabled();
+        UUID playerId = UUID.nameUUIDFromBytes(
+                "wok-infantry-test-start-refused".getBytes(StandardCharsets.UTF_8));
+        ServerPlayer administrator = new FakePlayer(server.overworld(),
+                new GameProfile(playerId, "wok-test-refused")) {
+            @Override
+            public boolean hasPermissions(int permissionLevel) {
+                return true;
+            }
+        };
+        try {
+            if (wasEnabled) {
+                testMode.setEnabled(false, ACTOR);
+            }
+            savedData.clearMainBase(Faction.BLUE);
+            savedData.clearMainBase(Faction.RED);
+            FormationVotePhase bluePhase = formations.voteSnapshot(Faction.BLUE, null).phase();
+            FormationVotePhase redPhase = formations.voteSnapshot(Faction.RED, null).phase();
+
+            for (String[] arguments : new String[][]{{"no_such_faction", null},
+                    {faction.id(), "no_such_formation"}}) {
+                TestModeService.Report report = testMode.testStart(administrator, null,
+                        arguments[0], arguments[1]);
+                String label = String.join(" ", List.of(arguments[0],
+                        String.valueOf(arguments[1])));
+                helper.assertFalse(report.success(), label + " 必须被拒绝：" + report.lines());
+                helper.assertTrue(report.lines().size() == 1 && report.failureLine() == 0,
+                        label + " 只回报失败原因这一行：" + report.lines());
+                helper.assertFalse(testMode.enabled() || TestModeService.isEnabled(server)
+                                || TestModeSavedData.get(server).enabled(),
+                        label + " 被拒绝时不得开启全服测试模式");
+                helper.assertFalse(testMode.bossBarShown(), label + " 被拒绝时不得显示 Boss 条");
+                helper.assertTrue(deployment.mainBase(Faction.BLUE).isEmpty()
+                                && deployment.mainBase(Faction.RED).isEmpty(),
+                        label + " 被拒绝时不得补设主基地");
+                helper.assertTrue(formations.voteSnapshot(Faction.BLUE, null).phase() == bluePhase
+                                && formations.voteSnapshot(Faction.RED, null).phase() == redPhase,
+                        label + " 被拒绝时不得开启或锁定投票");
+                helper.assertTrue(battle.playerRecord(playerId).isEmpty(),
+                        label + " 被拒绝时不得给玩家建战局记录或分配阵营");
+            }
+        } finally {
+            if (testMode.enabled() != wasEnabled) {
+                testMode.setEnabled(wasEnabled, ACTOR);
+            }
+            battle.removeFromBattle(administrator, playerId);
+            restoreBase(savedData, Faction.BLUE, previousBlue);
+            restoreBase(savedData, Faction.RED, previousRed);
+        }
+        helper.succeed();
+    }
+
     private static void restoreBase(DeploymentSavedData savedData, Faction faction,
                                     DeploymentPoint previous) {
         savedData.clearMainBase(faction);

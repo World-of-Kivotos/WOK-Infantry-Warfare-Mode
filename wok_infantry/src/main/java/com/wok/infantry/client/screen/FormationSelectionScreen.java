@@ -8,10 +8,12 @@ import com.wok.infantry.client.KeyBindingDefaults;
 import com.wok.infantry.client.hud.TacticalHud;
 import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import com.wok.infantry.client.ui.probe.UiSurfaceInfo;
+import com.wok.infantry.deployment.DeploymentPhase;
 import com.wok.infantry.formation.selection.FactionSelectionView;
 import com.wok.infantry.formation.selection.FormationSelectionSnapshot;
 import com.wok.infantry.formation.selection.FormationSelectionView;
 import com.wok.infantry.formation.vote.FormationVotePhase;
+import com.wok.infantry.network.battle.BattleOpenTarget;
 import com.wok.infantry.network.battle.client.BattleClientNetworkBridge;
 import com.wok.infantry.network.formation.client.FormationClientNetworkBridge;
 import net.minecraft.client.gui.GuiGraphics;
@@ -103,6 +105,11 @@ public final class FormationSelectionScreen extends TacticalScreen
     private final Map<GuiEventListener, String> roles = new IdentityHashMap<>();
     /** The join or lock confirmation this page opened, while it is open. */
     private OpenDialog openDialog;
+    /**
+     * The administrator confirmed a test start from this page (0.4.0-beta.2 审查修正): the
+     * battle snapshot that reports the deployment closes the page whichever way it was opened.
+     */
+    private boolean awaitingTestStart;
 
     private enum DialogKind {
         JOIN,
@@ -147,6 +154,25 @@ public final class FormationSelectionScreen extends TacticalScreen
 
     public Entry entry() {
         return entry;
+    }
+
+    /** Whether this page sent a test start that has not been answered by a deployment yet. */
+    public boolean awaitingTestStart() {
+        return awaitingTestStart;
+    }
+
+    /**
+     * Whether an arriving battle snapshot closes this page (0.4.0-beta.2 审查修正): only after
+     * this page sent a test start, once the snapshot reports the viewer deployed without asking
+     * for another page. Before, the page closed only when the server had pushed it; opened by
+     * the terminal key it turned into the squad page and from the terminal tab it stayed open
+     * over the battlefield. A refused deployment asks for the deployment page instead.
+     */
+    public static boolean closesOnTestStartDeployment(boolean awaitingTestStart,
+                                                      DeploymentPhase phase,
+                                                      BattleOpenTarget openTarget) {
+        return awaitingTestStart && phase == DeploymentPhase.ACTIVE
+                && openTarget == BattleOpenTarget.NONE;
     }
 
     /** The catalog shown, or {@code null} while waiting for it. */
@@ -640,6 +666,7 @@ public final class FormationSelectionScreen extends TacticalScreen
                         ClientFormationState.feedback(false, FormationText.cannotTestStart());
                         return;
                     }
+                    awaitingTestStart = true;
                     ClientFormationState.feedback(ClientFormationState.FeedbackKind.PENDING,
                             pending);
                 })
