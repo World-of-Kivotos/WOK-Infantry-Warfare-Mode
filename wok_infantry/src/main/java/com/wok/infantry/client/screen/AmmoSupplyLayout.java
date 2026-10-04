@@ -28,7 +28,8 @@ record AmmoSupplyLayout(TacticalMapLayout.Layout board,
     /** Height painted by {@link TacticalBoardTheme#sectionHeader}. */
     static final int SECTION_HEADER_HEIGHT = 14;
     static final int MIN_METER_BAR_WIDTH = 40;
-    private static final int PANEL_GAP = 2;
+    /** The panel sits flush under the header, as before, so 320×240 keeps four gun rows. */
+    private static final int PANEL_GAP = 0;
     private static final int PANEL_PADDING = 4;
     private static final int TEXT_INSET = 8;
     private static final int METER_TEXT_GAP = 8;

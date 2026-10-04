@@ -126,6 +126,20 @@ final class AmmoSupplyScreenLayoutTest {
     }
 
     @Test
+    void smallestTierKeepsTheRowCountsOfTheOldLayout() {
+        // The old fixed layout showed 4 gun rows on a crate and 3 gun / 2 vehicle rows on a
+        // large station at 320x240; the overlap fix must not cost a row there.
+        assertEquals(4, AmmoSupplyLayout.compute(320, 240,
+                AmmoSupplyView.TargetKind.SMALL_CRATE, false, 96).visibleRows());
+        assertEquals(4, AmmoSupplyLayout.compute(320, 240,
+                AmmoSupplyView.TargetKind.MEDIUM_CRATE, false, 96).visibleRows());
+        assertEquals(3, AmmoSupplyLayout.compute(320, 240,
+                AmmoSupplyView.TargetKind.LARGE_STATION, false, 96).visibleRows());
+        assertEquals(2, AmmoSupplyLayout.compute(320, 240,
+                AmmoSupplyView.TargetKind.LARGE_STATION, true, 96).visibleRows());
+    }
+
+    @Test
     void tinyWindowStillOffersOneRow() {
         AmmoSupplyLayout layout = AmmoSupplyLayout.compute(100, 80,
                 AmmoSupplyView.TargetKind.LARGE_STATION, true, 96);
