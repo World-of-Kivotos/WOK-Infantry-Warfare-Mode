@@ -11,8 +11,9 @@ import net.minecraft.network.chat.Component;
  * form) and its round result notice. Pure, so the wording and geometry are unit-tested.
  *
  * <p>Blue's manpower is always on the left and red's on the right; the viewer's own side is
- * drawn in the HUD friendly blue and the other in the hostile red. Both bars run out from the
- * centre, so a shrinking bar always moves towards its own number.
+ * drawn in the HUD friendly blue and the other in the hostile red. Both bars are anchored at the
+ * centre line and reach out towards their own number (preview {@code battle}), so a side losing
+ * manpower shrinks back towards the centre.
  */
 public final class BattleStripModel {
     public static final String VICTORY_KEY = "hud.wok_infantry.round.victory";
