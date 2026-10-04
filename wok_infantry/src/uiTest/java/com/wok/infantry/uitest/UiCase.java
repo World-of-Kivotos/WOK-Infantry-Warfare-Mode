@@ -123,7 +123,7 @@ public final class UiCase {
         if (filter == null || filter.isBlank()) {
             return true;
         }
-        for (String token : filter.split(",")) {
+        for (String token : filter.split(UiTier.LIST_SEPARATORS)) {
             String trimmed = token.trim();
             if (!trimmed.isEmpty() && (trimmed.equals(group) || id().equals(trimmed)
                     || id().startsWith(trimmed + ".") || surfaceId.equals(trimmed))) {

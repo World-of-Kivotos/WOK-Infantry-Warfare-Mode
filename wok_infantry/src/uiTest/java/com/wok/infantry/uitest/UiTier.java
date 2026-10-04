@@ -76,9 +76,13 @@ public enum UiTier {
         return windowHeight / guiScale;
     }
 
+    /** Separators of the {@code wok.ui.cases} / {@code wok.ui.tiers} lists. */
+    public static final String LIST_SEPARATORS = "[,;+\\s]+";
+
     /**
-     * Tiers selected by {@code wok.ui.tiers} (comma separated ids such as {@code 320x240} or
-     * {@code 320}), intersected with {@code wanted}; an empty filter keeps {@code wanted}.
+     * Tiers selected by {@code wok.ui.tiers} (ids such as {@code 320x240} or {@code 320},
+     * separated by {@code , ; +} or spaces), intersected with {@code wanted}; an empty filter
+     * keeps {@code wanted}.
      */
     public static List<UiTier> filter(List<UiTier> wanted, String filter) {
         if (filter == null || filter.isBlank()) {
@@ -86,7 +90,7 @@ public enum UiTier {
         }
         List<UiTier> result = new ArrayList<>();
         for (UiTier tier : wanted) {
-            for (String token : filter.split(",")) {
+            for (String token : filter.split(LIST_SEPARATORS)) {
                 String trimmed = token.trim().toLowerCase(Locale.ROOT);
                 if (!trimmed.isEmpty() && (tier.id.equals(trimmed)
                         || tier.id.startsWith(trimmed + "x"))) {

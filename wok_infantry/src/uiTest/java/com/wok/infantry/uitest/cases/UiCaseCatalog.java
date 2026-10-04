@@ -30,6 +30,7 @@ public final class UiCaseCatalog {
         cases.addAll(KitCases.cases());
         cases.addAll(FormationCases.cases());
         cases.addAll(AdminCases.cases());
+        cases.addAll(HudCases.cases());
         return cases.stream().filter(uiCase -> !"legacy".equals(uiCase.group())).toList();
     }
 }

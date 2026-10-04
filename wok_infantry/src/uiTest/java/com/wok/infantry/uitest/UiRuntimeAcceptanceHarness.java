@@ -316,8 +316,8 @@ public final class UiRuntimeAcceptanceHarness {
         // after deployment/respawn packets close or replace screens, matching the dedicated
         // network harness and a real multiplayer server.
         minecraft.options.pauseOnLostFocus = false;
-        runLiveFlow = CASE_FILTER.isEmpty() || List.of(CASE_FILTER.split(",")).stream()
-                .map(String::trim).anyMatch("legacy"::equals);
+        runLiveFlow = CASE_FILTER.isEmpty() || List.of(CASE_FILTER.split(UiTier.LIST_SEPARATORS))
+                .stream().map(String::trim).anyMatch("legacy"::equals);
         List<UiCase> cases = new ArrayList<>();
         if (runLiveFlow) {
             cases.addAll(UiCaseCatalog.legacy());
