@@ -172,13 +172,11 @@ public final class DownedService {
         stopDraggingByParticipant(casualty, false);
         PENDING_DEATHS.remove(casualty.getUUID());
         clearState(casualty);
-        float health = (float) Math.min(casualty.getMaxHealth(),
-                DownedConfig.REVIVE_HEALTH.get());
-        casualty.setHealth(Math.max(1.0F, health));
-        casualty.addEffect(new MobEffectInstance(
-                MobEffects.DAMAGE_RESISTANCE, 60, 4, false, false, true));
-        MedicalCompat.stabilize(casualty,
-                DownedConfig.BODY_HEALTH_REVIVE_AMOUNT.get().floatValue());
+        MedicalCompat.reviveAtOneHealth(casualty);
+        casualty.setHealth(Math.min(casualty.getMaxHealth(), 1.0F));
+        casualty.addEffect(new MobEffectInstance(MobEffects.BLINDNESS,
+                DownedTiming.secondsToTicks(DownedConfig.REVIVE_BLINDNESS_SECONDS.get()),
+                0, false, false, true));
         casualty.displayClientMessage(
                 Component.translatable("message.wok_downed.revived"), true);
         if (rescuer != null) {
@@ -204,6 +202,14 @@ public final class DownedService {
         player.getPersistentData().remove(STABILIZE_PENDING_KEY);
         player.removeEffect(DownedEffects.DOWNED.get());
         player.setForcedPose(null);
+    }
+
+    /** Optional core lifecycle bridge; a completed round must not leave a pending downed death. */
+    public static void resetForDeployment(ServerPlayer player) {
+        cancelByParticipant(player, false);
+        stopDraggingByParticipant(player, false);
+        PENDING_DEATHS.remove(player.getUUID());
+        clearState(player);
     }
 
     public static void cancelByParticipant(ServerPlayer player, boolean notify) {

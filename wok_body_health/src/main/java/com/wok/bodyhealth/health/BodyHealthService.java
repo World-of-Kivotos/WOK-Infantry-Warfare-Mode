@@ -8,13 +8,23 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
-import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 public final class BodyHealthService {
+    /** Absolute health, deliberately unaffected by the configurable healing conversion scale. */
+    public static boolean setAllPartsHealth(ServerPlayer player, float points) {
+        if (!Float.isFinite(points) || points <= 0.0F) return false;
+        BodyHealthData data = BodyHealthData.load(player);
+        for (BodyPart part : BodyPart.values()) {
+            data.set(part, Math.min(BodyHealthConfig.maxHealth(part), points));
+        }
+        saveAndSync(player, data);
+        return true;
+    }
+
     private static final UUID LEG_SPEED_MODIFIER_ID =
             UUID.fromString("cb450589-8c55-4e21-9160-b22442a6e195");
     private static final String LEG_SPEED_MODIFIER_NAME = "WOK destroyed leg penalty";
@@ -212,7 +222,10 @@ public final class BodyHealthService {
 
     public static void updatePenalties(ServerPlayer player) {
         BodyHealthData data = BodyHealthData.load(player);
-        if (player.isAlive() && player.getHealth() < player.getMaxHealth()) {
+        // Creative and spectator players keep vanilla health so that damage
+        // which reaches them anyway (the void) still works as in vanilla.
+        if (player.isAlive() && !player.isCreative() && !player.isSpectator()
+                && player.getHealth() < player.getMaxHealth()) {
             player.setHealth(player.getMaxHealth());
         }
 
@@ -236,22 +249,36 @@ public final class BodyHealthService {
         }
     }
 
-    public static void applyJumpPenalty(ServerPlayer player) {
+    /**
+     * Vertical jump velocity multiplier for destroyed legs. Player jumps are
+     * simulated by the client, so the client applies this from its synced
+     * snapshot; changing the server-side velocity would have no effect.
+     */
+    public static double jumpVelocityMultiplier(int destroyedLegs) {
+        return switch (destroyedLegs) {
+            case 0 -> 1.0D;
+            case 1 -> 0.65D;
+            default -> 0.35D;
+        };
+    }
+
+    public static boolean hasDestroyedCriticalPart(ServerPlayer player) {
         BodyHealthData data = BodyHealthData.load(player);
-        int destroyedLegs = destroyedCount(data, BodyPart.LEFT_LEG, BodyPart.RIGHT_LEG);
-        if (destroyedLegs == 0) {
-            return;
+        for (BodyPart part : BodyPart.values()) {
+            if (part.isCritical() && data.isDestroyed(part)) {
+                return true;
+            }
         }
-        Vec3 movement = player.getDeltaMovement();
-        double multiplier = destroyedLegs == 1 ? 0.65D : 0.35D;
-        player.setDeltaMovement(movement.x, movement.y * multiplier, movement.z);
+        return false;
     }
 
     private static boolean applyPartDamage(BodyHealthData data, BodyPart part,
                                            float damage, boolean allowOverflow) {
-        if (!(damage > 0.0F) || !Float.isFinite(damage)) {
+        if (!(damage > 0.0F)) {
             return false;
         }
+        // Overflow multipliers can push a huge hit to infinity; keep it lethal.
+        damage = Math.min(damage, Float.MAX_VALUE);
 
         float before = data.get(part);
         boolean wasAlreadyDestroyed = before <= 0.0001F;
@@ -331,11 +358,18 @@ public final class BodyHealthService {
         }
     }
 
-    private static float toDamagePoints(float vanillaDamage) {
-        if (!(vanillaDamage > 0.0F) || !Float.isFinite(vanillaDamage)) {
+    static float toDamagePoints(float vanillaDamage, float scale) {
+        if (!(vanillaDamage > 0.0F)) {
             return 0.0F;
         }
-        return vanillaDamage * BodyHealthConfig.DAMAGE_SCALE.get().floatValue();
+        // Float.MAX_VALUE or infinite hits (instant-kill mods, /damage) would
+        // overflow to infinity; clamp so they destroy parts instead of being
+        // discarded as invalid.
+        return Math.min(vanillaDamage * scale, Float.MAX_VALUE);
+    }
+
+    private static float toDamagePoints(float vanillaDamage) {
+        return toDamagePoints(vanillaDamage, BodyHealthConfig.DAMAGE_SCALE.get().floatValue());
     }
 
     private static void saveAndSync(ServerPlayer player, BodyHealthData data) {

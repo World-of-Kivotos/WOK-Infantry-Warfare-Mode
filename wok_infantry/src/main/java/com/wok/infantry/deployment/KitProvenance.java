@@ -100,6 +100,10 @@ public final class KitProvenance {
         return root != null && root.contains(ROOT_TAG, Tag.TAG_COMPOUND);
     }
 
+    public static boolean isTransportCargo(ItemStack stack) {
+        return isIssued(stack) && stack.getTag().getCompound(ROOT_TAG).getBoolean(TRANSPORT_CARGO_TAG);
+    }
+
     /** Removes a prior battle issuance stamp before an administrator saves a stack as a template. */
     public static void clearStamp(ItemStack stack) {
         if (stack == null || stack.isEmpty() || stack.getTag() == null) {

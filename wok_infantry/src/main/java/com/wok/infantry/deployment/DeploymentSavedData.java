@@ -645,7 +645,7 @@ final class DeploymentSavedData extends SavedData {
                 || !validCoordinate(anchorZ) || !validCoordinate(spawnX)
                 || !validCoordinate(spawnY) || !validCoordinate(spawnZ)
                 || Math.abs(spawnX - anchorX) > 2 || Math.abs(spawnZ - anchorZ) > 2
-                || spawnY - anchorY < 1 || spawnY - anchorY > 3) return null;
+                || spawnY - anchorY < 0 || spawnY - anchorY > 3) return null;
         return new RallyDeploymentPoint(tag.getUUID("Id"), faction, formation, squad,
                 dimension, new BlockPos(anchorX, anchorY, anchorZ),
                 new BlockPos(spawnX, spawnY, spawnZ), yaw);

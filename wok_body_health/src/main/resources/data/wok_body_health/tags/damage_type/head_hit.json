@@ -1,0 +1,12 @@
+{
+  "replace": false,
+  "values": [
+    "minecraft:falling_block",
+    "minecraft:falling_anvil",
+    "minecraft:falling_stalactite",
+    "minecraft:in_wall",
+    { "id": "superbwarfare:gunfire_headshot", "required": false },
+    { "id": "superbwarfare:gunfire_headshot_absolute", "required": false },
+    { "id": "superbwarfare:laser_headshot", "required": false }
+  ]
+}

@@ -11,6 +11,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraftforge.client.event.RenderHandEvent;
 import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 
 /** Applies visible fatigue motion to both the camera and TaCZ's actual hand-render pose. */
@@ -25,11 +26,26 @@ public final class ClientStaminaController {
     }
 
     public static void register() {
+        MinecraftForge.EVENT_BUS.addListener(EventPriority.LOWEST,
+                ClientStaminaController::onClientTick);
         // Run before TaCZ consumes RenderHandEvent and renders its custom gun model.
         MinecraftForge.EVENT_BUS.addListener(EventPriority.HIGHEST,
                 ClientStaminaController::onRenderHand);
         MinecraftForge.EVENT_BUS.addListener(EventPriority.LOW,
                 ClientStaminaController::onCameraAngles);
+    }
+
+    private static void onClientTick(TickEvent.ClientTickEvent event) {
+        LocalPlayer player = Minecraft.getInstance().player;
+        // START stops already-active sprint before movement; END also covers other tick hooks.
+        if (player != null && isSprintBlocked(player)) {
+            player.setSprinting(false);
+        }
+    }
+
+    public static boolean isSprintBlocked(LocalPlayer player) {
+        return player.isAlive() && !player.isSpectator() && !player.getAbilities().instabuild
+                && ClientStaminaState.snapshot().sprintBlocked();
     }
 
     private static void onRenderHand(RenderHandEvent event) {

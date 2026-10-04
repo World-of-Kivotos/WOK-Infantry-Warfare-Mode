@@ -2,7 +2,8 @@ package com.wok.infantry.stamina;
 
 /** Pure stamina math kept independent from Forge so balancing remains unit-testable. */
 public final class StaminaMath {
-    private static final float SWAY_START_RATIO = 0.35F;
+    private static final float SWAY_START_RATIO =
+            StaminaRules.SWAY_START_STAMINA / StaminaRules.MAX_STAMINA;
 
     private StaminaMath() {
     }
@@ -13,6 +14,12 @@ public final class StaminaMath {
 
     public static float recover(float current, float amount) {
         return clamp(current + Math.max(0.0F, amount), 0.0F, StaminaRules.MAX_STAMINA);
+    }
+
+    /** Exhaustion is latched until the server's configured recovery threshold is reached. */
+    public static boolean shouldBlockSprint(float legs, boolean previouslyBlocked,
+                                            float resumeThreshold) {
+        return legs <= 0.0F || (previouslyBlocked && legs < resumeThreshold);
     }
 
     /**

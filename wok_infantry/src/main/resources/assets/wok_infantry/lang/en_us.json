@@ -68,9 +68,9 @@
   "screen.wok_infantry.deployment.select_point": "Select your main base to deploy",
   "screen.wok_infantry.deployment.ready": "Ready; carried items will be cleared on deployment",
   "screen.wok_infantry.deployment.not_ready": "Check the full kit and clear inventory/offhand",
-  "screen.wok_infantry.deployment.resupply_ready": "You are at your main base and can resupply now",
+  "screen.wok_infantry.deployment.resupply_ready": "Stay in your base supply area for 15 seconds to resupply",
   "screen.wok_infantry.deployment.resupply_cooldown": "Resupply available in %s seconds",
-  "screen.wok_infantry.deployment.return_to_base": "Return to your main-base supply radius to resupply",
+  "screen.wok_infantry.deployment.return_to_base": "Return to your marked base supply area and stay for 15 seconds",
   "screen.wok_infantry.map.north": "N",
   "screen.wok_infantry.map.board_title": "WOK // TACTICAL BOARD",
   "screen.wok_infantry.map.link_connecting": "TACTICAL LINK CONNECTING",
@@ -307,5 +307,6 @@
   "hud.wok_infantry.stamina.arms": "ARMS",
   "hud.wok_infantry.stamina.legs": "LEGS",
   "message.wok_infantry.stamina.admin.status": "Current stamina: arms %1$s / legs %2$s",
-  "message.wok_infantry.stamina.admin.set": "Stamina set: arms %1$s / legs %2$s"
+  "message.wok_infantry.stamina.admin.set": "Stamina set: arms %1$s / legs %2$s",
+  "item.wok_infantry.base_supply_tool": "Base Supply Area Selector"
 }

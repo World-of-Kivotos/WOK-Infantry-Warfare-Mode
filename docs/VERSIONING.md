@@ -7,14 +7,14 @@
 
 | 模块 | 当前版本 | 稳定阶段 |
 | --- | --- | --- |
-| `wok_infantry` | `0.1.0` | 核心功能累积更新，含阵营与管理员配装全量导入导出 |
+| `wok_infantry` | `0.3.0-beta.3` | 基地十五秒补给、兵力值、机枪渐进卧姿；体力条跟随部位血量 HUD；修复目录联接下进存档崩溃 |
 | `wok_trauma` | `0.1.0-beta.1` | 黄针共享慢回与延迟副作用；待完整游戏验收 |
-| `wok_body_health` | `0.0.3-beta.2` | 伤害换算默认值与 HUD 避让调整 |
+| `wok_body_health` | `0.1.0-beta.8` | 受伤判定修复、数据驱动伤害标签、HUD 重做；人形用原生像素版 M4A1（同 beta.3） |
 | `wok_infantry_armor` | `1.1.1-beta.1` | 护甲移动惩罚调整；保留原 1.1 产品版本序列 |
 | `wok_vehicle_health` | `0.1.0-beta.1` | 载具 T 级、方向装甲与反坦克归一化 |
 | `wok_commander_support` | `0.1.0-beta.1` | 侦察卫星、F-15EX 与 F-16C；需核心 0.1.0+ |
-| `wok_capture_points` | `0.1.0-alpha.2` | 占点框架；可选核心联动最低 0.1.0 |
-| `wok_downed` | `0.1.0-alpha.2` | 倒地、救援、拖行及姿态/位置同步修复 |
+| `wok_capture_points` | `0.1.0-alpha.3` | 作战资格过滤；可选核心兵力与新局联动 |
+| `wok_downed` | `0.1.0-alpha.3` | 一血救援、五秒失明与新生命清理；保留姿态/拖行修复 |
 
 完整审计见 [内容与版本核对](CONTENT_VERSION_AUDIT_2026-09-06.md)。这些是当前源码/构建版本，
 不表示已发布 GitHub Release 或全部整合包联动验收通过。旧包保留历史版本，禁止仅重命名旧 JAR 冒充新版本。

@@ -31,7 +31,7 @@ public final class CaptureHudOverlay {
         }
         int panelWidth = Math.min(330, Math.max(190, width - 24));
         int left = (width - panelWidth) / 2;
-        int top = 8;
+        int top = net.minecraftforge.fml.ModList.get().isLoaded("wok_infantry") ? 28 : 8;
         int right = left + panelWidth;
         int bottom = top + 52;
         graphics.fill(left, top, right, bottom, 0xE3141B1D);
@@ -65,17 +65,19 @@ public final class CaptureHudOverlay {
 
     private static void renderCompact(GuiGraphics graphics, Minecraft minecraft,
                                       CapturePointView point, int width) {
-        int left = 8;
+        // Core's compact roster occupies x=8..128. Keep capture beside it on narrow screens.
+        boolean withCore = net.minecraftforge.fml.ModList.get().isLoaded("wok_infantry");
+        int left = withCore ? 140 : 8;
         int right = width - 8;
-        int top = 4;
-        int bottom = 39;
+        int top = withCore ? 26 : 4;
+        int bottom = top + 35;
         graphics.fill(left, top, right, bottom, 0xE3141B1D);
         graphics.fill(left, top, right, top + 2, ORANGE);
         outline(graphics, left, top, right, bottom, 0xFF566461);
 
         Component heading = Component.translatable("hud.wok_capture_points.compact_heading",
                 point.displayName(), point.bluePlayers(), point.redPlayers());
-        drawCentered(graphics, minecraft, heading, width / 2, top + 5,
+        drawCentered(graphics, minecraft, heading, (left + right) / 2, top + 5,
                 point.enabled() ? 0xFFF0F3ED : MUTED, right - left - 12);
 
         int barLeft = left + 10;
@@ -90,7 +92,7 @@ public final class CaptureHudOverlay {
         outline(graphics, barLeft, barTop, barRight, barTop + 5, 0xFF687673);
 
         Component state = stateText(point);
-        drawCentered(graphics, minecraft, state, width / 2, top + 26,
+        drawCentered(graphics, minecraft, state, (left + right) / 2, top + 26,
                 stateColor(point), right - left - 12);
     }
 

@@ -1,6 +1,6 @@
 # WOK步战附属-占点
 
-Minecraft 1.20.1 / Forge 47.4.22 的独立占点附属，modId 为 `wok_capture_points`。当前开发版本为 `0.1.0-alpha.2`。可选核心联动要求 `wok_infantry` 0.1.0 或更高版本，未安装核心时仍可独立运行。
+Minecraft 1.20.1 / Forge 47.4.22 的独立占点附属，modId 为 `wok_capture_points`。当前开发版本为 `0.1.0-alpha.3`。可选核心联动要求 `wok_infantry` 0.1.0 或更高版本，未安装核心时仍可独立运行。
 
 ## 快速设置 A/B/C/D
 
@@ -13,6 +13,8 @@ Minecraft 1.20.1 / Forge 47.4.22 的独立占点附属，modId 为 `wok_capture_
 重新圈地后再次执行 `point set` 会移动已有据点，同时保留其顺序、时长和归属。所有据点、世界规则覆盖项和占领进度写入世界存档。
 
 ## 阵营识别
+
+仅存活、未倒地且非旁观玩家参与占点；安装核心时还要求 ACTIVE 部署。与核心 `0.3.0-beta.1` 或更新版本联合使用时，新局统一重置进度，本局结束后暂停占领。占点和全占均不扣兵力；未安装核心时仍可独立占点。
 
 - 安装 `WOK步战核心` 时，优先采用核心权威的 BLUE/RED 阵营。
 - 单独安装时，默认识别记分板队伍 `blue`、`red`。
@@ -51,4 +53,4 @@ cd ..\wok_capture_points
 ..\gradlew.bat test jar
 ```
 
-成品位于 `wok_capture_points/build/libs/wok_capture_points-0.1.0-alpha.2.jar`；核心 class 不会被打进该 JAR，运行时不安装核心也可加载。
+成品位于 `wok_capture_points/build/libs/wok_capture_points-0.1.0-alpha.3.jar`；核心 class 不会被打进该 JAR，运行时不安装核心也可加载。

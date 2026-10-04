@@ -38,6 +38,13 @@ public final class ClientBodyHealthState {
                 : Math.max(0.0F, Math.min(1.0F, currentSnapshot.current()[index] / maximum));
     }
 
+    /** Uses the same threshold as the server-side {@code BodyHealthData#isDestroyed}. */
+    public static boolean isDestroyed(BodyPart part) {
+        BodyHealthSnapshot currentSnapshot = snapshot;
+        return currentSnapshot != null
+                && currentSnapshot.current()[part.ordinal()] <= 0.0001F;
+    }
+
     public static int value(BodyPart part) {
         BodyHealthSnapshot currentSnapshot = snapshot;
         if (currentSnapshot == null) {

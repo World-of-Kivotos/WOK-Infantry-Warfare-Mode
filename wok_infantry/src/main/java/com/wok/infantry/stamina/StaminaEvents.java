@@ -25,7 +25,7 @@ public final class StaminaEvents {
             return;
         }
         RuntimeState runtime = RUNTIME.computeIfAbsent(player.getUUID(), ignored ->
-                RuntimeState.create(StaminaState.load(player)));
+                new RuntimeState(player.level().getGameTime()));
         boolean movingHorizontally = runtime.movementTracker.sample(player.getX(), player.getZ());
         boolean enabled = isEnabled(player);
         if (!enabled) {
@@ -38,15 +38,12 @@ public final class StaminaEvents {
         float arms = before.arms();
         float legs = before.legs();
         boolean armExertion = TaczStaminaAdapter.isAiming(player);
-        boolean legExertion = player.isSprinting() && movingHorizontally;
-
-        if (runtime.legsExhausted
-                && legs < InfantryServerConfig.legExhaustedResumeThreshold()) {
+        boolean sprintBlocked = StaminaMath.shouldBlockSprint(legs, before.sprintBlocked(),
+                InfantryServerConfig.legExhaustedResumeThreshold());
+        if (sprintBlocked) {
             player.setSprinting(false);
-            legExertion = false;
-        } else if (runtime.legsExhausted) {
-            runtime.legsExhausted = false;
         }
+        boolean legExertion = !sprintBlocked && player.isSprinting() && movingHorizontally;
 
         if (armExertion) {
             arms = StaminaMath.drain(arms, InfantryServerConfig.armAdsDrainPerTick());
@@ -59,19 +56,20 @@ public final class StaminaEvents {
         if (legExertion) {
             legs = StaminaMath.drain(legs, InfantryServerConfig.legSprintDrainPerTick());
             runtime.lastLegExertionTick = gameTime;
-            if (legs <= 0.0F) {
-                runtime.legsExhausted = true;
-                player.setSprinting(false);
-            }
         } else if (gameTime - runtime.lastLegExertionTick
                 > InfantryServerConfig.staminaRecoveryDelayTicks()) {
             legs = StaminaMath.recover(legs, InfantryServerConfig.legRecoveryPerTick());
         }
 
-        StaminaState after = new StaminaState(arms, legs);
+        sprintBlocked = StaminaMath.shouldBlockSprint(legs, sprintBlocked,
+                InfantryServerConfig.legExhaustedResumeThreshold());
+        StaminaState after = new StaminaState(arms, legs, sprintBlocked);
         boolean changed = !after.equals(before);
         if (changed) {
             after.save(player);
+        }
+        if (sprintBlocked) {
+            player.setSprinting(false);
         }
         syncIfDue(player, runtime, after, true, changed);
     }
@@ -81,20 +79,22 @@ public final class StaminaEvents {
             return;
         }
         RuntimeState runtime = RUNTIME.computeIfAbsent(player.getUUID(), ignored ->
-                RuntimeState.create(StaminaState.load(player)));
+                new RuntimeState(player.level().getGameTime()));
         StaminaState after = consumeJump(player);
         runtime.lastLegExertionTick = player.level().getGameTime();
-        if (after.legs() <= 0.0F) {
-            runtime.legsExhausted = true;
-        }
         send(player, runtime, after, true);
     }
 
     static StaminaState consumeJump(ServerPlayer player) {
         StaminaState before = StaminaState.load(player);
-        StaminaState after = new StaminaState(before.arms(),
-                StaminaMath.drain(before.legs(), InfantryServerConfig.legJumpCost()));
+        float legs = StaminaMath.drain(before.legs(), InfantryServerConfig.legJumpCost());
+        StaminaState after = new StaminaState(before.arms(), legs,
+                StaminaMath.shouldBlockSprint(legs, before.sprintBlocked(),
+                        InfantryServerConfig.legExhaustedResumeThreshold()));
         after.save(player);
+        if (after.sprintBlocked()) {
+            player.setSprinting(false);
+        }
         return after;
     }
 
@@ -102,10 +102,11 @@ public final class StaminaEvents {
     public static StaminaState overwrite(ServerPlayer player, float arms, float legs) {
         StaminaState replacement = new StaminaState(arms, legs);
         replacement.save(player);
-        RuntimeState runtime = RuntimeState.create(replacement);
+        if (replacement.sprintBlocked() && isEnabled(player)) {
+            player.setSprinting(false);
+        }
         long gameTime = player.level().getGameTime();
-        runtime.lastArmExertionTick = gameTime;
-        runtime.lastLegExertionTick = gameTime;
+        RuntimeState runtime = new RuntimeState(gameTime);
         RUNTIME.put(player.getUUID(), runtime);
         send(player, runtime, replacement, isEnabled(player));
         return replacement;
@@ -113,7 +114,7 @@ public final class StaminaEvents {
 
     public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
-            RuntimeState runtime = RuntimeState.create(StaminaState.load(player));
+            RuntimeState runtime = new RuntimeState(player.level().getGameTime());
             RUNTIME.put(player.getUUID(), runtime);
             send(player, runtime, StaminaState.load(player), isEnabled(player));
         }
@@ -133,7 +134,7 @@ public final class StaminaEvents {
 
     public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
-            RuntimeState runtime = RuntimeState.create(StaminaState.load(player));
+            RuntimeState runtime = new RuntimeState(player.level().getGameTime());
             RUNTIME.put(player.getUUID(), runtime);
             send(player, runtime, StaminaState.load(player), isEnabled(player));
         }
@@ -143,13 +144,24 @@ public final class StaminaEvents {
         return player.isAlive() && !player.isSpectator() && !player.getAbilities().instabuild;
     }
 
+    /** Used at the vanilla sprint setter, including repeated START_SPRINTING packets. */
+    public static boolean isSprintBlocked(ServerPlayer player) {
+        if (!isEnabled(player)) {
+            return false;
+        }
+        StaminaState state = StaminaState.load(player);
+        return StaminaMath.shouldBlockSprint(state.legs(), state.sprintBlocked(),
+                InfantryServerConfig.legExhaustedResumeThreshold());
+    }
+
     private static void syncIfDue(ServerPlayer player, RuntimeState runtime,
                                   StaminaState state, boolean enabled, boolean changed) {
         long gameTime = player.level().getGameTime();
         int interval = changed ? StaminaRules.ACTIVE_SYNC_INTERVAL_TICKS
                 : StaminaRules.IDLE_SYNC_INTERVAL_TICKS;
         if (gameTime - runtime.lastSyncTick >= interval
-                || runtime.lastEnabled != enabled) {
+                || runtime.lastEnabled != enabled
+                || runtime.lastSprintBlocked != (enabled && state.sprintBlocked())) {
             send(player, runtime, state, enabled);
         }
     }
@@ -157,24 +169,27 @@ public final class StaminaEvents {
     private static void send(ServerPlayer player, RuntimeState runtime,
                              StaminaState state, boolean enabled) {
         if (player.connection != null) {
-            StaminaNetwork.send(player, new StaminaSnapshot(state.arms(), state.legs(), enabled));
+            StaminaNetwork.send(player, new StaminaSnapshot(state.arms(), state.legs(), enabled,
+                    state.sprintBlocked()));
         }
         runtime.lastSyncTick = player.level().getGameTime();
         runtime.lastEnabled = enabled;
+        runtime.lastSprintBlocked = enabled && state.sprintBlocked();
     }
 
     private static final class RuntimeState {
-        private long lastArmExertionTick = Long.MIN_VALUE / 2;
-        private long lastLegExertionTick = Long.MIN_VALUE / 2;
+        private long lastArmExertionTick;
+        private long lastLegExertionTick;
         private long lastSyncTick = Long.MIN_VALUE / 2;
         private boolean lastEnabled;
-        private boolean legsExhausted;
+        private boolean lastSprintBlocked;
         private final StaminaMovementTracker movementTracker = new StaminaMovementTracker();
 
-        private static RuntimeState create(StaminaState state) {
-            RuntimeState runtime = new RuntimeState();
-            runtime.legsExhausted = state.legs() <= 0.0F;
-            return runtime;
+        private RuntimeState(long gameTime) {
+            // Runtime is recreated on login/respawn: always wait a full cooldown instead of
+            // treating an absent exertion timestamp as permission to regenerate immediately.
+            lastArmExertionTick = gameTime;
+            lastLegExertionTick = gameTime;
         }
     }
 }

@@ -1,10 +1,15 @@
 package com.wok.infantry.stamina;
 
 /** Small wire-safe view of the authoritative local player's current reserves. */
-public record StaminaSnapshot(float arms, float legs, boolean enabled) {
+public record StaminaSnapshot(float arms, float legs, boolean enabled, boolean sprintBlocked) {
     public StaminaSnapshot {
         arms = StaminaMath.clamp(arms, 0.0F, StaminaRules.MAX_STAMINA);
         legs = StaminaMath.clamp(legs, 0.0F, StaminaRules.MAX_STAMINA);
+        sprintBlocked = enabled && (legs <= 0.0F || sprintBlocked);
+    }
+
+    public StaminaSnapshot(float arms, float legs, boolean enabled) {
+        this(arms, legs, enabled, false);
     }
 
     public float armRatio() {

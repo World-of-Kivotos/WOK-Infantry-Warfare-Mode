@@ -744,6 +744,10 @@ public final class FormationService {
 
     /** Deploys one idempotent vehicle batch at the side's physical arrow block. */
     public VehicleDeploymentResult deployVehicles(String publicFactionId, String formationId) {
+        if (com.wok.infantry.battle.tickets.TicketService.finished(server)) {
+            return VehicleDeploymentResult.failure(ActionResult.failure(
+                    ActionResult.Code.INVALID_TARGET, "本局已结束，开始新局后才能部署编制载具"));
+        }
         ResolvedSelection resolved = resolveSelection(catalog, publicFactionId, formationId);
         if (!resolved.result().success()) {
             return VehicleDeploymentResult.failure(resolved.result());
@@ -839,6 +843,7 @@ public final class FormationService {
 
     /** Replenishes ready combat losses; called once per second by the server lifecycle bridge. */
     public void tickVehicles() {
+        if (com.wok.infantry.battle.tickets.TicketService.finished(server)) return;
         if (replenishmentData == null || !replenishmentData.status().success()) {
             return;
         }

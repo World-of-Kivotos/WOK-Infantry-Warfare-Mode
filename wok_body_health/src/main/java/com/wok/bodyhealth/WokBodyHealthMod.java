@@ -25,8 +25,9 @@ public final class WokBodyHealthMod {
                 EventPriority.LOWEST, BodyHealthEvents::onLivingDamage);
         MinecraftForge.EVENT_BUS.addListener(BodyHealthEvents::onLivingHeal);
         MinecraftForge.EVENT_BUS.addListener(BodyHealthEvents::onLivingUseTotem);
+        MinecraftForge.EVENT_BUS.addListener(
+                EventPriority.LOWEST, true, BodyHealthEvents::onLivingDeathObserved);
         MinecraftForge.EVENT_BUS.addListener(BodyHealthEvents::onPlayerTick);
-        MinecraftForge.EVENT_BUS.addListener(BodyHealthEvents::onLivingJump);
         MinecraftForge.EVENT_BUS.addListener(BodyHealthEvents::onPlayerClone);
         MinecraftForge.EVENT_BUS.addListener(BodyHealthEvents::onPlayerLoggedIn);
         MinecraftForge.EVENT_BUS.addListener(BodyHealthEvents::onPlayerRespawn);

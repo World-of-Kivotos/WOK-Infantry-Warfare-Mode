@@ -53,6 +53,9 @@ public final class InfantryItems {
             () -> new BlockItem(InfantryBlocks.RALLY_RADIO.get(),
                     new Item.Properties().stacksTo(1)));
 
+    public static final RegistryObject<Item> BASE_SUPPLY_TOOL = ITEMS.register(
+            "base_supply_tool", () -> new Item(new Item.Properties().stacksTo(1)));
+
     private InfantryItems() {
     }
 

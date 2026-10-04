@@ -41,7 +41,7 @@ final class FormationRepository {
         try {
             new CatalogFiles(configPath.getParent()).recover();
         } catch (IOException exception) {
-            return LoadResult.failure(config, "中断的阵营配装导入恢复失败；原文件保持不变，请检查服务端日志");
+            return LoadResult.failure(config, "阵营配装导入恢复检查失败；原文件保持不变：" + exception.getMessage());
         }
         if (!Files.isRegularFile(configPath)) {
             FormationConfigData defaults = FormationConfigData.defaultConfig();

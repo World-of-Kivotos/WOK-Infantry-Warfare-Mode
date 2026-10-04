@@ -128,7 +128,7 @@ public final class CatalogFiles {
         }
     }
 
-    private static byte[] readBounded(Path path) throws IOException {
+    private byte[] readBounded(Path path) throws IOException {
         checkNotLink(path);
         if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) throw new IOException("文件不存在：" + path.getFileName());
         try (var input = Files.newInputStream(path)) {
@@ -138,7 +138,7 @@ public final class CatalogFiles {
         }
     }
 
-    private static void atomicWrite(Path target, byte[] contents) throws IOException {
+    private void atomicWrite(Path target, byte[] contents) throws IOException {
         checkNotLink(target);
         Path staging = Files.createTempFile(target.getParent(), ".catalog-", ".tmp");
         try {
@@ -151,17 +151,21 @@ public final class CatalogFiles {
         } finally { Files.deleteIfExists(staging); }
     }
 
-    private static void prepareDirectory(Path directory) throws IOException {
+    private void prepareDirectory(Path directory) throws IOException {
         checkNotLink(directory);
         Files.createDirectories(directory);
     }
 
-    private static void checkNotLink(Path path) throws IOException {
-        for (Path current = path; current != null; current = current.getParent()) {
+    // Only root and its descendants are checked: launchers (e.g. PCL version isolation) often reach
+    // the game directory through a junction, which must not block loading.
+    private void checkNotLink(Path path) throws IOException {
+        Path normalized = path.toAbsolutePath().normalize();
+        if (!normalized.startsWith(root)) throw new IOException("配置文件路径越出配置目录：" + path.getFileName());
+        for (Path current = normalized; current != null && current.startsWith(root); current = current.getParent()) {
             if (Files.isSymbolicLink(current) || Files.exists(current, LinkOption.NOFOLLOW_LINKS)
                     && Files.readAttributes(current, java.nio.file.attribute.BasicFileAttributes.class,
                     LinkOption.NOFOLLOW_LINKS).isOther()) {
-                throw new IOException("不能通过符号链接或重解析点访问配置文件");
+                throw new IOException("不能通过符号链接或重解析点访问配置文件：" + current);
             }
         }
     }

@@ -38,6 +38,8 @@ public final class WokInfantryMod {
         IEventBus modBus = context.getModEventBus();
         context.registerConfig(ModConfig.Type.CLIENT, InfantryClientConfig.SPEC);
         context.registerConfig(ModConfig.Type.SERVER, InfantryServerConfig.SPEC);
+        context.registerConfig(ModConfig.Type.SERVER,
+                com.wok.infantry.config.BattleGameplayConfig.SPEC, "wok_infantry-gameplay.toml");
         InfantryBlocks.register(modBus);
         InfantryBlockEntities.register(modBus);
         InfantryItems.register(modBus);
@@ -46,6 +48,7 @@ public final class WokInfantryMod {
         BattleNetwork.init();
         FormationNetwork.init();
         StaminaNetwork.init();
+        com.wok.infantry.battle.tickets.TicketNetwork.init();
         TaczAdsSpeedAdapter.register();
         MinecraftForge.EVENT_BUS.addListener(StaminaEvents::onPlayerTick);
         MinecraftForge.EVENT_BUS.addListener(StaminaEvents::onPlayerJump);

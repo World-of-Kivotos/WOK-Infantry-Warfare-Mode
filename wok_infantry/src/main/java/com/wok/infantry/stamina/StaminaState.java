@@ -3,15 +3,21 @@ package com.wok.infantry.stamina;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.entity.player.Player;
 
-/** Persistent per-player arm and leg reserves. Transient cooldowns remain server-runtime state. */
-public record StaminaState(float arms, float legs) {
+/** Persistent reserves and exhaustion latch; recovery timers remain server-runtime state. */
+public record StaminaState(float arms, float legs, boolean sprintBlocked) {
     private static final String ROOT_KEY = "wok_infantry_stamina";
     private static final String ARMS_KEY = "arms";
     private static final String LEGS_KEY = "legs";
+    private static final String SPRINT_BLOCKED_KEY = "sprintBlocked";
 
     public StaminaState {
         arms = StaminaMath.clamp(arms, 0.0F, StaminaRules.MAX_STAMINA);
         legs = StaminaMath.clamp(legs, 0.0F, StaminaRules.MAX_STAMINA);
+        sprintBlocked = legs <= 0.0F || sprintBlocked;
+    }
+
+    public StaminaState(float arms, float legs) {
+        this(arms, legs, false);
     }
 
     public static StaminaState full() {
@@ -24,13 +30,15 @@ public record StaminaState(float arms, float legs) {
             return full();
         }
         CompoundTag stamina = persistent.getCompound(ROOT_KEY);
-        return new StaminaState(stamina.getFloat(ARMS_KEY), stamina.getFloat(LEGS_KEY));
+        return new StaminaState(stamina.getFloat(ARMS_KEY), stamina.getFloat(LEGS_KEY),
+                stamina.getBoolean(SPRINT_BLOCKED_KEY));
     }
 
     public void save(Player player) {
         CompoundTag stamina = new CompoundTag();
         stamina.putFloat(ARMS_KEY, arms);
         stamina.putFloat(LEGS_KEY, legs);
+        stamina.putBoolean(SPRINT_BLOCKED_KEY, sprintBlocked);
         player.getPersistentData().put(ROOT_KEY, stamina);
     }
 

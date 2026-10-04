@@ -41,7 +41,7 @@ final class LoadoutRepository {
         try {
             new CatalogFiles(configPath.getParent()).recover();
         } catch (IOException exception) {
-            throw new IllegalStateException("无法恢复中断的阵营配装导入；保留原文件并停止加载", exception);
+            throw new IllegalStateException("阵营配装导入恢复检查失败；保留原文件并停止加载：" + exception.getMessage(), exception);
         }
         config = read(configPath, LoadoutConfigData.class, LoadoutConfigData.defaultConfig());
         config.normalize();

@@ -283,10 +283,16 @@ public final class BattleEvents {
                 && DeploymentService.get(player)
                 .map(service -> service.isValidIssuedStack(player,
                         event.getItemStack())).orElse(false);
-        if (active && !administratorSetupBlock && !issuedPortableAmmoCrate
+        boolean rallyDeployment = active
+                && event.getItemStack().is(InfantryItems.RALLY_RADIO.get())
+                && (player.hasPermissions(BattleRules.ADMIN_PERMISSION_LEVEL)
+                || DeploymentService.get(player).map(service -> service.isValidIssuedStack(
+                        player, event.getItemStack())).orElse(false));
+        if (active && !administratorSetupBlock && !issuedPortableAmmoCrate && !rallyDeployment
                 && (event.getItemStack().getItem() instanceof BlockItem
                 || event.getItemStack().getItem() instanceof BucketItem)) {
-            // World blocks/fluids cannot carry item provenance and would persist beyond this life.
+            // Ordinary blocks/fluids remain forbidden; rally ownership, placement permissions
+            // and cooldown are checked by placeRally when the block is actually placed.
             event.setCanceled(true);
         }
     }

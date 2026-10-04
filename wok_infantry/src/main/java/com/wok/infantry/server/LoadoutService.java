@@ -605,6 +605,34 @@ public final class LoadoutService {
                 && ItemStack.isSameItemSameTags(first, second);
     }
 
+    /** Refills template counts in place; extra ammunition and transport cargo keep their identity. */
+    public int replenishPreparedLoadout(ServerPlayer player, PreparedLoadout prepared,
+                                        UUID sessionId, UUID issueToken) {
+        if (!prepared.result().success()) throw new IllegalArgumentException("Invalid prepared kit");
+        int blocked = 0;
+        for (PreparedStack resolved : prepared.stacks()) {
+            int slot = resolved.target().inventoryIndex();
+            ItemStack existing = player.getInventory().getItem(slot);
+            ItemStack template = resolved.stack();
+            if (existing.isEmpty()) {
+                ItemStack supplied = template.copy();
+                KitProvenance.stamp(supplied, sessionId, player.getUUID(), issueToken,
+                        slot, resolved.ammoReserveLimit());
+                player.getInventory().setItem(slot, supplied);
+            } else if (existing.is(template.getItem())
+                    && KitProvenance.isValidAtSlot(existing, sessionId, player.getUUID(), issueToken, slot)
+                    && !KitProvenance.isTransportCargo(existing)) {
+                existing.setCount(Math.max(existing.getCount(), template.getCount()));
+            } else {
+                // Never replace a legitimate cargo deployer temporarily occupying a kit slot.
+                blocked++;
+            }
+        }
+        player.getInventory().setChanged();
+        player.inventoryMenu.broadcastChanges();
+        return blocked;
+    }
+
     /** Install half of the deployment transaction; all fallible parsing happened in prepare. */
     public void installPreparedLoadout(ServerPlayer player, PreparedLoadout prepared,
                                        UUID sessionId, UUID issueToken) {

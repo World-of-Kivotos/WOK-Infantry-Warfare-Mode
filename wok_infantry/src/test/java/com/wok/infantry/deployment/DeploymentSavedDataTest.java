@@ -334,6 +334,27 @@ class DeploymentSavedDataTest {
                 .getList("RallyCooldowns", Tag.TAG_COMPOUND).size());
     }
 
+    @Test
+    void reloadKeepsGroundLevelAndLegacyRaisedRalliesButRejectsUnsafeOffsets() {
+        BlockPos anchor = new BlockPos(620, 64, 620);
+        for (BlockPos spawn : List.of(anchor.east(), anchor.above(3))) {
+            DeploymentSavedData data = new DeploymentSavedData();
+            RallyDeploymentPoint rally = new RallyDeploymentPoint(id("rally-height"),
+                    Faction.BLUE, "default", SquadCallsign.ALPHA, OVERWORLD, anchor, spawn, 0);
+            assertTrue(data.putRally(rally));
+            CompoundTag encoded = data.save(new CompoundTag());
+            assertEquals(rally, DeploymentSavedData.load(encoded).rally(rally.id()).orElseThrow());
+            for (BlockPos unsafe : List.of(anchor.below(), anchor.above(4), anchor.east(3))) {
+                CompoundTag corrupted = encoded.copy();
+                CompoundTag point = corrupted.getList("Rallies", Tag.TAG_COMPOUND).getCompound(0);
+                point.putInt("SpawnX", unsafe.getX());
+                point.putInt("SpawnY", unsafe.getY());
+                point.putInt("SpawnZ", unsafe.getZ());
+                assertTrue(DeploymentSavedData.load(corrupted).rally(rally.id()).isEmpty());
+            }
+        }
+    }
+
     private static CompoundTag rootWithFields(List<CompoundTag> fields) {
         CompoundTag root = new CompoundTag();
         root.putInt("Version", 2);

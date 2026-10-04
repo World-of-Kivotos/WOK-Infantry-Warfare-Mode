@@ -27,7 +27,7 @@ public final class InfantryServerConfig {
     public static final double DEFAULT_LEG_JUMP_COST = 10.0D;
     public static final double DEFAULT_ARM_RECOVERY_PER_SECOND = 8.4D;
     public static final double DEFAULT_LEG_RECOVERY_PER_SECOND = 6.8D;
-    public static final int DEFAULT_STAMINA_RECOVERY_DELAY_TICKS = 16;
+    public static final int DEFAULT_STAMINA_RECOVERY_DELAY_TICKS = 60;
     public static final double DEFAULT_LEG_EXHAUSTED_RESUME_THRESHOLD = 15.0D;
 
     public static final ForgeConfigSpec SPEC;
@@ -96,7 +96,8 @@ public final class InfantryServerConfig {
                 .defineInRange("legRecoveryPerSecond", DEFAULT_LEG_RECOVERY_PER_SECOND,
                         0.0D, 50.0D);
         STAMINA_RECOVERY_DELAY_TICKS = builder
-                .comment("Ticks without exertion before either stamina pool starts recovering")
+                .comment("Ticks without exertion before each stamina pool starts recovering",
+                        "60 ticks = 3 seconds; exertion restarts that pool's cooldown")
                 .defineInRange("recoveryDelayTicks", DEFAULT_STAMINA_RECOVERY_DELAY_TICKS,
                         0, 200);
         LEG_EXHAUSTED_RESUME_THRESHOLD = builder

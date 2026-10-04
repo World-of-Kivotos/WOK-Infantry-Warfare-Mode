@@ -26,7 +26,9 @@ record RallyDeploymentPoint(UUID id, Faction faction, String formationId,
         int deltaX = Math.abs(spawnPosition.getX() - anchorPosition.getX());
         int deltaY = spawnPosition.getY() - anchorPosition.getY();
         int deltaZ = Math.abs(spawnPosition.getZ() - anchorPosition.getZ());
-        if (deltaX > 2 || deltaZ > 2 || deltaY < 1 || deltaY > 3) {
+        // Ground-level neighbors are valid for the low radio. Retain +3 for older saved
+        // points produced by the previous scan, which started one block above the anchor.
+        if (deltaX > 2 || deltaZ > 2 || deltaY < 0 || deltaY > 3) {
             throw new IllegalArgumentException("Rally spawn must stay within the safety scan");
         }
         if (!Float.isFinite(yaw) || yaw < 0.0F || yaw >= 360.0F) {

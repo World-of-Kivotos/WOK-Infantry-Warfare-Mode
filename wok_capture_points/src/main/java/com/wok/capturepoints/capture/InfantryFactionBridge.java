@@ -15,6 +15,19 @@ final class InfantryFactionBridge {
     private InfantryFactionBridge() {
     }
 
+    static boolean isActive(ServerPlayer player) {
+        if (!ModList.get().isLoaded("wok_infantry")) return true;
+        Access current = access();
+        if (current == null) return false;
+        try {
+            Object value = current.getDeployment.invoke(null, player);
+            return value instanceof Optional<?> service && service.isPresent()
+                    && Boolean.TRUE.equals(current.isActive.invoke(service.get(), player.getUUID()));
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return false;
+        }
+    }
+
     static CaptureTeam resolve(ServerPlayer player) {
         if (!ModList.get().isLoaded("wok_infantry")) return CaptureTeam.NEUTRAL;
         Access current = access();
@@ -42,9 +55,12 @@ final class InfantryFactionBridge {
             try {
                 Class<?> serviceClass = Class.forName("com.wok.infantry.battle.BattleService");
                 Class<?> factionClass = Class.forName("com.wok.infantry.battle.Faction");
+                Class<?> deploymentClass = Class.forName("com.wok.infantry.deployment.DeploymentService");
                 access = new Access(serviceClass.getMethod("get", ServerPlayer.class),
                         serviceClass.getMethod("factionOf", UUID.class),
-                        factionClass.getMethod("id"));
+                        factionClass.getMethod("id"),
+                        deploymentClass.getMethod("get", ServerPlayer.class),
+                        deploymentClass.getMethod("isActive", UUID.class));
             } catch (ReflectiveOperationException ignored) {
                 access = null;
             }
@@ -53,6 +69,7 @@ final class InfantryFactionBridge {
         }
     }
 
-    private record Access(Method getService, Method factionOf, Method factionId) {
+    private record Access(Method getService, Method factionOf, Method factionId,
+                          Method getDeployment, Method isActive) {
     }
 }
