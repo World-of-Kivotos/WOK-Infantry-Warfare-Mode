@@ -27,6 +27,7 @@ public final class UiCaseCatalog {
     /** Every case after the legacy ones. */
     public static List<UiCase> surfaces() {
         List<UiCase> cases = new ArrayList<>();
+        cases.addAll(KitCases.cases());
         cases.addAll(FormationCases.cases());
         cases.addAll(AdminCases.cases());
         return cases.stream().filter(uiCase -> !"legacy".equals(uiCase.group())).toList();

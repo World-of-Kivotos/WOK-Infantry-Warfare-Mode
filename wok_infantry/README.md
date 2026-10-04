@@ -250,6 +250,15 @@ JourneyMap `6.0.2` 的公开区域合并器不能安全裁切任意未对齐的�
 .\gradlew.bat runUiTestClient --no-daemon --console=plain
 ```
 
+实时流程截完前 9 张后，由用例运行器 `UiCaseRunner` 接着跑 `src/uiTest/.../cases/` 里登记的用例：先是保留原名和顺序的编制、管理员 5 张旧截图，再是组件陈列页 `UiKitGalleryScreen`（按钮七态、列表、滑杆、步进、输入框、页签、确认层、HUD 原件、图标图集）。每个用例按档位逐一截图，档位为 320×240（960×720 窗口 GUI 3）、960×720（GUI 1，按最低 2× 排成 480×360）、640×336（1280×672 窗口 GUI 2）三个必过档，外加只出报告的 480×270（960×540 窗口 GUI 2），截图名 `wok_ui_<界面>_<状态>_<档位>.png`。每张截图对应的那一帧都由主源码的布局探针 `client/ui/probe`（生产环境没有接收端，不做任何事）记录文字、框、控件和裁剪，按预览的 `check()` 规则加上“中文物理字号小于 2”“截断没有完整提示”“禁用没有原因”“中文界面出现 READY/[SL] 之类英文占位”检查。已迁移到新组件的界面（目前是陈列页）有任何违规即失败；还没迁移的旧界面只出报告。可选参数：
+
+- `-PuiCases=kit`：只跑某组、某界面或某个用例（逗号分隔；不含 `legacy` 时跳过实时流程和 14 张旧截图，几分钟内看完陈列页）；
+- `-PuiTiers=320x240,960x720`：只跑这些档位；
+- `-PuiLayoutStrict=false`：已迁移界面的违规也只报告不失败；
+- `-PuiPreviewShots=<目录>`：预览图目录，默认向上查找相邻的 `ui-preview/shots`。
+
+除 `wok_ui_acceptance.txt` 外，`run/ui-test/ui-test-results/` 还会写 `wok_ui_layout.json`（每张截图的违规、控件和框）、`wok_ui_manifest.json` 和 `index.html`（Java 截图与预览图并排对照）。之后每个界面批次只需新增自己的 `cases/*Cases.java` 并在 `UiCaseCatalog` 加一行，不改验收器主体。
+
 开发用三进程回环联机验收会启动一个集成服宿主和两个隐藏的外部 Forge 客户端，仅使用 `127.0.0.1:25566`；需要地形后端断言时可加载 JourneyMap 6 测试夹具。脚本会分阶段启动访客、严格检查三方结果并按捕获到的 PID 树清理进程；它不会接受 EULA，且 `networkTest` source set 不进入生产 JAR：
 
 ```powershell
