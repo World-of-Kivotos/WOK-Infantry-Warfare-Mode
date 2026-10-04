@@ -37,11 +37,16 @@ public final class FormationText {
         return key(width < 400 ? "title_short" : "title");
     }
 
-    /** Header identity: "未加入阵营", or the public faction · squad · role. */
+    /**
+     * Header identity: "未加入阵营", or the public faction · squad · role. While the catalog is
+     * still on its way nothing is claimed when the battle snapshot says the player has a faction
+     * (a participant opening the page from the squad terminal has no cached catalog).
+     */
     public static Component identity(FormationVoteModel model, BattleSnapshot battle) {
         FactionSelectionView faction = model.joinedFaction();
         if (faction == null) {
-            return key("identity.unjoined");
+            return model.waiting() && battle != null && battle.faction() != null
+                    ? Component.empty() : key("identity.unjoined");
         }
         MutableComponent identity = Component.literal(faction.displayName());
         if (battle != null && battle.ownSquad() != null) {

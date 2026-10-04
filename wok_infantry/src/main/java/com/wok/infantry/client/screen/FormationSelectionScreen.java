@@ -514,7 +514,7 @@ public final class FormationSelectionScreen extends TacticalScreen
     private List<TacticalBoardChrome.KeyHint> hints(FormationVoteModel model) {
         Component terminalKey = ClientBootstrap.keyLabel(KeyBindingDefaults.Binding.TERMINAL);
         List<TacticalBoardChrome.KeyHint> hints = new ArrayList<>();
-        Component esc = FormationText.escClose(model.joined(), terminalKey);
+        Component esc = FormationText.escClose(!unjoined(model), terminalKey);
         if (layout.mode() == FormationScreenLayout.Mode.WAITING) {
             hints.add(TacticalBoardChrome.KeyHint.literal("R", FormationText.hintRetry()));
             hints.add(TacticalBoardChrome.KeyHint.literal("Esc", esc));
@@ -826,11 +826,21 @@ public final class FormationSelectionScreen extends TacticalScreen
         if (minecraft == null) {
             return;
         }
-        boolean joined = snapshot != null && model().joined();
+        boolean unjoined = unjoined(model());
         minecraft.setScreen(returnScreen);
-        if (!joined && minecraft.gui != null) {
+        if (unjoined && minecraft.gui != null) {
             minecraft.gui.setOverlayMessage(FormationText.reopenNotice(
                     ClientBootstrap.keyLabel(KeyBindingDefaults.Binding.TERMINAL)), false);
         }
+    }
+
+    /**
+     * Whether the viewer has no faction. While the catalog is still on its way the battle
+     * snapshot decides, so a participant who opened the page from the squad terminal is not told
+     * "关闭阵营选择" or shown the unjoined Esc hint.
+     */
+    private static boolean unjoined(FormationVoteModel model) {
+        return model.waiting() ? !KeyBindingDefaults.inBattle(ClientBattleState.snapshot())
+                : !model.joined();
     }
 }
