@@ -10,11 +10,28 @@ public final class InfantryClientConfig {
     public static final boolean DEFAULT_MINIMUM_SCALE_2X = true;
     public static final boolean DEFAULT_REDIRECT_XAERO_WORLD_MAP = true;
 
+    public static final HudRosterMode DEFAULT_HUD_ROSTER_MODE = HudRosterMode.AUTO;
+    public static final boolean DEFAULT_SHOW_BATTLE_STRIP = true;
+
+    /** {@code hud.rosterMode}: how the in-battle squad roster is shown. */
+    public enum HudRosterMode {
+        /** Full roster; title row only on a tight screen with chat open, with F3, or while Tab is held. */
+        AUTO,
+        /** Always the full roster. */
+        FULL,
+        /** Always only the title row (squad name and member count). */
+        COLLAPSED,
+        /** No roster. */
+        HIDDEN
+    }
+
     public static final ForgeConfigSpec SPEC;
     private static final ForgeConfigSpec.DoubleValue MAP_MARKER_SCALE;
     private static final ForgeConfigSpec.BooleanValue REDIRECT_XAERO_WORLD_MAP;
     private static final ForgeConfigSpec.BooleanValue MINIMUM_SCALE_2X;
     private static final ForgeConfigSpec.IntValue KEY_DEFAULTS_REVISION;
+    private static final ForgeConfigSpec.EnumValue<HudRosterMode> HUD_ROSTER_MODE;
+    private static final ForgeConfigSpec.BooleanValue SHOW_BATTLE_STRIP;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -49,6 +66,19 @@ public final class InfantryClientConfig {
                         + "Xaero's World Map open-map key is on M as well) are moved once to the "
                         + "new default; keys you chose yourself are kept.")
                 .defineInRange("defaultsRevision", 0, 0, Integer.MAX_VALUE);
+        builder.pop();
+        builder.comment("In-battle HUD settings (the GUI scale 1 size follows ui.minimumScale2x)")
+                .push("hud");
+        HUD_ROSTER_MODE = builder
+                .comment("Squad roster: AUTO shows every member and shrinks to the title row on "
+                        + "small screens while chat is open, with F3 or while the player list key "
+                        + "is held; FULL always shows every member; COLLAPSED always shows only the "
+                        + "title row; HIDDEN hides the roster.")
+                .defineEnum("rosterMode", DEFAULT_HUD_ROSTER_MODE);
+        SHOW_BATTLE_STRIP = builder
+                .comment("Show the top battle strip with both sides' manpower. Round results and "
+                        + "base supply notices are shown either way.")
+                .define("showBattleStrip", DEFAULT_SHOW_BATTLE_STRIP);
         builder.pop();
         SPEC = builder.build();
     }
@@ -110,6 +140,23 @@ public final class InfantryClientConfig {
         }
         KEY_DEFAULTS_REVISION.set(Math.max(0, revision));
         KEY_DEFAULTS_REVISION.save();
+    }
+
+    /** {@code hud.rosterMode}; {@link #DEFAULT_HUD_ROSTER_MODE} while the config is not loaded. */
+    public static HudRosterMode hudRosterMode() {
+        if (!SPEC.isLoaded()) {
+            return DEFAULT_HUD_ROSTER_MODE;
+        }
+        HudRosterMode mode = HUD_ROSTER_MODE.get();
+        return mode == null ? DEFAULT_HUD_ROSTER_MODE : mode;
+    }
+
+    /** {@code hud.showBattleStrip}: whether the manpower strip is drawn at the top. */
+    public static boolean showBattleStrip() {
+        if (!SPEC.isLoaded()) {
+            return DEFAULT_SHOW_BATTLE_STRIP;
+        }
+        return SHOW_BATTLE_STRIP.get();
     }
 
     private static double clamp(double value) {
