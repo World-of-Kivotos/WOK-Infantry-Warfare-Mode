@@ -1,6 +1,6 @@
 # WOK步战核心
 
-Minecraft 1.20.1 / Forge 47.4.22 的独立步战大战场核心，modId 为 `wok_infantry`，当前版本为 `0.3.0-beta.6`。战术地图可软联动 JourneyMap 6 或 Xaero's Minimap 24.2；两者都不是核心加载所需的硬依赖，专用服务端也不需安装地图 MOD。
+Minecraft 1.20.1 / Forge 47.4.22 的独立步战大战场核心，modId 为 `wok_infantry`，当前版本为 `0.3.0-beta.7`。战术地图可软联动 JourneyMap 6 或 Xaero's Minimap 24.2；两者都不是核心加载所需的硬依赖，专用服务端也不需安装地图 MOD。
 阵营、小队、兵种名额、部署、配装发放和战术标记均由服务端裁决。
 
 本轮基地圈地、兵力值和机枪卧姿规则见[玩法调整说明](docs/GAMEPLAY_0.3.0.md)。
@@ -253,4 +253,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run_network_test.ps1
 .\gradlew.bat runUiTestClient "-PuiJourneyMapJar=run/compat-cache/journeymap-forge-1.20.1-6.0.2.jar" -PuiExpectedTerrainProvider=journeymap -PuiExpectedJourneyMapLoaded=true --no-daemon --console=plain
 ```
 
-产物位于 `build/libs/wok_infantry-0.3.0-beta.6.jar`。
+产物位于 `build/libs/wok_infantry-0.3.0-beta.7.jar`。
