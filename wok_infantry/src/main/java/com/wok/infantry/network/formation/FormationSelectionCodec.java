@@ -59,7 +59,7 @@ public final class FormationSelectionCodec {
                 buffer.writeVarInt(formation.population());
                 buffer.writeVarInt(formation.capacity());
                 buffer.writeBoolean(formation.available());
-                buffer.writeUtf(formation.unavailableReason(), MAX_REASON);
+                buffer.writeUtf(clip(formation.unavailableReason(), MAX_REASON), MAX_REASON);
                 writeStrings(buffer, formation.classes());
                 writeStrings(buffer, formation.squads());
                 writeStrings(buffer, formation.vehicles());
@@ -169,7 +169,22 @@ public final class FormationSelectionCodec {
 
     private static void writeStrings(FriendlyByteBuf buffer, List<String> values) {
         writeCount(buffer, values.size(), MAX_SUMMARIES, "summaries");
-        values.forEach(value -> buffer.writeUtf(value, MAX_SUMMARY));
+        values.forEach(value -> buffer.writeUtf(clip(value, MAX_SUMMARY), MAX_SUMMARY));
+    }
+
+    /**
+     * Display-only text is built from admin config at runtime; an overlong line must not make
+     * the snapshot unencodable, because that kicks the player during login.
+     */
+    static String clip(String value, int maximum) {
+        if (value == null || value.length() <= maximum) {
+            return value;
+        }
+        int end = maximum - 1;
+        if (Character.isHighSurrogate(value.charAt(end - 1))) {
+            end--;
+        }
+        return value.substring(0, end) + "…";
     }
 
     private static List<String> readStrings(FriendlyByteBuf buffer) {

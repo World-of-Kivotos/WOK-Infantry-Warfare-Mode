@@ -1029,7 +1029,7 @@ public final class FormationService {
         return List.copyOf(summaries);
     }
 
-    private static List<String> capabilitySummaries(FormationDefinition formation) {
+    static List<String> capabilitySummaries(FormationDefinition formation) {
         FormationCapabilityProfile capabilities = formation.capabilities();
         List<String> summaries = new ArrayList<>();
         if (capabilities.outpost().enabled()) {
@@ -1044,16 +1044,26 @@ public final class FormationService {
             summaries.add("重生等待 " + capabilities.respawn().delaySeconds() + " 秒");
         }
         if (!capabilities.respawn().mobileSpawnVehicleIds().isEmpty()) {
-            summaries.add("移动重生载具 "
-                    + String.join("、", capabilities.respawn().mobileSpawnVehicleIds()));
+            addIdSummaries(summaries, "移动重生载具 ",
+                    capabilities.respawn().mobileSpawnVehicleIds());
         }
-        summaries.add(switch (capabilities.support().mode()) {
-            case ALL -> "支援：全部已注册项目";
-            case NONE -> "支援：无";
-            case ALLOW_LIST -> "支援：白名单 "
-                    + String.join("、", capabilities.support().allowList());
-        });
+        switch (capabilities.support().mode()) {
+            case ALL -> summaries.add("支援：全部已注册项目");
+            case NONE -> summaries.add("支援：无");
+            case ALLOW_LIST -> addIdSummaries(summaries, "支援：白名单 ",
+                    capabilities.support().allowList());
+        }
         return List.copyOf(summaries);
+    }
+
+    /**
+     * One summary per id: a joined list can exceed the catalog's per-summary wire limit and
+     * fail the login snapshot. The client joins entries with "、", so the text is unchanged.
+     */
+    private static void addIdSummaries(List<String> summaries, String prefix, List<String> ids) {
+        for (int index = 0; index < ids.size(); index++) {
+            summaries.add(index == 0 ? prefix + ids.get(index) : ids.get(index));
+        }
     }
 
     private static Availability availability(FactionDefinition faction,

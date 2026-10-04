@@ -1,5 +1,29 @@
 # 更新日志
 
+## WOK步战核心 0.3.0-beta.7 — 2026-10-04
+
+### 新增
+- 无。
+### 修改
+- 编制目录里的“支援：白名单”和“移动重生载具”不再拼成一整条摘要发给客户端，改为每个 ID 一条；客户端照旧用“、”连接显示，界面文字不变。
+### 修复
+- 新建或进入世界时被踢出、提示“无效的玩家数据”：编制支援白名单较长时（例如学院军常规编制加入三种榴弹炮击后共 5 个 ID），“支援：白名单 …”一行达 247 字符，超过编制目录单条摘要上限 192，服务端在登录时编码编制目录包抛出 `EncoderException`，原版把它当成放置玩家失败断开连接。现在除拆分外，编码端对能力、兵种、小队、载具摘要和不可用原因这些纯显示文字超长时截断并加“…”（不拆开代理对），不再因显示文字过长导致进不去世界。
+### 兼容性
+- 网络格式与上限不变（编制协议仍为 `4`，单条摘要上限仍为 192、每类最多 64 条），0.3.0-beta.6 客户端也能解码本版服务端发出的目录；建议客户端与服务端同版。
+- 战局协议 `18`、体力协议 `2` 不变。WOK步战附属-指挥官支援 0.1.0-beta.3 的依赖范围 `[0.3.0-beta.6,)` 包含本版。
+- 扩展 API 无变化。
+### 配置/存档影响
+- 无新增配置项，不改写 `config/wok_infantry/formations.json`；之前因白名单过长进不去的存档，换本版后即可正常进入。
+- 存档格式不变。
+### 测试结果
+- `wok_infantry` 下 `.\gradlew.bat clean build compileUiTestJava --console=plain` BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 378 项（91 个测试类）全部通过，0 失败、0 错误、0 跳过。新增 `FormationServiceCatalogSummaryTest`（2 项：5 个 ID 的白名单逐条发送、每条不超上限、连接后文字与旧版相同；全部/无模式仍是一条）；`FormationSelectionCodecTest` 新增 2 项（超长摘要与原因截断后可往返解码、截断不拆代理对）。`compileUiTestJava` 只有 uiTest 中原有的 8 条过时 API 警告。
+- 用测试端 `D:\WOK步战测试\1.20.1-Forge_47.4.22\config\wok_infantry\formations.json` 原样回放（临时测试，未提交）：旧拼法下学院军 `default` 的支援行为 247 字符，与日志中的 `String too big (was 247 characters, max 192)` 一致；新版整份目录编码、解码往返相等，无剩余字节。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_infantry-0.3.0-beta.7.jar` PASS，强制依赖只有 `forge`、`minecraft`。
+- `tools/verify_versions.ps1` 限定核心模块运行 PASS（本轮只构建核心）。
+- 已部署到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，替换 0.3.0-beta.6（旧包备份为 `.bak`）。
+- 未运行：`runGameTestServer`、`runUiTestClient`（本版没有改界面）。
+- 游戏内验收：待用户在测试端新建世界确认能正常进入，并在编制选择界面查看“能力”一行显示正常。
+
 ## WOK步战核心 0.3.0-beta.6 — 2026-10-04
 
 ### 新增

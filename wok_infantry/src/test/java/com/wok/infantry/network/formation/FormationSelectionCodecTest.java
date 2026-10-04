@@ -40,6 +40,41 @@ class FormationSelectionCodecTest {
     }
 
     @Test
+    void overlongDisplayTextIsClippedInsteadOfFailingTheSnapshot() {
+        String summary = "支援：白名单 " + "wok_commander_support:x、".repeat(12);
+        String reason = "原因".repeat(200);
+        FormationSelectionSnapshot snapshot = new FormationSelectionSnapshot(1L, true,
+                "", "", FormationVotePhase.NOT_STARTED, false, "", "", Map.of(),
+                List.of(new FactionSelectionView("academy", "学院军", "", 0, 40, true,
+                        List.of(new FormationSelectionView("default", "常规", "", "",
+                                "infantry", "步兵", 0, 40, false, reason,
+                                List.of("assault"), List.of(), List.of(),
+                                List.of(summary))))));
+        FriendlyByteBuf encoded = new FriendlyByteBuf(Unpooled.buffer());
+        FormationSelectionCodec.encode(encoded, snapshot);
+
+        FormationSelectionView decoded = FormationSelectionCodec.decode(encoded)
+                .factions().get(0).formations().get(0);
+
+        String clippedSummary = decoded.capabilities().get(0);
+        assertEquals(FormationSelectionCodec.MAX_SUMMARY, clippedSummary.length());
+        assertEquals(summary.substring(0, FormationSelectionCodec.MAX_SUMMARY - 1) + "…",
+                clippedSummary);
+        assertEquals(FormationSelectionCodec.MAX_REASON, decoded.unavailableReason().length());
+        assertEquals(0, encoded.readableBytes());
+    }
+
+    @Test
+    void clipNeverSplitsASurrogatePair() {
+        String value = "a".repeat(9) + "😀" + "b";
+
+        String clipped = FormationSelectionCodec.clip(value, 11);
+
+        assertEquals("a".repeat(9) + "…", clipped);
+        assertEquals("short", FormationSelectionCodec.clip("short", 11));
+    }
+
+    @Test
     void clientIntentRejectsInvalidIdsAndTrailingBytes() {
         assertThrows(IllegalArgumentException.class,
                 () -> new SelectFormationPacket(1L, "BLUE", "default"));
