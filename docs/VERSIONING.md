@@ -42,7 +42,11 @@
 6. `gradle.properties`、JAR 文件名、JAR 内部版本元数据及当前使用说明一致；历史版本和历史验收记录保留其原版本号。
 
 构建完全部本次模块后，从根目录执行 `./tools/verify_versions.ps1`，核对八个模块的源码、说明、更新日志与 JAR 元数据；
+只构建了部分模块时用 `-Modules wok_infantry`（多个用逗号分隔）只核对这些模块。
 可用 `-ManifestPath outputs/current-versions.json` 输出带 Git 状态、SHA-256 和准确路径的构建清单。
+交付前再加 `-Release` 跑一次：它另外要求当前版本的 CHANGELOG 标题不再带“进行中”、六个栏目都在且没有空栏目（没有内容写“无”），
+并要求 JAR 晚于该模块 `src/main`、`build.gradle`、`gradle.properties` 的最后一次提交且这些路径没有未提交改动，
+也就是在最终提交之后重新构建。不加 `-Release` 时只核对元数据，旧 JAR 也能通过，不能当作发布门槛。
 实际安装前以这份清单选包，不按修改时间猜测，不在同一 `mods` 中保留同一 modId 的多个版本。
 占点与指挥官支援的开发依赖默认读取核心 `gradle.properties`，升级核心后必须先构建核心。
 

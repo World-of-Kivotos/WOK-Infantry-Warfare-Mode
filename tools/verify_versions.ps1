@@ -1,10 +1,34 @@
-param([string] $ManifestPath)
+param(
+    [string] $ManifestPath,
+    # Only check these mod IDs, e.g. -Modules wok_infantry (default: all eight modules). A
+    # comma-joined string, as "powershell -File" passes it, is split as well.
+    [string[]] $Modules,
+    # Release gate on top of the identity checks: the current CHANGELOG entry must be finished
+    # (no in-progress marker in its heading, all six sections present and none left empty) and
+    # each JAR must be built after the last commit touching its module's sources or build files,
+    # with no uncommitted changes there. Build again after the final commit before using it.
+    [switch] $Release
+)
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $workspace = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $moduleDirectories = @('.', 'wok_body_health', 'wok_infantry', 'wok_infantry_armor',
     'wok_vehicle_health', 'wok_commander_support', 'wok_capture_points', 'wok_downed')
+$selectedModules = @($Modules | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } |
+    Where-Object { $_ -ne '' })
+# CHANGELOG markers, \u-escaped to keep this script ASCII-only: "in progress" and the six
+# required sections (added, changed, fixed, compatibility, config/save impact, test results).
+$inProgressMarker = [regex]::Unescape('\u8fdb\u884c\u4e2d')
+$requiredSections = @(
+    [regex]::Unescape('\u65b0\u589e'),
+    [regex]::Unescape('\u4fee\u6539'),
+    [regex]::Unescape('\u4fee\u590d'),
+    [regex]::Unescape('\u517c\u5bb9\u6027'),
+    [regex]::Unescape('\u914d\u7f6e/\u5b58\u6863\u5f71\u54cd'),
+    [regex]::Unescape('\u6d4b\u8bd5\u7ed3\u679c'))
+# Paths, relative to a module root, whose last commit a release JAR must be newer than.
+$releaseSourcePaths = @('src/main', 'build.gradle', 'gradle.properties')
 # Keep this script ASCII-only: Windows PowerShell 5.1 decodes a BOM-less script with the ANSI
 # code page, so literal Chinese names would be garbled. CHANGELOG product names, \u-escaped:
 # trauma, body health, core, standalone armor, vehicle health, commander support,
@@ -41,6 +65,58 @@ function Read-JarText($Archive, [string] $Name) {
     try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
 }
 
+# Release gate, part 1: the CHANGELOG entry under $Heading (a full heading line) is finished.
+function Assert-ChangelogEntryFinished([string] $Changelog, [string] $Heading, [string] $Label) {
+    if ($Heading.Contains($inProgressMarker)) {
+        throw "CHANGELOG entry is still marked in progress: $Label"
+    }
+    $lines = $Changelog -split '\r?\n'
+    $start = [Array]::IndexOf($lines, $Heading)
+    if ($start -lt 0) { throw "CHANGELOG entry not found: $Label" }
+    $end = $lines.Length
+    for ($i = $start + 1; $i -lt $lines.Length; $i++) {
+        if ($lines[$i].StartsWith('## ')) { $end = $i; break }
+    }
+    $sections = @{}
+    $current = $null
+    for ($i = $start + 1; $i -lt $end; $i++) {
+        if ($lines[$i].StartsWith('### ')) {
+            $current = $lines[$i].Substring(4).Trim()
+            $sections[$current] = 0
+        } elseif ($null -ne $current -and $lines[$i].Trim() -ne '') {
+            $sections[$current]++
+        }
+    }
+    foreach ($section in $requiredSections) {
+        if (-not $sections.ContainsKey($section)) {
+            throw "CHANGELOG entry $Label is missing the section '### $section' (write a bullet saying none when empty)"
+        }
+        if ($sections[$section] -eq 0) {
+            throw "CHANGELOG entry $Label has an empty section '### $section'; empty sections must say none explicitly"
+        }
+    }
+}
+
+# Release gate, part 2: the JAR is newer than the module's last source/build commit and the
+# working tree has no uncommitted changes there.
+function Assert-JarBuiltFromHead([string] $Directory, [string] $JarPath, [string] $Label) {
+    $paths = @($releaseSourcePaths | ForEach-Object {
+        if ($Directory -eq '.') { $_ } else { "$Directory/$_" }
+    })
+    $dirty = @(& git -C $workspace status --porcelain --untracked-files=normal -- @paths)
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to read Git status' }
+    if ($dirty.Count -gt 0) {
+        throw "Uncommitted source changes for ${Label}; commit them and build again"
+    }
+    $lastCommit = & git -C $workspace log -1 --format=%ct -- @paths
+    if ($LASTEXITCODE -ne 0 -or -not $lastCommit) { throw "Unable to read the last commit for $Label" }
+    $jarTime = [DateTimeOffset]::new((Get-Item -LiteralPath $JarPath).LastWriteTimeUtc).ToUnixTimeSeconds()
+    if ($jarTime -lt [long] $lastCommit) {
+        throw "JAR is older than the last source commit for ${Label}; build again after the final commit"
+    }
+}
+
+$knownModIds = @{}
 $modules = @(foreach ($directory in $moduleDirectories) {
     $moduleRoot = Join-Path $workspace $directory
     $properties = @{}
@@ -48,6 +124,8 @@ $modules = @(foreach ($directory in $moduleDirectories) {
         if ($line -match '^([a-z_]+)=(.*)$') { $properties[$Matches[1]] = $Matches[2].Trim() }
     }
     $modId = $properties['mod_id']
+    $knownModIds[$modId] = $true
+    if ($selectedModules.Count -gt 0 -and $selectedModules -notcontains $modId) { continue }
     $version = $properties['mod_version']
     if ($version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
         throw "Invalid version for ${modId}: $version"
@@ -83,7 +161,12 @@ $modules = @(foreach ($directory in $moduleDirectories) {
     $moduleReadme = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $moduleRoot 'README.md')
     if (-not $moduleReadme.Contains($jarName)) { throw "Module README missing current JAR: $jarName" }
     $versionHeading = '(?m)^## ' + [regex]::Escape($productNames[$modId]) + ' ' + [regex]::Escape($version) + '(?: \u2014 [^\r\n]+)?\r?$'
-    if ($changelog -notmatch $versionHeading) { throw "CHANGELOG missing current version: $modId $version" }
+    $headingMatch = [regex]::Match($changelog, $versionHeading)
+    if (-not $headingMatch.Success) { throw "CHANGELOG missing current version: $modId $version" }
+    if ($Release) {
+        Assert-ChangelogEntryFinished $changelog $headingMatch.Value.TrimEnd("`r") "$modId $version"
+        Assert-JarBuiltFromHead $directory $jarPath "$modId $version"
+    }
 
     [pscustomobject]@{
         modId = $modId
@@ -93,6 +176,9 @@ $modules = @(foreach ($directory in $moduleDirectories) {
         sha256 = (Get-FileHash -LiteralPath $jarPath -Algorithm SHA256).Hash.ToLowerInvariant()
     }
 })
+foreach ($requested in $selectedModules) {
+    if (-not $knownModIds.ContainsKey($requested)) { throw "Unknown module: $requested" }
+}
 
 if ($ManifestPath) {
     $head = & git -C $workspace rev-parse HEAD
@@ -108,4 +194,8 @@ if ($ManifestPath) {
     $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ManifestPath -Encoding utf8
 }
 $modules | Format-Table modId, version, bytes, jar -AutoSize
-Write-Output 'PASS: source versions, current docs, JAR names, mod IDs and internal versions agree.'
+$scope = if ($selectedModules.Count -gt 0) { ' (modules: ' + ($selectedModules -join ', ') + ')' } else { '' }
+Write-Output "PASS: source versions, current docs, JAR names, mod IDs and internal versions agree$scope."
+if ($Release) {
+    Write-Output 'PASS (release): CHANGELOG entries finished, JARs built after the last source commit.'
+}

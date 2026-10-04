@@ -9,7 +9,7 @@ import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
 
 public final class TicketNetwork {
-    /** Manpower channel protocol: 2 adds the round's starting manpower ({@link Snapshot#max}). */
+    /** Manpower channel protocol: 2 adds the full-bar value ({@link Snapshot#max}). */
     public static final String PROTOCOL_VERSION = "2";
     public static final int MAX_TICKETS = 1_000_000;
     private static final long SUPPLY_HINT_NANOS = 5_000_000_000L;
@@ -17,7 +17,9 @@ public final class TicketNetwork {
     /**
      * Manpower of both sides as the viewer sees it.
      *
-     * @param max     full manpower bar (the round's starting manpower), at least each side's value
+     * @param max     full manpower bar: the server's current {@code tickets.initial} setting, or a
+     *                side's value when that is higher ({@code TicketService.barMaximum}); it is
+     *                not stored per round, so changing the setting mid-round rescales the bar
      * @param visible the viewer has a faction, so the battle strip is shown
      */
     public record Snapshot(int blue, int red, int max, boolean visible) {
