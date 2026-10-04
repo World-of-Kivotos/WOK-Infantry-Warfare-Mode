@@ -45,9 +45,9 @@ public final class InfantryClientConfig {
         KEY_DEFAULTS_REVISION = builder
                 .comment("Revision of the WOK default key table already applied to options.txt "
                         + "(written by the mod, do not edit). While it is lower than the current "
-                        + "revision, WOK keys still on their old default (K, L, U, O, and M with "
-                        + "Xaero's World Map installed) are moved once to the new default; keys "
-                        + "you chose yourself are kept.")
+                        + "revision, WOK keys still on their old default (K, L, U, O, and M while "
+                        + "Xaero's World Map open-map key is on M as well) are moved once to the "
+                        + "new default; keys you chose yourself are kept.")
                 .defineInRange("defaultsRevision", 0, 0, Integer.MAX_VALUE);
         builder.pop();
         SPEC = builder.build();

@@ -162,14 +162,16 @@ public final class KeyBindingDefaults {
 
     /**
      * One-time move of a mapping that still sits exactly on its pre-0.3.0-beta.8 default key
-     * (K, L, U, O, and M while Xaero's World Map is installed) to the new default. options.txt
-     * stores every key, so without this an upgraded client would keep the old, conflicting keys
-     * and the red marks in the controls screen. Anything the player chose is kept: another key, a
-     * mouse button, or the old key with a modifier.
+     * (K, L, U, O, and M while Xaero's redirected open-map key is on M too) to the new default.
+     * options.txt stores every key, so without this an upgraded client would keep the old,
+     * conflicting keys and the red marks in the controls screen. Anything the player chose is
+     * kept: another key, a mouse button, or the old key with a modifier.
      *
      * @param keyboardKey whether the mapping is bound to a keyboard key ({@code KEYSYM})
      * @param keyCode its GLFW key code
      * @param modified whether it has a Forge key modifier (Ctrl, Shift, Alt)
+     * @param xaeroWorldMapInstalled for the migration, {@link #xaeroTakesOverMapKey}: whether
+     *                               Xaero's redirected key already sits on the old map key
      * @return the GLFW key to set ({@link #UNBOUND} to unbind), or empty to leave it alone
      */
     public static OptionalInt migratedKey(Binding binding, boolean keyboardKey, int keyCode,
@@ -182,6 +184,24 @@ public final class KeyBindingDefaults {
             return OptionalInt.empty();
         }
         return OptionalInt.of(current);
+    }
+
+    /**
+     * Whether the one-time migration may move the WOK tactical-map key off its old default
+     * {@code M}: only while Xaero's redirect is available and Xaero's own open-map key is on that
+     * same plain key, i.e. the two really collide and Xaero's key already reaches the tactical map.
+     * A player who moved Xaero's key away from {@code M} to keep the WOK map there keeps it.
+     *
+     * @param redirectAvailable {@code XaeroWorldMapPolicy.redirectAvailable()}
+     * @param xaeroKeyboardKey whether Xaero's open-map key is a keyboard key ({@code false} when
+     *                         the mapping was not found)
+     * @param xaeroKeyCode its GLFW key code
+     * @param xaeroModified whether it has a Forge key modifier
+     */
+    public static boolean xaeroTakesOverMapKey(boolean redirectAvailable, boolean xaeroKeyboardKey,
+                                               int xaeroKeyCode, boolean xaeroModified) {
+        return redirectAvailable && xaeroKeyboardKey && !xaeroModified
+                && xaeroKeyCode == Binding.TACTICAL_MAP.legacyDefaultKey();
     }
 
     /**

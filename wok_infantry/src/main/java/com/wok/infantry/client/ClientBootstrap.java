@@ -273,13 +273,20 @@ public final class ClientBootstrap {
         if (applied >= KeyBindingDefaults.DEFAULTS_REVISION) {
             return;
         }
+        // WOK's old M only gives way when Xaero's redirected open-map key is really on M as well.
+        KeyMapping xaeroOpenMap = XaeroWorldMapPolicy.openMapKey();
+        boolean xaeroTakesMapKey = xaeroOpenMap != null && KeyBindingDefaults.xaeroTakesOverMapKey(
+                XAERO_WORLD_MAP_INSTALLED,
+                xaeroOpenMap.getKey().getType() == InputConstants.Type.KEYSYM,
+                xaeroOpenMap.getKey().getValue(),
+                xaeroOpenMap.getKeyModifier() != KeyModifier.NONE);
         StringBuilder moved = new StringBuilder();
         for (Map.Entry<Binding, KeyMapping> entry : MAPPINGS.entrySet()) {
             KeyMapping mapping = entry.getValue();
             InputConstants.Key key = mapping.getKey();
             OptionalInt target = KeyBindingDefaults.migratedKey(entry.getKey(),
                     key.getType() == InputConstants.Type.KEYSYM, key.getValue(),
-                    mapping.getKeyModifier() != KeyModifier.NONE, XAERO_WORLD_MAP_INSTALLED);
+                    mapping.getKeyModifier() != KeyModifier.NONE, xaeroTakesMapKey);
             if (target.isPresent()) {
                 mapping.setKey(InputConstants.Type.KEYSYM.getOrCreate(target.getAsInt()));
                 moved.append(moved.isEmpty() ? "" : ", ").append(mapping.getName());

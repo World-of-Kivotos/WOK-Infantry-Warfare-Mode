@@ -140,6 +140,29 @@ class KeyBindingDefaultsTest {
     }
 
     @Test
+    void theOldMapKeyOnlyGivesWayToXaerosKeyOnTheSameKey() {
+        // The test client: Xaero's open-map key and the WOK map key both on M.
+        assertTrue(KeyBindingDefaults.xaeroTakesOverMapKey(true, true, GLFW.GLFW_KEY_M, false));
+        assertEquals(OptionalInt.of(KeyBindingDefaults.UNBOUND),
+                KeyBindingDefaults.migratedKey(Binding.TACTICAL_MAP, true, GLFW.GLFW_KEY_M, false,
+                        KeyBindingDefaults.xaeroTakesOverMapKey(true, true, GLFW.GLFW_KEY_M,
+                                false)));
+        // A player who moved Xaero's key off M to keep the WOK map there keeps WOK's M.
+        assertFalse(KeyBindingDefaults.xaeroTakesOverMapKey(true, true, GLFW.GLFW_KEY_COMMA,
+                false));
+        assertEquals(OptionalInt.empty(),
+                KeyBindingDefaults.migratedKey(Binding.TACTICAL_MAP, true, GLFW.GLFW_KEY_M, false,
+                        KeyBindingDefaults.xaeroTakesOverMapKey(true, true, GLFW.GLFW_KEY_COMMA,
+                                false)));
+        assertFalse(KeyBindingDefaults.xaeroTakesOverMapKey(true, true, GLFW.GLFW_KEY_M, true),
+                "Ctrl+M on Xaero does not collide with a plain M");
+        assertFalse(KeyBindingDefaults.xaeroTakesOverMapKey(true, false, GLFW.GLFW_KEY_M, false),
+                "Xaero's key missing or on a mouse button");
+        assertFalse(KeyBindingDefaults.xaeroTakesOverMapKey(false, true, GLFW.GLFW_KEY_M, false),
+                "no working redirect (unknown Xaero build): WOK keeps M");
+    }
+
+    @Test
     void keysThePlayerChoseAreNeverMigrated() {
         // The test client's own options.txt: loadout moved to ';', everything else untouched.
         assertEquals(OptionalInt.empty(), KeyBindingDefaults.migratedKey(Binding.LOADOUT, true,
