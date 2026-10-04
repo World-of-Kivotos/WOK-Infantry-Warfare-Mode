@@ -102,6 +102,25 @@ class FormationVoteHudModelTest {
     }
 
     @Test
+    void formationIdsResolveWithinTheViewersFaction() {
+        // formation ids are unique per faction only: another faction listed first has "default" too
+        FactionSelectionView other = new FactionSelectionView("abydos", "对策委员会", "", 5, 40,
+                true, List.of(formation("default", "对策委员会常规", "wok_infantry:textures/gui/a.png")));
+        FormationSelectionSnapshot locked = new FormationSelectionSnapshot(3L, false, "millennium",
+                "default", FormationVotePhase.LOCKED, true, "", "default", Map.of(),
+                List.of(other, FACTION));
+        VoteView notice = FormationVoteHudModel.view(locked, Optional.of(new LockTransition(
+                "millennium", "default", "", NOW - 1L)), NOW);
+        assertEquals("常规编制", notice.formation());
+        assertEquals("", notice.iconId(), "never the other faction's emblem");
+
+        FormationSelectionSnapshot open = new FormationSelectionSnapshot(3L, true, "millennium", "",
+                FormationVotePhase.OPEN, true, "default", "", Map.of("default", 1),
+                List.of(other, FACTION));
+        assertEquals("常规编制", FormationVoteHudModel.view(open, Optional.empty(), NOW).formation());
+    }
+
+    @Test
     void lockNoticeWithoutEmblemShowsTheFlag() {
         VoteView view = new VoteView(State.LOCKED, "", 0, 0, "常规编制", "", false, 0.5F);
         Plate plate = FormationVoteHudModel.plate(view, false, KEY);

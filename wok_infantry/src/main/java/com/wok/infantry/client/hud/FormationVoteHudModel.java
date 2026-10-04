@@ -102,7 +102,8 @@ public final class FormationVoteHudModel {
             long age = nowNanos - transition.lockedAtNanos();
             if (age >= 0L && age < LOCK_NOTICE_NANOS) {
                 FactionSelectionView faction = faction(snapshot, transition.factionId());
-                FormationSelectionView formation = formation(snapshot, transition.formationId());
+                FormationSelectionView formation = formation(snapshot, faction,
+                        transition.formationId());
                 String name = !transition.formationName().isBlank() ? transition.formationName()
                         : formation != null ? formation.displayName() : transition.formationId();
                 return new VoteView(State.LOCKED, faction == null ? "" : faction.displayName(),
@@ -131,7 +132,7 @@ public final class FormationVoteHudModel {
             return new VoteView(State.OPEN, factionName, population, voted, "", "",
                     snapshot.voteChangeAllowed(), 0.0F);
         }
-        FormationSelectionView mine = formation(snapshot, own);
+        FormationSelectionView mine = formation(snapshot, faction, own);
         return new VoteView(State.VOTED, factionName, population, voted,
                 mine == null ? own : mine.displayName(), "", snapshot.voteChangeAllowed(), 0.0F);
     }
@@ -240,8 +241,21 @@ public final class FormationVoteHudModel {
         return null;
     }
 
-    private static FormationSelectionView formation(FormationSelectionSnapshot snapshot, String id) {
+    /**
+     * Formation {@code id} of {@code owner} (formation ids are only unique within a faction, so
+     * two factions may both have e.g. "default"); any faction's only when the owner is unknown.
+     */
+    private static FormationSelectionView formation(FormationSelectionSnapshot snapshot,
+                                                    FactionSelectionView owner, String id) {
         if (snapshot == null || id == null || id.isEmpty()) {
+            return null;
+        }
+        if (owner != null) {
+            for (FormationSelectionView formation : owner.formations()) {
+                if (formation.id().equals(id)) {
+                    return formation;
+                }
+            }
             return null;
         }
         for (FactionSelectionView faction : snapshot.factions()) {

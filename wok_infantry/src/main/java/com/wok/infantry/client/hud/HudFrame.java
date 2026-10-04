@@ -63,6 +63,7 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
 
     private static long frameCounter;
     private static HudFrame cached;
+    private static boolean capturing;
     private static boolean effectIconsDrawn = true;
     private static int preOffsetX;
     private static int preOffsetY;
@@ -134,7 +135,18 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
                 && frame.guiHeight == guiHeight) {
             return frame;
         }
-        frame = capture(Minecraft.getInstance(), guiWidth, guiHeight);
+        if (capturing) {
+            // An add-on called back into InfantryHudApi while this frame is being captured (e.g.
+            // a capture panel API that asks for its own slot): answer with the previous frame
+            // instead of recursing.
+            return frame;
+        }
+        capturing = true;
+        try {
+            frame = capture(Minecraft.getInstance(), guiWidth, guiHeight);
+        } finally {
+            capturing = false;
+        }
         cached = frame;
         return frame;
     }

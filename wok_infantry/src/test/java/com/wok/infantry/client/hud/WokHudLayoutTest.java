@@ -208,6 +208,28 @@ class WokHudLayoutTest {
     }
 
     @Test
+    void bossBarsAlsoClearTheCapturePanelDrawnAboveThem() {
+        // the capture panel is drawn above all and would hide bars shifted only under the strip
+        for (int[] tier : TIERS) {
+            UiRect panel = CaptureHudBridge.mirroredPanel(tier[0]);
+            Layout layout = WokHudLayout.compute(Input.screen(tier[0], tier[1], tier[2])
+                    .withRoster(8, false).withStrip(true).withCapturePanel(panel));
+            String where = tier[0] + "x" + tier[1] + "@" + tier[2];
+            int titleTop = WokHudLayout.BOSS_TITLE_TOP + layout.bossShift();
+            assertTrue(titleTop >= panel.bottom() + 4, where + ": boss title under the panel");
+            assertTrue(titleTop >= layout.topCenterBottom() * tier[2] + 4,
+                    where + ": and under the strip");
+        }
+        assertEquals(61 + 4 - 3, WokHudLayout.compute(Input.screen(320, 240, 1).withStrip(true)
+                .withCapturePanel(CaptureHudBridge.mirroredPanel(320))).bossShift());
+        assertEquals(0, WokHudLayout.compute(Input.screen(960, 720, 1)
+                        .withCapturePanel(CaptureHudBridge.mirroredPanel(960))).bossShift(),
+                "no core plate: the bars keep their place above the panel");
+        assertEquals(19 + 4 - 3, WokHudLayout.bossShift(1200, 19, UiRect.of(4, 26, 300, 61)),
+                "a panel beside the boss column does not move the bars");
+    }
+
+    @Test
     void vitalsStayLeftOfHotbarOffhandAndAttackIndicator() {
         for (int width = 320; width <= 1920; width++) {
             for (int factor = 1; factor <= 2; factor++) {

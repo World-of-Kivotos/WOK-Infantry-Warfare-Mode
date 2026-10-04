@@ -86,6 +86,8 @@ public final class WokHudLayout {
     public static final int EFFECT_HARMFUL_TOP = 27;
     /** First boss bar title row. */
     public static final int BOSS_TITLE_TOP = 3;
+    /** Boss bars span width / 2 ± 91 (BossHealthOverlay). */
+    public static final int BOSS_BAR_HALF_WIDTH = 91;
 
     private WokHudLayout() {
     }
@@ -222,7 +224,9 @@ public final class WokHudLayout {
      * @param centerLow       slot for a centre-low panel such as the downed panel
      * @param topCenterNext   first free slot under the top-centre plates, for an add-on panel
      * @param topCenterBottom bottom of the lowest top-centre plate, or 0 when none is shown
-     * @param bossShift       GUI pixels the vanilla boss bars move down (0 = none)
+     * @param bossShift       GUI pixels the vanilla boss bars move down (0 = none): below the
+     *                        top-centre plates and, while it spans the boss bar column, below
+     *                        the WOK步战附属-占点 panel (drawn above all, it would hide them)
      * @param capturePanel    the WOK步战附属-占点 panel in layout pixels, or null
      */
     public record Layout(int width, int height, int factor, boolean tight, boolean narrow,
@@ -395,8 +399,7 @@ public final class WokHudLayout {
         int nextTop = topCenterBottom > 0 ? topCenterBottom + gap : edge;
         UiRect topCenterNext = UiRect.of(band.left(), nextTop, band.right(),
                 Math.max(nextTop, height / 2));
-        int bossShift = topCenterBottom > 0
-                ? Math.max(0, topCenterBottom * factor + OBSTACLE_CLEARANCE - BOSS_TITLE_TOP) : 0;
+        int bossShift = bossShift(in.guiWidth(), topCenterBottom * factor, in.capturePanel());
 
         int vitalsRight = Math.max(edge, Math.min(
                 Math.floorDiv(hotbarObstacleLeft(in), factor) - OBSTACLE_CLEARANCE,
@@ -422,6 +425,26 @@ public final class WokHudLayout {
         return new Layout(width, height, factor, tight, narrow, edge, gap, roster, strip, toasts,
                 vote, band, vitals, staminaPlate, staminaRow, centerLow, topCenterNext,
                 topCenterBottom, bossShift, capture);
+    }
+
+    /**
+     * GUI pixels the vanilla boss bars move down so the first title row lands 4px under the
+     * core's top-centre plates ({@code topCenterBottomGui}, 0 = none shown: no shift). While the
+     * capture panel (GUI pixels, drawn above all) spans the boss bar column, the bars also clear
+     * it; without core plates they keep their place, which already clears the panel's top.
+     */
+    static int bossShift(int guiWidth, int topCenterBottomGui, UiRect captureGui) {
+        if (topCenterBottomGui <= 0) {
+            return 0;
+        }
+        int clear = topCenterBottomGui;
+        int bossLeft = guiWidth / 2 - BOSS_BAR_HALF_WIDTH;
+        int bossRight = guiWidth / 2 + BOSS_BAR_HALF_WIDTH;
+        if (captureGui != null && !captureGui.isEmpty() && captureGui.left() < bossRight
+                && captureGui.right() > bossLeft) {
+            clear = Math.max(clear, captureGui.bottom());
+        }
+        return Math.max(0, clear + OBSTACLE_CLEARANCE - BOSS_TITLE_TOP);
     }
 
     /**
