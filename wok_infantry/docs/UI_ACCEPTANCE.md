@@ -93,7 +93,7 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<版本>\<标�
 
 ### 本轮结果（2026-10-04，核心 0.3.0-beta.8）
 
-- zh_cn：`status=PASS`，139 张截图，严格违规 0；已迁移界面（kit 24、mapicons 8、formation 56 + 旧图 2、hud 32）全部 PASS，两条回归 PASS。归档在 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261004-0.3.0-beta.8\zh_cn\`。
+- zh_cn：`status=PASS`，139 张截图，严格违规 0；已迁移界面（kit 24、mapicons 8、formation 56 + 旧图 2、hud 32）全部 PASS，两条回归 PASS。归档在 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261004-0.3.0-beta.8\zh_cn\`；审查修正（HUD 各状态先清空聊天、标点陈列页均分行、编制夹具调不到服务端方法即失败）后重跑一轮，结果相同（PASS，139 张，严格违规 0，报告 169 条），归档在同一日期目录的 `zh_cn-review\`，以它为准。
 - 旧界面只出报告的违规共 169 条：管理员终端 64（GUI 1 下 1× 中文 44、禁用键没写原因 20）、小队终端 49（1× 中文 26、禁用键没写原因 23：部署/重新部署/补给、退出/移交/踢出、创建）、配装 30（1× 中文 22、翻页键没写原因 8）、战术地图 26（1× 中文 22、支援键截断没有完整提示 3、“READY”占位 1）。它们分别留给地图（B7）、小队（B8）、配装/补给（B9）、管理员（B10）批次。
 - en_us 报告轮（`-PuiLayoutStrict=false`）：`status=PASS`（语义检查全部通过），139 张截图，共报告 157 条违规，归档在同一日期目录的 `en_us\`。其中已迁移界面 40 条，全部是英文文案比中文长而被省略号截断、没有完整提示：编制页投票摘要（“Administrator lock (no timer)”“3 (the faction picks one)”、领先编制名 + 票数）、管理员区说明、320 档详情的载具/能力行；HUD 投票条第二行在 960/640 档（“→ Formation to change”“to pick a squad and deploy”）；标点陈列页页头身份。其余 117 条是旧界面。英文措辞缩短或改成可换行留给后续的 i18n 收尾。
 
