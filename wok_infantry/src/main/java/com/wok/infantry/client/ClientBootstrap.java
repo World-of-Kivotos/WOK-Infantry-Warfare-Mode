@@ -94,7 +94,13 @@ public final class ClientBootstrap {
      */
     public static Component keyLabel(Binding binding) {
         KeyMapping mapping = effectiveMapping(binding);
-        return mapping == null ? null : mapping.getTranslatedKeyMessage();
+        if (mapping == null) {
+            return null;
+        }
+        // A one- or two-pixel glyph such as the grave accent is named as printed on the key.
+        Component label = mapping.getTranslatedKeyMessage();
+        String readable = KeyBindingDefaults.readableKeyNameKey(label.getString());
+        return readable == null ? label : Component.translatable(readable);
     }
 
     /** Footer hint {@code [key] action} for {@code binding}, or {@code null} when unbound. */

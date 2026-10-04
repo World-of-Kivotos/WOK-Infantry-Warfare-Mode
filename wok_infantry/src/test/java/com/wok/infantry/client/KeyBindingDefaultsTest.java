@@ -264,11 +264,42 @@ class KeyBindingDefaultsTest {
             }
         }
         assertEquals(MapRoute.MAP, KeyBindingDefaults.mapRoute(false, true, null));
-        assertEquals(MapRoute.MAP, KeyBindingDefaults.mapRoute(false, true, true),
-                "faction members can open the map while the vote runs");
+        assertEquals(MapRoute.MAP, KeyBindingDefaults.mapRoute(false, true, false));
+        // Review fix UI-03: while the faction still votes the terminal's map tab is locked, so
+        // the map key goes to the formation page like the terminal key.
+        assertEquals(MapRoute.FORMATION, KeyBindingDefaults.mapRoute(false, true, true),
+                "a faction without a locked formation has not entered the battle");
         assertEquals(MapRoute.MAP, KeyBindingDefaults.mapRoute(false, false, false));
         assertEquals(MapRoute.FORMATION, KeyBindingDefaults.mapRoute(false, false, true));
         assertEquals(MapRoute.FORMATION, KeyBindingDefaults.mapRoute(false, false, null));
+    }
+
+    @Test
+    void theThinGraveAccentIsNamedAsPrintedOnTheKey() {
+        // Review fix UI-04: the default terminal key's own name is a 1-2px glyph in key caps.
+        assertEquals("key.wok_infantry.cap.grave", KeyBindingDefaults.readableKeyNameKey("`"));
+        for (String keyName : new String[]{"M", "K", "Tab", "Ctrl + `", "~", "", "F1"}) {
+            assertNull(KeyBindingDefaults.readableKeyNameKey(keyName), keyName);
+        }
+        assertNull(KeyBindingDefaults.readableKeyNameKey(null));
+    }
+
+    @Test
+    void terminalMapAndXaeroRedirectShareOneBattleEnteredRule() {
+        for (boolean faction : new boolean[]{false, true}) {
+            for (Boolean required : new Boolean[]{null, false, true}) {
+                boolean entered = KeyBindingDefaults.battleEntered(faction, required);
+                assertEquals(entered ? TerminalRoute.SQUAD : TerminalRoute.FORMATION,
+                        KeyBindingDefaults.terminalRoute(faction, required));
+                assertEquals(entered ? MapRoute.MAP : MapRoute.FORMATION,
+                        KeyBindingDefaults.mapRoute(false, faction, required));
+            }
+        }
+        // The formation snapshot decides; the battle snapshot only before it arrived.
+        assertTrue(KeyBindingDefaults.battleEntered(false, false));
+        assertFalse(KeyBindingDefaults.battleEntered(true, true), "voting faction member");
+        assertTrue(KeyBindingDefaults.battleEntered(true, null));
+        assertFalse(KeyBindingDefaults.battleEntered(false, null));
     }
 
     @Test
