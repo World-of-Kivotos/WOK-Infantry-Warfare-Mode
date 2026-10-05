@@ -1,8 +1,10 @@
 package com.wok.capturepoints.uitest;
 
 import com.wok.capturepoints.WokCapturePointsMod;
+import com.wok.capturepoints.api.CaptureHudApi;
 import com.wok.capturepoints.capture.CapturePointView;
 import com.wok.capturepoints.capture.CaptureTeam;
+import com.wok.capturepoints.client.CaptureStripLayout;
 import com.wok.capturepoints.client.ClientCaptureState;
 import com.wok.capturepoints.network.CaptureSnapshotPacket;
 import com.wok.infantry.client.ClientBattleState;
@@ -15,6 +17,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ScreenEvent;
+import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -26,12 +29,23 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Development-only real-client HUD and tactical-map visual acceptance. */
+/**
+ * Development-only real-client HUD and tactical-map visual acceptance.
+ *
+ * <p>0.1.0-alpha.4: the HUD captures also check who draws the point. With a core that shows it
+ * ({@code InfantryHudApi.rendersCapturePoints()}, core 0.5.0-beta.2+) the first two HUD captures
+ * must show the core's objective tile and this add-on must report no panel; the last two turn the
+ * core's {@code hud.showBattleStrip} off (in memory, restored at the end) and must show this
+ * add-on's thin strip in the core's {@code top_center_next} slot. With an older core every HUD
+ * capture shows the thin strip. The core is only read by reflection here, so the same harness
+ * runs against either core JAR ({@code -Pinfantry_dev_jar_path}).
+ */
 @Mod.EventBusSubscriber(modid = WokCapturePointsMod.MOD_ID, value = Dist.CLIENT,
         bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class CaptureUiAcceptanceHarness {
@@ -39,9 +53,14 @@ public final class CaptureUiAcceptanceHarness {
             "wok_capture_01_hud_320x240.png",
             "wok_capture_02_map_320x240.png",
             "wok_capture_03_hud_960x720.png",
-            "wok_capture_04_map_960x720.png"
+            "wok_capture_04_map_960x720.png",
+            "wok_capture_05_strip_off_320x240.png",
+            "wok_capture_06_strip_off_960x720.png"
     };
-    private static final int GLOBAL_TIMEOUT_TICKS = 1_600;
+    private static final String CORE_HUD_API = "com.wok.infantry.client.hud.InfantryHudApi";
+    private static final String CORE_HUD_FRAME = "com.wok.infantry.client.hud.HudFrame";
+    private static final String CORE_CLIENT_CONFIG = "com.wok.infantry.config.InfantryClientConfig";
+    private static final int GLOBAL_TIMEOUT_TICKS = 2_400;
     private static final int PHASE_TIMEOUT_TICKS = 300;
     private static final Map<String, Long> BASELINES = new LinkedHashMap<>();
     private static final Map<String, String> CALLBACKS = new ConcurrentHashMap<>();
@@ -55,6 +74,8 @@ public final class CaptureUiAcceptanceHarness {
     private static boolean captureRequested;
     private static String failure;
     private static boolean resultWritten;
+    /** The core's original {@code hud.showBattleStrip}, while the harness has it switched off. */
+    private static Boolean savedShowBattleStrip;
 
     private CaptureUiAcceptanceHarness() {
     }
@@ -119,7 +140,21 @@ public final class CaptureUiAcceptanceHarness {
                     Phase.PREPARE_LARGE_MAP);
             case PREPARE_LARGE_MAP -> prepareMap(minecraft, 1, 960, 720,
                     Phase.CAPTURE_LARGE_MAP);
-            case CAPTURE_LARGE_MAP -> capture(minecraft, SCREENSHOTS[3], Phase.FINISH);
+            case CAPTURE_LARGE_MAP -> capture(minecraft, SCREENSHOTS[3],
+                    Phase.PREPARE_COMPACT_STRIP);
+            case PREPARE_COMPACT_STRIP -> {
+                showBattleStrip(false);
+                if (savedShowBattleStrip == null) {
+                    fail("could not switch the core's hud.showBattleStrip off");
+                } else {
+                    prepareHud(minecraft, 3, 320, 240, Phase.CAPTURE_COMPACT_STRIP);
+                }
+            }
+            case CAPTURE_COMPACT_STRIP -> capture(minecraft, SCREENSHOTS[4],
+                    Phase.PREPARE_LARGE_STRIP);
+            case PREPARE_LARGE_STRIP -> prepareHud(minecraft, 1, 960, 720,
+                    Phase.CAPTURE_LARGE_STRIP);
+            case CAPTURE_LARGE_STRIP -> capture(minecraft, SCREENSHOTS[5], Phase.FINISH);
             case FINISH -> finish(minecraft, true);
             case FAIL -> finish(minecraft, false);
             case STOPPED -> {
@@ -168,7 +203,106 @@ public final class CaptureUiAcceptanceHarness {
             return;
         }
         OBSERVATIONS.add("hudLogicalSize=" + logicalSize(minecraft));
+        if (!checkWhoDrawsThePoint(minecraft)) {
+            return;
+        }
         transition(next);
+    }
+
+    /**
+     * Who shows the point this frame: the core's objective tile (this add-on reports no panel) or
+     * this add-on's thin strip (at most 200 × 23 layout pixels, reported through panelRect).
+     */
+    private static boolean checkWhoDrawsThePoint(Minecraft minecraft) {
+        int width = minecraft.getWindow().getGuiScaledWidth();
+        int height = minecraft.getWindow().getGuiScaledHeight();
+        Boolean coreRenders = coreRendersCapturePoints();
+        int[] panel = CaptureHudApi.panelRect(width, height);
+        Object objective = coreObjective(width, height);
+        int factor = CaptureStripLayout.factor(minecraft.getWindow().getGuiScale(), width, height);
+        String tag = "@" + width + "x" + height + (savedShowBattleStrip == null ? ""
+                : " showBattleStrip=false");
+        OBSERVATIONS.add("coreRendersCapturePoints" + tag + "="
+                + (coreRenders == null ? "missing" : coreRenders));
+        OBSERVATIONS.add("addonPanelRect" + tag + "="
+                + (panel == null ? "null" : Arrays.toString(panel)));
+        OBSERVATIONS.add("coreObjective" + tag + "=" + (objective == null ? "null"
+                : objective.toString().replaceAll("\\s+", " ")));
+        if (Boolean.TRUE.equals(coreRenders)) {
+            if (panel != null || objective == null) {
+                fail("the core shows the point: expected no add-on panel and a core objective, "
+                        + "got panel=" + Arrays.toString(panel) + " objective=" + objective);
+                return false;
+            }
+            return true;
+        }
+        if (panel == null) {
+            fail("the core does not show the point (rendersCapturePoints=" + coreRenders
+                    + "): the add-on's thin strip is missing");
+            return false;
+        }
+        if (panel[2] > CaptureStripLayout.MAX_WIDTH * factor
+                || panel[3] > CaptureStripLayout.HEIGHT_WIDE * factor
+                || panel[0] < 0 || panel[0] + panel[2] > width) {
+            fail("thin strip out of bounds: " + Arrays.toString(panel) + " on " + width + "x"
+                    + height + " at " + factor + "x");
+            return false;
+        }
+        if (objective != null) {
+            fail("both the core objective tile and the thin strip are shown: " + objective);
+            return false;
+        }
+        return true;
+    }
+
+    /** {@code InfantryHudApi.rendersCapturePoints()}, or null on a core without it. */
+    private static Boolean coreRendersCapturePoints() {
+        try {
+            return (Boolean) Class.forName(CORE_HUD_API).getMethod("rendersCapturePoints")
+                    .invoke(null);
+        } catch (ReflectiveOperationException | LinkageError exception) {
+            return null;
+        }
+    }
+
+    /** {@code HudFrame.current(w, h).objective()}, or null (none, or a core without it). */
+    private static Object coreObjective(int width, int height) {
+        try {
+            Object frame = Class.forName(CORE_HUD_FRAME)
+                    .getMethod("current", int.class, int.class).invoke(null, width, height);
+            return frame == null ? null : frame.getClass().getMethod("objective").invoke(frame);
+        } catch (ReflectiveOperationException | LinkageError exception) {
+            return null;
+        }
+    }
+
+    /**
+     * Switches the core's {@code hud.showBattleStrip} (in memory, restored when the run ends);
+     * the first call remembers the original value. Without the core nothing changes.
+     */
+    private static void showBattleStrip(boolean shown) {
+        try {
+            Field field = Class.forName(CORE_CLIENT_CONFIG).getDeclaredField("SHOW_BATTLE_STRIP");
+            field.setAccessible(true);
+            ForgeConfigSpec.BooleanValue value = (ForgeConfigSpec.BooleanValue) field.get(null);
+            if (savedShowBattleStrip == null) {
+                savedShowBattleStrip = value.get();
+            }
+            if (value.get() != shown) {
+                value.set(shown);
+            }
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException exception) {
+            OBSERVATIONS.add("showBattleStrip=unavailable:" + exception);
+        }
+    }
+
+    private static void restoreBattleStrip() {
+        if (savedShowBattleStrip != null) {
+            boolean original = savedShowBattleStrip;
+            showBattleStrip(original);
+            OBSERVATIONS.add("showBattleStripRestored=" + original);
+            savedShowBattleStrip = null;
+        }
     }
 
     private static void prepareMap(Minecraft minecraft, int guiScale, int expectedWidth,
@@ -302,6 +436,7 @@ public final class CaptureUiAcceptanceHarness {
 
     private static void finish(Minecraft minecraft, boolean success) throws IOException {
         if (!resultWritten) {
+            restoreBattleStrip();
             Path result = minecraft.gameDirectory.toPath().resolve("ui-test-results")
                     .resolve("wok_capture_points_ui_acceptance.txt");
             Files.createDirectories(result.getParent());
@@ -332,6 +467,10 @@ public final class CaptureUiAcceptanceHarness {
         CAPTURE_LARGE_HUD,
         PREPARE_LARGE_MAP,
         CAPTURE_LARGE_MAP,
+        PREPARE_COMPACT_STRIP,
+        CAPTURE_COMPACT_STRIP,
+        PREPARE_LARGE_STRIP,
+        CAPTURE_LARGE_STRIP,
         FINISH,
         FAIL,
         STOPPED
