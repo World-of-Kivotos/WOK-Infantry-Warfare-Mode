@@ -39,6 +39,7 @@ import com.wok.infantry.uitest.fixtures.ServerFixtures;
 import com.wok.infantry.uitest.fixtures.SupportFixtures;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
@@ -564,18 +565,25 @@ public final class UiRuntimeAcceptanceHarness {
             return;
         }
         if (!classTabClicked && phaseTicks >= 2) {
-            // Real mouse click on the class tab. SquadScreen is rebuilt by the squad batch (B8),
-            // which can switch this to a uiId click ("terminal.tabs/classes").
-            int utilityWidth = 22;
-            int tabCount = 5;
-            int tabGap = 3;
-            int available = Math.max(170, squadScreen.width - 16 - utilityWidth - 6);
-            int tabWidth = Math.max(34, Math.min(96,
-                    (available - tabGap * (tabCount - 1)) / tabCount));
-            double classTabX = 8 + tabWidth + 3 + tabWidth / 2.0D;
-            boolean clicked = squadScreen.mouseClicked(classTabX, 34.0D,
-                    GLFW.GLFW_MOUSE_BUTTON_LEFT);
-            if (!clicked) {
+            // Real mouse click on the class tab of the terminal strip, found by its probe id
+            // ("terminal.tabs", tab "classes") instead of computed coordinates.
+            AbstractWidget strip = UiFind.widget(squadScreen,
+                    com.wok.infantry.client.screen.BattleTab.TERMINAL_TABS_UI_ID).orElse(null);
+            if (!(strip instanceof com.wok.infantry.client.screen.TacticalTabStrip tabs)) {
+                fail("The squad terminal has no tab strip ("
+                        + com.wok.infantry.client.screen.BattleTab.TERMINAL_TABS_UI_ID + ")");
+                return;
+            }
+            com.wok.infantry.client.screen.UiRect tab = tabs.tabBounds(
+                    tabs.indexOf(com.wok.infantry.client.screen.BattleTab.CLASSES.id()));
+            if (tab == null || tab.isEmpty()) {
+                fail("The class tab is not shown in the terminal strip");
+                return;
+            }
+            UiInputDriver.clickLayout(minecraft, tab.left() + tab.width() / 2.0D,
+                    tab.top() + tab.height() / 2.0D);
+            if (!(minecraft.screen instanceof SquadScreen clickedScreen)
+                    || clickedScreen.page() != com.wok.infantry.client.screen.BattleTab.CLASSES) {
                 fail("The class tab did not accept a real mouse click");
                 return;
             }

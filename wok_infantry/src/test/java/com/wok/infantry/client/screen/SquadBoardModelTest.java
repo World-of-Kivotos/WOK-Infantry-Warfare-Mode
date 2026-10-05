@@ -554,10 +554,14 @@ class SquadBoardModelTest {
         assertEquals(List.of(CheckItem.FORMATION, CheckItem.SQUAD, CheckItem.CLASS,
                 CheckItem.POINT), model.checklist().stream()
                 .map(SquadBoardModel.ChecklistItem::item).toList());
-        assertNotNull(model.tabDisabledReason(BattleTab.LOADOUT));
-        assertNotNull(model.tabDisabledReason(BattleTab.MAP));
-        assertNull(model.tabDisabledReason(BattleTab.FORMATION));
-        assertNull(model.tabDisabledReason(BattleTab.CLASSES));
+        // Same rule as the formation page's strip (6.2): every tab but the formation tab waits.
+        for (BattleTab tab : BattleTab.values()) {
+            if (tab == BattleTab.FORMATION) {
+                assertNull(model.tabDisabledReason(tab));
+            } else {
+                assertNotNull(model.tabDisabledReason(tab), tab + " must wait for the lock");
+            }
+        }
         assertNull(SquadBoardModel.of(leaderSnapshot(defaultDeployment(), List.of()), null,
                 null, NOW).tabDisabledReason(BattleTab.MAP));
     }

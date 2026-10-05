@@ -246,6 +246,24 @@ public final class UiLayoutFrame {
                 fitted, truncated, fullText == null ? "" : fullText, tipped, controls.size()));
     }
 
+    /**
+     * A new layer (a modal card) starts: the texts drawn so far that no control has claimed yet
+     * stay ownerless, so a control of the new layer never adopts a label of the layer below
+     * (for example a faint page label under a dialog key).
+     */
+    public void layer() {
+        int next = controls.size();
+        for (int index = texts.size() - 1; index >= 0; index--) {
+            Text text = texts.get(index);
+            if (text.nextControl() != next) {
+                break;
+            }
+            texts.set(index, new Text(text.text(), text.rect(), text.scale(), text.box(),
+                    text.clip(), text.fitted(), text.truncated(), text.fullText(), text.tipped(),
+                    -1));
+        }
+    }
+
     /** Marks text {@code index} as offered in full elsewhere (see {@link UiLayoutProbe#tipped}). */
     public void markTipped(int index) {
         if (index >= 0 && index < texts.size()) {

@@ -937,16 +937,16 @@ public final class SquadBoardModel {
     }
 
     /**
-     * Why a terminal tab cannot be opened, or {@code null}. Before the formation is locked the
-     * loadout and the map wait for it (the squad, class and deployment pages stay open and show
-     * the vote block; the formation tab is always open).
+     * Why a terminal tab cannot be opened, or {@code null}. Before the formation is locked every
+     * tab but the formation tab waits for it ("编制锁定后开放"), the same rule as the formation
+     * page's strip (user decision 6.2); the page that is already shown is never disabled by the
+     * screen, and it shows the vote block.
      */
     public Component tabDisabledReason(BattleTab tab) {
         if (tab == null || stage == Stage.READY || stage == Stage.LOADING) {
             return null;
         }
-        return tab == BattleTab.LOADOUT || tab == BattleTab.MAP
-                ? FormationText.tabLockedReason() : null;
+        return tab == BattleTab.FORMATION ? null : FormationText.tabLockedReason();
     }
 
     // ------------------------------------------------------------------------ derivation
@@ -1622,6 +1622,8 @@ public final class SquadBoardModel {
                 "confirm.transfer_commander.body", "confirm.transfer.ok")) {
             keys.add(KEY_PREFIX + suffix);
         }
+        // The pages' own texts (0.5.0-beta.1 B8 rendering).
+        keys.addAll(SquadBoardText.translationKeys());
         return Set.copyOf(keys);
     }
 
@@ -1659,6 +1661,11 @@ public final class SquadBoardModel {
         counts.put(KEY_PREFIX + "confirm.disband.commander", 1);
         counts.put(KEY_PREFIX + "confirm.transfer_leader.body", 2);
         counts.put(KEY_PREFIX + "confirm.transfer_commander.body", 2);
+        SquadBoardText.translationArgumentCounts().forEach((key, count) -> {
+            if (counts.put(key, count) != null) {
+                throw new IllegalStateException("Squad board key declared twice: " + key);
+            }
+        });
         return Collections.unmodifiableMap(counts);
     }
 

@@ -114,9 +114,15 @@ public final class FormationClientNetworkBridge {
                     replaceable(current))) {
                 case DEPLOYMENT -> {
                     recordLock(snapshot);
-                    // Replaces the terminal: the vote page is never the deployment page's parent.
-                    minecraft.setScreen(new SquadScreen(BattleTerminalNav.returnScreenFor(current),
-                            true));
+                    if (current instanceof SquadScreen squadScreen) {
+                        // The terminal is already open: switch it, never stack a second one.
+                        squadScreen.showPage(BattleTab.DEPLOYMENT);
+                    } else {
+                        // Replaces the terminal: the vote page is never the deployment page's
+                        // parent.
+                        minecraft.setScreen(new SquadScreen(
+                                BattleTerminalNav.returnScreenFor(current), true));
+                    }
                 }
                 case NOTICE_ONLY -> recordLock(snapshot);
                 case CLOSE -> minecraft.setScreen(selectionScreen.returnScreen());
