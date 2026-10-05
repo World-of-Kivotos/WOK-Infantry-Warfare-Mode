@@ -106,6 +106,10 @@ class StaminaBarLayoutTest {
         assertEquals(UiRect.of(229, 306, 411, 313), tall.band(), "640×336: 24 rows higher");
         assertEquals(UiRect.of(187, 300, 229, 313), tall.earLeft());
         assertEquals(UiRect.of(411, 300, 453, 313), tall.earRight());
+        assertEquals(UiRect.of(230, 308, 318, 311), tall.arms());
+        assertEquals(UiRect.of(322, 308, 410, 311), tall.legs());
+        assertEquals(UiRect.of(203, 303, 227, 311), tall.armsNumber());
+        assertEquals(UiRect.of(413, 303, 437, 311), tall.legsNumber());
 
         // preview 960×540：凹槽 [389,571)×[510,517)，左耳 [347,389)×[504,517)、右耳 [571,613)×[504,517)，
         // 手槽 [390,478)×[512,515)、腿槽 [482,570)×[512,515)
@@ -115,7 +119,18 @@ class StaminaBarLayoutTest {
         assertEquals(UiRect.of(571, 504, 613, 517), wide.earRight());
         assertEquals(UiRect.of(390, 512, 478, 515), wide.arms());
         assertEquals(UiRect.of(482, 512, 570, 515), wide.legs());
-        assertEquals(UiRect.of(389, 690, 571, 697), layout(960, 720, 1).band());
+        assertEquals(UiRect.of(363, 507, 387, 515), wide.armsNumber());
+        assertEquals(UiRect.of(573, 507, 597, 515), wide.legsNumber());
+        assertEquals(UiRect.of(351, 506, 360, 515), wide.armsIcon());
+        assertEquals(UiRect.of(600, 506, 609, 515), wide.legsIcon());
+
+        // 960×720 at 1× (e.g. 1920×1440 at GUI 2, or GUI 1 with ui.minimumScale2x off)
+        Layout big = layout(960, 720, 1);
+        assertTrue(big.numbers());
+        assertEquals(UiRect.of(389, 690, 571, 697), big.band());
+        assertEquals(UiRect.of(347, 684, 389, 697), big.earLeft());
+        assertEquals(UiRect.of(571, 684, 613, 697), big.earRight());
+        assertEquals(UiRect.of(363, 687, 387, 695), big.armsNumber());
     }
 
     @Test
