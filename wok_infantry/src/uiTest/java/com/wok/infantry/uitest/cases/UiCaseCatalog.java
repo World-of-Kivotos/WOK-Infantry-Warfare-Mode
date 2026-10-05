@@ -36,6 +36,7 @@ public final class UiCaseCatalog {
         cases.addAll(FormationCases.cases());
         cases.addAll(AdminCases.cases());
         cases.addAll(AmmoCases.cases());
+        cases.addAll(SquadCases.cases());
         cases.addAll(HudCases.cases());
         return cases.stream().filter(uiCase -> !UiCase.LEGACY_GROUP.equals(uiCase.group()))
                 .toList();

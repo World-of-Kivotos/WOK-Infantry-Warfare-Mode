@@ -1,5 +1,116 @@
 # 更新日志
 
+## WOK步战核心 0.5.0-beta.1 — 2026-10-05
+
+> 用户需求（2026-10-05）：“按 ` 进入的主页面 UI 还是老版本的”，并选择“先做战斗终端”。本版把战斗终端的小队 / 兵种 / 部署三页按预览 `20-squad.js` 的“新版”战术平板界面重做：先补齐小队终端需要的战局数据和不画图的纯逻辑层（`7a6ec50`），再在其上重画三页、编制投票等待区和确认层（`e1c44d6`），最后是交付前的独立审查修正（`0cd6377`、`66ba47c`、`60abe6d`）。战局协议 19→20，与 0.4.0 线不兼容，按 `docs/VERSIONING.md` 提升次版本号（用户此前已同意协议升级）。本版建立在 0.4.0-beta.3（战术地图 Squad 式标点，见下一条）之上：战斗终端分支在 0.4.0-beta.2 上开发，交付前与 0.4.0-beta.3 合并。本版同时包含体力条 A4（快捷栏上方战术凹槽）：用户 2026-10-05 在预览 `16-stamina` 里选定 A4，分支 `claude/体力条` 在 0.4.0-beta.3 上实现（`c815300`–`7b5cf20`）、经独立审查修正（`b2dd63f`），没有单独改版本号，随后并入本版（`91f0c93`）；体力条不改任何网络协议号。下面“测试结果”中标“合并前（分支）”的数字只覆盖各自分支，合并后的最终数字见该栏最后几条。
+
+### 新增
+- 新版战斗终端三页（`SquadScreen` 重写，外壳为 `TacticalScreen` / `TacticalBoardChrome`，GUI 缩放 1 时按 2× 排版）：顶部换成统一的页签条 `BattleTab.strip`（小队 / 兵种 / 部署 / 配装 / 战术地图 / 编制，`Ctrl+Tab` 切页），“编制”页签取代旧版临时“编制”键、经 `BattleTerminalNav` 打开编制页；三页在同一个界面里原地切换。页脚按键提示写实际按键（Esc 关闭、Ctrl+Tab 切页、R 刷新）。
+- 小队页（`SquadPagePainter`）：宽屏顶部是五个呼号的呼号条（人数 / 本队容量、队长名，或可创建 / 已满 / 未建立 / 冷却中 / 本阵营编制无此呼号），窄屏换成两行一项的小队列表；名单按服务端顺序编号，带状态点、职务、状态字（待部署 / 阵亡 / 离线）、兵种和血量，空位画成“空位”行；名单下方是本队兵种名额签、操作对象和操作组（查看本队：移交队长、踢出 | 退出小队、解散小队；查看别队：加入或创建与返回本队），按键下方写当前操作的说明或禁用原因；右栏（窄屏为左下）是我的状态、指挥官（申请 / 卸任 / 移交指挥权，可移交给别队的在线队长）和阵营兵力。
+- 兵种页（`ClassPagePainter`）：本队每个兵种一行，写名额 n/m、正在使用的队员卡片（含血量）和状态（当前兵种 / 名额已满 / 点击更换 / 本小队未开放）；右栏是当前兵种（名额、能否更换与原因）、“配置当前兵种装备”键（打开配装页签）和更换规则；窄屏收成兵种列表加当前兵种条。“部署时发放”（当前兵种的配装槽位预览）只在客户端已有配装缓存时显示，不为它另发请求。
+- 部署页（`DeploymentPagePainter`）：部署点列表（图标、名称、中文维度名与坐标、说明、已选；按可见行分页，标题写“16 个 · 第 1/3 页”，翻页键在列表下方）；宽屏另有部署点方位图（`DeploymentPointMap`：上方为北的网格与比例尺，只画已选部署点所在维度，主基地画补给半径，已选点的标签优先、其余放不下就让位、互不重叠，点图上的点即选中该部署点）；部署状态（等待重生倒计时与进度条，倒计时每帧读快照、用中性色；部署清单；部署 / 补给 / 重新部署键与原因；须知）。
+- 编制投票等待区（`FormationVotePanel`）：编制锁定前三页共用——投票未开启 / 进行中（已投人数）、规则说明、“打开编制投票”键、本阵营候选编制的票数与占比（领先标记；名字放不下时先收起“领先”，再把“4 票 · 50%”收成“4 票”）、你的票和截止方式。这时没有任何建队、选兵种或部署的可点控件，其余页签禁用并悬停写原因。
+- 确认层（`TacticalConfirmDialog`）：踢出、退出小队、解散小队、重新部署为红色危险确认（焦点先在“取消”，Tab 到红键后回车和空格也不会按下它，只能用鼠标点），移交队长、移交指挥权为普通确认，卸任指挥官不弹确认；去掉旧版“3 秒内再点一次确认”。每个禁用的按键都有悬停原因。
+- `TextFit.wrapBest` / `wrapBestPlain` 与 `TextFit.Wrapped`：从长到短挑第一个不留孤字（末行只剩一两个字）、不超行数的文案。
+- uiTest：`SquadCases` 18 个用例——预览的 14 个状态（squads、other、nosquad、kick、classes、classesnosquad、classesactive、deployment、active、loading、votewait、vote、voteclasses、votedeploy）加 2 / 8 / 15 / 16 个部署点，全部 `migrated(true)`，在 320×240、960×720、640×336 三个必需档和 480×270、427×240 两个报告档运行；客户端夹具 `SquadFixtures` 只换客户端缓存、不动服务端。每个状态核对界面报告的预览状态、夹具在截图时没被服务端快照换掉、裁剪区里没有半行字；踢出核对红色确认、焦点在取消、Tab 到红键后回车和空格都不确认、Esc 取消且终端还在；部署页核对页数等于实际页数、首页每一行都画出、标题写出同一页码；锁定前核对没有可点的建队 / 兵种 / 部署控件且有通往编制页的键。
+- 语言：中英成对再新增 304 个语言键（各由 924 个增至 1228 个，都在 `screen.wok_infantry.squad_board.*` 下）：三页的标题、名单、状态、规则、部署点方位图、投票等待区和窄屏短文案（各三到四档），以及审查修正加的确认层失效提示 `squad_board.confirm.stale`（“情况已变化，“…”未执行，请重新确认”）。
+- 战局快照（协议 20）：每个小队多带各兵种的名额与已用数（`SquadView.classLimits`，`ClassLimitView`：兵种 id、本队名额、本队已用，按编制兵种顺序，名额不超过本队容量）；快照末尾多带本人视角的上下文：`FormationContextView`（本局编制 id 与公开名、编制默认兵种、己方与对方公开阵营 id、名称和人数上限；编制投票未锁定时编制为空）、`viewerClassId`（本人当前预留的兵种，不在小队里也有；没有编制时为空）、`kickCooldowns`（只发本人的踢出冷却，每个呼号至多一条，带到期时间）。
+- 纯逻辑 `SquadBoardModel`（`client/screen`，不画图）：权限（未入队 / 队员 / 队长 / 指挥官，另有管理员提示）；五个呼号的状态（待锁定、未开放、本队、可创建、未建立、已满、可加入、冷却中）；名单下方的操作组（查看本队时为移交队长、踢出 | 退出小队、解散小队，查看别队时只有加入或创建与返回本队）；指挥官面板（申请、卸任、移交指挥权——目标可以是任意小队的在线队长）；兵种行、部署点行、部署 / 重新部署 / 补给；部署清单；页头身份按“阵营 · 编制 · 小队 · 职务”逐级缩短的候选；终端页签的禁用原因；统一的分页规则 `Page`（标题页码、列表行和翻页键共用一次计算的结果）。每个操作都给出是否可用、禁用原因（长 / 短 / 极短三档语言键）或可用时的说明，以及是否需要二次确认和确认层文案。
+- 二次确认按用户拍板：踢出、退出小队、解散小队、重新部署（红色危险确认）、移交队长、移交指挥权（普通确认）；卸任指挥官不弹确认。踢出的确认写明 60 秒内不能重新加入，对方正在作战时另写会撤回等待区并收回配装；退出写明兵种重置为编制默认，指挥官退出会卸任，队长退出时队长交给谁（与服务端规则相同：先在线、再按入队顺序）；解散写明人数、作战中的队员会被撤回、本队指挥官会卸任。
+- `SquadLabels` 补齐：完整职务名与短职务名（指挥官 / 小队长 / 队员 / 未入队）、按任意人数与容量的“n/容量”、公开阵营名与对方阵营名（没有上下文时退回蓝方 / 红方）、本局编制名；兵种名的实现搬到这里。
+- 服务端：`LoadoutService.squadClassLimits(ServerPlayer)`（每个呼号的已启用兵种名额，与本人名额用同一套过滤和回退），`FormationService.formationContext(Faction, String)`（只读目录，不回读战局服务）。
+- 语言：中英成对新增 243 个语言键（各由 681 个增至 924 个）：小队终端的操作名与短名、呼号状态、禁用原因与说明（各三档）、确认层、部署清单、页头身份、部署点标题与坐标；另加 `role.wok_infantry.unassigned`、`role.wok_infantry.member_short` 和主世界 / 下界 / 末地三个维度名（部署点行用中文维度名代替 `minecraft:overworld`）。
+- 体力条“战术平板凹槽”（预览 `16-stamina` 的 A4，用户 2026-10-05 选定），位置在快捷栏正上方、原版经验条那一行：
+  - 底板和小队名单、战况条同款，半透明；两条凹槽并排，手从左端起填，腿从右端起填。
+  - 手槽 50%、腿槽 15% 有刻度。
+  - 两端耳朵放手掌 / 靴子剪影，外侧 2px 贴边随各自状态变色；布局宽 ≥640 时耳朵里显示百分比（无阴影）。
+  - 刚消耗的一段留 0.6 秒残影；恢复时条头亮 1px。
+  - 腿耗尽时腿槽变暗红空槽、靴子换红锁；回到 15 时显示绿勾 1 秒。
+  - 骑马等可跳坐骑时腿槽显示跳跃蓄力（向上箭头；骆驼冲刺冷却时变灰）；乘坐其他载具时腿段变灰。
+- 客户端配置 `hud.staminaBar`（默认 true）：设为 false 时保留原版经验条和跳跃条、不画体力条（腿耗尽照样锁疾跑）。
+- `InfantryHudApi.usesBodyHealthCompanionSlot()`（返回 false），供部位血量以后判断是否还要为体力预留伴随槽。
+- 界面图标图集追加手掌、靴子、跳跃箭头，共 48 个（`TacticalIcon.HAND`、`BOOT`、`JUMP`）。
+- 体力条纯逻辑类 `StaminaBarLayout`（几何）、`StaminaBarModel`（状态与配色）、`StaminaTrend`（残影与恢复中，由 `ClientStaminaState` 持有）。
+- UI 验收新增 stamina-a4 的 8 个状态：full、sprint、aim、legsout、recover、unlock、vehicle、horse（组 `hud`，全部 `migrated(true)`，5 个档位）。截图和预览 PNG 同名，结果页并排显示。
+
+### 修改
+- `BattleNetwork.PROTOCOL_VERSION` 由 `19` 改为 `20`；包编号、原有字段的顺序与含义都不变，新字段只追加在每个小队末尾和快照末尾。快照编解码对新字段做上界校验并失败关闭：兵种名额最多 64 项、同一兵种不能重复、名额不超过本队容量、已用数必须等于名单里持有该兵种的人数；本人兵种必须与名单里本人那一行一致；踢出冷却每个呼号至多一条、到期时间必须晚于快照时间且不超过 60 秒；上下文里的 id 与名称在构造时就规范化和截断（名称最多 40 个 UTF-16 码元），过长的管理员命名不会让快照编不出来。
+- 快照版本指纹（`BattleSnapshotRevision`）把编制上下文、本人兵种、各小队兵种名额和“哪些呼号在冷却中”算进结构；冷却剩余秒数不算，倒计时不会让界面每秒重建，冷却到期那一次会重建以恢复“加入”。
+- 配装界面请求改用独立限流类别 `LOADOUT_OPEN`（1 秒），不再和战斗终端键的 `OPEN_UI` 共用窗口：按终端键后立刻点“配装”不再被无声丢弃（squad-07）。编制目录请求此前已是独立的 `FORMATION_CATALOG`。
+- `SquadScreen.callsign`、`className` 三个重载改为委托 `SquadLabels`（签名不变）；部署页的分页静态方法改为委托 `SquadBoardModel.Page`（签名和行为不变）。
+- 终端导航：小队 / 兵种 / 部署三个页签在已打开的终端里原地切页（新增 `SquadScreen.forTab`、`showPage`、`page()`），不再叠一层新界面；删去 `BattleTerminalNav.rootSkippingSquadPages`。`SquadBoardModel.tabDisabledReason` 让“编制”页签任何时候都可用。
+- 服务端要求打开部署页（登录、重生）时：终端已打开就切到部署页，不再叠第二个终端；没打开时照旧打开；已部署、正在打字、开着容器 / 配装 / 调枪等界面时不打断（`BattleClientNetworkBridge.deploymentArrival`）。编制锁定后推送的部署页同理（`FormationClientNetworkBridge`）。
+- 创建、加入小队只发请求，不再预先切换正在查看的小队，等服务端快照到了再跟随本队。
+- 换行避头尾补上“开括号、开引号不留在行尾”（`TextFit.NO_LINE_END`），例如“由本阵营共享编制（”不再把“（”留在行尾。
+- 布局探针：新增 `UiLayoutProbe.layer()` / `UiLayoutFrame.layer()`，`TacticalScreen` 画确认层前标记新图层，确认层的按键不再“认领”压在它下面的页面文字（只影响 uiTest 的布局报告）。
+- uiTest 旧流程：`openCompactClasses` 改为按 uiId 找“兵种”页签再点；`HudFixtures` 改用 21 参 `BattleSnapshot` 并保留真实上下文。14 张旧截图的文件名与顺序不变，其中 `wok_ui_01`–`wok_ui_09` 的小队 / 兵种 / 部署画面随新界面改变（预期）；占点 uiTest 的字段与结果文件格式不变。
+- 体力 HUD 不再画在部位血量人形下的 52×11 伴随槽里，也删掉了没装部位血量时左下的“手 / 腿”双条；装不装部位血量，体力条位置都一样。核心仍调用部位血量的伴随槽接口，让小队名单避开人形。
+- 体力条显示时（生存或冒险、服务端启用体力、活着、没按 F1、`hud.staminaBar` 开着）取消原版经验条与等级数字，以及骑马时的跳跃条。创造、旁观、死亡或体力关闭时，原版照常显示。
+- 体力条窄屏（GUI 宽约 445 以下）：右端停在 TaCZ 弹药读数前 2px，靴子进快捷栏上方的中缝凸台，左耳缩成 10px。
+- GUI 缩放 1 的 2× HUD：体力条凹槽保持 1×、贴着原版快捷栏，耳朵按 2×；窗口窄到左耳会碰聊天栏时，耳朵保持 1×。
+- `vitals` 槽现在也停在体力条左耳左侧 4px（320 宽时为 `[2,55)`），核心自己不再使用它；`HudFrame` 去掉 `companionSlot`，`WokHudLayout` 改为 `withStaminaText`、布局里带 `staminaBar`。
+- stamina 覆盖层改为紧接在原版经验条之后绘制（`registerAbove(EXPERIENCE_BAR)`），id `wok_infantry:stamina` 不变。
+- uiTest 的 hud 用例改查快捷栏上方的体力条：凹槽在原版经验条那一行 `[h−30, h−23)`、与 `StaminaBarLayout` 算出的位置一致，不碰快捷栏、选中框、副手格、状态行、TaCZ 读数禁区和聊天，并确认截图那一帧原版经验条和跳跃条没有运行。
+- 体力条绘制时不再每帧格式化百分比（查预先生成的 “0%”–“100%” 表）、不再每帧重算底板外轮廓（窗口、HUD 倍率、字宽、聊天右缘不变就复用上一帧的布局），也不再每帧新建分块列表（体力条分支的审查修正 `b2dd63f`）。
+
+### 修复
+- 旧小队页审查问题随重写处理（编号见界面审查报告）：标题页码与实际分页不一致（squad-01，标题、列表行和翻页键共用一次计算）；编制没配的呼号还亮着“创建”（squad-02）；人数分母用全编制最大容量（squad-03，改用本队容量）；服务端拒绝或限流后界面停在错的小队上（squad-04）；踢出、退出、移交、解散没有或只有“再点一次”确认（squad-05、squad-06）；GUI 缩放 1 时中文 1:1 绘字认不出（squad-08，按 2× 排版）；查看别队时还能“解散 / 退出”本队（squad-10）；重建界面后旧按钮残留焦点（squad-11，改用完整重建并按角色还原焦点）；窄屏小队名被压成字母、名单行贴边（squad-12、squad-13）；宽屏大片空白而名单不显示状态与血量（squad-14）；禁用按键没有原因、踢出冷却期间“加入”仍亮（squad-15）；未入队时兵种与身份显示错（squad-16）；分区色条和刷新键配色不合规则（squad-17）；三处页签条不统一（squad-18，统一用 `BattleTab.strip`）；部署点写 `minecraft:overworld` 注册名（squad-19）；兵种页标题与名额为 0 的原因不对（squad-20）。
+- 审查修正（交付前独立审查，`0cd6377`、`66ba47c`、`60abe6d`；不改协议、版本号和存档）：
+  - 清空快照（玩家被移出阵营、重置战局时服务端发 `BattleClearPacket`）若落在两个 tick 之间，下一帧会用空快照去画按“编制已锁定”建好的页面，兵种 / 部署 / 我的状态等处对空快照取值会让客户端崩溃；现在每帧先比对模型阶段与页面阶段，不一致就先重建再画。
+  - 确认层（踢出、退出、解散、重新部署、移交队长、移交指挥权）打开后，新快照到达时按“同一操作、同一对象”复核：仍可执行就换成最新说明（例如对方刚部署），不再可执行（对象已离队、小队进入作战、自己不再是队长、已不在作战中）就关闭并在页脚写“情况已变化，“…”未执行，请重新确认”；按下确认时再用最新快照核对一次，绝不发送打开确认层时的旧意图（`SquadBoardModel.stillOffered`）。
+  - 点击呼号或页签会在点击处理中重建界面，原版随后把焦点交给已移除的旧控件，之后的按键会落到看不见的旧列表上；现在交给重建后同一角色的控件，没有就清空焦点。
+  - 320 宽部署页作战中状态条第一行原本是空的（作战中没有待办清单），按预览改为小队、兵种和所在部署点。
+  - 快照编码对“本人兵种”多做了一条目录 id 格式检查（只许小写字母、数字和 `_.-`），而名单里每个队员的兵种都原样发送、从不按这个格式检查；旧存档读回的兵种只去首尾空白、不改大小写，这样的玩家每次快照都会在编码时被拒（服务端只记日志），终端一直停在“同步中”。现在本人兵种只要求与名单里本人那一行一致（长度仍受线上 64 字符上限约束），与名单同一标准。
+  - 解散确认写“全部 N 名队员退出小队”，N 却只数了除自己以外的人；改为全队人数（队长本人也离队）。
+  - 绘制性能：每个行渲染器和悬停说明原来各自重建整套 `SquadBoardModel`（每帧二三十次）；先改为每帧一次，再改为只在输入变化时重建（快照或投票阶段换了对象、查看的小队或操作对象变了、等待回执的操作或管理员提示变了，或时钟进入下一个 250 毫秒档——只有踢出冷却读时钟，最多晚 250 毫秒），操作键状态与页头身份也只在模型或页签条变化时重算。事件处理与确认复核仍用最新快照现建的模型。
+- 体力条（A4）随本版修复：
+  - 体力位置跟着部位血量人形走，低头看快捷栏时看不到。
+  - 320 宽时体力伴随槽压住副手格。
+  - GUI 1 下伴随槽里的体力只剩两条无标签细条。
+  - 腿力竭时看不出疾跑被锁了，也看不出什么时候能再跑。
+
+### 兼容性
+- 网络协议：战局协议 19→20（`BattleNetwork.PROTOCOL_VERSION`），版本严格相等，客户端与服务端必须同为 0.5.0-beta.1；与 0.4.0-beta.1 / 0.4.0-beta.2 / 0.4.0-beta.3 混用时 Forge 在连接阶段拒绝。编制协议 `5`、兵力协议 `2`、体力协议 `2`、配装协议 `11` 不变。
+- 公共 API 只新增或保持兼容：`BattleSnapshot` 规范构造器改为 21 参（末尾追加 `formationContext`、`viewerClassId`、`kickCooldowns`），原 18 参、17 参、16 参构造器保留（18 参时本人兵种取名单里本人那一行）；新增 `withViewerContext`、`withFormationContext`、`formationLocked()`、`squad(SquadCallsign)`、`kickCooldown(...)`、`kickCooldownRemainingMillis(...)`；`SquadView` 规范构造器改为 5 参，原 4 参保留；新增记录 `ClassLimitView`、`KickCooldownView`、`FormationContextView`；`BattleSnapshotRevision.visible` 原 12 参重载保留；`BattleService.snapshotFor` 原三个重载保留，另加带各呼号名额的 4 参重载。`MemberView` 10 参兼容构造器、`SquadScreen` 三个构造器和 `callsign` / `className` 静态方法签名不变。
+- 附属 MOD：都不直接解码战局快照；占点 uiTest 只读 `ClientBattleState`。指挥官支援 0.1.0-beta.3 的依赖范围 `[0.3.0-beta.6,)` 包含本版，但测试端要把附属和本版核心一起装上验证。
+- 界面：小队、兵种、部署三页整体换成新界面；`SquadScreen` 三个构造器（含登录 / 重生自动开部署页用的那个）、`uiSurfaceId()` 仍为 `squad`。旧版按钮式名单和“3 秒内再点一次”的确认不再存在，依赖旧控件位置的外部脚本需要改按 uiId 找控件。
+- 本版新增的语言键只在 0.5.0-beta.1 客户端里；旧小队页用过的 39 个语言键本版不再引用，暂时保留未删。
+- 体力条不改任何网络协议号（体力协议仍为 `2`）；它只由客户端决定，服务端与体力数据不变。
+- 部位血量本轮不用发版：新旧核心和新旧部位血量都能各自独立安装。旧部位血量仍会在人形下预留那条伴随槽，只是空着；`ClientStaminaState.snapshot().enabled()` 的签名和语义不变。
+- 原版经验条、跳跃条两个覆盖层都不改 `leftHeight` / `rightHeight`；取消在最高优先级进行、不接收已取消事件，不影响其他 MOD 的状态行和覆盖层。需要经验条的整合包可以设 `hud.staminaBar=false`；用隐藏 HUD 的 MOD 按 id 屏蔽 `wok_infantry:stamina` 时，原版经验条仍会被取消、那一行空着，这种情况也应改用 `hud.staminaBar=false`。
+- 卓越前线 0.8.9 自带的体力线（客户端配置 `stamina_hud`，默认开）已反汇编核实：画在 `[cx−90, cx+90)×[h−24, h−23)`，压在体力条凹槽底边。核心不取消别的 MOD 的覆盖层，整合包应把它设为 false（步战测试端的 `superbwarfare-client.toml` 已于 2026-10-05 20:38 改为 `stamina_hud = false`，原文件备份为同目录的 `superbwarfare-client.toml.backup-20261005-203838-before-stamina-hud-off.bak`）。
+
+### 配置/存档影响
+- 新增客户端配置 `hud.staminaBar`（体力条），默认 true，旧配置文件由 Forge 自动补上；不新增服务端配置。
+- 不改任何存档格式（`wok_infantry_battle.dat` 仍为 Version 6；踢出冷却仍只在内存里，重启清空，与此前相同；体力数据仍随玩家保存，格式不变）。
+- 体力条没有新增语言键，“手 / 腿”短键保留（战斗终端新增的语言键见“新增”）。
+- `ui_icons.png` 重新生成，共 48 个图标，旧图标 UV 不变。
+
+### 测试结果
+- 本栏先列合并前（分支）各批的结果，保留为历史，那些产物都已作废、未部署；合并后的最终结果在本栏最后几条，以那里为准。
+- 合并前（分支 `claude/战斗终端`）数据与逻辑层（`7a6ec50`）：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`，六个测试源集全部编译通过）；JUnit 938 项全部通过，0 失败、0 跳过（比 0.4.0-beta.2 多 31 项：`SquadBoardModelTest` 18 项——只配阿尔法/布拉沃的编制、8 人与 4 人混合容量、查看别队没有退出/解散、未入队取 `viewerClassId` 与编制默认兵种提示、踢出冷却禁用加入和创建且归零即恢复、队长管理与作战中仍可踢人、普通队员只能退出与退出确认的后果、非队长管理员、指挥官把指挥权移交给别队在线队长、申请指挥官的原因顺序、二次确认清单、兵种行规则、部署原因推断、作战中重新部署确认、2/3/16 个部署点的统一分页、投票锁定前一切不可点、同步中与页头身份逐级缩短、全部语言键中英都有；`BattleSnapshotCodecTest` 新增 6 项——协议 20 新字段往返、兼容构造器、兵种名额矛盾被拒、本人上下文非法被拒、上下文规范化与截断、解码拒绝未规范化文本与超长冷却表；`BattleServiceSnapshotContextTest` 2 项；`BattleSnapshotRevisionTest`、`ServerRequestLimiterTest` 各 1 项；`SquadLabelsTest` 3 项）。翻译契约测试把小队终端按枚举拼出的语言键与参数个数一并核对。
+- 合并前（分支）数据与逻辑层那一批的产物（2,139,592 字节，SHA-256 `43E72062A590B355929C6F578ACB3394BFA8098A36CD93134804422242E954E4`）已作废，未部署。
+- 合并前（分支 `claude/战斗终端`）界面那一批（`e1c44d6`）：同样的 `clean build` 加六个测试源集编译通过；JUnit 949 项全部通过（比数据与逻辑层多 11 项：`DeploymentPointMapTest` 4 项——点、标签和比例尺都在图内且标签互不重叠、已选点标签优先与主基地补给圈、只画已选点所在维度、16 个密集信标让出标签；`DeploymentArrivalTest` 3 项——终端已开时切页、登录与重生照旧打开、已部署或打字 / 开容器时不打断；`TextFitTest` 3 项——孤字时换短文案、行数上限与回退、开括号不留行尾；`UiLayoutReportTest` 1 项——确认层按键不认领下层文字；`SquadBoardModelTest` 的页签用例改为逐个核对）；22 项 GameTest 通过；zh_cn 严格轮 PASS（6042 tick，279 张，严格违规 0），归档 `…\20261005-0.5.0-beta.1\zh_cn-final\`，保留作对照。那一批的产物（2,289,111 字节，SHA-256 `F2374A615A67AAF50F231A9920F038D5D60D44AB071370D00F71230FCDC23C53`）已作废，未部署。审查途中在 `0cd6377` 上跑过一轮 zh_cn（归档 `zh_cn-final2`，用例结果与下文审查修正后那一轮逐行相同），只作参考。
+- 合并前（分支 `claude/战斗终端`）审查修正后（代码 `60abe6d`，分支在 0.4.0-beta.2 之上，不含 0.4.0-beta.3 的地图标点）：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`，六个测试源集全部编译通过）；JUnit 953 项全部通过，0 失败、0 跳过（比界面那一批多 4 项：`SquadBoardModelTest` 3 项——确认层复核的各种失效情形、作战中重新部署确认失效、作战中窄屏状态条写小队兵种部署点；`BattleSnapshotCodecTest` 1 项——不合目录格式的旧存档兵种在队内与队外都能往返；另在队长管理用例里补了解散确认人数的断言）。
+- 合并前（分支）产物 `wok_infantry-0.5.0-beta.1.jar`，2,292,921 字节，SHA-256 `5423FADFF84A2FFA4742EC41079252ED35B471258A79B3791DB4E75CC94C3D5F`（当时 GameTest 与中英两轮 uiTest 跑完后重新核对，不变）；当时 `tools/verify_versions.ps1 -Modules wok_infantry -Release` 与 `tools/verify_mod_independence.ps1` 都 PASS。这个产物已被合并后的构建取代，作废、未部署。
+- 合并前（分支 `claude/战斗终端`）`runGameTestServer`：22 项必需 GameTest 全部通过。
+- 合并前（分支 `claude/战斗终端`）`runUiTestClient` zh_cn 严格轮：`status=PASS`，6029 tick，58 个用例、279 张截图（`squad.*` 18 个用例 × 5 档 = 90 张，全部 PASS、0 违规，含 480×270、427×240 两个报告档），`strictLayoutViolations=0`，`layoutViolations=121`（0.4.0-beta.2 为 169，少掉的是旧小队页的违规，剩下的全是未迁移的旧界面），`finalActiveMarkers=1`；270 行用例结果与 `zh_cn-final`、`zh_cn-final2` 逐行相同。14 张旧截图的文件名和顺序不变。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.1\zh_cn-final3\`（`zh_cn-final` 已被界面那一批占用，归档任务不覆盖已有目录）。
+- 合并前（分支 `claude/战斗终端`）`runUiTestClient` en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`（语义检查全部通过），6042 tick，279 张截图，`strictLayoutViolations=0`，`layoutViolations=229`（0.4.0-beta.2 的 `en_us-final2` 为 172）。新三页 77 条，全部是英文比中文长、被省略号截断而没有完整提示（`text-truncated-no-tip` 75 条，`control-truncated-no-tip` 2 条：320 档“Promote”键）：最多的是部署页作战区说明“Resupply needs you deployed inside the main base”（960 / 640 / 480 档共 18 条），其次是投票等待区和部署清单里的英文短句（“Opens after the lock”“Formation default (after the lock)”“When the admin locks (no deadline)”等）、320 档指挥官名、640 档“我的状态”里的中文编制名加“(faction-wide)”；其余 152 条不在新三页：已迁移界面原有的英文截断 51 条（编制页 37、陈列页 8、HUD 4、标点陈列 2），只出报告的旧界面 101 条（分项见下文合并后 en_us 一条，两轮逐张相同）。英文措辞缩短或换行留给 i18n 收尾。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.1\en_us-final\`。
+- 合并前（分支 `claude/战斗终端`）占点兼容：`wok_capture_points` 的 `compileJava compileUiTestJava` 以当时的核心 JAR 编译通过。
+- uiTest 过程中发现：嵌套类上的 `@Mod.EventBusSubscriber` 在 dev 客户端里登记了却收不到事件，`SquadFixtures` 改为第一次 `start` 时用 `MinecraftForge.EVENT_BUS.addListener` 挂监听（每个客户端 tick 两端、每帧 HUD 与界面绘制前重装夹具）。`HudFixtures` 用的是同样的写法，本版没有改它。
+- 合并前（分支 `claude/体力条`，审查修正后 `b2dd63f`；分支在 0.4.0-beta.3 之上、没有改版本号，产物仍叫 `wok_infantry-0.4.0-beta.3.jar`，作废、未部署）：限流脚本 `clean build` 加六个测试源集编译 BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 943 项全过（比 0.4.0-beta.3 的 922 项多 21 项：新增 `StaminaBarLayoutTest` 11、`StaminaBarModelTest` 9、`StaminaTrendTest` 4，`HudOverlayContractTest` +2，删除旧的 `StaminaHudOverlayTest` 5 项）；GameTest 22/22；zh_cn 严格轮 `status=PASS`，5033 tick，48 个用例、229 张截图，`strictLayoutViolations=0`，`layoutViolations=169`（全是当时的旧界面，含旧小队页）；原有 180 行与 0.4.0-beta.3 逐行相同，stamina-a4 的 40 行全部 PASS、0 违规。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.3\stamina-a4-review-zh_cn\`（实现者那一轮 `stamina-a4-pre0.5.0-zh_cn` 的 220 行与它逐行相同）。en_us 轮在分支上没有跑。
+- 合并后（最终，代码 `91f0c93`：`claude/新版界面` 依次并入 0.4.0-beta.3、`claude/战斗终端`、`claude/体力条`；之后只有本条文档提交）：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`，六个测试源集全部编译通过）；JUnit 989 项全部通过，0 失败、0 跳过（= 0.4.0-beta.3 的 922 项 + 战斗终端 46 项〔分支 953 − 0.4.0-beta.2 的 907〕+ 体力条 21 项〔分支 943 − 922〕，三边的测试都在）。
+- 合并后产物 `wok_infantry/build/libs/wok_infantry-0.5.0-beta.1.jar`，2,326,073 字节，SHA-256 `A930A26E5BBD92F0B35BFBB43BCDA1714D361650AC3BD27A9393403AF2FA0BFC`（GameTest 与中英两轮 uiTest 跑完后重新核对，不变）。
+- 合并后 `runGameTestServer`：22 项必需 GameTest 全部通过。
+- 合并后 `runUiTestClient` zh_cn 严格轮：`status=PASS`，6744 tick，66 个用例、319 张截图，`strictLayoutViolations=0`。战斗终端 `squad.*` 18 个用例 × 5 档 = 90 张、体力条 `stamina-a4.*` 8 个用例 × 5 档 = 40 张，全部 PASS、0 违规（含 480×270、427×240 两个报告档）。`layoutViolations=121`，与战斗终端分支逐张相同：管理员终端 64 条，实时流程截图 57 条（配装 30、战术地图 26，部署页 1——`wok_ui_01` 里 320 档“先加入一个未满员小队”被截断、没有完整提示，实时流程截图只出报告，合并前就有）。310 行用例结果中，270 行与战斗终端分支的 `zh_cn-final3` 逐行相同，220 行与体力条分支的 `stamina-a4-review-zh_cn` 逐行相同（两边共有的 180 行两边一致），没有缺少、多出或改变的行。两张地图截图 `mapIcons[wok_ui_04_map_320x240.png]`、`mapIcons[wok_ui_06_map_960x720.png]` 都画出 8 种标点各 1 个、牌 30 物理像素（每美术像素 2 物理像素），960 档另有 6 个工具键图标；地图标点陈列页 10 个“档位 × 底图”的标点都是 30 物理像素。`finalActiveMarkers=1`，`temporaryOperatorCleanup=revoked`。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.1\zh_cn-merged\`（319 张截图与 5 个结果文件）。
+- 合并后 `runUiTestClient` en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`（语义检查全部通过），6736 tick，66 个用例、319 张截图，`strictLayoutViolations=0`，`layoutViolations=229`，与战斗终端分支的 `en_us-final` 逐张相同（新三页 77 条英文截断；已迁移界面原有的英文截断 51 条：编制页 37、陈列页 8、HUD 4、标点陈列 2；其余 101 条是只出报告的管理员终端 64、实时流程截图 32、旧图 10/11 编制页 3、弹药补给 2）；体力条 40 张 0 违规（体力条只有百分比数字，没有可翻译的文字）。270 行用例结果与 `en_us-final` 逐行相同，stamina-a4 的 40 行全部 PASS；两张地图截图的 `mapIcons[...]` 与 zh_cn 轮相同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.1\en_us-merged\`。
+- 合并后独立安装检查：`tools/verify_mod_independence.ps1 -JarPath …\wok_infantry-0.5.0-beta.1.jar` PASS，强制依赖只有 `forge`、`minecraft`。
+- 合并后版本核对：`tools/verify_versions.ps1 -Modules wok_infantry -Release`（Windows PowerShell 5.1）PASS（源码版本、文档、JAR 名、modId 与内部版本一致；本条目六栏不空，JAR 晚于核心源码最后一次提交且源码没有未提交改动）。
+- 合并后占点兼容：`wok_capture_points` 的 `compileJava compileUiTestJava`（`--rerun` 强制重编）以合并后的核心 JAR 编译通过；占点 uiTest 本身没有运行。
+- 合并后的构建与验收没有发现合并引入的问题，没有额外修复。
+- 已部署：2026-10-05 把 SHA-256 为 `A930A26E…FA0BFC` 的 `wok_infantry-0.5.0-beta.1.jar` 部署到测试端 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，部署后哈希与构建产物一致；0.4.0-beta.3 改名为 `wok_infantry-0.4.0-beta.3.jar.backup-20261005-204832-before-0.5.0-beta.1.bak`。测试端 8 个 WOK步战 JAR 的独立安装检查全部 PASS。同日测试端 `config/superbwarfare-client.toml` 的 `stamina_hud` 改为 `false`（用户同意，原文件备份为 `.bak`），避免卓越前线自带体力线压在本版体力条凹槽下沿。
+- 未做：真实客户端人工验收——战斗终端（窄屏与大屏、文字、按键状态、确认层、部署流程，以及需要两个号的踢人冷却、移交队长、跨队移交指挥权、作战中踢人）；体力条（联网时的残影和恢复节奏、真骑马和骆驼冲刺冷却、坐 SBW 载具、与部位血量人形和 TaCZ 读数同屏、`hud.staminaBar` 开关切换；uiTest 里体力状态是固定注入的，玩家没有真的骑乘，截图里没有坐骑血量行）。新增英文文案的母语审校。`networkTest` 的 `NetworkRuntimeAcceptanceHarness` 仍期待战局协议 `"14"`（早于本版即已过时，本版没有动）。
+
 ## WOK步战核心 0.4.0-beta.3 — 2026-10-05
 
 > 用户反馈（2026-10-05）：“我们的地图标记好像没生效”。原因是 0.4.0-beta.1 只做了 Squad 式剪影标点的图集和绘制原件（`map_icons.png`、`client/map/TacticalMapIcons`），战术地图 `TacticalMapScreen` 仍在画旧的 11×11 白线小图、坦克/步战车俯视贴图和部署点字母方块。本版只把战术地图的标点绘制换成新图标（移植方案的“档 1+”，地图分片 C3）；侧栏、外壳、手势、标签避让器等地图档 2 的其余内容不在本版。网络协议号与存档格式都不变，可与 0.4.0-beta.1、0.4.0-beta.2 互连。

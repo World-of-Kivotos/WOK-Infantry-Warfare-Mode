@@ -102,6 +102,11 @@ class TacticalIconAtlasTest {
         assertEquals(10, TacticalIcon.COMMANDER.v());
         assertEquals(120, TacticalIcon.SHIELD.u());
         assertEquals(20, TacticalIcon.SHIELD.v());
+        // the stamina bar glyphs were appended after SHIELD (UVs of the older icons never move)
+        assertEquals(130, TacticalIcon.HAND.u());
+        assertEquals(140, TacticalIcon.BOOT.u());
+        assertEquals(150, TacticalIcon.JUMP.u());
+        assertEquals(20, TacticalIcon.JUMP.v());
         assertEquals(Optional.of(TacticalIcon.CHECK), TacticalIcon.byId("check"));
         assertEquals(Optional.empty(), TacticalIcon.byId("rifle"));
         assertEquals(Optional.empty(), TacticalIcon.byId(null));

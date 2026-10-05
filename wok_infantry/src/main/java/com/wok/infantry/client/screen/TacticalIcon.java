@@ -60,7 +60,13 @@ public enum TacticalIcon {
     DOT,
     DEPLOY,
     HEAL,
-    SHIELD;
+    SHIELD,
+    /** Open hand: the stamina bar's arms (手) pool. */
+    HAND,
+    /** Side-view boot, toe right: the stamina bar's legs (腿) pool. */
+    BOOT,
+    /** Upward arrow: the jump charge of a jumpable mount in the stamina bar's legs slot. */
+    JUMP;
 
     /** Width and height of every icon in GUI units. */
     public static final int SIZE = 9;

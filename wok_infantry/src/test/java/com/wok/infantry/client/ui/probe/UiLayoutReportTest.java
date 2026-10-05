@@ -195,6 +195,26 @@ class UiLayoutReportTest {
     }
 
     @Test
+    void aDialogKeyNeverAdoptsAPageLabelDrawnUnderIt() {
+        UiLayoutFrame frame = frame();
+        // A page label drawn after the page's widgets, then a modal layer with a wide key over it.
+        text(frame, "空位", 206, 219, 224);
+        frame.layer();
+        text(frame, "取消", 150, 209, 168);
+        frame.addControl("modal.confirm.cancel", "button", "NORMAL", rect(98, 208, 237, 226),
+                true, true, false, false, "取消", "", "", false);
+        assertEquals(List.of(), rules(frame, ZH));
+
+        UiLayoutFrame noLayer = frame();
+        text(noLayer, "空位", 206, 219, 224);
+        text(noLayer, "取消", 150, 209, 168);
+        noLayer.addControl("modal.confirm.cancel", "button", "NORMAL", rect(98, 208, 237, 226),
+                true, true, false, false, "取消", "", "", false);
+        assertEquals(List.of("control-text-overflow"), rules(noLayer, ZH),
+                "without the layer mark the key would claim the page label");
+    }
+
+    @Test
     void disabledControlsNeedAReasonUnlessTheyAreTheCurrentEntry() {
         UiLayoutFrame frame = frame();
         frame.addControl("a", "button", "DISABLED", rect(10, 10, 40, 24), false, true, false,

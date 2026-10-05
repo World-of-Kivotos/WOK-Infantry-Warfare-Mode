@@ -7,6 +7,7 @@ import com.wok.infantry.battle.BattleRules;
 import com.wok.infantry.battle.BattleService;
 import com.wok.infantry.battle.BattleSnapshot;
 import com.wok.infantry.battle.Faction;
+import com.wok.infantry.battle.SquadCallsign;
 import com.wok.infantry.deployment.DeploymentService;
 import com.wok.infantry.network.battle.packet.c2s.BattleOpenPacket;
 import com.wok.infantry.network.battle.packet.c2s.BattleSnapshotRequestPacket;
@@ -50,8 +51,12 @@ import java.util.Map;
 public final class BattleNetwork {
     public static final ResourceLocation CHANNEL_NAME =
             ResourceLocation.fromNamespaceAndPath(WokInfantryMod.MOD_ID, "battle");
-    /** 19: squad members carry a {@code MemberState} and a trusted health ratio. */
-    public static final String PROTOCOL_VERSION = "19";
+    /**
+     * 19: squad members carry a {@code MemberState} and a trusted health ratio.
+     * 20: each squad carries its class limits; the snapshot ends with the viewer context
+     * (formation context, viewer class, kick cooldowns).
+     */
+    public static final String PROTOCOL_VERSION = "20";
 
     public static final int C2S_OPEN_ID = 0;
     public static final int C2S_SNAPSHOT_REQUEST_ID = 1;
@@ -263,7 +268,10 @@ public final class BattleNetwork {
                 ? BattleRules.DEFAULT_CLASS_LIMITS : loadoutService.classLimits(player);
         Map<String, String> classDisplayNames = loadoutService == null
                 ? Map.of() : loadoutService.classDisplayNames(player);
-        BattleSnapshot snapshot = service.snapshotFor(player, classLimits, classDisplayNames);
+        Map<SquadCallsign, Map<String, Integer>> squadClassLimits = loadoutService == null
+                ? Map.of() : loadoutService.squadClassLimits(player);
+        BattleSnapshot snapshot = service.snapshotFor(player, classLimits, classDisplayNames,
+                squadClassLimits);
         DeploymentService deploymentService = DeploymentService.get(player)
                 .orElseThrow(() -> new IllegalStateException("Deployment service is not running"));
         sendToPlayer(player, new BattleSnapshotPacket(

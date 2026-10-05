@@ -27,9 +27,9 @@ import java.util.function.Function;
  *   (same root), so the tactical map keeps its view when the player comes back to it. The cache is
  *   cleared on logout.</li>
  * </ul>
- * Each tab is opened by an {@link Opener}. Defaults exist for squads, deployment, loadout and the
- * map; the screen batches register their own (classes page, formation page) with
- * {@link #registerOpener}. Client thread only.
+ * Each tab is opened by an {@link Opener}. Defaults exist for the squad, class and deployment
+ * pages (one {@link SquadScreen}, switched in place when it is already open), the loadout and the
+ * map; the formation page registers its own with {@link #registerOpener}. Client thread only.
  */
 public final class BattleTerminalNav {
     /** Implemented by every battle-terminal screen. */
@@ -49,14 +49,12 @@ public final class BattleTerminalNav {
     private static final Map<BattleTab, Opener> OPENERS = new EnumMap<>(BattleTab.class);
 
     static {
-        registerOpener(BattleTab.SQUADS, (root, from) -> {
-            show(new SquadScreen(root));
-            return true;
-        });
-        registerOpener(BattleTab.DEPLOYMENT, (root, from) -> {
-            show(new SquadScreen(root, true));
-            return true;
-        });
+        registerOpener(BattleTab.SQUADS, (root, from) -> openSquadPage(root, from,
+                BattleTab.SQUADS));
+        registerOpener(BattleTab.CLASSES, (root, from) -> openSquadPage(root, from,
+                BattleTab.CLASSES));
+        registerOpener(BattleTab.DEPLOYMENT, (root, from) -> openSquadPage(root, from,
+                BattleTab.DEPLOYMENT));
         registerOpener(BattleTab.MAP, (root, from) -> {
             show(reuse(BattleTab.MAP, root, TacticalMapScreen.class, TacticalMapScreen::new));
             return true;
@@ -78,16 +76,19 @@ public final class BattleTerminalNav {
     }
 
     /**
-     * Root of the terminal entered from {@code start}, also when squad pages (not yet a
-     * {@link Terminal}, 档 3 replaces them) are chained as its parents. The squad page's temporary
-     * "编制" key opens the vote page with this root, so the vote page replaces the squad page and
-     * a later tab switch never stacks a second squad page under it.
+     * The squad, class or deployment page: switched in place when {@code from} is already the
+     * squad screen, otherwise a new squad screen for {@code root}.
      */
-    public static Screen rootSkippingSquadPages(Screen start) {
-        return MODEL.rootSkipping(start, screen -> screen instanceof SquadScreen,
-                screen -> ((SquadScreen) screen).previousScreen(),
-                screen -> screen instanceof Terminal,
-                screen -> ((Terminal) screen).terminalReturnScreen());
+    private static boolean openSquadPage(Screen root, Screen from, BattleTab tab) {
+        if (from instanceof SquadScreen squadScreen) {
+            squadScreen.showPage(tab);
+            if (Minecraft.getInstance().screen != squadScreen) {
+                show(squadScreen);
+            }
+            return true;
+        }
+        show(SquadScreen.forTab(root, tab));
+        return true;
     }
 
     /** Replaces (or removes, with {@code null}) the opener of {@code tab}. */

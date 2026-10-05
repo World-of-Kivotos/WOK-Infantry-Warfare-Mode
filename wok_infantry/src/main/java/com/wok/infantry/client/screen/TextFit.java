@@ -26,6 +26,8 @@ public final class TextFit {
     public static final String ELLIPSIS = "…";
     /** Closing punctuation that never starts a wrapped line (避头尾). */
     static final String NO_LINE_START = "。，、；：？！）」』》〉】’”…·%,.;:?!)]}";
+    /** Opening brackets and quotes never end a line (they go down with the text they open). */
+    static final String NO_LINE_END = "（「『《〈【‘“([{";
 
     public enum Align {
         LEFT,
@@ -113,6 +115,78 @@ public final class TextFit {
         }
         return lines;
     }
+
+    /** A wrapped paragraph: the candidate that was chosen and its lines. */
+    public record Wrapped(String text, List<String> lines) {
+        public Wrapped {
+            text = text == null ? "" : text;
+            lines = List.copyOf(lines == null ? List.of() : lines);
+        }
+    }
+
+    /**
+     * Picks the first of {@code candidates} (longest first) that wraps into at most
+     * {@code maxLines} lines (0 = no limit) without an orphan, i.e. a last line of only one or two
+     * characters ("…发放配" / "装"); failing that the first that fits the line limit; failing
+     * that the last candidate cut to {@code maxLines} with "…" (preview {@code wrapBest}).
+     * Punctuation and spaces are not counted as characters.
+     */
+    public static Wrapped wrapBestPlain(List<String> candidates, int maxWidth, int maxLines,
+                                        ToIntFunction<String> width) {
+        if (candidates == null || candidates.isEmpty()) {
+            return new Wrapped("", List.of());
+        }
+        List<List<String>> wrapped = new ArrayList<>(candidates.size());
+        for (String candidate : candidates) {
+            wrapped.add(wrapPlain(candidate, maxWidth, 0, width));
+        }
+        for (int index = 0; index < candidates.size(); index++) {
+            List<String> lines = wrapped.get(index);
+            if ((maxLines <= 0 || lines.size() <= maxLines) && !orphaned(lines)) {
+                return new Wrapped(candidates.get(index), lines);
+            }
+        }
+        for (int index = 0; index < candidates.size(); index++) {
+            List<String> lines = wrapped.get(index);
+            if (maxLines <= 0 || lines.size() <= maxLines) {
+                return new Wrapped(candidates.get(index), lines);
+            }
+        }
+        String last = candidates.get(candidates.size() - 1);
+        return new Wrapped(last, wrapPlain(last, maxWidth, Math.max(1, maxLines), width));
+    }
+
+    /** {@link #wrapBestPlain} for components, measured with {@code font}. */
+    public static Wrapped wrapBest(Font font, List<? extends Component> candidates, int maxWidth,
+                                   int maxLines) {
+        List<String> plain = new ArrayList<>(candidates == null ? 0 : candidates.size());
+        if (candidates != null) {
+            for (Component candidate : candidates) {
+                plain.add(candidate == null ? "" : candidate.getString());
+            }
+        }
+        return wrapBestPlain(plain, maxWidth, maxLines, font::width);
+    }
+
+    /** Whether a wrapped paragraph ends in a line of one or two counted characters. */
+    static boolean orphaned(List<String> lines) {
+        if (lines.size() < 2) {
+            return false;
+        }
+        String last = lines.get(lines.size() - 1);
+        int counted = 0;
+        for (int offset = 0; offset < last.length(); ) {
+            int codePoint = last.codePointAt(offset);
+            if (!Character.isWhitespace(codePoint) && NOT_COUNTED.indexOf(codePoint) < 0) {
+                counted++;
+            }
+            offset += Character.charCount(codePoint);
+        }
+        return counted <= 2;
+    }
+
+    /** Punctuation that does not count as an orphaned character (preview {@code NOT_COUNTED}). */
+    static final String NOT_COUNTED = "。，、；：！？…（）()·,.;:!?";
 
     /** Left edge of a text of {@code textWidth} placed in [x, x + maxWidth). */
     public static int alignedX(int x, int maxWidth, int textWidth, Align align) {
@@ -295,9 +369,10 @@ public final class TextFit {
             if (width.applyAsInt(line + piece) > maxWidth && !line.toString().isBlank()) {
                 String done = stripTrailingWhitespace(line.toString());
                 line.setLength(0);
-                if (startsWithClosingPunctuation(piece)
+                if ((startsWithClosingPunctuation(piece) || endsWithOpeningPunctuation(done))
                         && done.codePointCount(0, done.length()) > 1) {
-                    // 避头尾: carry the previous character down together with the punctuation.
+                    // 避头尾: carry the previous character down together with the closing
+                    // punctuation, or an opening bracket down to the text it opens.
                     int cut = done.offsetByCodePoints(done.length(), -1);
                     lines.add(stripTrailingWhitespace(done.substring(0, cut)));
                     line.append(done.substring(cut));
@@ -328,6 +403,11 @@ public final class TextFit {
 
     private static boolean startsWithClosingPunctuation(String token) {
         return !token.isEmpty() && NO_LINE_START.indexOf(token.codePointAt(0)) >= 0;
+    }
+
+    private static boolean endsWithOpeningPunctuation(String line) {
+        return !line.isEmpty()
+                && NO_LINE_END.indexOf(line.codePointBefore(line.length())) >= 0;
     }
 
     /** Splits into single CJK characters, runs of other non-space characters and space runs. */

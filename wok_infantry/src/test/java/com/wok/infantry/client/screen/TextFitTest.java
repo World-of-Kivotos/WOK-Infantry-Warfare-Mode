@@ -146,6 +146,13 @@ class TextFitTest {
     }
 
     @Test
+    void openingBracketNeverEndsALine() {
+        // "共享编制（" / "千禧年…）" read as a dangling bracket (squad terminal rules, 640×336).
+        assertEquals(List.of("一二", "（三四"), TextFit.wrapPlain("一二（三四", 27, 0, WIDTH));
+        assertEquals(List.of("一二", "“三”"), TextFit.wrapPlain("一二“三”", 27, 0, WIDTH));
+    }
+
+    @Test
     void closingQuoteAfterChineseStillNeverStartsALine() {
         assertEquals(List.of("一二", "三”四"), TextFit.wrapPlain("一二三”四", 27, 0, WIDTH));
     }
@@ -196,5 +203,33 @@ class TextFitTest {
         assertEquals(10, TextFit.alignedX(10, 100, 40, TextFit.Align.LEFT));
         assertEquals(40, TextFit.alignedX(10, 100, 40, TextFit.Align.CENTER));
         assertEquals(70, TextFit.alignedX(10, 100, 40, TextFit.Align.RIGHT));
+    }
+
+    @Test
+    void wrapBestSkipsAVariantThatLeavesAnOrphan() {
+        // 7 CJK characters per 63px line: the long form ends with "装" alone on its last line.
+        String orphan = "部署时清空随身物品按兵种发放配装";
+        String clean = "部署时按兵种发放配装";
+        assertTrue(TextFit.orphaned(TextFit.wrapPlain(orphan, 63, 0, WIDTH)));
+        TextFit.Wrapped wrapped = TextFit.wrapBestPlain(List.of(orphan, clean), 63, 0, WIDTH);
+
+        assertEquals(clean, wrapped.text());
+        assertFalse(TextFit.orphaned(wrapped.lines()));
+    }
+
+    @Test
+    void wrapBestKeepsTheLineLimitAndFallsBackToTheShortestForm() {
+        String longForm = "一二三四五六七八九十一二三四五六七八九十";
+        String shortForm = "一二三四五六七";
+        assertEquals(shortForm, TextFit.wrapBestPlain(List.of(longForm, shortForm), 63, 1, WIDTH)
+                .text());
+        TextFit.Wrapped cut = TextFit.wrapBestPlain(List.of(longForm, longForm + "十"), 63, 2,
+                WIDTH);
+        assertEquals(2, cut.lines().size());
+        assertTrue(cut.lines().get(1).endsWith(TextFit.ELLIPSIS));
+        // Punctuation does not count: "配装。" alone on a line is still an orphan.
+        assertTrue(TextFit.orphaned(List.of("一二三四五六七", "配装。")));
+        assertFalse(TextFit.orphaned(List.of("一二三四五六七", "发放配装")));
+        assertEquals("", TextFit.wrapBestPlain(List.of(), 63, 0, WIDTH).text());
     }
 }

@@ -1400,6 +1400,19 @@ public final class BattleService {
     public synchronized BattleSnapshot snapshotFor(ServerPlayer viewer,
                                                     Map<String, Integer> configuredClassLimits,
                                                     Map<String, String> configuredClassDisplayNames) {
+        return snapshotFor(viewer, configuredClassLimits, configuredClassDisplayNames, Map.of());
+    }
+
+    /**
+     * Protocol 20 snapshot. {@code squadClassLimits} holds the enabled class limits of each call
+     * sign (from the loadout catalog, see {@code LoadoutService.squadClassLimits}); call signs
+     * without an entry get no class limit list.
+     */
+    public synchronized BattleSnapshot snapshotFor(ServerPlayer viewer,
+                                                    Map<String, Integer> configuredClassLimits,
+                                                    Map<String, String> configuredClassDisplayNames,
+                                                    Map<SquadCallsign, Map<String, Integer>>
+                                                            squadClassLimits) {
         Objects.requireNonNull(viewer, "viewer");
         if (viewer.server != server) {
             throw new IllegalArgumentException("Player belongs to a different MinecraftServer");
@@ -1471,7 +1484,9 @@ public final class BattleService {
                             member.assignedClassId, state, healthRatio));
                 }
                 squads.add(new SquadView(callsign, data.leader(faction, formationId, callsign),
-                        memberViews, configuredCapacity));
+                        memberViews, configuredCapacity,
+                        squadClassLimitViews(squadClassLimits == null ? null
+                                : squadClassLimits.get(callsign), configuredCapacity, members)));
             }
 
             for (BattleSavedData.StoredPlayer ally : factionPlayers) {
@@ -1509,15 +1524,97 @@ public final class BattleService {
         SupportView support = SupportService.get(server)
                 .map(service -> service.viewFor(viewer))
                 .orElseGet(SupportView::unavailable);
+        // Protocol 20 viewer context: public names, the reserved class (also outside a squad)
+        // and the viewer's own rejoin cooldowns.
+        FormationContextView formationContext = formationContext(faction, formationId);
+        String viewerClassId = self == null || faction == null || formationId == null
+                ? "" : Objects.requireNonNullElse(self.assignedClassId,
+                BattleRules.DEFAULT_CLASS_ID);
+        List<KickCooldownView> kickCooldowns = kickCooldownViews(squadKickCooldowns, self, now);
         // Structural projection only: per-heartbeat health changes must not rebuild client UIs.
         long visibleRevision = BattleSnapshotRevision.visible(faction, formationId, ownSquad,
                 leader, commander, factionCount, enemyCount, squads, markers, permissions,
-                quotas, support.structuralRevision());
+                quotas, support.structuralRevision(), formationContext, viewerClassId,
+                kickCooldowns.stream().map(KickCooldownView::squad).toList());
         return new BattleSnapshot(viewer.getUUID(), faction, ownSquad, leader, commander,
                 factionCount, enemyCount, BattleRules.FACTION_CAPACITY,
                 Math.max(1, formationSquadCapacity),
                 squads, positions, markers, permissions, quotas, now, visibleRevision)
-                .withSupport(support);
+                .withSupport(support)
+                .withViewerContext(formationContext, viewerClassId, kickCooldowns);
+    }
+
+    /**
+     * One squad's class limits in formation order: each limit is capped at the squad's capacity
+     * and {@code used} counts the members currently holding the class. Unknown or malformed ids
+     * are skipped; the list stops at the wire bound of 64 classes.
+     */
+    static List<ClassLimitView> squadClassLimitViews(Map<String, Integer> limits,
+                                                     int capacity,
+                                                     List<BattleSavedData.StoredPlayer>
+                                                             members) {
+        if (limits == null || limits.isEmpty()) {
+            return List.of();
+        }
+        List<ClassLimitView> result = new ArrayList<>(Math.min(limits.size(), 64));
+        Set<String> seen = new LinkedHashSet<>();
+        for (Map.Entry<String, Integer> entry : limits.entrySet()) {
+            String classId = normalizeClassId(entry.getKey());
+            Integer limit = entry.getValue();
+            if (classId == null || limit == null || limit < 0 || !seen.add(classId)) {
+                continue;
+            }
+            if (result.size() >= 64) {
+                break;
+            }
+            int used = 0;
+            for (BattleSavedData.StoredPlayer member : members) {
+                // Same normalization as MemberView#classId, so the codec's "used = holders"
+                // check always agrees with the roster.
+                if (classId.equals(Objects.requireNonNullElse(member.assignedClassId,
+                        BattleRules.DEFAULT_CLASS_ID))) {
+                    used++;
+                }
+            }
+            result.add(new ClassLimitView(classId, Math.min(limit, capacity), used));
+        }
+        return List.copyOf(result);
+    }
+
+    /** Public names of the viewer's formation and both factions; empty without a faction. */
+    private FormationContextView formationContext(Faction faction, String formationId) {
+        if (faction == null) {
+            return FormationContextView.EMPTY;
+        }
+        return FormationService.get(server)
+                .map(service -> service.formationContext(faction, formationId))
+                .orElse(FormationContextView.EMPTY);
+    }
+
+    /**
+     * The viewer's unexpired kick cooldowns inside their current formation, at most one per call
+     * sign. A wall-clock step backwards can never push an expiry past the rule's 60 seconds.
+     */
+    static List<KickCooldownView> kickCooldownViews(Map<SquadKickKey, Long> cooldowns,
+                                                    BattleSavedData.StoredPlayer self,
+                                                    long nowMillis) {
+        if (self == null || self.faction == null || self.formationId == null) {
+            return List.of();
+        }
+        EnumMap<SquadCallsign, Long> expiries = new EnumMap<>(SquadCallsign.class);
+        for (Map.Entry<SquadKickKey, Long> entry : cooldowns.entrySet()) {
+            SquadKickKey key = entry.getKey();
+            long expiresAt = entry.getValue();
+            if (!key.playerId().equals(self.playerId) || key.faction() != self.faction
+                    || !self.formationId.equals(key.formationId()) || expiresAt <= nowMillis) {
+                continue;
+            }
+            expiries.merge(key.squad(), Math.min(expiresAt,
+                    nowMillis + BattleRules.SQUAD_KICK_REJOIN_COOLDOWN_MILLIS), Math::max);
+        }
+        List<KickCooldownView> result = new ArrayList<>(expiries.size());
+        expiries.forEach((squad, expiresAt) -> result.add(new KickCooldownView(squad, expiresAt)));
+        return List.copyOf(result);
     }
 
     /** Administrator-only reassignment, primarily for match setup and recovery. */
@@ -2260,8 +2357,8 @@ public final class BattleService {
                 "你刚被该小队踢出，请等待 " + seconds + " 秒后再加入");
     }
 
-    private record SquadKickKey(UUID playerId, Faction faction, String formationId,
-                                SquadCallsign squad) {
+    record SquadKickKey(UUID playerId, Faction faction, String formationId,
+                        SquadCallsign squad) {
     }
 
     private static String safeName(ServerPlayer player) {

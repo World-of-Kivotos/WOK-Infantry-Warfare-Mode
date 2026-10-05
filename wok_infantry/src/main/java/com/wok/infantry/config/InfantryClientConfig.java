@@ -12,6 +12,7 @@ public final class InfantryClientConfig {
 
     public static final HudRosterMode DEFAULT_HUD_ROSTER_MODE = HudRosterMode.AUTO;
     public static final boolean DEFAULT_SHOW_BATTLE_STRIP = true;
+    public static final boolean DEFAULT_HUD_STAMINA_BAR = true;
 
     /** {@code hud.rosterMode}: how the in-battle squad roster is shown. */
     public enum HudRosterMode {
@@ -32,6 +33,7 @@ public final class InfantryClientConfig {
     private static final ForgeConfigSpec.IntValue KEY_DEFAULTS_REVISION;
     private static final ForgeConfigSpec.EnumValue<HudRosterMode> HUD_ROSTER_MODE;
     private static final ForgeConfigSpec.BooleanValue SHOW_BATTLE_STRIP;
+    private static final ForgeConfigSpec.BooleanValue HUD_STAMINA_BAR;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -81,6 +83,13 @@ public final class InfantryClientConfig {
                 .comment("Show the top battle strip with both sides' manpower. Round results and "
                         + "base supply notices are shown either way.")
                 .define("showBattleStrip", DEFAULT_SHOW_BATTLE_STRIP);
+        HUD_STAMINA_BAR = builder
+                .comment("Show the arms/legs stamina bar in the experience bar row above the "
+                        + "hotbar. While it is shown (survival or adventure, stamina on) it "
+                        + "replaces the vanilla experience bar and level, and the jump bar while "
+                        + "riding a horse. Set to false to keep the vanilla bars; stamina is then "
+                        + "not shown (sprint is still locked when the legs run out).")
+                .define("staminaBar", DEFAULT_HUD_STAMINA_BAR);
         builder.pop();
         SPEC = builder.build();
     }
@@ -159,6 +168,17 @@ public final class InfantryClientConfig {
             return DEFAULT_SHOW_BATTLE_STRIP;
         }
         return SHOW_BATTLE_STRIP.get();
+    }
+
+    /**
+     * {@code hud.staminaBar}: whether the stamina bar takes the vanilla experience row (and hides
+     * the vanilla experience and mount jump bars while it is shown).
+     */
+    public static boolean hudStaminaBar() {
+        if (!SPEC.isLoaded()) {
+            return DEFAULT_HUD_STAMINA_BAR;
+        }
+        return HUD_STAMINA_BAR.get();
     }
 
     private static double clamp(double value) {

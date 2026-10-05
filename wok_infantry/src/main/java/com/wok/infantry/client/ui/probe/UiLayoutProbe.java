@@ -73,6 +73,14 @@ public final class UiLayoutProbe {
         }
     }
 
+    /** A new layer (a modal card) starts drawing; see {@link UiLayoutFrame#layer()}. */
+    public static void layer() {
+        UiLayoutFrame target = frame;
+        if (target != null) {
+            target.layer();
+        }
+    }
+
     /** Stops recording and returns the recorded frame, or {@code null}. */
     public static UiLayoutFrame endFrame() {
         UiLayoutFrame recorded = frame;

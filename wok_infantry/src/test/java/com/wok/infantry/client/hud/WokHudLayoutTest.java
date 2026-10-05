@@ -25,13 +25,15 @@ class WokHudLayoutTest {
     @Test
     void narrowScreenMatchesTheAcceptedGeometry() {
         Layout layout = WokHudLayout.compute(Input.screen(320, 240, 1).withRoster(8, false)
-                .withStrip(true).withStamina(true));
+                .withStrip(true));
         assertTrue(layout.tight());
         assertTrue(layout.narrow());
         assertEquals(UiRect.of(2, 2, 118, 95), layout.roster(), "8 rows end at y95 (chat starts at 110)");
         assertEquals(UiRect.of(123, 2, 318, 19), layout.strip(), "strip docks right of the roster");
-        assertEquals(UiRect.of(2, 211, 65, 238), layout.staminaPlate());
-        assertEquals(UiRect.of(2, 203, 65, 238), layout.vitals());
+        assertEquals(UiRect.of(69, 210, 201, 217), layout.staminaBar().band(),
+                "stamina in the experience row, cut before TaCZ's readout");
+        assertEquals(UiRect.of(2, 203, 55, 238), layout.vitals(),
+                "vitals end 4px left of the stamina bar's narrow ear [59, 69)");
 
         Layout collapsed = WokHudLayout.compute(Input.screen(320, 240, 1).withRoster(8, true));
         assertEquals(UiRect.of(2, 2, 118, 13), collapsed.roster(), "title row only");
@@ -40,40 +42,45 @@ class WokHudLayoutTest {
     @Test
     void largeScreenMatchesTheAcceptedGeometry() {
         Layout layout = WokHudLayout.compute(Input.screen(960, 720, 1).withRoster(8, false)
-                .withStrip(true).withStamina(true));
+                .withStrip(true));
         assertFalse(layout.tight());
         assertEquals(UiRect.of(4, 4, 176, 115), layout.roster());
         assertEquals(UiRect.of(330, 4, 630, 21), layout.strip(), "300px strip centred");
-        assertEquals(UiRect.of(4, 689, 114, 716), layout.staminaPlate());
+        assertEquals(UiRect.of(4, 683, 114, 716), layout.vitals());
+        assertEquals(UiRect.of(389, 690, 571, 697), layout.staminaBar().band());
+        assertEquals(UiRect.of(347, 684, 389, 697), layout.staminaBar().earLeft());
     }
 
     @Test
     void guiScaleOneLaysOutAtHalfSize() {
         Layout layout = WokHudLayout.compute(Input.screen(960, 720, 2).withRoster(8, false)
-                .withStrip(true).withStamina(true));
+                .withStrip(true));
         assertEquals(480, layout.width());
         assertEquals(360, layout.height());
         assertEquals(UiRect.of(4, 4, 176, 115), layout.roster());
         assertEquals(UiRect.of(184, 4, 476, 21), layout.strip(), "too narrow to centre: docked");
-        assertTrue(layout.staminaRow(), "only one row fits under the 1x chat");
-        assertEquals(UiRect.of(4, 341, 114, 356), layout.staminaPlate());
-        assertEquals(UiRect.of(8, 682, 228, 712), layout.toGui(layout.staminaPlate()),
+        assertEquals(WokHudLayout.VITALS_MIN_HEIGHT, layout.vitals().height(),
+                "only one row fits under the 1x chat");
+        assertEquals(UiRect.of(4, 341, 114, 356), layout.vitals());
+        assertEquals(UiRect.of(8, 682, 228, 712), layout.toGui(layout.vitals()),
                 "2 GUI pixels under the chat's last line at 680");
+        assertEquals(UiRect.of(389, 690, 571, 697), layout.staminaBar().band(),
+                "the stamina grooves keep the vanilla row at 1x");
+        assertEquals(2, layout.staminaBar().earScale(), "its ears follow the 2x HUD");
     }
 
     @Test
     void vitalsNeverReachIntoTheVanillaChat() {
         for (int[] tier : TIERS) {
-            Layout layout = WokHudLayout.compute(Input.screen(tier[0], tier[1], tier[2])
-                    .withStamina(true));
+            Layout layout = WokHudLayout.compute(Input.screen(tier[0], tier[1], tier[2]));
             String where = tier[0] + "x" + tier[1] + "@" + tier[2];
             assertTrue(layout.toGui(layout.vitals()).top() >= tier[1] - 40 + 2, where);
-            assertEquals(tier[2] == 2, layout.staminaRow(), where + ": stacked plate at 1x");
-            assertEquals(layout.staminaRow() ? 15 : 27, layout.staminaPlate().height(), where);
+            assertTrue(layout.vitals().height() >= (tier[2] == 2 ? 15 : 27),
+                    where + ": two rows at 1x, one under the 1x chat at 2x");
         }
-        Layout scaled = WokHudLayout.compute(Input.screen(1920, 1080, 2).withStamina(true));
-        assertTrue(scaled.staminaRow());
-        assertEquals(UiRect.of(8, 1042, 228, 1072), scaled.toGui(scaled.staminaPlate()));
+        Layout scaled = WokHudLayout.compute(Input.screen(1920, 1080, 2));
+        assertEquals(WokHudLayout.VITALS_MIN_HEIGHT, scaled.vitals().height());
+        assertEquals(UiRect.of(8, 1042, 228, 1072), scaled.toGui(scaled.vitals()));
     }
 
     @Test
@@ -107,7 +114,7 @@ class WokHudLayoutTest {
                         for (int effects : new int[]{0, 3}) {
                             Input input = Input.screen(tier[0], tier[1], tier[2])
                                     .withRoster(8, collapsed).withStrip(true)
-                                    .withToasts(List.of(150, 60)).withStamina(true)
+                                    .withToasts(List.of(150, 60))
                                     .withHotbarNeighbours(offhand, !offhand)
                                     .withEffects(effects, effects == 0 ? 0 : 2)
                                     .withCapturePanel(capture
@@ -301,23 +308,24 @@ class WokHudLayoutTest {
         for (int width = 320; width <= 1920; width++) {
             for (int factor = 1; factor <= 2; factor++) {
                 for (int neighbours = 0; neighbours < 4; neighbours++) {
-                    Input input = Input.screen(width, 480, factor).withStamina(true)
+                    Input input = Input.screen(width, 480, factor)
                             .withHotbarNeighbours((neighbours & 1) != 0, (neighbours & 2) != 0);
                     Layout layout = WokHudLayout.compute(input);
                     int limit = Math.floorDiv(WokHudLayout.hotbarObstacleLeft(input), factor) - 4;
                     String where = width + "@" + factor + " neighbours=" + neighbours;
-                    assertTrue(layout.staminaPlate().right() <= limit, where);
                     assertTrue(layout.vitals().right() <= limit, where);
-                    assertTrue(layout.toGui(layout.staminaPlate()).right()
-                            <= WokHudLayout.hotbarObstacleLeft(input) - 4, where);
+                    UiRect gui = layout.toGui(layout.vitals());
+                    assertTrue(gui.right() <= WokHudLayout.hotbarObstacleLeft(input) - 4, where);
+                    assertTrue(gui.right() <= layout.staminaBar().earLeft().left() - 4,
+                            where + ": vitals end left of the stamina bar's ear");
                 }
             }
         }
-        Input offhand = Input.screen(320, 240, 1).withStamina(true).withHotbarNeighbours(true, false);
-        assertEquals(160 - 124, WokHudLayout.compute(offhand).staminaPlate().right(),
+        Input offhand = Input.screen(320, 240, 1).withHotbarNeighbours(true, false);
+        assertEquals(160 - 124, WokHudLayout.compute(offhand).vitals().right(),
                 "off-hand slot starts at w/2 − 120");
-        Input indicator = Input.screen(320, 240, 1).withStamina(true).withHotbarNeighbours(false, true);
-        assertEquals(160 - 117, WokHudLayout.compute(indicator).staminaPlate().right(),
+        Input indicator = Input.screen(320, 240, 1).withHotbarNeighbours(false, true);
+        assertEquals(160 - 117, WokHudLayout.compute(indicator).vitals().right(),
                 "attack indicator starts at w/2 − 113");
     }
 
@@ -544,9 +552,19 @@ class WokHudLayoutTest {
                         where + ": " + plates.get(i) + " vs " + plates.get(j));
             }
         }
-        if (layout.staminaPlate() != null) {
-            int limit = Math.floorDiv(WokHudLayout.hotbarObstacleLeft(input), input.factor()) - 4;
-            assertTrue(layout.staminaPlate().right() <= limit, where + ": stamina vs hotbar");
+        int limit = Math.floorDiv(WokHudLayout.hotbarObstacleLeft(input), input.factor()) - 4;
+        assertTrue(layout.vitals().right() <= limit, where + ": vitals vs hotbar");
+        // the stamina bar (GUI pixels) never meets a core plate or the vitals slot
+        List<UiRect> occupied = new ArrayList<>();
+        for (UiRect plate : plates) {
+            occupied.add(layout.toGui(plate));
+        }
+        occupied.add(layout.toGui(layout.vitals()));
+        for (UiRect piece : layout.staminaBar().pieces()) {
+            for (UiRect other : occupied) {
+                assertFalse(piece.intersects(other), where + ": stamina " + piece + " vs "
+                        + other);
+            }
         }
         List<UiRect> top = new ArrayList<>(layout.toasts());
         if (layout.strip() != null) {
