@@ -1,5 +1,8 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.battle.Faction;
+import com.wok.infantry.battle.SquadCallsign;
+import com.wok.infantry.battle.TacticalMarker;
 import com.wok.infantry.battle.TacticalMarkerType;
 import com.wok.infantry.client.map.TacticalMapIcons;
 import com.wok.infantry.client.ui.UiTierMatrix;
@@ -8,8 +11,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.opentest4j.AssertionFailedError;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -307,6 +312,35 @@ class TacticalMapScreenLayoutTest {
                 TacticalMapScreen.markerColor(TacticalMarkerType.ATTACK_DIRECTION));
         assertEquals(TacticalBoardTheme.MAP_ICON_RECON,
                 TacticalMapScreen.markerColor(TacticalMarkerType.RECON_CONTACT));
+    }
+
+    @Test
+    void iconUnderTheCursorWinsOverAnAttackLineRunningBeneathIt() {
+        ResourceLocation overworld = ResourceLocation.fromNamespaceAndPath("minecraft",
+                "overworld");
+        TacticalMarker tank = new TacticalMarker(new UUID(0L, 2L), Faction.BLUE,
+                TacticalMarkerType.TANK, overworld, 0.0D, 64.0D, 0.0D, 0.0D, 0.0D,
+                new UUID(0L, 9L), SquadCallsign.ALPHA, 1_000L, 2_000L);
+        TacticalMarker attack = new TacticalMarker(new UUID(0L, 1L), Faction.BLUE,
+                TacticalMarkerType.ATTACK_DIRECTION, overworld, -40.0D, 64.0D, 0.0D, 40.0D,
+                0.0D, new UUID(0L, 9L), SquadCallsign.ALPHA, 1_000L, 2_000L);
+        TacticalMarker defend = new TacticalMarker(new UUID(0L, 3L), Faction.BLUE,
+                TacticalMarkerType.DEFEND, overworld, 4.0D, 64.0D, 0.0D, 4.0D, 0.0D,
+                new UUID(0L, 9L), SquadCallsign.ALPHA, 1_000L, 2_000L);
+        // The cursor is on the tank's icon 12 px from its centre, 1 px from the attack line.
+        List<TacticalMapScreen.MarkerHit> hits = new ArrayList<>(List.of(
+                new TacticalMapScreen.MarkerHit(attack, false, 1.0D),
+                new TacticalMapScreen.MarkerHit(defend, true, 400.0D),
+                new TacticalMapScreen.MarkerHit(tank, true, 144.0D)));
+        hits.sort(TacticalMapScreen.MARKER_HIT_ORDER);
+        assertEquals(List.of(tank, defend, attack),
+                hits.stream().map(TacticalMapScreen.MarkerHit::marker).toList());
+        // Equal distances fall back to the id, so cycling clicks keep a stable order.
+        List<TacticalMapScreen.MarkerHit> ties = new ArrayList<>(List.of(
+                new TacticalMapScreen.MarkerHit(defend, true, 25.0D),
+                new TacticalMapScreen.MarkerHit(tank, true, 25.0D)));
+        ties.sort(TacticalMapScreen.MARKER_HIT_ORDER);
+        assertEquals(tank, ties.get(0).marker());
     }
 
     @Test

@@ -65,6 +65,14 @@ public final class TacticalMapScreen extends Screen {
     static final int TOOL_ICON_MARGIN_PHYSICAL = 2;
     /** Hit tolerance around an attack-order line, in physical pixels. */
     static final double ATTACK_LINE_HIT_PHYSICAL = 10.0D;
+    /**
+     * Order of the markers under the cursor (hover ring, first click, click cycling): icons under
+     * the cursor before attack-order lines that merely run beneath it, then nearest, then by id.
+     */
+    static final Comparator<MarkerHit> MARKER_HIT_ORDER = Comparator
+            .comparing((MarkerHit hit) -> !hit.onIcon())
+            .thenComparingDouble(MarkerHit::distanceSquared)
+            .thenComparing(hit -> hit.marker().id());
     static final int ALLIED_PLAYER_MARKER_RADIUS = 5;
     static final int ALLIED_LEADER_MARKER_RADIUS = 6;
     static final int ALLIED_COMMANDER_MARKER_RADIUS = 7;
@@ -3046,20 +3054,48 @@ public final class TacticalMapScreen extends Screen {
         return hits.get(0).marker();
     }
 
-    /** Marker under the cursor for the white hover ring; contacts can be hovered too. */
+    /**
+     * Marker under the cursor for the white hover ring; contacts can be hovered too. Uses the
+     * cursor's sub-pixel GUI position, as a click does, so the ring shows exactly where a click
+     * would select ({@code render} only gets the cursor rounded down to a GUI pixel).
+     */
     private UUID hoveredMarkerId(List<TacticalMarker> markers, int mouseX, int mouseY,
                                  int artPx) {
-        if (!insideMap(mouseX, mouseY)) {
+        double x = preciseMouse(mouseX, true);
+        double y = preciseMouse(mouseY, false);
+        if (!insideMap(x, y)) {
             return null;
         }
-        List<MarkerHit> hits = markerHits(markers, mouseX, mouseY, artPx, true);
+        List<MarkerHit> hits = markerHits(markers, x, y, artPx, true);
         return hits.isEmpty() ? null : hits.get(0).marker().id();
     }
 
     /**
-     * Markers under the cursor, nearest first: a marker icon hits on its plate plus one art pixel
-     * all round ({@link TacticalMapIcons.Placement#hit}); an attack order also hits within
-     * {@link #ATTACK_LINE_HIT_PHYSICAL} of its visible line.
+     * The cursor's GUI coordinate with the fraction {@code render} drops, or {@code rounded} when
+     * the window cursor is not at that GUI pixel (a caller passing a position of its own).
+     */
+    private double preciseMouse(int rounded, boolean horizontal) {
+        if (minecraft == null || minecraft.getWindow() == null) {
+            return rounded;
+        }
+        int screen = horizontal ? minecraft.getWindow().getScreenWidth()
+                : minecraft.getWindow().getScreenHeight();
+        int scaled = horizontal ? minecraft.getWindow().getGuiScaledWidth()
+                : minecraft.getWindow().getGuiScaledHeight();
+        if (screen <= 0) {
+            return rounded;
+        }
+        double precise = (horizontal ? minecraft.mouseHandler.xpos()
+                : minecraft.mouseHandler.ypos()) * scaled / screen;
+        return Math.floor(precise) == rounded ? precise : rounded;
+    }
+
+    /**
+     * Markers under the cursor: first every marker whose icon is under it (plate plus one art
+     * pixel all round, {@link TacticalMapIcons.Placement#hit}), nearest centre first; then the
+     * attack orders that only hit within {@link #ATTACK_LINE_HIT_PHYSICAL} of their visible line,
+     * nearest line first ({@link #MARKER_HIT_ORDER}). An order line merely running beneath an icon
+     * never takes the hover or the first click from that icon.
      */
     private List<MarkerHit> markerHits(List<TacticalMarker> markers, double mouseX,
                                        double mouseY, int artPx, boolean includeContacts) {
@@ -3077,6 +3113,10 @@ public final class TacticalMapScreen extends Screen {
             boolean onIcon = insideMap(x, y) && TacticalMapIcons.hitGui(
                     TacticalMapIcons.MapIcon.of(marker.type()), x, y, artPx, scale,
                     mouseX, mouseY);
+            if (onIcon) {
+                hits.add(new MarkerHit(marker, true, distance));
+                continue;
+            }
             if (marker.type() == TacticalMarkerType.ATTACK_DIRECTION) {
                 double endX = screenX(marker.endX());
                 double endY = screenY(marker.endZ());
@@ -3084,17 +3124,12 @@ public final class TacticalMapScreen extends Screen {
                     double line = distanceToSegmentSquared(mouseX, mouseY, x, y, endX, endY)
                             * scale * scale;
                     if (line < ATTACK_LINE_HIT_PHYSICAL * ATTACK_LINE_HIT_PHYSICAL) {
-                        hits.add(new MarkerHit(marker, onIcon ? Math.min(line, distance) : line));
-                        continue;
+                        hits.add(new MarkerHit(marker, false, line));
                     }
                 }
             }
-            if (onIcon) {
-                hits.add(new MarkerHit(marker, distance));
-            }
         }
-        hits.sort(Comparator.comparingDouble(MarkerHit::distanceSquared)
-                .thenComparing(hit -> hit.marker().id()));
+        hits.sort(MARKER_HIT_ORDER);
         return hits;
     }
 
@@ -3646,7 +3681,12 @@ public final class TacticalMapScreen extends Screen {
     private record WorldPoint(ResourceLocation dimension, double x, double z) {
     }
 
-    private record MarkerHit(TacticalMarker marker, double distanceSquared) {
+    /**
+     * A marker under the cursor: {@code onIcon} when its icon is under it (distance to the icon
+     * centre), otherwise an attack order hit on its line (distance to the line), both squared in
+     * physical pixels.
+     */
+    record MarkerHit(TacticalMarker marker, boolean onIcon, double distanceSquared) {
     }
 
     private record MarkerToolIconSlot(BattleClientActions.MarkerTool tool,
