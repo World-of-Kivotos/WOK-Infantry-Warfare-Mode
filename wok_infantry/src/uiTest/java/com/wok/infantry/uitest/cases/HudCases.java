@@ -1,9 +1,15 @@
 package com.wok.infantry.uitest.cases;
 
+import com.wok.infantry.battle.BattleSnapshot;
+import com.wok.infantry.battle.Faction;
 import com.wok.infantry.battle.MemberState;
+import com.wok.infantry.client.ClientBattleState;
 import com.wok.infantry.client.ClientBootstrap;
 import com.wok.infantry.client.KeyBindingDefaults;
+import com.wok.infantry.client.hud.BattleStripModel;
 import com.wok.infantry.client.hud.BattleStripOverlay;
+import com.wok.infantry.client.hud.CaptureHudBridge;
+import com.wok.infantry.client.hud.CaptureObjective;
 import com.wok.infantry.client.hud.FormationVoteHudModel;
 import com.wok.infantry.client.hud.FormationVoteHudOverlay;
 import com.wok.infantry.client.hud.HudFrame;
@@ -22,6 +28,7 @@ import com.wok.infantry.uitest.UiInputDriver;
 import com.wok.infantry.uitest.UiStep;
 import com.wok.infantry.uitest.UiTier;
 import com.wok.infantry.uitest.fixtures.HudFixtures;
+import com.wok.infantry.uitest.fixtures.MockData;
 import net.minecraft.client.gui.components.BossHealthOverlay;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.gui.screens.ChatScreen;
@@ -86,8 +93,210 @@ public final class HudCases {
                 hud("voted", HudFixtures.Mode.VOTED),
                 hud("locked", HudFixtures.Mode.LOCKED),
                 bossBar()));
+        cases.addAll(captureCases());
         cases.addAll(staminaCases());
         return cases;
+    }
+
+    // ---- capture objective in the battle strip (0.5.0-beta.2) ---------------------------------
+
+    /**
+     * One WOK步战附属-占点 state as the core shows it in the battle strip: the point it pins (built
+     * for the viewer's side, so the colours do not depend on the test world's faction) and what
+     * the objective tile must then report.
+     */
+    private enum CaptureState {
+        /** Our side takes B at ×2: friendly edge, 62 %, nine seconds left. */
+        CAPTURE("capture", CaptureObjective.Look.CAPTURING, true, "62%", false, true),
+        /** Both sides in B, progress frozen: orange. */
+        CONTESTED("capture-contested", CaptureObjective.Look.CONTESTED, false, "62%", false, true),
+        /** Our side holds B: friendly edge, 100 %. */
+        SECURED("capture-secured", CaptureObjective.Look.SECURED, true, "100%", false, true),
+        /** B switched off: gray, translucent, "停用". */
+        DISABLED("capture-disabled", CaptureObjective.Look.DISABLED, false, null, false, false),
+        /** The enemy takes B and our side may not take it yet: hostile edge and a lock. */
+        LOCKED("capture-locked", CaptureObjective.Look.CAPTURING, false, "35%", true, true);
+
+        private final String id;
+        private final CaptureObjective.Look look;
+        private final boolean friendlyEdge;
+        private final String value;
+        private final boolean lock;
+        private final boolean solid;
+
+        CaptureState(String id, CaptureObjective.Look look, boolean friendlyEdge, String value,
+                     boolean lock, boolean solid) {
+            this.id = id;
+            this.look = look;
+            this.friendlyEdge = friendlyEdge;
+            this.value = value;
+            this.lock = lock;
+            this.solid = solid;
+        }
+
+        /** The tile's expected left edge colour. */
+        int edge() {
+            return switch (this) {
+                case CONTESTED -> TacticalBoardTheme.ACCENT_B;
+                case DISABLED -> TacticalBoardTheme.OFFLINE;
+                default -> friendlyEdge ? TacticalBoardTheme.HUD_FRIENDLY
+                        : TacticalBoardTheme.HUD_HOSTILE;
+            };
+        }
+
+        /** The tile's expected number, or the disabled word. */
+        String value() {
+            return value != null ? value
+                    : Component.translatable(BattleStripModel.DISABLED_KEY).getString();
+        }
+
+        /** The point to pin for a viewer of {@code own}. */
+        CaptureObjective point(Faction own) {
+            Faction enemy = own.opposite();
+            double toOwn = own == Faction.BLUE ? 1.0D : -1.0D;
+            String name = Component.translatable("uitest.wok_infantry.hud.capture.name")
+                    .getString();
+            Component ownName = Component.translatable("faction.wok_infantry." + own.id());
+            Component enemyName = Component.translatable("faction.wok_infantry." + enemy.id());
+            CaptureObjective.Side ownSide = side(own);
+            CaptureObjective.Side enemySide = side(enemy);
+            CaptureObjective.Side neutral = CaptureObjective.Side.NEUTRAL;
+            return switch (this) {
+                case CAPTURE -> point(name, 0.62D * toOwn, 62, ownSide, neutral, ownSide, own, 3,
+                        1, true, true, true, 2, "capturing", Component.translatable(
+                                "uitest.wok_infantry.hud.capture.capturing", ownName), 9);
+                case CONTESTED -> point(name, 0.62D * toOwn, 62, ownSide, neutral, neutral, own,
+                        2, 2, true, true, true, 0, "contested", Component.translatable(
+                                "uitest.wok_infantry.hud.capture.contested"), -1);
+                case SECURED -> point(name, toOwn, 100, ownSide, ownSide, ownSide, own, 2, 0,
+                        true, true, true, 2, "secured", Component.translatable(
+                                "uitest.wok_infantry.hud.capture.secured", ownName), -1);
+                case DISABLED -> point(name, 0.3D * toOwn, 30, ownSide, neutral, neutral, own,
+                        1, 0, false, true, true, 0, "disabled", Component.translatable(
+                                "uitest.wok_infantry.hud.capture.disabled"), -1);
+                case LOCKED -> point(name, -0.35D * toOwn, 35, enemySide, neutral, enemySide,
+                        own, 1, 2, true, false, true, 2, "capturing", Component.translatable(
+                                "uitest.wok_infantry.hud.capture.capturing", enemyName), 15);
+            };
+        }
+
+        private static CaptureObjective point(String name, double control, int percent,
+                                              CaptureObjective.Side leading,
+                                              CaptureObjective.Side owner,
+                                              CaptureObjective.Side capturing, Faction own,
+                                              int ownPlayers, int enemyPlayers, boolean enabled,
+                                              boolean ownAllowed, boolean enemyAllowed,
+                                              int speed, String state, Component status,
+                                              int remaining) {
+            boolean blue = own == Faction.BLUE;
+            return new CaptureObjective("b", name, "B", control, percent, leading, owner,
+                    capturing, blue ? ownPlayers : enemyPlayers, blue ? enemyPlayers : ownPlayers,
+                    enabled, blue ? ownAllowed : enemyAllowed, blue ? enemyAllowed : ownAllowed,
+                    speed, state, status, remaining);
+        }
+
+        private static CaptureObjective.Side side(Faction faction) {
+            return faction == Faction.BLUE ? CaptureObjective.Side.BLUE
+                    : CaptureObjective.Side.RED;
+        }
+    }
+
+    /** Standing in a capture point: the battle HUD with the objective tile, five states. */
+    public static List<UiCase> captureCases() {
+        List<UiCase> cases = new ArrayList<>();
+        for (CaptureState state : CaptureState.values()) {
+            cases.add(capture(state));
+        }
+        return cases;
+    }
+
+    private static UiCase capture(CaptureState state) {
+        return UiCase.builder("hud", state.id)
+                .tiers(UiTier.ALL)
+                .migrated(true)
+                .hudCapture(true)
+                .open(context -> {
+                    HudFixtures.start(HudFixtures.Mode.BATTLE);
+                    chatLines(context, HudFixtures.Mode.BATTLE);
+                    CaptureHudBridge.pinForAcceptance(state.point(viewer()));
+                    return null;
+                })
+                .steps(UiStep.action(context ->
+                                UiInputDriver.releaseToCentre(context.minecraft())),
+                        UiStep.until("the HUD fixture", context -> HudFixtures.applied()))
+                .check(HudCases::checkCommon)
+                .check((context, capture) -> checkState(context, capture,
+                        HudFixtures.Mode.BATTLE))
+                .check((context, capture) -> checkObjective(context, capture, state))
+                .cleanup(context -> {
+                    CaptureHudBridge.pinForAcceptance(null);
+                    HudFixtures.stop();
+                })
+                .build();
+    }
+
+    /** The viewer's side in the battle snapshot (blue when it has none, as the strip assumes). */
+    private static Faction viewer() {
+        BattleSnapshot snapshot = ClientBattleState.snapshot();
+        return snapshot == null || snapshot.faction() == null ? Faction.BLUE
+                : snapshot.faction();
+    }
+
+    /**
+     * The objective tile inside the strip with this state's look, colour, number and lock; the
+     * strip 30 tall with the second row (name · status · time left) on non-tight screens, 17 tall
+     * with the tile only on tight ones; the ticket numbers clear of the tile.
+     */
+    private static void checkObjective(UiCaseContext context, UiCapture.Result capture,
+                                       CaptureState state) {
+        UiLayoutFrame frame = capture.frame();
+        HudFrame hud = HudFrame.current(capture.guiWidth(), capture.guiHeight());
+        context.require(hud != null && hud.objective() != null, "no objective in the HUD frame");
+        UiLayoutFrame.Box strip = frame.box(BattleStripOverlay.PROBE_BOX);
+        UiLayoutFrame.Box tile = frame.box(BattleStripOverlay.OBJECTIVE_PROBE_BOX);
+        context.require(strip != null && tile != null, "the objective tile was not drawn");
+        context.require(tile.rect().within(strip.rect(), 0.01F),
+                "objective tile " + tile.rect() + " leaves the strip " + strip.rect());
+        boolean tight = hud.layout().tight();
+        int expectedHeight = (tight ? WokHudLayout.STRIP_HEIGHT : WokHudLayout.STRIP_HEIGHT_WIDE)
+                * capture.baseScale();
+        context.require(Math.abs(strip.rect().height() - expectedHeight) < 0.01F,
+                "strip " + strip.rect() + " should be " + expectedHeight + " tall (tight="
+                        + tight + ")");
+        String note = frame.notes().stream()
+                .filter(line -> line.startsWith(BattleStripOverlay.OBJECTIVE_NOTE))
+                .findFirst().orElse("");
+        context.require(!note.isEmpty(), "the objective tile left no probe note");
+        for (String expected : List.of("look=" + state.look, "edge=" + hex(state.edge()),
+                "value=" + state.value(), "lock=" + state.lock, "solid=" + state.solid,
+                "line=" + !tight)) {
+            context.require(note.contains(expected), "objective " + state.id + " should show '"
+                    + expected + "': " + note);
+        }
+        // The full row when it fits, else the row without the point name (never cut first).
+        int room = hud.layout().strip().width() - 2 * BattleStripModel.TEXT_INSET;
+        String line = BattleStripModel.line(hud.objective(), room,
+                context.minecraft().font::width).getString();
+        String full = hud.objective().line().getString();
+        String shortLine = hud.objective().shortLine().getString();
+        List<UiLayoutFrame.Text> rows = frame.texts().stream().filter(text ->
+                full.equals(text.fullText()) || full.equals(text.text())
+                        || shortLine.equals(text.fullText()) || shortLine.equals(text.text()))
+                .toList();
+        context.require(tight ? rows.isEmpty() : rows.size() == 1
+                        && line.equals(rows.get(0).text()) && !rows.get(0).truncated(),
+                "second row " + rows + " (expected " + (tight ? "none on a tight screen"
+                        : "'" + line + "' uncut") + ")");
+        for (UiLayoutFrame.Text text : frame.texts()) {
+            if ((text.text().equals(String.valueOf(MockData.TICKETS_BLUE))
+                    || text.text().equals(String.valueOf(MockData.TICKETS_RED)))
+                    && text.rect().overlaps(tile.rect())) {
+                context.fail("ticket number " + text.text() + " " + text.rect()
+                        + " under the objective tile " + tile.rect());
+            }
+        }
+        context.observe("hudObjective[" + state.id + "@" + context.tier().id() + "]="
+                + note.substring(BattleStripOverlay.OBJECTIVE_NOTE.length()));
     }
 
     /** The stamina bar's states (preview {@code surfaces/16-stamina.js} DEMO). */

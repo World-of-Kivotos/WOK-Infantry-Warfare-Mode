@@ -80,8 +80,11 @@ public final class InfantryClientConfig {
                         + "title row; HIDDEN hides the roster.")
                 .defineEnum("rosterMode", DEFAULT_HUD_ROSTER_MODE);
         SHOW_BATTLE_STRIP = builder
-                .comment("Show the top battle strip with both sides' manpower. Round results and "
-                        + "base supply notices are shown either way.")
+                .comment("Show the top battle strip with both sides' manpower and, while you "
+                        + "stand in a WOK Capture Points objective, its progress tile (and on "
+                        + "larger screens a second row with its status). When false, the capture "
+                        + "add-on draws its own thin strip instead. Round results and base "
+                        + "supply notices are shown either way.")
                 .define("showBattleStrip", DEFAULT_SHOW_BATTLE_STRIP);
         HUD_STAMINA_BAR = builder
                 .comment("Show the arms/legs stamina bar in the experience bar row above the "

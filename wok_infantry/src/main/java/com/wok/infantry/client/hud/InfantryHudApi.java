@@ -1,6 +1,7 @@
 package com.wok.infantry.client.hud;
 
 import com.wok.infantry.client.screen.UiRect;
+import com.wok.infantry.config.InfantryClientConfig;
 
 /**
  * Client-only, reflection-friendly HUD slots of WOK步战核心 for add-on HUDs, in the same style as
@@ -13,9 +14,13 @@ import com.wok.infantry.client.screen.UiRect;
  * <ul>
  *     <li>{@value #TOP_CENTER_NEXT}: the first free area under the core's top-centre plates
  *     (battle strip, notices, ballot), as wide as the strip column, down to the screen's middle;
- *     meant for WOK步战附属-占点's panel. A capture panel placed here must also be reported by
- *     {@code CaptureHudApi.panelRect} (as null), or the core keeps moving its plates out of the
- *     way of where 0.1.0-alpha.3 drew the panel (see {@code CaptureHudBridge}).</li>
+ *     with none of them shown it starts where the strip column would (the screen edge, or below
+ *     status-effect icons that leave the column too narrow beside them, since 0.5.0-beta.2);
+ *     meant for WOK步战附属-占点's own strip while the core does not show the point
+ *     ({@link #rendersCapturePoints()} false). A capture HUD placed here must also be reported by
+ *     {@code CaptureHudApi.panelRect}, or the core keeps moving its plates out of the way of where
+ *     0.1.0-alpha.3 drew its panel (see {@code CaptureHudBridge}); reported, it also moves the
+ *     vanilla boss bars below it.</li>
  *     <li>{@value #CENTER_LOW}: a 200-wide (narrower on small screens) area from 16px under the
  *     screen's middle, clear of the action bar; meant for the downed panel. Asking for it
  *     reserves it: from the next frame on, as long as it is asked for every frame, the squad
@@ -73,6 +78,24 @@ public final class InfantryHudApi {
      */
     public static boolean usesBodyHealthCompanionSlot() {
         return false;
+    }
+
+    /**
+     * Whether the core shows the WOK步战附属-占点 point the viewer stands in as the objective tile
+     * of its battle strip (since 0.5.0-beta.2): true while the client config
+     * {@code hud.showBattleStrip} is on and the core can read the add-on's
+     * {@code CaptureHudApi.currentPoint()}. The add-on (0.1.0-alpha.4+) calls this reflectively
+     * and draws nothing itself while it is true; when it is false, or the method is missing (an
+     * older core), the add-on draws its own strip, in the {@link #TOP_CENTER_NEXT} slot when it
+     * gets one. Safe to call every frame; it never computes a HUD frame.
+     */
+    public static boolean rendersCapturePoints() {
+        return rendersCapturePoints(InfantryClientConfig.showBattleStrip(),
+                CaptureHudBridge.readsObjective());
+    }
+
+    static boolean rendersCapturePoints(boolean stripOn, boolean readsObjective) {
+        return stripOn && readsObjective;
     }
 
     static int[] slot(WokHudLayout.Layout layout, String id) {

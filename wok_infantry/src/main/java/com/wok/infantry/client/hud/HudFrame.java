@@ -47,7 +47,10 @@ import java.util.Objects;
  * @param factor       core HUD scale (UiScale.hudFactor()); parts draw in layout pixels
  * @param playerListHeld vanilla draws the player list this frame (its key is held and there is
  *                     a list to show, see {@link WokHudLayout#vanillaPlayerListShown})
- * @param strip        battle strip content, or null when the strip is hidden
+ * @param strip        manpower content of the battle strip, or null when no manpower is shown
+ * @param objective    the WOK步战附属-占点 point the viewer stands in, shown as the strip's
+ *                     objective tile (and, on non-tight screens, its second row), or null; with
+ *                     an objective the strip is shown even without manpower
  * @param notices      notices under the strip, top first (round result, base supply)
  * @param vote         formation ballot plate, or null (it replaces strip and notices)
  * @param staminaShown the stamina bar is drawn above the hotbar this frame (stamina on, survival
@@ -59,6 +62,7 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
                        boolean spectator, boolean creative,
                        WokHudLayout.RosterPresence rosterPresence, SquadRosterModel.Roster roster,
                        TicketNetwork.Snapshot tickets, BattleStripModel.Sides strip,
+                       BattleStripModel.Objective objective,
                        List<Notice> notices, FormationVoteHudModel.Plate vote,
                        StaminaSnapshot stamina, boolean staminaShown,
                        WokHudLayout.Layout layout) {
@@ -80,6 +84,9 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
     private static String rosterLanguage;
     private static boolean rosterUnicode;
     private static SquadRosterModel.Roster rosterCache;
+    private static CaptureObjective objectivePoint;
+    private static Faction objectiveViewer;
+    private static BattleStripModel.Objective objectiveCache;
 
     public HudFrame {
         notices = List.copyOf(notices);
@@ -210,9 +217,12 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
 
         TicketNetwork.Snapshot tickets = TicketNetwork.snapshot();
         Faction viewerFaction = battle == null ? null : battle.faction();
-        BattleStripModel.Sides strip = vote == null && tickets.visible()
-                && InfantryClientConfig.showBattleStrip()
+        boolean stripOn = InfantryClientConfig.showBattleStrip();
+        BattleStripModel.Sides strip = vote == null && tickets.visible() && stripOn
                 ? BattleStripModel.sides(tickets, viewerFaction) : null;
+        // With the strip off, WOK步战附属-占点 draws its own thin strip (rendersCapturePoints).
+        BattleStripModel.Objective objective = hidden || !stripOn ? null
+                : objective(CaptureHudBridge.objective(), viewerFaction);
         List<Notice> notices = new ArrayList<>(2);
         if (vote == null) {
             if (tickets.visible()) {
@@ -273,7 +283,7 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
         WokHudLayout.Input input = WokHudLayout.Input.screen(guiWidth, guiHeight, factor)
                 .withRoster(roster == null ? 0 : roster.rows().size(),
                         presence == WokHudLayout.RosterPresence.COLLAPSED)
-                .withStrip(strip != null)
+                .withStrip(strip != null || objective != null, objective != null && !tight)
                 .withToasts(noticeWidths)
                 .withVote(vote == null ? 0
                                 : vote.contentWidth(line -> TacticalHud.segmentsWidth(font, line)),
@@ -289,7 +299,26 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
                 .withCenterLowInUse(!hidden && centerLowInUse(frameCounter, centerLowAskedFrame));
         return new HudFrame(frameCounter, guiWidth, guiHeight, factor, hidden, chatOpen,
                 debugScreen, playerListHeld, spectator, creative, presence, roster, tickets,
-                strip, notices, vote, stamina, staminaShown, WokHudLayout.compute(input));
+                strip, objective, notices, vote, stamina, staminaShown,
+                WokHudLayout.compute(input));
+    }
+
+    /**
+     * The strip content of {@code point} for {@code viewer}, rebuilt only when the add-on hands
+     * over a new point description or the viewer changes side.
+     */
+    private static BattleStripModel.Objective objective(CaptureObjective point, Faction viewer) {
+        if (point == null) {
+            objectivePoint = null;
+            objectiveCache = null;
+            return null;
+        }
+        if (point != objectivePoint || viewer != objectiveViewer || objectiveCache == null) {
+            objectiveCache = BattleStripModel.objective(point, viewer);
+            objectivePoint = point;
+            objectiveViewer = viewer;
+        }
+        return objectiveCache;
     }
 
     /**

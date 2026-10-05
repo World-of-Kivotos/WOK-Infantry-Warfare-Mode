@@ -9,6 +9,8 @@
   "hud.wok_capture_points.contested": "争夺中 · 进度冻结",
   "hud.wok_capture_points.locked": "顺序未解锁",
   "hud.wok_capture_points.capturing": "%s正在占领 · 速度 ×%s",
+  "hud.wok_capture_points.capturing_plain": "%s正在占领",
+  "hud.wok_capture_points.remaining": "%s · 剩余 %s",
   "hud.wok_capture_points.secured": "%s控制",
   "hud.wok_capture_points.neutral": "中立 · 等待占领",
   "message.wok_capture_points.first_selected": "已选择第一角：%s",

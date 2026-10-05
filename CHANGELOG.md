@@ -1,5 +1,93 @@
 # 更新日志
 
+## WOK步战核心 0.5.0-beta.2 — 2026-10-05
+
+> 用户反馈（2026-10-05）：“占领点的 UI 太大了，挡视野”。按用户已选定的 HUD 定稿（预览 `surfaces/10-hud.js` 新版与说明第 115 行起“战况条：一行放下双方兵力、据点进度；宽屏第二行写据点状态和剩余时间”，零件 `kit/hud-parts.js` 的 `HUDP.battle`），把 WOK步战附属-占点的据点进度并进核心顶部兵力战况条，占点自己的 330×52 大面板随占点 0.1.0-alpha.4（见下一条）退场。分支 `claude/占点HUD`，基于 `claude/新版界面` 的 `1d9f8bc`（0.5.0-beta.1）。不改任何网络协议号，可与 0.5.0-beta.1 互连。
+
+### 新增
+- 战况条据点小牌（`BattleStripOverlay`）：玩家站在占点据点里时，第一行中间画一块实心 HUD 小底板“B 62%”（距战况条顶 3px、高 11px），左贴边颜色为正在占领的一方（己方友军蓝、敌方红）；争夺中贴边与数字为橙色，已控制时为拥有方颜色，中立为灰，停用时为灰色半透明底板并写“停用”代替百分比；本方暂时不能占（顺序占点未解锁）时名字前加锁图标；百分比为 `|control|`，颜色为领先一方。双方兵力条在小牌两侧 4px 处收住；名字放不下时先省略名字，百分比从不截断。
+- 非紧凑屏（布局宽 ≥400 且高 ≥280）在据点里时战况条变为 30 高的宽形，第二行居中写“据点名 · 占点给出的状态 · 剩余 m:ss”（剩余时间只在有人正在占领时写）；整行放不下时先省掉据点名（小牌上已有短名），写“状态 · 剩余 m:ss”，仍放不下才用省略号截断；紧凑屏（320×240、480×270、427×240）仍是 17 高一行，只留小牌。没有兵力数据时战况条照样显示据点；编制投票条显示期间，据点条放在投票条下方。不在据点里时战况条与 0.5.0-beta.1 完全相同。
+- `InfantryHudApi.rendersCapturePoints()`：客户端配置 `hud.showBattleStrip` 开着、且能读到占点的据点数据时为 true；占点 0.1.0-alpha.4 反射调用它决定自己画不画。
+- `CaptureHudBridge` 反射读取占点 `com.wok.capturepoints.api.CaptureHudApi.currentPoint()`（只按类名，不编译期依赖），解析成新记录 `CaptureObjective`（外观、对本方是否上锁、时间格式）；同一份 Map 只解析一次。`BattleStripModel` 新增 `objective`、`line`、`tile`、`tileMaxWidth`、带小牌的 `geometry` 重载；`WokHudLayout` 新增 `STRIP_HEIGHT_WIDE`（30）与 `Input.withStrip(shown, wide)`。
+- 语言：中英成对新增 4 个键 `hud.wok_infantry.capture.line`（“%s · %s”）、`hud.wok_infantry.capture.line_time`（“%s · %s · 剩余 %s” / “%s · %s · %s left”）、`hud.wok_infantry.capture.status_time`（“%s · 剩余 %s” / “%s · %s left”）、`hud.wok_infantry.capture.disabled`（“停用” / “Off”）。
+- UI 验收新增 5 个用例：`hud.capture`、`hud.capture-contested`、`hud.capture-secured`、`hud.capture-disabled`、`hud.capture-locked`（全部 `migrated(true)`，5 个档位）；uiTest 语言成对新增 5 个据点夹具键。
+
+### 修改
+- 占点由核心画进战况条时，核心不再为它挪动名单、战况条、通知和 Boss 条（新占点此时也不再报告面板）。占点自己画 HUD 时——旧占点 0.1.0-alpha.3 的大面板（没有 `CaptureHudApi`，仍按其面板坐标镜像避让，与 0.5.0-beta.1 相同），或新占点在核心关闭战况条后画的薄条（经 `CaptureHudApi.panelRect` 报告）——核心照旧避让。
+- Boss 条下移：此前没有核心顶部底板时 Boss 条一律不动；现在占点薄条贴顶、压到第一条 Boss 条所在行时，Boss 条也移到它下方（alpha.3 面板在 y 26–28，仍不移动）。占点 0.1.0-alpha.4 只在 Boss 条真的压到薄条时才把薄条移到 Boss 条下方，两边因此会稳定下来：薄条先在、Boss 条后出现时，Boss 条在薄条下方；Boss 条先在、玩家后走进据点时，薄条在 Boss 条下方（y 21 起），核心此时不再移动 Boss 条（审查修正，见占点条目“修改”）。
+- `top_center_next` 槽位：顶部没有任何核心底板时，槽位从战况条列实际开始的位置起算——屏幕边缘，或状态效果图标让列宽不够、列移到图标下方时的那一行；此前总从屏幕边缘起算，关闭战况条后占点薄条可能压到右上角的状态效果图标（审查修正）。顶部有底板时不变。
+- 客户端配置 `hud.showBattleStrip` 的注释补写据点小牌，以及关闭后由占点附属自己画薄条；键名、默认值不变。
+- `WokHudLayout.Input` 规范构造器末尾追加 `stripWide`，原 20 参构造器保留（窄战况条）；`HudFrame` 记录追加 `objective` 组件；`BattleStripOverlay.drawStrip` 多一个据点参数（包内可见）。
+
+### 修复
+- 修复站在据点里时占点 330×52 大面板挡住视野的问题（用户反馈“占领点的 UI 太大了，挡视野”）：据点信息改为战况条里的一块小牌，宽屏多一行文字，不再另占屏幕中上部的一大块。
+
+### 兼容性
+- 网络协议号全部不变：战局 `20`、编制 `5`、兵力 `2`、体力 `2`、配装 `11`；本版与 0.5.0-beta.1 可以互连，据点显示只由客户端决定。
+- 与占点的组合（核心 / 占点）：0.5.0-beta.2 + 0.1.0-alpha.4＝据点并入战况条，占点什么都不画；0.5.0-beta.2 + 0.1.0-alpha.3＝alpha.3 的大面板 + 核心避让（与现在相同，战况条仍是 17 高、没有小牌）；0.5.0-beta.1 或更早 + 0.1.0-alpha.4＝占点薄条（放进核心 `top_center_next` 槽位，核心照 `panelRect` 让开）；只装占点＝占点薄条；核心关闭战况条（`hud.showBattleStrip=false`）＝占点薄条。
+- 失败回退：读取 `currentPoint()` 失败或返回的 Map 不符合约定（缺必需键、类型不对、`version` 不是 1）时只记一次日志，之后不再显示据点，`rendersCapturePoints()` 变为 false，占点改画自己的薄条并报告位置；`panelRect()` 失败时回到 alpha.3 面板的镜像避让。
+- 两个 MOD 仍可各自独立安装：核心只按类名反射占点，占点只按类名反射核心；核心强制依赖仍只有 `forge`、`minecraft`。
+- 公共 API 只新增或保持兼容（见“修改”）；附属 MOD 都不用改，占点要显示进战况条需升到 0.1.0-alpha.4。
+
+### 配置/存档影响
+- 不新增配置项；`hud.showBattleStrip` 的键名、默认值 `true` 不变，只改注释（配置文件里的英文注释在下次保存时更新）。
+- 不改任何存档格式。语言文件各新增 4 个键。
+
+### 测试结果
+- 以下为独立审查修正后的最终结果：代码 `565a16f`（本版最后一个源码提交，审查修正只改了顶部没有底板时 `top_center_next` 槽位的起点；之后只有文档提交）。JUnit、GameTest、zh_cn 严格轮（归档 `zh_cn-final2`）、产物、独立安装与版本核对都按 `565a16f` 重跑；en_us 报告轮没有重跑，下面的 en_us 数字来自审查前的 `4934b45`（改动的槽位只在关闭战况条时给占点用，核心自己的验收截图没有用到）。审查前的最终一轮（`4934b45`）归档在 `…\20261005-0.5.0-beta.2\zh_cn-final\`，用例结果与 `zh_cn-final2` 逐行相同。首轮（`241c403`/`e59803c`，第二行放不下时直接截断）跑过一轮 zh_cn 严格轮，归档 `…\20261005-0.5.0-beta.2\zh_cn\`，用例结果与最终一轮逐行相同，留作对照；那一轮的 en_us 报告轮里 640×336、960×720 两档的英文第二行被省略号截断 4 条，由 `4934b45` 修正（先省掉据点名），那一轮没有归档。
+- `wok_infantry`：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`，六个测试源集全部编译通过）；JUnit 1007 项全部通过，0 失败、0 跳过（审查修正 +1：`WokHudLayoutTest` 顶部没有底板时 `top_center_next` 起点等于战况条列起点，8 个档位 × 0–8 个状态效果图标下 23 高的薄条都不压图标；审查前 1006 项，比 0.5.0-beta.1 的 989 项多 17 项：`CaptureObjectiveTest` 7 项——读占点 Map 的全部字段、可选值回退与名称回退、缺必需键 / 类型不对 / 阵营名不对 / `version`≠1 / `status` 不是 Component 时拒绝、数值夹紧与名称截长、外观优先级（含自家人站在自家占满的据点算已控制）、对本方上锁、百分比与时间格式；`BattleStripModelTest` +4——小牌几何（距顶 3、高 11、名字后数字右对齐、锁图标、长名只省名字、最窄也放得下数字与锁）与兵力条在小牌两侧 4px 收住、按本方视角的贴边与数字颜色（占领中 / 被敌方占领 / 争夺 / 敌方已控制 / 停用）、第二行中英文案、放不下时先省掉据点名；`WokHudLayoutTest` +3——投票条期间据点条在其下方（8 个档位）、宽战况条 30 高把通知与 `top_center_next` 往下推且 8 个档位 × 有无状态效果图标都互不重叠、贴顶的占点薄条让 Boss 条下移；`CaptureHudBridgeTest` +2——没有占点时什么都不读也不避让、验收注入等同于新占点在据点里；`InfantryHudApiTest` +1——`rendersCapturePoints` 只在战况条开着且读得到据点时为 true）。翻译契约测试登记了 3 个带参数的新键。
+- 产物 `wok_infantry/build/libs/wok_infantry-0.5.0-beta.2.jar`，2,342,088 字节，SHA-256 `4727A2CBB64B24C34079FD185DA9E79A6DB7A0C74073C2764178A4E6583551A9`（`565a16f` 的 `clean build`；GameTest、zh_cn 严格轮与占点两轮 uiTest 跑完后重新核对，不变）。审查前的 2,342,092 字节、`847D7002…6FEF1E66` 作废。
+- `runGameTestServer`（`565a16f`）：22 项必需 GameTest 全部通过。
+- `runUiTestClient` zh_cn 严格轮（`565a16f`）：`status=PASS`，7177 tick，71 个用例、344 张截图，`strictLayoutViolations=0`，`layoutViolations=121`；335 行用例结果与审查前的 `zh_cn-final` 逐行相同，`finalActiveMarkers=1`，`temporaryOperatorCleanup=revoked`。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.2\zh_cn-final2\`（344 张截图与 5 个结果文件）。
+- 审查前 zh_cn 严格轮（`4934b45`）：`status=PASS`，7174 tick，71 个用例、344 张截图，`strictLayoutViolations=0`，`layoutViolations=121`（与 0.5.0-beta.1 相同，全是只出报告的旧界面）。新增的 `hud.capture*` 5 个用例 × 5 档 = 25 张全部 PASS、0 违规（含 480×270、427×240 两个报告档）：探针记录的外观、贴边色、数字、锁、实心都符合各状态（例：`capture@960x720` 为 CAPTURING、贴边 `FF6FB1E6`、62%、第二行有；`capture-locked@640x336` 为 CAPTURING、贴边 `FFE8695D`、35%、锁；`capture-disabled` 为 DISABLED、贴边 `FF7D898A`、“停用”、半透明）；960×720 与 640×336 战况条 30 高并画出整行第二行，320×240、480×270、427×240 为 17 高只留小牌。其余 310 行用例结果与 0.5.0-beta.1 的 `zh_cn-merged` 逐行相同。`finalActiveMarkers=1`，`temporaryOperatorCleanup=revoked`。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.2\zh_cn-final\`（344 张截图与 5 个结果文件）。
+- 截图目视（Read）：320×240 的“B 62%”小牌在兵力条正中、左边蓝色贴边，两侧兵力数字与条不被压；锁定状态小牌前有锁图标、红贴边、红色 35%；960×720（2×）停用为灰色半透明小牌写“停用”，第二行“B点 · 指挥所 · 据点已停用”；640×336 第二行“B点 · 指挥所 · 蓝方正在占领 · 速度 ×2 · 剩余 0:09”居中，不碰顶边与底边；浅色天空背景下文字可读。
+- `runUiTestClient` en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`（语义检查全部通过），7173 tick，71 个用例、344 张截图，`strictLayoutViolations=0`，`layoutViolations=229`，与 0.5.0-beta.1 的 `en_us-merged` 相同；`hud.capture*` 25 张 0 违规（640×336 与 960×720 的英文整行放不下时改写“Red Force capturing · speed ×2 · 0:15 left”，不截断）；其余 310 行用例结果与 `en_us-merged` 逐行相同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.2\en_us\`。
+- 占点联动（真实反射链路，见下一条占点 0.1.0-alpha.4 的测试结果）：占点 uiTest（带一条原版 Boss 条）以本版最终 JAR 运行 PASS——本版读 `CaptureHudApi.currentPoint()` 画出小牌，占点不再画；关闭 `hud.showBattleStrip` 后本版不画小牌、占点薄条贴顶进 `top_center_next`，本版把 Boss 条挪到薄条下方并在 320×240 右移让开名单。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对本 JAR PASS，强制依赖只有 `forge`、`minecraft`；JAR 里没有占点或 uiTest 的类。
+- 版本核对：`tools/verify_versions.ps1 -Modules wok_infantry,wok_capture_points -Release`（Windows PowerShell 5.1）PASS（源码版本、根 README 与 VERSIONING 版本表、模块 README 产物名、CHANGELOG 标题、JAR 名、modId 与内部版本一致；两条条目六栏不空，JAR 晚于各自源码最后一次提交且源码没有未提交改动）。
+- 兼容矩阵覆盖：新核心 + 新占点、核心关闭战况条、旧核心 0.5.0-beta.1 + 新占点三种组合在真实开发客户端里跑过（上一条与占点条目，审查修正后都带 Boss 条重跑）；新核心 + 旧占点 alpha.3 走的是未改动的镜像避让分支（`CaptureHudBridgeTest` 的 alpha.3 几何与 `WokHudLayoutTest` 的据点避让用例照旧通过；`bossShift` 新分支对 alpha.3 面板（y 26/28 起）不生效），只装占点的位置由占点单测覆盖，这两种没有在客户端里跑。
+- 未做：真实客户端（PCL）人工验收——多人进出据点、争夺、顺序占点的锁图标、剩余时间随同步跳动、长据点名、GUI 1 下 2× 清晰度、投票条期间站进据点；部署由编排方进行。
+
+## WOK步战附属-占点 0.1.0-alpha.4 — 2026-10-05
+
+> 用户反馈（2026-10-05）：“占领点的 UI 太大了，挡视野”。本版去掉站在据点里时屏幕顶部 330×52（窄屏 x=140 到右边缘、35 高）的大面板：装了核心 0.5.0-beta.2 并开着战况条时，据点改由核心画进战况条（见上一条）；其余情况本附属只画一条宽不超过 200 的薄条。
+
+### 新增
+- 只读客户端接口 `com.wok.capturepoints.api.CaptureHudApi`：`currentPoint()` 返回当前所在据点的不可修改 `Map<String, Object>`（`version`=1、`id`、`name`、`shortName`、`control`、`percent`、`leading`、`owner`、`capturing`、`bluePlayers`、`redPlayers`、`enabled`、`blueAllowed`、`redAllowed`、`speed`、`captureSeconds`、`remainingSeconds`、`state`、`status`；除 `status` 是翻译好的 `Component` 外都是 JDK 类型），不在据点里时为 `null`，同一次同步内返回同一个实例；`panelRect(int, int)` 报告本附属薄条的 GUI 矩形（核心接管时为 `null`）。
+- 薄条（`CaptureHudOverlay` 重写）：顶部居中、宽不超过 200，一行“据点名 │ 蓝方人数 ▬|▬ 红方人数”（14 高；进度条从中线向领先一方伸出，蓝左红右，与核心战况条一致），宽屏（布局宽 ≥400 且高 ≥280）第二行写状态与剩余时间（共 23 高）。底板为半透明 HUD 底板、1px 描边，顶边 1px 为状态色（占领方 / 争夺橙 / 拥有方 / 灰）；文字无阴影；颜色常量在本模块内定义，不依赖核心。GUI 缩放 1 的大窗口按 2× 画。
+- 剩余时间：正在占领时按当前速度算出到占满的秒数（`m:ss`）。
+- 纯逻辑 `CaptureHudModel`（状态、百分比、剩余时间、状态文字与配色）、`CaptureStripLayout`（薄条几何）；`InfantryHudLink`（只用反射找核心 `InfantryHudApi`）。
+- 语言：中英成对新增 `hud.wok_capture_points.capturing_plain`（“%s正在占领”）、`hud.wok_capture_points.remaining`（“%s · 剩余 %s” / “%s · %s left”）。
+
+### 修改
+- 去掉 0.1.0-alpha.3 的 330×52 大面板与窄屏 35 高面板。核心 `InfantryHudApi.rendersCapturePoints()` 为 true 时不画任何东西；方法不存在（核心早于 0.5.0-beta.2）或为 false（核心关闭战况条）时画薄条：有核心时放在 `InfantryHudApi.slot("top_center_next")` 给的位置（核心早于 0.4.0-beta.1、取不到槽位时按 alpha.3 面板的位置：宽屏居中于 GUI y 28，GUI 宽 ≤360 的窄屏从 x 140 到右边缘 8、y 26，避开旧核心左上的名单），只装本附属时贴顶；原版 Boss 条真的压到薄条时移到最后一条 Boss 条下方 4px（按 Forge `BossEventProgress` 实测名字行与条的位置，含核心对 Boss 条的平移）。
+- 审查修正（交付前）：Boss 条已经在薄条下方时薄条不再跟着下移。此前薄条只要看到比自己顶边低的 Boss 条就移到它下面，而核心会把 Boss 条再挪到薄条下方，两边逐帧互相推：核心 0.5.0-beta.1 开着战况条（或新核心关掉战况条、但有通知或投票条）时，一条 Boss 条就能让薄条几帧内跑出屏幕。现在三种核心下都在几帧内稳定（`CaptureStripBossTest` 逐帧模拟）。核心 0.5.0-beta.2 起会把 Boss 条挪到贴顶薄条（起点在第一条 Boss 条所在行，GUI y < 21）的下方，这时薄条保持原位、交给核心挪，即使玩家走进据点时 Boss 条已经在了也一样；此前薄条会先让到 Boss 条下面，核心便把它当成 Boss 条右侧的障碍，窄屏时 Boss 条不再右移、压到小队名单上（uiTest 320×240 截图可见）。核心早于 0.4.0-beta.1 时窄屏的回退位置也按 alpha.3 改到名单右侧（此前居中，会压到旧核心的名单）。薄条只在玩家站在据点里时才反射查询核心，状态行文字每次同步只翻译一次，不再每帧新建。
+- 速度倍率为 1 时状态只写“蓝方正在占领”，不再写“速度 ×1”；倍率大于 1 时照旧写“速度 ×N”。
+- 自家人站在自家已占满的据点里时状态改为“蓝方控制”（此前按“正在占领”显示）。
+- 原有语言键全部保留（`title`、`ratio`、`compact_heading` 等；战术地图仍用 `ratio`）。
+
+### 修复
+- 修复站在据点里时据点面板太大、挡住视野的问题（用户反馈）。
+
+### 兼容性
+- 无新增硬依赖；未安装核心时照常独立运行（薄条贴顶）。所有跨 MOD 调用都是按类名反射，调用失败只记一次日志并回退：`rendersCapturePoints` 失败按“核心不接管”画薄条，`slot` 失败按自己的位置画。
+- 与核心的组合见上一条“兼容性”：新核心 0.5.0-beta.2＝据点并入战况条；核心 0.5.0-beta.1 或更早＝本附属薄条（放进核心槽位，核心照 `panelRect` 避让并让 Boss 条下移）；只装本附属＝薄条；核心关闭战况条＝薄条。已知限制：核心 0.5.0-beta.1 关掉战况条（非默认）时顶部没有核心底板，旧核心不挪 Boss 条，薄条移到 Boss 条下方，窄屏时 Boss 条会压到小队名单的标题行——旧核心的限制，配 alpha.3 时同样如此，核心升到 0.5.0-beta.2 后没有。
+- 不改网络协议：`CaptureSnapshotPacket` 格式不变，可与 0.1.0-alpha.3 的服务端互连（据点数据由服务端同步，HUD 只由客户端决定）。
+
+### 配置/存档影响
+- 无。不新增配置项，存档格式不变；语言文件各新增 2 个键。
+
+### 测试结果
+- 以下为独立审查修正后的最终结果：源码最后一次提交 `f8826f8`（审查修正 `d2a7901`、`f8826f8`；此前生产源码 `d5b6f9a`，uiTest `67011d6`，版本号 `e59803c`），以核心 0.5.0-beta.2 的最终 JAR（`565a16f`）编译。
+- `wok_capture_points`：用限流脚本运行 `clean build compileUiTestJava`，BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 34 项全部通过，0 失败、0 跳过（审查修正新增 6 项：`CaptureStripBossTest` 4 项——逐帧模拟核心 0.5.0-beta.1（战况条开 / 关）、0.5.0-beta.2（关战况条，有无通知、列被状态效果图标推下）与无核心下的 Boss 条下移，1–3 条 Boss 条、Boss 条先在或后来，薄条与 Boss 条都必须 3 帧内稳定、互不重叠、留在屏幕上半部；`CaptureStripLayoutTest` +2——旧核心无槽位时窄屏在名单右侧、新核心清第一行 Boss 条时薄条不让。修正前代码跑 `CaptureStripBossTest` 的旧核心用例失败：薄条几帧内出屏。审查前为 28 项，比 alpha.3 的 9 项多 19 项：`CaptureHudModelTest` 6 项——状态优先级与“自家人站在自家占满的据点里算已控制”、百分比不提前到 100、剩余时间按当前速度、短名、中英状态文字、配色；`CaptureStripLayoutTest` 8 项——2× 规则、320 档进核心槽位、960 档 GUI 1 按 2× 带状态行且宽 200 居中于槽位、无槽位时贴顶或 GUI y 28、压到 Boss 条时下移、5 个档位宽 ≤200 不出屏且只在非紧凑屏有状态行、名字让位给最短进度条、进度条从中线向领先一方伸出；`CaptureHudApiTest` 3 项——给核心的 Map 的全部键、类型与含义、同一次同步返回同一实例、不在据点或据点已删时为 null；`CaptureLanguageTest` 2 项——中英键与参数一致、HUD 键齐全）。
+- 产物 `wok_capture_points/build/libs/wok_capture_points-0.1.0-alpha.4.jar`，82,489 字节，SHA-256 `B718BB4B0360F7ED19B4DEAD9D991F28A764918E64F3811EC33BCADFF5B9EF07`（`f8826f8` 之后的 `clean build`，晚于两轮 uiTest）。JAR 里没有核心或 uiTest 的类。审查前的 81,635 字节、`E1C6A277…BECE345` 作废。
+- `runUiTestClient`（在核心 `run/ui-test`，zh_cn；审查修正起每张 HUD 截图都带一条只在客户端的原版 Boss 条，并要求薄条四个 tick 内位置不变、在屏幕上半部）对核心 0.5.0-beta.2 最终 JAR：`PASS`，6 张截图。320×240 与 960×720 两档 `rendersCapturePoints=true`、本附属 `panelRect=null`、核心 `HudFrame.objective()` 有值（真实反射链路：核心读 `CaptureHudApi.currentPoint()` 画出“A 35%”小牌与“A点 · 火车站 · 蓝方正在占领 · 剩余 0:30”）；把核心 `hud.showBattleStrip` 临时关掉后 `rendersCapturePoints=false`、核心不再画小牌、本附属薄条 `[123, 2, 195, 14]`（320×240）与 `[460, 8, 400, 46]`（960×720，2× 时 200×23 布局像素）贴顶放进核心槽位，Boss 条（玩家进据点前就在）由核心挪到薄条下方，320×240 时还右移让开名单；结束后配置还原为 true。
+- 同一套 uiTest 对测试端在用的核心 0.5.0-beta.1（`-Pinfantry_dev_jar_path` 指向从测试端只读复制的 `wok_infantry-0.5.0-beta.1.jar`，SHA-256 `A930A26E…FA0BFC`）：`PASS`，旧核心没有 `rendersCapturePoints`，四张 HUD 截图都是本附属薄条：战况条开着时在旧核心战况条下方的槽位里（320×240 `[123, 22, 195, 14]`，960×720 `[460, 50, 400, 46]`），旧核心照 `panelRect` 把 Boss 条挪到薄条下方；关掉战况条时薄条在 Boss 条下方（`[123, 21, 195, 14]`、`[460, 22, 400, 46]`）。修正前的代码对同一旧核心跑同一套 uiTest 失败：960×720 时薄条 `panelRect` 已到 `[460, 3600, 400, 46]`（Boss 条追赶出屏），结果留在 `run/ui-acceptance/20261005-0.1.0-alpha.4/review-repro-prefix-core-0.5.0-beta.1/`。
+- 截图目视（Read）：新核心下据点小牌在战况条中间；薄条一行“A点 · 火车站 │ 3 ▬|▬ 2”，宽屏第二行蓝字“蓝方正在占领 · 剩余 0:30”；新核心关战况条时薄条贴顶、Boss 条在其下且不压名单；旧核心开战况条时薄条在旧战况条下方、Boss 条在薄条下方，都不压名单；旧核心关战况条（非默认）的 320×240 截图里 Boss 条压到名单标题行（见“兼容性”已知限制）。截图与结果文件保存在 `wok_capture_points/run/ui-acceptance/20261005-0.1.0-alpha.4/review-core-0.5.0-beta.2/` 与 `review-core-0.5.0-beta.1/`（审查前的 `core-0.5.0-*` 两组没有 Boss 条，只作对照；都被 Git 忽略，核心的 `archiveUiAcceptance` 只归档核心清单里的截图）。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对本 JAR PASS，强制依赖只有 `forge`、`minecraft`。
+- 版本核对：`tools/verify_versions.ps1 -Modules wok_infantry,wok_capture_points -Release`（Windows PowerShell 5.1）PASS。
+- 未做：只装本附属（不装核心）与新核心 + 旧占点 alpha.3 的真实客户端没有跑（uiTest 依赖核心类；alpha.3 是重混淆过的生产 JAR，要反混淆后才能放进开发客户端，本轮没做），这两种只有单测覆盖。真实对局里的人工验收（多人进出据点、争夺、顺序占点、真实 Boss 战同屏、剩余时间随同步每 10 tick 跳一次）。部署由编排方进行。
+
 ## WOK步战核心 0.5.0-beta.1 — 2026-10-05
 
 > 用户需求（2026-10-05）：“按 ` 进入的主页面 UI 还是老版本的”，并选择“先做战斗终端”。本版把战斗终端的小队 / 兵种 / 部署三页按预览 `20-squad.js` 的“新版”战术平板界面重做：先补齐小队终端需要的战局数据和不画图的纯逻辑层（`7a6ec50`），再在其上重画三页、编制投票等待区和确认层（`e1c44d6`），最后是交付前的独立审查修正（`0cd6377`、`66ba47c`、`60abe6d`）。战局协议 19→20，与 0.4.0 线不兼容，按 `docs/VERSIONING.md` 提升次版本号（用户此前已同意协议升级）。本版建立在 0.4.0-beta.3（战术地图 Squad 式标点，见下一条）之上：战斗终端分支在 0.4.0-beta.2 上开发，交付前与 0.4.0-beta.3 合并。本版同时包含体力条 A4（快捷栏上方战术凹槽）：用户 2026-10-05 在预览 `16-stamina` 里选定 A4，分支 `claude/体力条` 在 0.4.0-beta.3 上实现（`c815300`–`7b5cf20`）、经独立审查修正（`b2dd63f`），没有单独改版本号，随后并入本版（`91f0c93`）；体力条不改任何网络协议号。下面“测试结果”中标“合并前（分支）”的数字只覆盖各自分支，合并后的最终数字见该栏最后几条。

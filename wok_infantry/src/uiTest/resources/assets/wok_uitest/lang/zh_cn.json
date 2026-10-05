@@ -94,5 +94,10 @@
   "uitest.wok_infantry.hud.downed.title": "倒地 · 等待队友救援",
   "uitest.wok_infantry.hud.downed.hint": "按住 Shift 放弃救援",
   "uitest.wok_infantry.hud.downed.seconds": "%s 秒",
-  "uitest.wok_infantry.hud.boss": "凋灵"
+  "uitest.wok_infantry.hud.boss": "凋灵",
+  "uitest.wok_infantry.hud.capture.name": "B点 · 指挥所",
+  "uitest.wok_infantry.hud.capture.capturing": "%s正在占领 · 速度 ×2",
+  "uitest.wok_infantry.hud.capture.contested": "争夺中 · 进度冻结",
+  "uitest.wok_infantry.hud.capture.secured": "%s控制",
+  "uitest.wok_infantry.hud.capture.disabled": "据点已停用"
 }

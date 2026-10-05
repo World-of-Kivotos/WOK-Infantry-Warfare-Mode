@@ -225,6 +225,10 @@ class ClientTranslationContractTest {
             Map.entry("message.wok_infantry.test_mode.base_created", 3),
             Map.entry("message.wok_infantry.test_mode.base_failed", 2),
             Map.entry("message.wok_infantry.test_mode.reminder", 1),
+            // Capture objective in the battle strip (0.5.0-beta.2): name, status[, time left].
+            Map.entry("hud.wok_infantry.capture.line", 2),
+            Map.entry("hud.wok_infantry.capture.line_time", 3),
+            Map.entry("hud.wok_infantry.capture.status_time", 2),
             Map.entry("hud.wok_infantry.squad_count", 2));
     private static final Map<String, String> EXPECTED_ENGLISH_COMPACT_LABELS = Map.ofEntries(
             Map.entry("screen.wok_infantry.tab.map_short", "Map"),
