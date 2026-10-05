@@ -12,6 +12,8 @@ import com.wok.infantry.client.ClientFormationState;
 import com.wok.infantry.client.ClientStaminaState;
 import com.wok.infantry.client.hud.HudPaint;
 import com.wok.infantry.client.hud.InfantryHudApi;
+import com.wok.infantry.client.hud.StaminaBarModel;
+import com.wok.infantry.client.hud.StaminaHudOverlay;
 import com.wok.infantry.client.hud.TacticalHud;
 import com.wok.infantry.client.screen.TacticalBoardTheme;
 import com.wok.infantry.client.screen.UiRect;
@@ -27,6 +29,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
 import net.minecraftforge.client.event.RenderGuiEvent;
+import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
@@ -48,6 +51,13 @@ import java.util.UUID;
  *
  * <p>The downed state also draws a stand-in for WOK步战附属-倒地's panel in the core's
  * {@link InfantryHudApi#CENTER_LOW} slot, so the slot API is exercised with the core alone.
+ *
+ * <p>The stamina bar is pinned ({@link StaminaHudOverlay#pinForAcceptance}) to the case's state —
+ * by default the preview's 72 / 38 — so remnants, recovery heads, the lock and the mount states
+ * are captured without network timing; the player is not really riding, so the vanilla mount
+ * health rows of the preview's horse and vehicle states do not appear. The fixture also records
+ * whether the vanilla experience or jump bar overlay ran in the last GUI frame (it must not while
+ * the stamina bar takes its row).
  */
 public final class HudFixtures {
     /** HUD states of {@code 10-hud.js}, plus the eight-member roster. */
@@ -87,12 +97,30 @@ public final class HudFixtures {
     private static BattleSnapshot lastReal;
     private static BattleSnapshot lastFixture;
     private static FormationSelectionSnapshot formationFixture;
+    private static StaminaBarModel.State staminaFixture;
+    private static boolean vanillaRowInFrame;
+    private static volatile boolean vanillaRowDrawn;
 
     private HudFixtures() {
     }
 
-    /** Shows {@code next} from now on; the first call remembers the server's values. */
+    /** The preview's battle HUD stamina (手 72, 腿 38, nothing moving). */
+    public static StaminaBarModel.State defaultStamina() {
+        return StaminaBarModel.State.of(MockData.STAMINA_ARMS, MockData.STAMINA_LEGS);
+    }
+
+    /** Shows {@code next} with the default stamina from now on. */
     public static void start(Mode next) {
+        start(next, defaultStamina());
+    }
+
+    /**
+     * Shows {@code next} with the stamina bar pinned to {@code stamina} from now on; the first
+     * call remembers the server's values.
+     */
+    public static void start(Mode next, StaminaBarModel.State stamina) {
+        staminaFixture = stamina == null ? defaultStamina() : stamina;
+        StaminaHudOverlay.pinForAcceptance(staminaFixture);
         if (!saved) {
             saved = true;
             savedFormation = ClientFormationState.snapshot();
@@ -127,6 +155,8 @@ public final class HudFixtures {
         }
         mode = null;
         saved = false;
+        staminaFixture = null;
+        StaminaHudOverlay.pinForAcceptance(null);
         ClientFormationState.clear();
         ClientFormationState.update(savedFormation);
         TicketNetwork.acceptClient(savedTickets == null ? NO_TICKETS : savedTickets);
@@ -152,6 +182,14 @@ public final class HudFixtures {
         return mode != null && lastFixture != null && ClientBattleState.snapshot() == lastFixture;
     }
 
+    /**
+     * Whether the vanilla experience bar or mount jump bar overlay ran (was not cancelled) in the
+     * last finished GUI frame.
+     */
+    public static boolean vanillaRowDrawn() {
+        return vanillaRowDrawn;
+    }
+
     // ---- re-installation ------------------------------------------------------------------------
 
     @Mod.EventBusSubscriber(modid = WokInfantryMod.MOD_ID, value = Dist.CLIENT,
@@ -170,6 +208,21 @@ public final class HudFixtures {
         @SubscribeEvent(priority = EventPriority.HIGHEST)
         public static void onRenderGuiPre(RenderGuiEvent.Pre event) {
             apply();
+            vanillaRowInFrame = false;
+        }
+
+        /** A cancelled overlay fires no Post event: only the overlays that really ran count. */
+        @SubscribeEvent(priority = EventPriority.LOWEST)
+        public static void onOverlayPost(RenderGuiOverlayEvent.Post event) {
+            if (event.getOverlay() != null
+                    && StaminaHudOverlay.replacesVanillaOverlay(event.getOverlay().id())) {
+                vanillaRowInFrame = true;
+            }
+        }
+
+        @SubscribeEvent(priority = EventPriority.LOWEST)
+        public static void onRenderGuiPost(RenderGuiEvent.Post event) {
+            vanillaRowDrawn = vanillaRowInFrame;
         }
     }
 
@@ -210,8 +263,9 @@ public final class HudFixtures {
         if (ClientFormationState.snapshot() != formationFixture) {
             ClientFormationState.update(formationFixture);
         }
-        StaminaSnapshot stamina = new StaminaSnapshot(MockData.STAMINA_ARMS,
-                MockData.STAMINA_LEGS, true);
+        StaminaBarModel.State pinned = staminaFixture == null ? defaultStamina() : staminaFixture;
+        StaminaSnapshot stamina = new StaminaSnapshot(pinned.arms().value(),
+                pinned.legs().value(), true, pinned.locked());
         if (!stamina.equals(ClientStaminaState.snapshot())) {
             ClientStaminaState.update(stamina);
         }

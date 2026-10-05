@@ -8,8 +8,11 @@ import com.wok.infantry.client.hud.FormationVoteHudModel;
 import com.wok.infantry.client.hud.FormationVoteHudOverlay;
 import com.wok.infantry.client.hud.HudFrame;
 import com.wok.infantry.client.hud.SquadHudOverlay;
+import com.wok.infantry.client.hud.StaminaBarLayout;
+import com.wok.infantry.client.hud.StaminaBarModel;
 import com.wok.infantry.client.hud.StaminaHudOverlay;
 import com.wok.infantry.client.hud.WokHudLayout;
+import com.wok.infantry.client.screen.TacticalBoardTheme;
 import com.wok.infantry.client.screen.UiRect;
 import com.wok.infantry.client.ui.probe.UiLayoutFrame;
 import com.wok.infantry.uitest.UiCapture;
@@ -27,31 +30,53 @@ import net.minecraft.network.protocol.game.ClientboundBossEventPacket;
 import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.world.BossEvent;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Battle HUD (preview surface {@code 10-hud}), captured with no screen open, or under the vanilla
  * chat for the {@code chat} state. Every state is a migrated surface: the roster, battle strip,
- * notices, ballot plate and vitals report their boxes and texts to the layout probe, so any text
+ * notices, ballot plate and stamina bar report their boxes and texts to the layout probe, so any text
  * outside its plate or two overlapping parts fail the run on a required tier.
  *
- * <p>States: {@code battle} (roster, strip, base-supply notice, vitals), {@code chat} (the roster
+ * <p>States: {@code battle} (roster, strip, base-supply notice, stamina), {@code chat} (the roster
  * shrinks to its title on tight screens), {@code downed} (the viewer is down; a stand-in add-on
  * panel takes the core's {@code center_low} slot), {@code votewait} / {@code vote} /
  * {@code voted} (the ballot plate in the strip's slot, no roster before the lock),
  * {@code locked} (the 3-second lock notice) and {@code roster8} (eight members, the viewer leads
  * the squad and the faction). Data are the preview's demo data ({@link HudFixtures}), installed
  * on the client caches only.
+ *
+ * <p>Every state also checks the stamina bar in the vanilla experience row (preview surface
+ * {@code stamina-a4}): its grooves where {@link StaminaBarLayout} puts them, nothing on the hotbar,
+ * the status rows, the off-hand slot, TaCZ's readout or the chat, and the vanilla experience and
+ * jump bars cancelled. The {@code stamina-a4} cases capture the bar's states over the battle HUD
+ * (full, sprint, aim, legsout, recover, unlock, vehicle, horse: the preview's states, named like
+ * its PNGs so the result page shows them side by side) and check the colours and marks the bar
+ * reported to the layout probe.
  */
 public final class HudCases {
     /** Roster bottom at 320×240 for eight members (preview {@code 10-hud} notes). */
     private static final int ROSTER_BOTTOM_320 = 95;
+    /** Preview surface of the stamina bar states (its PNGs are named after it). */
+    public static final String STAMINA_SURFACE = "stamina-a4";
+    private static final String STAMINA_BOX_PREFIX = "hud.stamina.";
+    private static final String NEUTRAL = hex(TacticalBoardTheme.NEUTRAL_B);
+    private static final String ORANGE = hex(TacticalBoardTheme.ACCENT_B);
+    private static final String RED = hex(TacticalBoardTheme.DANGER_B);
+    private static final String GREEN = hex(TacticalBoardTheme.SUCCESS_B);
+    private static final String LIGHT = hex(TacticalBoardTheme.LIGHT);
+    private static final String GRAY = hex(TacticalBoardTheme.OFFLINE);
+
+    /** One stamina state of the preview: the pinned values and what the probe note must say. */
+    private record StaminaState(String id, StaminaBarModel.State state, List<String> expect) {
+    }
 
     private HudCases() {
     }
 
     public static List<UiCase> cases() {
-        return List.of(
+        List<UiCase> cases = new ArrayList<>(List.of(
                 hud("battle", HudFixtures.Mode.BATTLE),
                 hud("chat", HudFixtures.Mode.CHAT),
                 hud("downed", HudFixtures.Mode.DOWNED),
@@ -60,7 +85,83 @@ public final class HudCases {
                 hud("vote", HudFixtures.Mode.VOTE),
                 hud("voted", HudFixtures.Mode.VOTED),
                 hud("locked", HudFixtures.Mode.LOCKED),
-                bossBar());
+                bossBar()));
+        cases.addAll(staminaCases());
+        return cases;
+    }
+
+    /** The stamina bar's states (preview {@code surfaces/16-stamina.js} DEMO). */
+    public static List<UiCase> staminaCases() {
+        List<UiCase> cases = new ArrayList<>();
+        for (StaminaState state : staminaStates()) {
+            cases.add(stamina(state));
+        }
+        return cases;
+    }
+
+    private static List<StaminaState> staminaStates() {
+        StaminaBarModel.Mount none = StaminaBarModel.Mount.NONE;
+        return List.of(
+                new StaminaState("full", StaminaBarModel.State.of(100.0F, 100.0F),
+                        List.of("arms=100%,hand,accent=" + NEUTRAL,
+                                "legs=100%,boot,accent=" + NEUTRAL)),
+                new StaminaState("sprint", new StaminaBarModel.State(pool(100.0F),
+                        new StaminaBarModel.Pool(64.0F, 69.0F, false), false, false, none, 0.0F),
+                        List.of("legs=64%,boot,accent=" + NEUTRAL, "ghost=69%")),
+                new StaminaState("aim", new StaminaBarModel.State(
+                        new StaminaBarModel.Pool(42.0F, 44.0F, false), pool(86.0F), false, false,
+                        none, 0.0F),
+                        List.of("arms=42%,hand,accent=" + ORANGE + ",fill=" + ORANGE
+                                + ",ghost=44%")),
+                new StaminaState("legsout", new StaminaBarModel.State(pool(70.0F),
+                        new StaminaBarModel.Pool(0.0F, 5.0F, false), true, false, none, 0.0F),
+                        List.of("legs=0%,lock,accent=" + RED, "track="
+                                + hex(StaminaBarModel.LOCK_TRACK))),
+                new StaminaState("recover", new StaminaBarModel.State(
+                        new StaminaBarModel.Pool(46.0F, 46.0F, true),
+                        new StaminaBarModel.Pool(31.0F, 31.0F, true), false, false, none, 0.0F),
+                        List.of("arms=46%,hand,accent=" + ORANGE, "legs=31%,boot,accent="
+                                + ORANGE, "rising=true")),
+                new StaminaState("unlock", new StaminaBarModel.State(
+                        new StaminaBarModel.Pool(88.0F, 88.0F, true),
+                        new StaminaBarModel.Pool(16.0F, 16.0F, true), false, true, none, 0.0F),
+                        List.of("legs=16%,check,accent=" + GREEN)),
+                new StaminaState("vehicle", new StaminaBarModel.State(pool(64.0F),
+                        new StaminaBarModel.Pool(78.0F, 78.0F, true), false, false,
+                        StaminaBarModel.Mount.SEATED, 0.0F),
+                        List.of("legs=78%,boot,accent=" + GRAY + ",fill=" + GRAY,
+                                "mount=SEATED")),
+                new StaminaState("horse", new StaminaBarModel.State(
+                        new StaminaBarModel.Pool(44.0F, 46.0F, false), pool(100.0F), false, false,
+                        StaminaBarModel.Mount.JUMP, 0.55F),
+                        List.of("arms=44%,hand,accent=" + ORANGE, "legs=55%,jump,accent=" + LIGHT,
+                                "mount=JUMP")));
+    }
+
+    private static StaminaBarModel.Pool pool(float value) {
+        return StaminaBarModel.Pool.of(value);
+    }
+
+    private static UiCase stamina(StaminaState state) {
+        return UiCase.builder(STAMINA_SURFACE, state.id())
+                .group("hud")
+                .tiers(UiTier.ALL)
+                .migrated(true)
+                .hudCapture(true)
+                .open(context -> {
+                    HudFixtures.start(HudFixtures.Mode.BATTLE, state.state());
+                    chatLines(context, HudFixtures.Mode.BATTLE);
+                    return null;
+                })
+                .steps(UiStep.action(context ->
+                                UiInputDriver.releaseToCentre(context.minecraft())),
+                        UiStep.until("the HUD fixture", context -> HudFixtures.applied()))
+                .check(HudCases::checkCommon)
+                .check((context, capture) -> checkState(context, capture,
+                        HudFixtures.Mode.BATTLE))
+                .check((context, capture) -> checkStaminaState(context, capture, state))
+                .cleanup(context -> HudFixtures.stop())
+                .build();
     }
 
     /**
@@ -144,8 +245,9 @@ public final class HudCases {
     // ---- checks ---------------------------------------------------------------------------------
 
     /**
-     * Every state: the parts stay clear of the vanilla hotbar and status rows, the vitals end at
-     * least 4px left of the hotbar, and at GUI 1 the HUD lays out as 480×360.
+     * Every state: the core parts stay clear of the vanilla hotbar and status rows, the stamina
+     * bar takes exactly the experience row ({@link #checkStaminaBar}), and at GUI 1 the HUD lays
+     * out as 480×360.
      */
     private static void checkCommon(UiCaseContext context, UiCapture.Result capture) {
         UiLayoutFrame frame = capture.frame();
@@ -154,17 +256,13 @@ public final class HudCases {
         UiLayoutFrame.Rect hotbar = new UiLayoutFrame.Rect(width / 2.0F - 91.0F, height - 39.0F,
                 width / 2.0F + 91.0F, height);
         for (UiLayoutFrame.Box box : frame.boxes()) {
-            if (box.id().startsWith("hud.") && box.rect().overlaps(hotbar)) {
+            if (box.id().startsWith("hud.") && !box.id().startsWith(STAMINA_BOX_PREFIX)
+                    && box.rect().overlaps(hotbar)) {
                 context.fail(box.id() + " " + box.rect() + " covers the hotbar or status rows "
                         + hotbar);
             }
         }
-        UiLayoutFrame.Box vitals = frame.box(StaminaHudOverlay.PROBE_BOX);
-        context.require(vitals != null, "the vitals (stamina) plate was not drawn");
-        float hotbarLeft = width / 2.0F - WokHudLayout.HOTBAR_HALF_WIDTH;
-        context.require(vitals.rect().right() <= hotbarLeft - 4.0F + 0.01F,
-                "vitals right edge " + vitals.rect().right() + " is not 4px left of the hotbar "
-                        + hotbarLeft);
+        checkStaminaBar(context, capture);
         if (context.tier() == UiTier.T960) {
             context.require(capture.baseScale() == 2 && capture.layoutWidth() == 480
                             && capture.layoutHeight() == 360,
@@ -175,6 +273,100 @@ public final class HudCases {
         context.observe("hudBoxes[" + context.uiCase().stateId() + "@" + context.tier().id()
                 + "]=" + frame.boxes().stream().filter(box -> !"hud.plate".equals(box.id()))
                 .map(box -> box.id() + box.rect()).toList());
+    }
+
+    /**
+     * The stamina bar (GUI pixels): its pieces are where {@link StaminaBarLayout} puts them for
+     * this screen, the grooves fill the experience row [h − 30, h − 23) of the hotbar column, the
+     * ears sit outside the column (on narrow screens the boot's tab in the centre gap between the
+     * status rows), nothing reaches the hotbar, its selection frame, the off-hand slot, the status
+     * rows, TaCZ's readout keep-out or, above its last line, the chat; the percentages are drawn
+     * from 640 layout pixels on; the vanilla experience and jump bars did not run.
+     */
+    private static void checkStaminaBar(UiCaseContext context, UiCapture.Result capture) {
+        UiLayoutFrame frame = capture.frame();
+        int w = capture.guiWidth();
+        int h = capture.guiHeight();
+        float cx = w / 2;
+        HudFrame hud = HudFrame.current(w, h);
+        context.require(hud != null && hud.staminaShown(), "the stamina bar is not shown");
+        StaminaBarLayout.Layout bar = hud.layout().staminaBar();
+        UiLayoutFrame.Box band = frame.box(StaminaHudOverlay.BAND_BOX);
+        UiLayoutFrame.Box earLeft = frame.box(StaminaHudOverlay.EAR_LEFT_BOX);
+        UiLayoutFrame.Box earRight = frame.box(StaminaHudOverlay.EAR_RIGHT_BOX);
+        UiLayoutFrame.Box tab = frame.box(StaminaHudOverlay.TAB_BOX);
+        context.require(band != null && earLeft != null, "the stamina bar was not drawn");
+        context.require(same(band.rect(), bar.band()) && same(earLeft.rect(), bar.earLeft()),
+                "stamina bar " + band.rect() + " / " + earLeft.rect() + " is not at its layout "
+                        + bar.band() + " / " + bar.earLeft());
+        context.require(band.rect().top() == h - 30 && band.rect().bottom() == h - 23,
+                "the grooves leave the experience row: " + band.rect());
+        context.require(band.rect().left() >= cx - 91 && band.rect().right() <= cx + 91,
+                "the grooves leave the hotbar column: " + band.rect());
+        context.require(bar.narrow() ? tab != null && earRight == null
+                        : tab == null && earRight != null && same(earRight.rect(), bar.earRight()),
+                "narrow=" + bar.narrow() + " but tab=" + tab + " right ear=" + earRight);
+        List<UiLayoutFrame.Rect> obstacles = List.of(
+                // hotbar, its selection frame, off-hand slots and attack indicators
+                new UiLayoutFrame.Rect(cx - 120, h - 23, cx + 120, h),
+                // status rows above the experience row, TaCZ's ammo readout keep-out
+                new UiLayoutFrame.Rect(cx - 91, h - 39, cx - 10, h - 30),
+                new UiLayoutFrame.Rect(cx + 10, h - 39, cx + 91, h - 30),
+                new UiLayoutFrame.Rect(w - 117, h - 48, w - 5, h - 22));
+        int chatRight = StaminaBarLayout.chatRight(context.minecraft().gui.getChat().getWidth(),
+                context.minecraft().gui.getChat().getScale());
+        for (UiLayoutFrame.Box box : frame.boxes()) {
+            if (!box.id().startsWith(STAMINA_BOX_PREFIX)) {
+                continue;
+            }
+            for (UiLayoutFrame.Rect obstacle : obstacles) {
+                context.require(!box.rect().overlaps(obstacle), box.id() + " " + box.rect()
+                        + " covers a vanilla or TaCZ part " + obstacle);
+            }
+            context.require(box.rect().top() >= h - 40 || box.rect().left() >= chatRight,
+                    box.id() + " " + box.rect() + " reaches into the chat [0, " + chatRight
+                            + ") above its last line");
+        }
+        List<String> percents = new ArrayList<>();
+        for (UiLayoutFrame.Text text : frame.texts()) {
+            if (text.text().endsWith("%") && text.rect().top() >= h - 40) {
+                percents.add(text.text());
+            }
+        }
+        boolean numbers = capture.layoutWidth() >= StaminaBarLayout.NUMBERS_MIN_WIDTH;
+        context.require(bar.numbers() == numbers && percents.size() == (numbers ? 2 : 0),
+                "percentages " + percents + " (expected " + (numbers ? 2 : 0) + ")");
+        context.require(!HudFixtures.vanillaRowDrawn(),
+                "the vanilla experience or jump bar still ran under the stamina bar");
+        context.observe("hudStamina[" + context.uiCase().id() + "@" + context.tier().id()
+                + "]=band" + bar.band() + " earLeft" + bar.earLeft() + " earScale="
+                + bar.earScale() + " narrow=" + bar.narrow() + " numbers=" + percents);
+    }
+
+    /** The colours and marks the stamina bar reported for this state (probe note). */
+    private static void checkStaminaState(UiCaseContext context, UiCapture.Result capture,
+                                          StaminaState state) {
+        String note = capture.frame().notes().stream()
+                .filter(line -> line.startsWith(StaminaHudOverlay.PROBE_NOTE))
+                .findFirst().orElse("");
+        context.require(!note.isEmpty(), "the stamina bar left no probe note");
+        for (String expected : state.expect()) {
+            context.require(note.contains(expected), "stamina state " + state.id()
+                    + " should show '" + expected + "': " + note);
+        }
+        context.observe("hudStaminaState[" + state.id() + "@" + context.tier().id() + "]="
+                + note.substring(StaminaHudOverlay.PROBE_NOTE.length()));
+    }
+
+    private static boolean same(UiLayoutFrame.Rect rect, UiRect expected) {
+        return expected != null && Math.abs(rect.left() - expected.left()) < 0.01F
+                && Math.abs(rect.top() - expected.top()) < 0.01F
+                && Math.abs(rect.right() - expected.right()) < 0.01F
+                && Math.abs(rect.bottom() - expected.bottom()) < 0.01F;
+    }
+
+    private static String hex(int argb) {
+        return String.format(java.util.Locale.ROOT, "%08X", argb);
     }
 
     /**
