@@ -96,8 +96,8 @@ public final class CaptureHudOverlay {
                 guiHeight);
         boolean core = InfantryHudLink.coreLoaded();
         int[] slot = core ? InfantryHudLink.topCenterNext(guiWidth, guiHeight) : null;
-        return CaptureStripLayout.place(guiWidth, guiHeight, factor, slot, core, bossTop,
-                bossBottom);
+        return CaptureStripLayout.place(guiWidth, guiHeight, factor, slot, core,
+                core && InfantryHudLink.coreMovesBossBars(), bossTop, bossBottom);
     }
 
     private static void render(GuiGraphics graphics, int width, int height) {

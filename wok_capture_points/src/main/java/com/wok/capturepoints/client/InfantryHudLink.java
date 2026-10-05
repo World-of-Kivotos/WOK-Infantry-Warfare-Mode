@@ -35,6 +35,17 @@ final class InfantryHudLink {
         return coreLoaded;
     }
 
+    /**
+     * Whether the installed core is 0.5.0-beta.2 or later (it has {@code rendersCapturePoints}
+     * and has not failed): such a core moves the vanilla boss bars below this add-on's strip when
+     * the strip starts in the first boss row
+     * ({@link CaptureStripLayout#CORE_CLEARS_BOSS_ROW_ABOVE}).
+     */
+    static boolean coreMovesBossBars() {
+        resolve();
+        return rendersCapturePoints != null;
+    }
+
     /** Whether the installed core shows the capture point itself this frame. */
     static boolean coreRendersCapturePoints() {
         resolve();

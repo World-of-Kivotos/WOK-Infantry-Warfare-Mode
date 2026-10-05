@@ -19,7 +19,10 @@ package com.wok.capturepoints.client;
  * at y {@value #FALLBACK_COMPACT_TOP} on screens up to {@value #FALLBACK_COMPACT_MAX_WIDTH} wide),
  * or at the top edge without the core. Either way it moves below vanilla boss bars that really
  * cover it; bars a core has already moved below it are left alone (moving under those would make
- * the core move them again, and the two would chase each other off the screen).
+ * the core move them again, and the two would chase each other off the screen). A core
+ * 0.5.0-beta.2+ moves the bars below a strip that starts in the first boss row, so there the
+ * strip keeps its place even while bars cover it for a frame
+ * ({@link #CORE_CLEARS_BOSS_ROW_ABOVE}).
  */
 public final class CaptureStripLayout {
     public static final int MAX_WIDTH = 200;
@@ -58,6 +61,13 @@ public final class CaptureStripLayout {
     public static final int BOSS_BAR_HEIGHT = 5;
     /** Vanilla boss bars span the screen centre ± this (BossHealthOverlay). */
     public static final int BOSS_HALF_WIDTH = 91;
+    /**
+     * WOK步战核心 0.5.0-beta.2+ moves the boss bars below a reported strip in their column whose
+     * top (GUI y) is above this: first bar 12 + 5 tall + 4 clearance. Such a strip stays where it
+     * is and leaves the bars to the core; going under them instead would make the core treat the
+     * strip as an obstacle beside the bars and stop moving them clear of the squad roster.
+     */
+    public static final int CORE_CLEARS_BOSS_ROW_ABOVE = 21;
     /** Smallest layout the 2× rule may produce (WOK步战核心 {@code UiScale}). */
     static final int MIN_LAYOUT_WIDTH = 320;
     static final int MIN_LAYOUT_HEIGHT = 240;
@@ -134,12 +144,15 @@ public final class CaptureStripLayout {
      * @param slot          the core's {@code top_center_next} slot {@code {left, top, width,
      *                      height}} in GUI pixels, or null without one
      * @param coreLoaded    WOK步战核心 is installed (used only without a slot)
+     * @param coreMovesBossBars the installed core moves the boss bars below this strip when it
+     *                      starts above {@link #CORE_CLEARS_BOSS_ROW_ABOVE} (core 0.5.0-beta.2+)
      * @param bossTopGui    GUI y of the first boss bar's name row as drawn ({@link #bossTop})
      * @param bossBottomGui GUI y under the lowest vanilla boss bar drawn ({@link #bossBottom});
      *                      0 or less = no boss bar
      */
     public static Plate place(int guiWidth, int guiHeight, int factor, int[] slot,
-                              boolean coreLoaded, int bossTopGui, int bossBottomGui) {
+                              boolean coreLoaded, boolean coreMovesBossBars, int bossTopGui,
+                              int bossBottomGui) {
         int f = Math.max(1, factor);
         int width = Math.max(1, guiWidth / f);
         int height = Math.max(1, guiHeight / f);
@@ -164,7 +177,8 @@ public final class CaptureStripLayout {
             left = (width - plateWidth) / 2;
             top = coreLoaded ? ceilDiv(FALLBACK_TOP_WITH_CORE, f) : EDGE;
         }
-        if (bossBottomGui > 0) {
+        boolean coreClears = coreMovesBossBars && top * f < CORE_CLEARS_BOSS_ROW_ABOVE;
+        if (bossBottomGui > 0 && !coreClears) {
             int guiLeft = left * f;
             int guiRight = (left + plateWidth) * f;
             boolean sharesColumn = guiLeft < guiWidth / 2 + BOSS_HALF_WIDTH

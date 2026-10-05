@@ -29,15 +29,33 @@ class CaptureStripLayoutTest {
     /** {@link CaptureStripLayout#place} without boss bars. */
     private static Plate place(int guiWidth, int guiHeight, int factor, int[] slot,
                                boolean core) {
-        return CaptureStripLayout.place(guiWidth, guiHeight, factor, slot, core,
+        return CaptureStripLayout.place(guiWidth, guiHeight, factor, slot, core, false,
                 Integer.MAX_VALUE, 0);
     }
 
-    /** {@link CaptureStripLayout#place} under one vanilla boss bar at y 12 moved down {@code shift}. */
+    /**
+     * {@link CaptureStripLayout#place} under one vanilla boss bar at y 12 moved down
+     * {@code shift}, with a core older than 0.5.0-beta.2 (or none).
+     */
     private static Plate placeUnderBoss(int guiWidth, int guiHeight, int factor, int[] slot,
                                         boolean core, int shift) {
-        return CaptureStripLayout.place(guiWidth, guiHeight, factor, slot, core,
+        return CaptureStripLayout.place(guiWidth, guiHeight, factor, slot, core, false,
                 CaptureStripLayout.bossTop(12, shift), CaptureStripLayout.bossBottom(12, shift));
+    }
+
+    /** A core 0.5.0-beta.2+ moves the bars below a strip that starts in the first boss row. */
+    @Test
+    void aNewCoreClearsTheFirstBossRowItself() {
+        int[] top = {170, 4, 300, 160};
+        int one = 12;
+        assertEquals(4, CaptureStripLayout.place(640, 336, 1, top, true, true,
+                CaptureStripLayout.bossTop(one, 0), CaptureStripLayout.bossBottom(one, 0)).top(),
+                "bars still in place for one frame: the core moves them, the strip stays");
+        int[] belowIcons = {170, 29, 300, 140};
+        assertEquals(59, CaptureStripLayout.place(640, 336, 1, belowIcons, true, true,
+                CaptureStripLayout.bossTop(one, 0), CaptureStripLayout.bossBottom(50, 0)).top(),
+                "a strip under the first row (status-effect icons): the core leaves the bars, "
+                        + "so the strip goes under the third");
     }
 
     @Test

@@ -61,12 +61,12 @@ class CaptureStripBossTest {
         for (int frame = 0; frame < FRAMES; frame++) {
             String where = core + " " + guiWidth + "x" + guiHeight + " frame " + frame;
             int[] reported = CaptureStripLayout.place(guiWidth, guiHeight, factor, slot,
-                    core != Core.NONE, lastTop, lastBottom).guiRect();
+                    core != Core.NONE, core == Core.BETA_2, lastTop, lastBottom).guiRect();
             int shift = core.shift(guiWidth, topCenterBottomGui, reported);
             int top = CaptureStripLayout.bossTop(bars.get(0), shift);
             int bottom = CaptureStripLayout.bossBottom(bars.get(bars.size() - 1), shift);
             Plate drawn = CaptureStripLayout.place(guiWidth, guiHeight, factor, slot,
-                    core != Core.NONE, top, bottom);
+                    core != Core.NONE, core == Core.BETA_2, top, bottom);
             int[] gui = drawn.guiRect();
             assertTrue(gui[1] >= 0 && gui[1] + gui[3] <= guiHeight / 2, where + ": " + drawn);
             assertFalse(gui[1] < bottom && gui[1] + gui[3] > top,
@@ -105,17 +105,37 @@ class CaptureStripBossTest {
                 .top(), "under the lowest of three bars");
     }
 
+    /**
+     * With its strip off and nothing on top, core 0.5.0-beta.2 moves the bars below the thin
+     * strip, whether the bars or the strip came first: the strip stays on top, so on narrow
+     * screens the core can still move the bars right of the squad roster (a strip under the bars
+     * would sit beside them as an obstacle and pin them over the roster).
+     */
     @Test
-    void newCoreWithItsStripOffSettlesEitherWay() {
+    void newCoreWithItsStripOffKeepsTheStripOnTop() {
         int[] slot = {170, 4, 300, 164};
-        // the bars come while the viewer stands in the point: the core moves them under it
-        assertEquals(4, run(Core.BETA_2, 640, 336, 1, slot, 0, List.of(12), false).top());
-        // the viewer walks in while the bars are shown: the strip goes under them
-        assertEquals(21, run(Core.BETA_2, 640, 336, 1, slot, 0, List.of(12), true).top());
+        int[] narrow = {123, 2, 195, 118};
+        for (boolean before : new boolean[]{false, true}) {
+            assertEquals(4, run(Core.BETA_2, 640, 336, 1, slot, 0, List.of(12), before).top());
+            assertEquals(4, run(Core.BETA_2, 640, 336, 1, slot, 0, List.of(12, 31, 50), before)
+                    .top(), "three bars");
+            assertEquals(2, run(Core.BETA_2, 320, 240, 1, narrow, 0, List.of(12), before).top());
+            assertEquals(4, run(Core.BETA_2, 960, 720, 2, new int[]{368, 8, 584, 352}, 0,
+                    List.of(12), before).top());
+        }
         // a notice 4..16 above the slot: the core moves the bars under everything
         int[] underNotice = {170, 20, 300, 148};
         for (boolean before : new boolean[]{false, true}) {
             assertEquals(20, run(Core.BETA_2, 640, 336, 1, underNotice, 16, List.of(12),
+                    before).top());
+        }
+        // status-effect icons pushed the column below the first boss row: the core leaves the
+        // bars, the strip goes under the lowest of them
+        int[] belowIcons = {170, 29, 300, 139};
+        for (boolean before : new boolean[]{false, true}) {
+            assertEquals(29, run(Core.BETA_2, 640, 336, 1, belowIcons, 0, List.of(12), before)
+                    .top(), "one bar ends above it");
+            assertEquals(59, run(Core.BETA_2, 640, 336, 1, belowIcons, 0, List.of(12, 31, 50),
                     before).top());
         }
     }
