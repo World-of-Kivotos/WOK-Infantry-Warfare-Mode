@@ -1,62 +1,166 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.battle.BattleRules;
 import com.wok.infantry.battle.BattleSnapshot;
-import com.wok.infantry.battle.ClassQuotaView;
-import com.wok.infantry.battle.MemberView;
 import com.wok.infantry.battle.SquadCallsign;
-import com.wok.infantry.battle.SquadView;
 import com.wok.infantry.client.BattleClientActions;
 import com.wok.infantry.client.ClientBattleState;
+import com.wok.infantry.client.ClientBootstrap;
+import com.wok.infantry.client.ClientFormationState;
+import com.wok.infantry.client.KeyBindingDefaults;
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
+import com.wok.infantry.client.ui.probe.UiSurfaceInfo;
 import com.wok.infantry.deployment.DeploymentPhase;
-import com.wok.infantry.deployment.DeploymentPoint;
-import com.wok.infantry.deployment.DeploymentPointKind;
-import com.wok.infantry.deployment.DeploymentView;
-import com.wok.infantry.network.formation.client.FormationClientNetworkBridge;
-import net.minecraft.client.Minecraft;
+import com.wok.infantry.formation.selection.FormationSelectionSnapshot;
+import com.wok.infantry.formation.vote.FormationVotePhase;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.util.FormattedCharSequence;
+import org.lwjgl.glfw.GLFW;
 
-import java.util.Comparator;
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 
-/** Deployment/squad management surface modelled after large-team tactical shooters. */
-public final class SquadScreen extends Screen {
-    private enum Page {
-        SQUADS,
-        CLASSES,
-        DEPLOYMENT
+/**
+ * The battle terminal's squad, class and deployment pages (preview {@code 20-squad.js}, "new"):
+ * one tactical-tablet screen with the shared shell, the six terminal tabs and three pages that
+ * switch in place. The loadout, map and formation tabs go through {@link BattleTerminalNav} with
+ * replace semantics, so one Esc always closes the whole terminal.
+ *
+ * <p>What every page shows and allows comes from {@link SquadBoardModel}, read from the latest
+ * battle snapshot every frame (re-derived only when the snapshot, the selection, the waiting
+ * intents or the 250 ms clock step changed); the widgets are rebuilt only when the snapshot's
+ * structure changes
+ * (its generation), on a page or squad switch and on resize, so a teammate losing health or a
+ * ticking countdown never moves the keyboard focus. Destructive or hand-over operations ask for a
+ * confirmation inside the screen ({@link TacticalConfirmDialog}; kick, leave, disband and
+ * redeploy are dangerous and never accept Enter). Intents go out through
+ * {@link BattleClientActions} only; nothing is changed locally before the server answers, but a
+ * sent operation waits ("等待回执") until the answer, a new snapshot or a 3-second timeout.
+ *
+ * <p>While the faction's formation is not locked every page shows the vote waiting block and no
+ * control that creates or joins a squad, picks a class or deploys is enabled.
+ */
+public final class SquadScreen extends TacticalScreen
+        implements BattleTerminalNav.Terminal, UiSurfaceInfo {
+    /** Preview surface id ({@code ui-preview/surfaces/20-squad.js}). */
+    public static final String SURFACE_ID = "squad";
+    /** Probe id of the refresh key of the sync placeholder. */
+    public static final String REFRESH_UI_ID = "squad.refresh";
+    /** Probe id of the "open the formation page" key (vote block, no faction). */
+    public static final String VOTE_UI_ID = "squad.vote.open";
+    /** Probe ids of the operation keys are {@code squad.action.<action id>}. */
+    public static final String ACTION_UI_ID_PREFIX = "squad.action.";
+
+    private static final long PENDING_TIMEOUT_NANOS = 3_000_000_000L;
+    /** Clock granularity of the cached draw model (only the kick countdown reads the clock). */
+    private static final long MODEL_CLOCK_STEP_MILLIS = 250L;
+    private static final String TABS_ROLE = "squad.tabs";
+
+    /** The three pages of this screen. */
+    enum Page {
+        SQUADS(BattleTab.SQUADS),
+        CLASSES(BattleTab.CLASSES),
+        DEPLOYMENT(BattleTab.DEPLOYMENT);
+
+        final BattleTab tab;
+
+        Page(BattleTab tab) {
+            this.tab = tab;
+        }
+
+        static Page of(BattleTab tab) {
+            for (Page page : values()) {
+                if (page.tab == tab) {
+                    return page;
+                }
+            }
+            return null;
+        }
+    }
+
+    /** What a page draws and how it handles the mouse beyond its widgets. */
+    interface Painter {
+        void render(GuiGraphics graphics, SquadBoardModel model, int mouseX, int mouseY);
+
+        /** Drawn after the widgets (empty roster slots and the like). */
+        default void renderOverlay(GuiGraphics graphics, SquadBoardModel model) {
+        }
+
+        default boolean mouseClicked(double mouseX, double mouseY, int button) {
+            return false;
+        }
+
+        default boolean mouseScrolled(double mouseX, double mouseY, double delta) {
+            return false;
+        }
+    }
+
+    /** An operation key and how to find its current state in a fresh model. */
+    private record ActionBinding(Button button, Function<SquadBoardModel,
+            SquadBoardModel.ActionState> locator, Component label, boolean labelCut) {
+    }
+
+    /** The open confirmation and the operation it asks about. */
+    private record OpenConfirm(TacticalConfirmDialog dialog, SquadBoardModel.ActionState state) {
     }
 
     private final Screen previous;
-    private Page page = Page.SQUADS;
-    private int classPage;
-    private int deploymentPage;
-    private SquadCallsign selectedSquad;
+    private Page page;
+    private SquadCallsign viewedSquad;
     private SquadCallsign observedOwnSquad;
     private boolean ownSquadObserved;
     private UUID selectedMember;
-    private long redeployConfirmUntilNanos;
-    private long disbandConfirmUntilNanos;
-    private long observedGeneration = -1L;
+    private int classPage;
+    private int deploymentPage;
+    private long observedGeneration = Long.MIN_VALUE;
+    private FormationSelectionSnapshot observedCatalog;
+    private ClientBattleState.BattleFeedback observedFeedback;
     private boolean requestedSnapshot;
-
-    private int contentTop;
-    private int contentBottom;
-    private int leftX;
-    private int leftWidth;
-    private int centerX;
-    private int centerWidth;
-    private int rightX;
-    private int rightWidth;
-    private boolean compact;
-    private TacticalMapLayout.Layout tabletLayout;
+    private final EnumMap<SquadBoardModel.Action, Long> pending =
+            new EnumMap<>(SquadBoardModel.Action.class);
+    private SquadBoardModel model;
+    private Painter painter;
+    /** The stage the painter was built for ({@code null} before the first init). */
+    private SquadBoardModel.Stage painterStage;
+    private final List<ActionBinding> bindings = new ArrayList<>();
+    private final Map<Button, Tooltip> tooltips = new IdentityHashMap<>();
+    private final Map<Button, String> tooltipTexts = new IdentityHashMap<>();
+    private final Map<GuiEventListener, String> roles = new IdentityHashMap<>();
+    /** Roles of the previous build: a click that rebuilt the board finds its control again. */
+    private Map<GuiEventListener, String> previousRoles = Map.of();
+    /**
+     * The model of the frame being drawn, shared by the widget callbacks of that frame (rows,
+     * cells, tooltips); {@code null} outside rendering, where callers build a fresh one.
+     */
+    private SquadBoardModel frameModel;
+    /** The last draw model and the clock step it was built in (see {@link #drawModel}). */
+    private SquadBoardModel cachedModel;
+    private long cachedClockStep = Long.MIN_VALUE;
+    /** The model the operation keys were last synchronised with. */
+    private SquadBoardModel syncedModel;
+    /** The header identity chosen for {@link #identityModel} next to {@link #identityStrip}. */
+    private SquadBoardModel identityModel;
+    private TacticalTabStrip identityStrip;
+    private Component identityChoice;
+    /** The confirmation that is open (also gives the probe state {@code kick}). */
+    private OpenConfirm openConfirm;
+    private long respawnRevision = Long.MIN_VALUE;
+    private long respawnTotalTicks;
 
     public SquadScreen() {
         this(null, false);
@@ -68,743 +172,759 @@ public final class SquadScreen extends Screen {
 
     /** Used by the server after login/death to open directly on the deployment workflow. */
     public SquadScreen(Screen previous, boolean openDeployment) {
-        super(Component.translatable("screen.wok_infantry.squad"));
-        this.previous = previous;
-        this.page = openDeployment ? Page.DEPLOYMENT : Page.SQUADS;
+        this(previous, openDeployment ? Page.DEPLOYMENT : Page.SQUADS);
     }
 
-    /** Screen this page returns to (see {@link BattleTerminalNav#rootSkippingSquadPages}). */
-    Screen previousScreen() {
-        return previous;
+    private SquadScreen(Screen previous, Page page) {
+        super(Component.translatable("screen.wok_infantry.squad"));
+        // A terminal screen as parent is replaced, never stacked: the whole terminal returns to
+        // the screen that was open before it.
+        this.previous = BattleTerminalNav.returnScreenFor(previous);
+        this.page = page == null ? Page.SQUADS : page;
+    }
+
+    /** The terminal page of {@code tab} (squads, classes or deployment) for {@code root}. */
+    public static SquadScreen forTab(Screen root, BattleTab tab) {
+        Page page = Page.of(tab);
+        return new SquadScreen(root, page == null ? Page.SQUADS : page);
     }
 
     @Override
-    protected void init() {
+    public Screen terminalReturnScreen() {
+        return previous;
+    }
+
+    /** The page shown ({@link BattleTab#SQUADS}, {@link BattleTab#CLASSES} or {@link BattleTab#DEPLOYMENT}). */
+    public BattleTab page() {
+        return page.tab;
+    }
+
+    /**
+     * Switches to the squad, class or deployment page in place (other tabs are ignored). Used by
+     * the network bridge so a deployment request never opens a second terminal on top.
+     */
+    public void showPage(BattleTab tab) {
+        Page target = Page.of(tab);
+        if (target == null || target == page) {
+            return;
+        }
+        page = target;
+        if (minecraft != null) {
+            rebuildKeepingFocus();
+        }
+    }
+
+    // ---- state used by the painters ------------------------------------------------------------------
+
+    Font boardFont() {
+        return font;
+    }
+
+    TacticalShellLayout.Metrics boardMetrics() {
+        return shellLayout().metrics();
+    }
+
+    /**
+     * The model of the frame being drawn (built once per frame and shared by every row, cell and
+     * tooltip of that frame), or a fresh one in event handlers.
+     */
+    SquadBoardModel liveModel() {
+        SquadBoardModel frame = frameModel;
+        return frame != null ? frame : buildModel();
+    }
+
+    SquadCallsign viewedSquad() {
+        return viewedSquad;
+    }
+
+    UUID selectedMember() {
+        return selectedMember;
+    }
+
+    int classPage() {
+        return classPage;
+    }
+
+    int deploymentPage() {
+        return deploymentPage;
+    }
+
+    void setClassPage(int value) {
+        if (value != classPage) {
+            classPage = Math.max(0, value);
+            rebuildKeepingFocus();
+        }
+    }
+
+    void setDeploymentPage(int value) {
+        if (value != deploymentPage) {
+            deploymentPage = Math.max(0, value);
+            rebuildKeepingFocus();
+        }
+    }
+
+    /** Shows the roster of {@code callsign} ({@code null}: the own squad) and clears the target. */
+    void viewSquad(SquadCallsign callsign) {
+        if (callsign == viewedSquad) {
+            return;
+        }
+        viewedSquad = callsign;
+        selectedMember = null;
+        rebuildKeepingFocus();
+    }
+
+    /** Selects {@code member} as the operation target, or clears it when already selected. */
+    void toggleMember(UUID member) {
+        selectedMember = member == null || member.equals(selectedMember) ? null : member;
+    }
+
+    /** Adds {@code widget} to the board with its probe id. */
+    <T extends AbstractWidget> T addBoardWidget(T widget, String uiId) {
+        addRenderableWidget(widget);
+        roles.put(widget, uiId);
+        return UiLayoutProbe.tag(widget, uiId);
+    }
+
+    /**
+     * Adds an operation key in {@code cell}: full label, or the short one when the full one does
+     * not fit; an icon only when there is room for it. Its enabled state, tooltip (the disabled
+     * reason, else what it does) follow {@code locator} on a fresh model every frame.
+     */
+    Button addActionButton(UiRect cell, SquadBoardModel.ActionState initial,
+                           Function<SquadBoardModel, SquadBoardModel.ActionState> locator,
+                           TacticalIcon icon) {
+        SquadBoardModel.Action action = initial.action();
+        int room = cell.width() - (action.danger() ? 10 : 8);
+        Component full = initial.label();
+        Component label = font.width(full) > room ? initial.shortLabel() : full;
+        boolean withIcon = icon != null && room >= font.width(label) + TacticalIcon.ADVANCE;
+        int labelRoom = cell.width() - 6 - (withIcon ? TacticalIcon.ADVANCE : 0);
+        BattleUiButton.Builder builder = BattleUiButton.builder(label,
+                        ignored -> perform(locator.apply(liveModel())))
+                .kind(kind(action));
+        if (withIcon) {
+            builder.icon(icon);
+        }
+        Button button = builder.bounds(cell.left(), cell.top(), cell.width(), cell.height())
+                .build();
+        addBoardWidget(button, ACTION_UI_ID_PREFIX + action.id());
+        ActionBinding binding = new ActionBinding(button, locator, full,
+                font.width(label) > labelRoom || label != full);
+        bindings.add(binding);
+        sync(binding, model);
+        return button;
+    }
+
+    private static BattleUiButton.Kind kind(SquadBoardModel.Action action) {
+        if (action.danger()) {
+            return BattleUiButton.Kind.DANGER;
+        }
+        return switch (action) {
+            case CREATE_SQUAD, JOIN_SQUAD, DEPLOY, RESUPPLY -> BattleUiButton.Kind.SUCCESS;
+            default -> BattleUiButton.Kind.NORMAL;
+        };
+    }
+
+    /** A plain key ({@code reason} disables it and becomes its tooltip). */
+    Button addKey(UiRect cell, Component label, TacticalIcon icon, Component reason,
+                  Runnable onPress, String uiId) {
+        BattleUiButton.Builder builder = BattleUiButton.builder(label, ignored -> onPress.run());
+        if (icon != null && font.width(label) + TacticalIcon.ADVANCE <= cell.width() - 8) {
+            builder.icon(icon);
+        }
+        Button button = builder.bounds(cell.left(), cell.top(), cell.width(), cell.height())
+                .build();
+        button.active = reason == null;
+        if (reason != null) {
+            button.setTooltip(Tooltip.create(font.width(label) > cell.width() - 6
+                    ? Component.empty().append(label).append("\n").append(reason) : reason));
+        } else if (font.width(label) > cell.width() - 6) {
+            button.setTooltip(Tooltip.create(label));
+        }
+        return addBoardWidget(button, uiId);
+    }
+
+    private void sync(ActionBinding binding, SquadBoardModel current) {
+        SquadBoardModel.ActionState state = current == null ? null
+                : binding.locator().apply(current);
+        Button button = binding.button();
+        if (state == null) {
+            button.active = false;
+            setTooltip(button, SquadBoardModel.Reason.of(
+                    SquadBoardModel.ReasonCode.PENDING).full(), binding);
+            return;
+        }
+        button.active = state.enabled();
+        SquadBoardModel.Reason text = state.explanation();
+        setTooltip(button, text == null ? null : text.full(), binding);
+    }
+
+    private void setTooltip(Button button, Component text, ActionBinding binding) {
+        Component shown = text;
+        if (binding.labelCut()) {
+            shown = text == null ? binding.label()
+                    : Component.empty().append(binding.label()).append("\n").append(text);
+        }
+        String key = shown == null ? "" : shown.getString();
+        if (key.equals(tooltipTexts.get(button))) {
+            return;
+        }
+        tooltipTexts.put(button, key);
+        Tooltip tooltip = shown == null ? null : Tooltip.create(shown);
+        tooltips.put(button, tooltip);
+        button.setTooltip(tooltip);
+    }
+
+    /** Runs {@code state} (after its confirmation, if it needs one). */
+    void perform(SquadBoardModel.ActionState state) {
+        if (state == null || !state.enabled()) {
+            return;
+        }
+        if (state.action() == SquadBoardModel.Action.RETURN_TO_OWN_SQUAD) {
+            viewSquad(null);
+            return;
+        }
+        SquadBoardModel.Confirm confirm = state.confirm();
+        if (confirm == null) {
+            send(state);
+            return;
+        }
+        TacticalConfirmDialog dialog = TacticalConfirmDialog.builder(confirm.title(),
+                        confirm.joinedBody())
+                .danger(confirm.danger())
+                .confirmLabel(confirm.confirmLabel())
+                .onConfirm(() -> confirmed(state))
+                .onCancel(() -> openConfirm = null)
+                .build();
+        openConfirm = new OpenConfirm(dialog, state);
+        openModal(dialog);
+    }
+
+    /**
+     * The confirmation was accepted: sends the operation only if a model of the newest snapshot
+     * still offers it for the same target, never the intent as it stood when the dialog opened.
+     */
+    private void confirmed(SquadBoardModel.ActionState asked) {
+        openConfirm = null;
+        SquadBoardModel.ActionState current = buildModel().stillOffered(asked);
+        if (current == null) {
+            staleNotice(asked);
+            return;
+        }
+        send(current);
+    }
+
+    /**
+     * After a newer snapshot: an open confirmation whose operation is still offered for the same
+     * target gets the newest wording (a target that just deployed, a different successor); one
+     * that no longer applies (the target left, the squad went into combat, the viewer lost the
+     * leadership) closes without sending and says so in the footer.
+     */
+    private void revalidateConfirm() {
+        OpenConfirm open = openConfirm;
+        if (open == null) {
+            return;
+        }
+        if (open.dialog().closed() || modal() != open.dialog()) {
+            openConfirm = null;
+            return;
+        }
+        SquadBoardModel.ActionState current = buildModel().stillOffered(open.state());
+        if (current == null || current.confirm() == null) {
+            openConfirm = null;
+            open.dialog().dismiss();
+            staleNotice(open.state());
+            return;
+        }
+        open.dialog().updateBody(current.confirm().joinedBody());
+    }
+
+    private void staleNotice(SquadBoardModel.ActionState state) {
+        ClientBattleState.showFeedback(false, SquadBoardText.t(SquadBoardText.CONFIRM_STALE,
+                state.label()).getString());
+        // A local notice is not a server answer: intents still waiting keep waiting.
+        observedFeedback = ClientBattleState.feedback();
+    }
+
+    private void send(SquadBoardModel.ActionState state) {
+        switch (state.action()) {
+            case CREATE_SQUAD -> BattleClientActions.createSquad(state.squad());
+            case JOIN_SQUAD -> BattleClientActions.joinSquad(state.squad());
+            case RETURN_TO_OWN_SQUAD -> {
+                viewSquad(null);
+                return;
+            }
+            case LEAVE_SQUAD -> BattleClientActions.leaveSquad();
+            case DISBAND_SQUAD -> BattleClientActions.disbandSquad();
+            case KICK_MEMBER -> BattleClientActions.kickMember(state.target());
+            case TRANSFER_LEADER -> BattleClientActions.transferLeadership(state.target());
+            case CLAIM_COMMANDER -> BattleClientActions.claimCommander();
+            case RESIGN_COMMANDER -> BattleClientActions.resignCommander();
+            case TRANSFER_COMMANDER -> BattleClientActions.transferCommander(state.target());
+            case SELECT_CLASS -> BattleClientActions.selectClass(state.classId());
+            case SELECT_DEPLOYMENT_POINT -> BattleClientActions.selectDeploymentPoint(
+                    state.pointId());
+            case DEPLOY -> BattleClientActions.deploy();
+            case REDEPLOY -> BattleClientActions.redeploy();
+            case RESUPPLY -> BattleClientActions.resupply();
+        }
+        pending.put(state.action(), System.nanoTime());
+    }
+
+    /**
+     * Elapsed share of the respawn countdown, from the longest wait seen for the current
+     * deployment record (the snapshot carries the remaining ticks, not the total).
+     */
+    float respawnProgress(SquadBoardModel current) {
+        BattleSnapshot snapshot = current.snapshot();
+        if (snapshot == null || snapshot.deployment().phase() != DeploymentPhase.WAITING) {
+            return 1.0F;
+        }
+        long waiting = snapshot.deployment().waitingTicks();
+        long revision = snapshot.deployment().revision();
+        if (revision != respawnRevision) {
+            respawnRevision = revision;
+            respawnTotalTicks = waiting;
+        } else if (waiting > respawnTotalTicks) {
+            respawnTotalTicks = waiting;
+        }
+        return respawnTotalTicks <= 0L ? 1.0F
+                : Math.max(0.0F, Math.min(1.0F, 1.0F - waiting / (float) respawnTotalTicks));
+    }
+
+    /** Opens the formation tab (vote block, no faction). */
+    void openFormationTab() {
+        BattleTerminalNav.navigate(this, BattleTab.FORMATION);
+    }
+
+    /** Opens the loadout tab (the server answers with the loadout page). */
+    void openLoadoutTab() {
+        BattleTerminalNav.navigate(this, BattleTab.LOADOUT);
+    }
+
+    // ---- model ---------------------------------------------------------------------------------------
+
+    private SquadBoardModel buildModel() {
+        BattleSnapshot snapshot = ClientBattleState.snapshot();
+        FormationSelectionSnapshot catalog = ClientFormationState.snapshot();
+        FormationVotePhase phase = catalog == null ? null : catalog.votePhase();
+        return SquadBoardModel.of(SquadBoardModel.Input.of(snapshot)
+                .withViewedSquad(viewedSquad)
+                .withSelectedMember(selectedMember)
+                .withNow(ClientBattleState.estimatedServerTimeMillis())
+                .withAdministrator(isAdministrator())
+                .withVotePhase(phase)
+                .withPending(activePending()));
+    }
+
+    /**
+     * The model to draw this frame. It is rebuilt only when one of its inputs changed: another
+     * snapshot or vote phase object, the viewed squad, the target, the administrator hint, the
+     * waiting intents, or the clock moved into the next {@link #MODEL_CLOCK_STEP_MILLIS} step
+     * (the kick countdown is the only clock-driven value; it may show up to that much late).
+     * Every other frame reuses the previous model instead of re-deriving every row, reason and
+     * confirmation text (审查修正: per-frame allocation).
+     */
+    private SquadBoardModel drawModel() {
+        BattleSnapshot snapshot = ClientBattleState.snapshot();
+        FormationSelectionSnapshot catalog = ClientFormationState.snapshot();
+        FormationVotePhase phase = catalog == null ? null : catalog.votePhase();
+        long now = ClientBattleState.estimatedServerTimeMillis();
+        long clockStep = Math.floorDiv(now, MODEL_CLOCK_STEP_MILLIS);
+        boolean administrator = isAdministrator();
+        Set<SquadBoardModel.Action> waiting = activePending();
+        SquadBoardModel cached = cachedModel;
+        if (cached != null && cached.snapshot() == snapshot
+                && cached.input().votePhase() == phase
+                && cached.input().viewedSquad() == viewedSquad
+                && Objects.equals(cached.input().selectedMember(), selectedMember)
+                && cached.input().administrator() == administrator
+                && cached.input().pending().equals(waiting)
+                && cachedClockStep == clockStep) {
+            return cached;
+        }
+        cachedModel = SquadBoardModel.of(SquadBoardModel.Input.of(snapshot)
+                .withViewedSquad(viewedSquad)
+                .withSelectedMember(selectedMember)
+                .withNow(now)
+                .withAdministrator(administrator)
+                .withVotePhase(phase)
+                .withPending(waiting));
+        cachedClockStep = clockStep;
+        return cachedModel;
+    }
+
+    private Set<SquadBoardModel.Action> activePending() {
+        if (pending.isEmpty()) {
+            return Set.of();
+        }
+        long now = System.nanoTime();
+        pending.values().removeIf(sent -> now - sent > PENDING_TIMEOUT_NANOS);
+        return pending.isEmpty() ? Set.of() : EnumSet.copyOf(pending.keySet());
+    }
+
+    private boolean isAdministrator() {
+        return minecraft != null && minecraft.player != null
+                && minecraft.player.hasPermissions(BattleRules.ADMIN_PERMISSION_LEVEL);
+    }
+
+    // ---- widgets ------------------------------------------------------------------------------------
+
+    @Override
+    protected void initTactical() {
         observedGeneration = ClientBattleState.generation();
+        observedCatalog = ClientFormationState.snapshot();
+        bindings.clear();
+        syncedModel = null;
+        tooltips.clear();
+        tooltipTexts.clear();
+        previousRoles = roles.isEmpty() ? Map.of() : new IdentityHashMap<>(roles);
+        roles.clear();
         BattleSnapshot snapshot = ClientBattleState.snapshot();
         if (snapshot == null && !requestedSnapshot) {
             requestedSnapshot = true;
             BattleClientActions.requestSnapshot();
         }
+        normalizeSelection(snapshot);
+        model = buildModel();
+        BattleTab current = page.tab;
+        TacticalTabStrip strip = BattleTab.strip(current,
+                tab -> tab == current ? null : model.tabDisabledReason(tab), this::onTab);
+        addRenderableWidget(strip);
+        roles.put(strip, TABS_ROLE);
+        setTabStrip(strip);
+        TacticalBoardChrome.placeTabs(font, shellLayout(), title(), strip);
 
-        layoutPanels();
-        initNavigation();
+        UiRect content = shellLayout().content();
+        painterStage = model.stage();
+        painter = switch (model.stage()) {
+            case LOADING -> new PlaceholderPainter(this, content, false);
+            case NO_FACTION -> new PlaceholderPainter(this, content, true);
+            default -> switch (page) {
+                case SQUADS -> new SquadPagePainter(this, content, model);
+                case CLASSES -> new ClassPagePainter(this, content, model);
+                case DEPLOYMENT -> new DeploymentPagePainter(this, content, model);
+            };
+        };
+    }
+
+    /** Follows the own squad when it changes; drops a target that left the viewed squad. */
+    private void normalizeSelection(BattleSnapshot snapshot) {
         if (snapshot == null) {
-            addRenderableWidget(BattleUiButton.builder(
-                            Component.translatable("gui.wok_infantry.refresh"),
-                            ignored -> BattleClientActions.requestSnapshot())
-                    .bounds(width / 2 - 55, height / 2 + 12, 110, 20).build());
             return;
         }
-
-        normalizeSelection(snapshot);
-        switch (page) {
-            case SQUADS -> initSquadWidgets(snapshot);
-            case CLASSES -> initClassWidgets(snapshot);
-            case DEPLOYMENT -> initDeploymentWidgets(snapshot);
+        if (!ownSquadObserved || observedOwnSquad != snapshot.ownSquad()) {
+            ownSquadObserved = true;
+            observedOwnSquad = snapshot.ownSquad();
+            viewedSquad = null;
+        }
+        SquadBoardModel probe = SquadBoardModel.of(SquadBoardModel.Input.of(snapshot)
+                .withViewedSquad(viewedSquad).withSelectedMember(selectedMember));
+        if (probe.selectedMember() == null) {
+            selectedMember = null;
         }
     }
 
-    private void layoutPanels() {
-        tabletLayout = TacticalMapLayout.compute(width, height);
-        contentTop = tabletLayout.rich() ? 58 : 48;
-        contentBottom = Math.max(contentTop + 100, tabletLayout.footer().top() - 8);
-        compact = width < 690;
-        int gap = 6;
-        int horizontalMargin = tabletLayout.rich() ? 16 : 8;
-        int contentRight = width - horizontalMargin;
-        leftX = horizontalMargin;
-        if (compact) {
-            leftWidth = Math.max(132, Math.min(210, (width - 22) * 2 / 5));
-            centerX = leftX + leftWidth + gap;
-            centerWidth = Math.max(110, contentRight - centerX);
-            rightX = width;
-            rightWidth = 0;
-        } else {
-            leftWidth = Math.max(170, Math.min(230, width / 4));
-            rightWidth = Math.max(155, Math.min(205, width / 5));
-            centerX = leftX + leftWidth + gap;
-            rightX = contentRight - rightWidth;
-            centerWidth = Math.max(180, rightX - gap - centerX);
+    private void onTab(BattleTab tab) {
+        Page target = Page.of(tab);
+        if (target != null) {
+            showPage(tab);
+            return;
         }
+        BattleTerminalNav.navigate(this, tab);
     }
 
-    private void initNavigation() {
-        int buttonY = tabletLayout.topBarY();
-        int utilityWidth = 22;
-        // Five battle pages plus the temporary "编制" key (the vote page, until 档 3 tabs).
-        int tabCount = 6;
-        int tabGap = 3;
-        int refreshX = tabletLayout.header().right() - 4 - utilityWidth;
-        int available = Math.max(170, refreshX - leftX - 6);
-        int tabWidth = Math.max(34, Math.min(96,
-                (available - tabGap * (tabCount - 1)) / tabCount));
-        int x = leftX;
-
-        Component squadsLabel = fittedButtonLabel("screen.wok_infantry.tab.squads",
-                "screen.wok_infantry.tab.squads_short", tabWidth);
-        Button squads = BattleUiButton.builder(squadsLabel, ignored -> {
-            page = Page.SQUADS;
-            rebuildWidgets();
-        }).selected(page == Page.SQUADS)
-                .tooltip(Tooltip.create(Component.translatable("screen.wok_infantry.tab.squads")))
-                .bounds(x, buttonY, tabWidth, 20).build();
-        squads.active = page != Page.SQUADS;
-        addRenderableWidget(squads);
-        x += tabWidth + 3;
-
-        Component classesLabel = fittedButtonLabel("screen.wok_infantry.tab.classes",
-                "screen.wok_infantry.tab.classes_short", tabWidth);
-        Button classes = BattleUiButton.builder(classesLabel, ignored -> {
-            page = Page.CLASSES;
-            rebuildWidgets();
-        }).selected(page == Page.CLASSES)
-                .tooltip(Tooltip.create(Component.translatable("screen.wok_infantry.tab.classes")))
-                .bounds(x, buttonY, tabWidth, 20).build();
-        classes.active = page != Page.CLASSES;
-        addRenderableWidget(classes);
-        x += tabWidth + 3;
-
-        Component deploymentLabel = fittedButtonLabel("screen.wok_infantry.tab.deployment",
-                "screen.wok_infantry.tab.deployment_short", tabWidth);
-        Button deployment = BattleUiButton.builder(deploymentLabel, ignored -> {
-                    page = Page.DEPLOYMENT;
-                    rebuildWidgets();
-                }).selected(page == Page.DEPLOYMENT)
-                .tooltip(Tooltip.create(Component.translatable(
-                        "screen.wok_infantry.tab.deployment")))
-                .bounds(x, buttonY, tabWidth, 20).build();
-        deployment.active = page != Page.DEPLOYMENT;
-        addRenderableWidget(deployment);
-        x += tabWidth + 3;
-
-        Component loadoutLabel = fittedButtonLabel("screen.wok_infantry.tab.loadout",
-                "screen.wok_infantry.tab.loadout_short", tabWidth);
-        addRenderableWidget(BattleUiButton.builder(loadoutLabel,
-                        ignored -> BattleClientActions.openLoadout())
-                .tooltip(Tooltip.create(Component.translatable("screen.wok_infantry.tab.loadout")))
-                .bounds(x, buttonY, tabWidth, 20).build());
-        x += tabWidth + 3;
-
-        Component mapLabel = fittedButtonLabel("screen.wok_infantry.tab.map",
-                "screen.wok_infantry.tab.map_short", tabWidth);
-        addRenderableWidget(BattleUiButton.builder(mapLabel, ignored ->
-                        Minecraft.getInstance().setScreen(new TacticalMapScreen(this)))
-                .tooltip(Tooltip.create(Component.translatable("screen.wok_infantry.tab.map")))
-                .bounds(x, buttonY, tabWidth, 20).build());
-        x += tabWidth + 3;
-
-        // Temporary entry to the faction/formation vote page (player-08); 档 3 replaces the
-        // whole row with the shared terminal tab strip. The vote page replaces this page and
-        // returns to the terminal's root, so switching tabs there never stacks a second squad
-        // page under it.
-        Component formationLabel = fittedButtonLabel("screen.wok_infantry.tab.formation",
-                "screen.wok_infantry.tab.formation_short", tabWidth);
-        addRenderableWidget(BattleUiButton.builder(formationLabel, ignored ->
-                        FormationClientNetworkBridge.openFromTerminal(
-                                BattleTerminalNav.rootSkippingSquadPages(previous)))
-                .tooltip(Tooltip.create(Component.translatable(
-                        "screen.wok_infantry.tab.formation")))
-                .bounds(x, buttonY, tabWidth, 20).build());
-
-        addRenderableWidget(BattleUiButton.builder(Component.literal("R"), ignored ->
-                        BattleClientActions.requestSnapshot())
-                .kind(BattleUiButton.Kind.CONTROL)
-                .tooltip(Tooltip.create(Component.translatable("gui.wok_infantry.refresh")))
-                .bounds(refreshX, buttonY, utilityWidth, 20).build());
+    private Component title() {
+        return SquadBoardText.t(width < 440 ? SquadBoardText.TITLE_SHORT : SquadBoardText.TITLE);
     }
 
-    private void initSquadWidgets(BattleSnapshot snapshot) {
-        int rowTop = contentTop + 25;
-        int rowHeight = Math.max(14, Math.min(34,
-                (contentBottom - rowTop - 29) / SquadCallsign.values().length));
-        for (int index = 0; index < SquadCallsign.values().length; index++) {
-            SquadCallsign callsign = SquadCallsign.values()[index];
-            SquadView squad = ClientBattleState.squad(callsign);
-            int y = rowTop + index * rowHeight;
-            int actionWidth = Math.min(54, leftWidth / 3);
-            int selectWidth = leftWidth - actionWidth - 10;
-            int rowButtonHeight = Math.max(12, rowHeight - 2);
-            int squadButtonWidth = Math.max(55, selectWidth);
-            boolean ownSquad = snapshot.ownSquad() == callsign;
-            boolean selected = selectedSquad == callsign;
-            Component fullSquadLabel = squadButtonLabel(callsign, squad, ownSquad, selected);
-            Component visibleSquadLabel = fittedSquadButtonLabel(callsign, squad, ownSquad,
-                    selected, fullSquadLabel, squadButtonWidth);
-            addRenderableWidget(BattleUiButton.builder(visibleSquadLabel, ignored -> {
-                selectedSquad = callsign;
-                selectedMember = null;
-                rebuildWidgets();
-            }).selected(selected)
-                    .tooltip(Tooltip.create(fullSquadLabel))
-                    .bounds(leftX + 5, y, squadButtonWidth, rowButtonHeight).build());
-
-            if (squad == null || !squad.active()) {
-                Button create = BattleUiButton.builder(Component.translatable("gui.wok_infantry.create"), ignored -> {
-                            selectedSquad = callsign;
-                            BattleClientActions.createSquad(callsign);
-                        })
-                        .bounds(leftX + leftWidth - actionWidth - 4, y,
-                                actionWidth, rowButtonHeight).build();
-                create.active = snapshot.permissions().canCreateSquad()
-                        && snapshot.deployment().canChangeSquad();
-                addRenderableWidget(create);
-            } else if (snapshot.ownSquad() != callsign) {
-                Button join = BattleUiButton.builder(Component.translatable("gui.wok_infantry.join"), ignored -> {
-                            selectedSquad = callsign;
-                            BattleClientActions.joinSquad(callsign);
-                        })
-                        .bounds(leftX + leftWidth - actionWidth - 4, y,
-                                actionWidth, rowButtonHeight).build();
-                join.active = snapshot.permissions().canJoinSquad()
-                        && snapshot.deployment().canChangeSquad()
-                        && squad.members().size() < Math.max(1, squad.capacity());
-                addRenderableWidget(join);
+    /**
+     * Rebuilds the widgets and gives the keyboard focus back to the same control (by its role),
+     * also to the control that opened an open confirmation.
+     */
+    private void rebuildKeepingFocus() {
+        boolean modalOpen = hasModal();
+        GuiEventListener focused = modalOpen ? parkedFocus() : getFocused();
+        String role = focused == null ? null : roles.get(focused);
+        boolean keyboard = minecraft != null && minecraft.getLastInputType().isKeyboard();
+        rebuildWidgets();
+        GuiEventListener replacement = role == null || !(keyboard || modalOpen) ? null
+                : widgetWithRole(role);
+        if (modalOpen) {
+            if (replacement != null) {
+                reparkFocus(replacement);
             }
+            return;
         }
-
-        boolean canDisband = snapshot.squadLeader()
-                && snapshot.ownSquad() != null
-                && snapshot.deployment().canChangeSquad();
-        SquadView selected = ClientBattleState.squad(selectedSquad);
-        if (selected != null) {
-            int memberTop = contentTop + 28;
-            int actionY = contentBottom - 26;
-            int memberActionTop = canDisband ? actionY - 24 : actionY;
-            int minimumMemberHeight = canDisband ? 9 : 12;
-            int memberHeight = Math.max(minimumMemberHeight, Math.min(compact ? 25 : 28,
-                    Math.max(1, memberActionTop - memberTop - 3) / 8));
-            List<MemberView> members = selected.members().stream()
-                    .sorted(Comparator.comparing(MemberView::leader).reversed())
-                    .limit(8).toList();
-            for (int index = 0; index < members.size(); index++) {
-                MemberView member = members.get(index);
-                int y = memberTop + index * memberHeight;
-                int memberButtonWidth = centerWidth - 12;
-                Component fullMemberLabel = memberButtonLabel(snapshot, index + 1, member);
-                Component visibleMemberLabel = ellipsizedButtonLabel(
-                        fullMemberLabel, memberButtonWidth);
-                addRenderableWidget(BattleUiButton.builder(visibleMemberLabel, ignored -> {
-                    selectedMember = member.playerId().equals(selectedMember)
-                            ? null : member.playerId();
-                    rebuildWidgets();
-                }).selected(member.playerId().equals(selectedMember))
-                        .tooltip(Tooltip.create(fullMemberLabel))
-                        .bounds(centerX + 6, y, memberButtonWidth,
-                                Math.max(9, memberHeight - 3)).build());
-            }
-        }
-
-        int actionY = contentBottom - 26;
-        int buttonWidth = Math.max(36, (centerWidth - 18) / 3);
-        Component leaveLabel = fittedButtonLabel("gui.wok_infantry.leave_squad",
-                "gui.wok_infantry.leave_squad_short", buttonWidth);
-        Button leave = BattleUiButton.builder(leaveLabel, ignored ->
-                        BattleClientActions.leaveSquad())
-                .tooltip(Tooltip.create(Component.translatable("gui.wok_infantry.leave_squad")))
-                .bounds(centerX + 5, actionY, buttonWidth, 20).build();
-        leave.active = snapshot.permissions().canLeaveSquad()
-                && snapshot.deployment().canChangeSquad();
-        addRenderableWidget(leave);
-
-        MemberView target = ClientBattleState.member(selectedMember);
-        boolean canManageTarget = snapshot.permissions().canManageSquad()
-                && target != null
-                && !target.playerId().equals(snapshot.viewerId())
-                && target.squad() == snapshot.ownSquad();
-        Component transferFullLabel = targetActionLabel(
-                "gui.wok_infantry.transfer_leader", target);
-        Component transferLabel = fittedButtonLabel(transferFullLabel,
-                "gui.wok_infantry.transfer_leader_short", buttonWidth);
-        Button transfer = BattleUiButton.builder(transferLabel, ignored -> {
-            if (selectedMember != null) {
-                BattleClientActions.transferLeadership(selectedMember);
-            }
-        }).tooltip(Tooltip.create(transferFullLabel))
-                .bounds(centerX + 9 + buttonWidth, actionY, buttonWidth, 20).build();
-        transfer.active = canManageTarget && target.online();
-        addRenderableWidget(transfer);
-
-        Component kickFullLabel = targetActionLabel("gui.wok_infantry.kick", target);
-        int kickWidth = Math.max(36, centerWidth - (18 + buttonWidth * 2));
-        Component kickLabel = fittedButtonLabel(kickFullLabel,
-                "gui.wok_infantry.kick_short", kickWidth);
-        Button kick = BattleUiButton.builder(kickLabel, ignored -> {
-            if (selectedMember != null) {
-                BattleClientActions.kickMember(selectedMember);
-            }
-        }).kind(BattleUiButton.Kind.DANGER)
-                .tooltip(Tooltip.create(kickFullLabel))
-                .bounds(centerX + 13 + buttonWidth * 2, actionY, kickWidth, 20).build();
-        kick.active = canManageTarget;
-        addRenderableWidget(kick);
-
-        if (canDisband) {
-            boolean confirming = disbandConfirmUntilNanos > System.nanoTime();
-            Button disband = BattleUiButton.builder(Component.translatable(confirming
-                            ? "gui.wok_infantry.disband_squad_confirm"
-                            : "gui.wok_infantry.disband_squad"), ignored -> {
-                        long now = System.nanoTime();
-                        if (disbandConfirmUntilNanos > now) {
-                            disbandConfirmUntilNanos = 0L;
-                            BattleClientActions.disbandSquad();
-                        } else {
-                            disbandConfirmUntilNanos = now + 3_000_000_000L;
-                            rebuildWidgets();
-                        }
-                    }).kind(BattleUiButton.Kind.DANGER)
-                    .bounds(centerX + 5, actionY - 24, centerWidth - 10, 20).build();
-            addRenderableWidget(disband);
-        }
-
-        int commanderX = compact ? leftX + 5 : rightX + 6;
-        int commanderWidth = compact ? leftWidth - 10 : rightWidth - 12;
-        if (snapshot.commander()) {
-            int gap = 4;
-            int resignWidth = Math.max(40, (commanderWidth - gap) / 2);
-            Component resignFullLabel = Component.translatable(
-                    "gui.wok_infantry.resign_commander");
-            Component resignLabel = fittedButtonLabel(resignFullLabel,
-                    "gui.wok_infantry.resign_commander_short", resignWidth);
-            addRenderableWidget(BattleUiButton.builder(resignLabel, ignored ->
-                            BattleClientActions.resignCommander())
-                    .tooltip(Tooltip.create(resignFullLabel))
-                    .bounds(commanderX, contentBottom - 26, resignWidth, 20).build());
-            boolean validCommanderTarget = target != null && target.leader() && target.online()
-                    && !target.playerId().equals(snapshot.viewerId());
-            int commanderTransferWidth = Math.max(40,
-                    commanderWidth - resignWidth - gap);
-            Component commanderTransferFullLabel = targetActionLabel(
-                    "gui.wok_infantry.transfer_commander", target);
-            Component commanderTransferLabel = fittedButtonLabel(commanderTransferFullLabel,
-                    "gui.wok_infantry.transfer_commander_short", commanderTransferWidth);
-            Button commanderTransfer = BattleUiButton.builder(commanderTransferLabel, ignored -> {
-                        if (selectedMember != null) {
-                            BattleClientActions.transferCommander(selectedMember);
-                        }
-                    }).tooltip(Tooltip.create(commanderTransferFullLabel))
-                    .bounds(commanderX + resignWidth + gap, contentBottom - 26,
-                            commanderTransferWidth, 20).build();
-            commanderTransfer.active = validCommanderTarget;
-            addRenderableWidget(commanderTransfer);
-        } else if (snapshot.permissions().canClaimCommander()) {
-            Component claimFullLabel = Component.translatable(
-                    "gui.wok_infantry.claim_commander");
-            Component claimLabel = fittedButtonLabel(claimFullLabel,
-                    "gui.wok_infantry.claim_commander_short", commanderWidth);
-            addRenderableWidget(BattleUiButton.builder(claimLabel, ignored ->
-                            BattleClientActions.claimCommander())
-                    .tooltip(Tooltip.create(claimFullLabel))
-                    .bounds(commanderX, contentBottom - 26, commanderWidth, 20).build());
-        }
+        // Never leave the keyboard focus on a control of the previous build.
+        setFocused(replacement);
     }
 
-    private void initClassWidgets(BattleSnapshot snapshot) {
-        int rowTop = contentTop + 29;
-        int listX = compact ? leftX : centerX;
-        int listWidth = compact ? leftWidth + 6 + centerWidth : centerWidth;
-        String currentClass = currentClass(snapshot);
-        List<ClassQuotaView> quotas = snapshot.classQuotas();
-        int bottomY = contentBottom - 26;
-        int availableHeight = Math.max(1, bottomY - rowTop - 3);
-        int rowsPerPage = Math.max(1, availableHeight / 24);
-        int pageCount = Math.max(1, (quotas.size() + rowsPerPage - 1) / rowsPerPage);
-        classPage = Math.max(0, Math.min(classPage, pageCount - 1));
-        int start = classPage * rowsPerPage;
-        int end = Math.min(quotas.size(), start + rowsPerPage);
-        int rowHeight = Math.max(14, Math.min(34,
-                availableHeight / Math.max(1, end - start)));
-        for (int index = start; index < end; index++) {
-            ClassQuotaView quota = quotas.get(index);
-            int y = rowTop + (index - start) * rowHeight;
-            if (y + Math.max(11, rowHeight - 4) > bottomY) {
-                break;
+    /** The enabled control of this build with probe role {@code role}, or {@code null}. */
+    private GuiEventListener widgetWithRole(String role) {
+        for (Map.Entry<GuiEventListener, String> entry : roles.entrySet()) {
+            GuiEventListener widget = entry.getKey();
+            if (role.equals(entry.getValue()) && children().contains(widget)
+                    && !(widget instanceof AbstractWidget control && !control.active)) {
+                return widget;
             }
-            MutableComponent label = className(quota.classId(), quota.displayName()).append("  ")
-                    .append(Component.translatable("screen.wok_infantry.class.quota",
-                            quota.used(), quota.limit()));
-            if (quota.classId().equals(currentClass)) {
-                label.append("  ").append(Component.translatable("screen.wok_infantry.class.selected"));
-            }
-            Button choose = BattleUiButton.builder(label, ignored ->
-                            BattleClientActions.selectClass(quota.classId()))
-                    .selected(quota.classId().equals(currentClass))
-                    .bounds(listX + 6, y, listWidth - 12,
-                            Math.max(11, rowHeight - 4)).build();
-            choose.active = snapshot.ownSquad() != null
-                    && snapshot.deployment().canChangeClass()
-                    && !quota.classId().equals(currentClass)
-                    && quota.remaining() > 0;
-            Component reason;
-            if (snapshot.ownSquad() == null) {
-                reason = Component.translatable("screen.wok_infantry.class.reason.no_squad");
-            } else if (!snapshot.deployment().canChangeClass()) {
-                reason = Component.translatable("screen.wok_infantry.class.reason.active");
-            } else if (quota.classId().equals(currentClass)) {
-                reason = Component.translatable("screen.wok_infantry.class.reason.current");
-            } else if (quota.remaining() <= 0) {
-                reason = Component.translatable("screen.wok_infantry.class.reason.full");
-            } else {
-                reason = Component.translatable("screen.wok_infantry.class.reason.available");
-            }
-            choose.setTooltip(Tooltip.create(reason));
-            addRenderableWidget(choose);
         }
-
-        int pagerWidth = 30;
-        Button previous = BattleUiButton.builder(Component.literal("<"), ignored -> {
-            classPage--;
-            rebuildWidgets();
-        }).bounds(listX + 6, bottomY, pagerWidth, 20).build();
-        previous.active = classPage > 0;
-        addRenderableWidget(previous);
-        Button next = BattleUiButton.builder(Component.literal(">"), ignored -> {
-            classPage++;
-            rebuildWidgets();
-        }).bounds(listX + listWidth - 6 - pagerWidth, bottomY, pagerWidth, 20).build();
-        next.active = classPage + 1 < pageCount;
-        addRenderableWidget(next);
-        addRenderableWidget(BattleUiButton.builder(Component.translatable("screen.wok_infantry.class.configure_loadout"),
-                        ignored -> BattleClientActions.openLoadout())
-                .bounds(listX + 40, bottomY, Math.max(40, listWidth - 80), 20).build());
+        return null;
     }
 
-    private void initDeploymentWidgets(BattleSnapshot snapshot) {
-        DeploymentView deployment = snapshot.deployment();
-        int panelX = leftX;
-        int panelWidth = Math.max(120, width - panelX
-                - (tabletLayout.rich() ? 16 : 8));
-        int actionY = contentBottom - 26;
-        DeploymentLayout layout = deploymentLayout();
-        int rowsPerPage = visibleDeploymentRows(layout.listTop(), actionY - 2,
-                layout.pointHeight(), layout.rowPitch());
-        DeploymentPagination pagination = deploymentPagination(
-                deployment.points().size(), rowsPerPage, deploymentPage);
-        deploymentPage = pagination.page();
-        for (int index = pagination.startInclusive();
-             index < pagination.endExclusive(); index++) {
-            DeploymentPoint point = deployment.points().get(index);
-            int localIndex = index - pagination.startInclusive();
-            int y = layout.listTop() + localIndex * layout.rowPitch();
-            boolean selected = point.id().equals(deployment.selectedPointId());
-            MutableComponent label = selected ? Component.literal("✓ ") : Component.empty();
-            String pointKey = switch (point.kind()) {
-                case MAIN_BASE -> "screen.wok_infantry.deployment.main_base";
-                case FIELD_BEACON -> "screen.wok_infantry.deployment.field_beacon";
-                case RALLY -> "screen.wok_infantry.deployment.rally";
-            };
-            label.append(Component.translatable(pointKey,
-                    point.dimension(), point.position().getX(), point.position().getY(),
-                    point.position().getZ()));
-
-            int pointX = panelX + 7;
-            int pointWidth = panelWidth - 14;
-            if (pagination.multiplePages() && localIndex == 0) {
-                int pagerWidth = compact ? 24 : 28;
-                int pagerGap = 3;
-                Button previousPage = BattleUiButton.builder(Component.literal("<"), ignored -> {
-                    deploymentPage = pagination.previousPage();
-                    rebuildWidgets();
-                }).bounds(pointX, y, pagerWidth, layout.pointHeight()).build();
-                previousPage.active = pagination.hasPrevious();
-                addRenderableWidget(previousPage);
-
-                Button nextPage = BattleUiButton.builder(Component.literal(">"), ignored -> {
-                    deploymentPage = pagination.nextPage();
-                    rebuildWidgets();
-                }).bounds(pointX + pointWidth - pagerWidth, y,
-                        pagerWidth, layout.pointHeight()).build();
-                nextPage.active = pagination.hasNext();
-                addRenderableWidget(nextPage);
-
-                pointX += pagerWidth + pagerGap;
-                pointWidth -= (pagerWidth + pagerGap) * 2;
-            }
-            Button pointButton = BattleUiButton.builder(label, ignored ->
-                            BattleClientActions.selectDeploymentPoint(point.id()))
-                    .selected(selected)
-                    .bounds(pointX, y, Math.max(40, pointWidth), layout.pointHeight()).build();
-            pointButton.active = deployment.phase() != DeploymentPhase.ACTIVE && !selected;
-            addRenderableWidget(pointButton);
+    /**
+     * Vanilla focuses the clicked control after its handler returned; when that handler rebuilt
+     * the board (a call sign, a page switch) the control is already gone. Its rebuilt counterpart
+     * (same probe role) takes the focus instead, else nothing, so later keys never reach a
+     * control that is no longer on the screen.
+     */
+    private void adoptRebuiltFocus() {
+        GuiEventListener focused = getFocused();
+        if (focused == null || children().contains(focused)) {
+            return;
         }
-
-        int gap = 4;
-        int actionWidth = Math.max(48, (panelWidth - 14 - gap * 2) / 3);
-        int actionX = panelX + 7;
-        Button deploy = BattleUiButton.builder(Component.translatable("gui.wok_infantry.deploy"), ignored ->
-                        BattleClientActions.deploy())
-                .kind(BattleUiButton.Kind.SUCCESS)
-                .bounds(actionX, actionY, actionWidth, 20).build();
-        deploy.active = deployment.canDeploy();
-        addRenderableWidget(deploy);
-        actionX += actionWidth + gap;
-
-        boolean confirmingRedeploy = redeployConfirmUntilNanos > System.nanoTime();
-        Button redeploy = BattleUiButton.builder(Component.translatable(confirmingRedeploy
-                        ? "gui.wok_infantry.redeploy_confirm" : "gui.wok_infantry.redeploy"), ignored -> {
-                    long now = System.nanoTime();
-                    if (redeployConfirmUntilNanos > now) {
-                        redeployConfirmUntilNanos = 0L;
-                        BattleClientActions.redeploy();
-                    } else {
-                        redeployConfirmUntilNanos = now + 3_000_000_000L;
-                        rebuildWidgets();
-                    }
-                })
-                .kind(BattleUiButton.Kind.DANGER)
-                .bounds(actionX, actionY, actionWidth, 20).build();
-        redeploy.active = deployment.phase() == DeploymentPhase.ACTIVE;
-        addRenderableWidget(redeploy);
-        actionX += actionWidth + gap;
-
-        Button resupply = BattleUiButton.builder(Component.translatable("gui.wok_infantry.resupply"), ignored ->
-                        BattleClientActions.resupply())
-                .kind(BattleUiButton.Kind.SUCCESS)
-                .bounds(actionX, actionY,
-                        Math.max(48, panelX + panelWidth - 7 - actionX), 20).build();
-        resupply.active = deployment.canResupply();
-        addRenderableWidget(resupply);
+        String role = previousRoles.get(focused);
+        setFocused(role == null ? null : widgetWithRole(role));
     }
 
     @Override
     public void tick() {
         super.tick();
-        if (redeployConfirmUntilNanos != 0L
-                && redeployConfirmUntilNanos <= System.nanoTime()) {
-            redeployConfirmUntilNanos = 0L;
-            rebuildWidgets();
-            return;
+        ClientBattleState.BattleFeedback feedback = ClientBattleState.feedback();
+        if (feedback != null && feedback != observedFeedback) {
+            // The server answered an intent: whatever it was, stop waiting.
+            observedFeedback = feedback;
+            pending.clear();
         }
-        if (disbandConfirmUntilNanos != 0L
-                && disbandConfirmUntilNanos <= System.nanoTime()) {
-            disbandConfirmUntilNanos = 0L;
-            rebuildWidgets();
-            return;
+        boolean catalogChanged = ClientFormationState.snapshot() != observedCatalog
+                && (model == null || model.stage() != SquadBoardModel.Stage.READY);
+        if (ClientBattleState.generation() != observedGeneration || catalogChanged) {
+            snapshotChanged();
         }
-        if (observedGeneration != ClientBattleState.generation()) {
-            rebuildWidgets();
+    }
+
+    /** A structurally new snapshot: stop waiting, rebuild the page, re-check a confirmation. */
+    private void snapshotChanged() {
+        pending.clear();
+        rebuildKeepingFocus();
+        revalidateConfirm();
+    }
+
+    // ---- rendering ----------------------------------------------------------------------------------
+
+    @Override
+    protected void renderTactical(GuiGraphics graphics, int mouseX, int mouseY,
+                                  float partialTick) {
+        model = drawModel();
+        if (painterStage != null && model.stage() != painterStage) {
+            // The snapshot changed what the page can show (cleared when the viewer left the
+            // battle, the vote reopened, the formation locked) between two ticks: rebuild
+            // before drawing, a page is never painted with a model it was not built for (a
+            // cleared snapshot would otherwise crash the READY painters).
+            snapshotChanged();
+            model = drawModel();
+        }
+        frameModel = model;
+        try {
+            if (model != syncedModel) {
+                // The keys only change with the model; an unchanged model needs no new state.
+                for (ActionBinding binding : bindings) {
+                    sync(binding, model);
+                }
+                syncedModel = model;
+            }
+            BattleSnapshot snapshot = model.snapshot();
+            TacticalBoardChrome.ShellSpec spec = TacticalBoardChrome.ShellSpec.of(title())
+                    .withIdentity(identity())
+                    .withLink(TacticalBoardChrome.LinkState.forBattleSnapshot(snapshot))
+                    .withTabs(tabStrip())
+                    .withHints(hints())
+                    .withFeedback(TacticalBoardChrome.Feedback.fromBattle());
+            drawShell(graphics, spec);
+            if (painter != null) {
+                painter.render(graphics, model, mouseX, mouseY);
+            }
+            renderWidgets(graphics, mouseX, mouseY, partialTick);
+            if (painter != null) {
+                painter.renderOverlay(graphics, model);
+            }
+        } finally {
+            frameModel = null;
+        }
+    }
+
+    /**
+     * The longest identity candidate ("阵营 · 编制 · 小队 · 职务" shortened step by step) that
+     * the header can show next to the full tab names (preview {@code identityCaps}).
+     */
+    private Component identity() {
+        TacticalTabStrip strip = tabStrip();
+        if (model == identityModel && strip == identityStrip) {
+            // Same model, same strip (rebuilt with the layout): the same choice as last frame.
+            return identityChoice;
+        }
+        List<Component> candidates = model.identityCandidates();
+        TacticalShellLayout layout = shellLayout();
+        int tabs = strip == null ? 0 : strip.preferredWidth(font, false, layout.tight());
+        int available = layout.header().width() - 14;
+        int cap = Math.min(layout.header().width() * 3 / 10,
+                available - font.width(title()) - (tabs > 0 ? tabs + 10 : 0) - 10);
+        Component chosen = candidates.isEmpty() ? null : candidates.get(candidates.size() - 1);
+        for (Component candidate : candidates) {
+            if (font.width(candidate) <= cap) {
+                chosen = candidate;
+                break;
+            }
+        }
+        identityModel = model;
+        identityStrip = strip;
+        identityChoice = chosen;
+        return chosen;
+    }
+
+    private List<TacticalBoardChrome.KeyHint> hints() {
+        List<TacticalBoardChrome.KeyHint> hints = new ArrayList<>();
+        hints.add(TacticalBoardChrome.KeyHint.close());
+        TacticalTabStrip strip = tabStrip();
+        if (strip != null && strip.canCycle()) {
+            hints.add(TacticalBoardChrome.KeyHint.switchTab());
+        }
+        hints.add(TacticalBoardChrome.KeyHint.literal("R",
+                SquadBoardText.t(SquadBoardText.HINT_REFRESH)));
+        return hints;
+    }
+
+    /** Test seam: pagination of the shown point list (deployment page), or {@code null}. */
+    SquadBoardModel.Page shownPointPage() {
+        return painter instanceof DeploymentPagePainter deployment ? deployment.page() : null;
+    }
+
+    /** Test seam: pagination of the shown class list (class page), or {@code null}. */
+    SquadBoardModel.Page shownClassPage() {
+        return painter instanceof ClassPagePainter classes ? classes.page() : null;
+    }
+
+    // ---- probe state --------------------------------------------------------------------------------
+
+    @Override
+    public String uiSurfaceId() {
+        return SURFACE_ID;
+    }
+
+    /** Preview state ({@code 20-squad.js}) of what the screen shows. */
+    @Override
+    public String uiStateId() {
+        SquadBoardModel current = model == null ? buildModel() : model;
+        OpenConfirm open = openConfirm;
+        if (hasModal() && open != null && modal() == open.dialog()
+                && open.state().action() == SquadBoardModel.Action.KICK_MEMBER) {
+            return "kick";
+        }
+        if (hasModal()) {
+            return "confirm";
+        }
+        return uiStateId(current, page.tab);
+    }
+
+    static String uiStateId(SquadBoardModel model, BattleTab page) {
+        switch (model.stage()) {
+            case LOADING -> {
+                return "loading";
+            }
+            case NO_FACTION -> {
+                return "nofaction";
+            }
+            case VOTE_PENDING -> {
+                if (page == BattleTab.CLASSES) {
+                    return "voteclasses";
+                }
+                if (page == BattleTab.DEPLOYMENT) {
+                    return "votedeploy";
+                }
+                return model.input().votePhase() == FormationVotePhase.OPEN ? "vote" : "votewait";
+            }
+            default -> {
+            }
+        }
+        boolean active = model.snapshot().deployment().phase() == DeploymentPhase.ACTIVE;
+        if (page == BattleTab.CLASSES) {
+            return !model.authority().inSquad() ? "classesnosquad" : active ? "classesactive"
+                    : "classes";
+        }
+        if (page == BattleTab.DEPLOYMENT) {
+            return active ? "active" : "deployment";
+        }
+        if (!model.authority().inSquad()) {
+            return "nosquad";
+        }
+        return model.viewedSquad() == model.snapshot().ownSquad() ? "squads" : "other";
+    }
+
+    // ---- input --------------------------------------------------------------------------------------
+
+    @Override
+    protected boolean onKeyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_R && modifiers == 0) {
+            BattleClientActions.requestSnapshot();
+            return true;
+        }
+        if (keyCode != GLFW.GLFW_KEY_ESCAPE
+                && ClientBootstrap.isKey(KeyBindingDefaults.Binding.TERMINAL, keyCode, scanCode)) {
+            onClose();
+            return true;
+        }
+        return super.onKeyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    protected boolean onMouseClicked(double mouseX, double mouseY, int button) {
+        if (painter != null && painter.mouseClicked(mouseX, mouseY, button)) {
+            return true;
+        }
+        boolean handled = super.onMouseClicked(mouseX, mouseY, button);
+        adoptRebuiltFocus();
+        return handled;
+    }
+
+    @Override
+    protected boolean onMouseScrolled(double mouseX, double mouseY, double delta) {
+        if (super.onMouseScrolled(mouseX, mouseY, delta)) {
+            return true;
+        }
+        return painter != null && painter.mouseScrolled(mouseX, mouseY, delta);
+    }
+
+    @Override
+    public void onClose() {
+        if (minecraft != null) {
+            minecraft.setScreen(previous);
         }
     }
 
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        BattleSnapshot snapshot = ClientBattleState.snapshot();
-        TacticalBoardChrome.renderShell(graphics, width, height, tabletLayout);
-        TacticalBoardChrome.renderHeader(graphics, font, tabletLayout,
-                Component.translatable("screen.wok_infantry.squad.board_title"),
-                TacticalBoardChrome.battleIdentity(snapshot), snapshot != null);
-        if (snapshot == null) {
-            BattleUiTheme.drawCenteredText(graphics, font,
-                    Component.translatable("screen.wok_infantry.waiting_snapshot"),
-                    width / 2, height / 2 - 10, TacticalBoardTheme.MUTED_TEXT);
-            super.render(graphics, mouseX, mouseY, partialTick);
-            return;
-        }
-
-        switch (page) {
-            case SQUADS -> renderSquadPage(graphics, snapshot);
-            case CLASSES -> renderClassPage(graphics, snapshot);
-            case DEPLOYMENT -> renderDeploymentPage(graphics, snapshot);
-        }
-        super.render(graphics, mouseX, mouseY, partialTick);
-        TacticalMapLayout.Rect footer = tabletLayout.footer();
-        BattleUiTheme.feedback(graphics, font, footer.left(), footer.top(), footer.right(),
-                footer.bottom());
+    public boolean isPauseScreen() {
+        return false;
     }
 
-    private void renderSquadPage(GuiGraphics graphics, BattleSnapshot snapshot) {
-        TacticalBoardTheme.raisedPanel(graphics, leftX, contentTop,
-                leftX + leftWidth, contentBottom, TacticalBoardTheme.BOARD_ALT);
-        TacticalBoardTheme.raisedPanel(graphics, centerX, contentTop,
-                centerX + centerWidth, contentBottom, TacticalBoardTheme.BOARD_ALT);
-        TacticalBoardTheme.sectionHeader(graphics, font,
-                Component.translatable("screen.wok_infantry.squad_list"),
-                leftX + 4, contentTop + 4, leftX + leftWidth - 4,
-                TacticalBoardTheme.SECTION);
+    // ---- compatibility --------------------------------------------------------------------------
 
-        SquadView selected = ClientBattleState.squad(selectedSquad);
-        MutableComponent heading = selectedSquad == null
-                ? Component.translatable("screen.wok_infantry.no_squad_selected")
-                : callsign(selectedSquad).copy();
-        if (selected != null) {
-            heading.append("  ").append(Component.translatable("screen.wok_infantry.squad.member_count",
-                    selected.members().size(), Math.max(snapshot.squadCapacity(), selected.capacity())));
-        }
-        TacticalBoardTheme.sectionHeader(graphics, font, heading,
-                centerX + 4, contentTop + 4, centerX + centerWidth - 4,
-                TacticalBoardTheme.ACCENT);
-
-        if (selected == null || selected.members().isEmpty()) {
-            BattleUiTheme.drawCenteredText(graphics, font,
-                    Component.translatable("screen.wok_infantry.squad.empty"),
-                    centerX + centerWidth / 2, contentTop + 55,
-                    TacticalBoardTheme.MUTED_TEXT);
-        }
-
-        if (!compact) {
-            renderCommandPanel(graphics, snapshot);
-        }
-    }
-
-    private void renderCommandPanel(GuiGraphics graphics, BattleSnapshot snapshot) {
-        TacticalBoardTheme.raisedPanel(graphics, rightX, contentTop,
-                rightX + rightWidth, contentBottom, TacticalBoardTheme.BOARD_ALT);
-        TacticalBoardTheme.sectionHeader(graphics, font,
-                Component.translatable("screen.wok_infantry.command_panel"),
-                rightX + 4, contentTop + 4, rightX + rightWidth - 4,
-                TacticalBoardTheme.ACCENT);
-        int y = contentTop + 29;
-        renderStatusLine(graphics, rightX + 7, y,
-                "screen.wok_infantry.status.squad",
-                snapshot.ownSquad() == null
-                        ? Component.translatable("screen.wok_infantry.status.none")
-                        : callsign(snapshot.ownSquad()),
-                snapshot.ownSquad() == null ? TacticalBoardTheme.MUTED_TEXT
-                        : TacticalBoardTheme.FRIENDLY);
-        y += 19;
-        renderStatusLine(graphics, rightX + 7, y,
-                "screen.wok_infantry.status.role",
-                role(snapshot), TacticalBoardTheme.TEXT);
-        y += 30;
-        int maxHintLines = Math.max(1, (contentBottom - 32 - y) / 10);
-        drawWrappedText(graphics, Component.translatable("screen.wok_infantry.command_hint"),
-                rightX + 7, y, rightWidth - 14, maxHintLines,
-                TacticalBoardTheme.MUTED_TEXT);
-    }
-
-    private void renderClassPage(GuiGraphics graphics, BattleSnapshot snapshot) {
-        int listX = compact ? leftX : centerX;
-        int listWidth = compact ? leftWidth + 6 + centerWidth : centerWidth;
-        TacticalBoardTheme.raisedPanel(graphics, listX, contentTop,
-                listX + listWidth, contentBottom, TacticalBoardTheme.BOARD_ALT);
-        TacticalBoardTheme.sectionHeader(graphics, font,
-                Component.translatable("screen.wok_infantry.class.title"),
-                listX + 4, contentTop + 4, listX + listWidth - 4,
-                TacticalBoardTheme.ACCENT);
-        if (!compact) {
-            TacticalBoardTheme.raisedPanel(graphics, leftX, contentTop,
-                    leftX + leftWidth, contentBottom, TacticalBoardTheme.BOARD_ALT);
-            TacticalBoardTheme.sectionHeader(graphics, font,
-                    Component.translatable("screen.wok_infantry.deployment_status"),
-                    leftX + 4, contentTop + 4, leftX + leftWidth - 4,
-                    TacticalBoardTheme.SECTION);
-            int y = contentTop + 32;
-            MutableComponent squad = snapshot.ownSquad() == null
-                    ? Component.translatable("screen.wok_infantry.status.none")
-                    : callsign(snapshot.ownSquad()).copy();
-            renderStatusLine(graphics, leftX + 7, y,
-                    "screen.wok_infantry.status.squad", squad,
-                    TacticalBoardTheme.FRIENDLY);
-            y += 20;
-            renderStatusLine(graphics, leftX + 7, y,
-                    "screen.wok_infantry.status.class",
-                    className(snapshot, currentClass(snapshot)),
-                    TacticalBoardTheme.TEXT);
-            renderCommandPanel(graphics, snapshot);
-        }
-    }
-
-    private void renderDeploymentPage(GuiGraphics graphics, BattleSnapshot snapshot) {
-        DeploymentView deployment = snapshot.deployment();
-        int panelX = leftX;
-        int panelWidth = Math.max(120, width - panelX
-                - (tabletLayout.rich() ? 16 : 8));
-        DeploymentLayout layout = deploymentLayout();
-        TacticalBoardTheme.raisedPanel(graphics, panelX, contentTop,
-                panelX + panelWidth, contentBottom, TacticalBoardTheme.BOARD_ALT);
-        TacticalBoardTheme.sectionHeader(graphics, font,
-                Component.translatable("screen.wok_infantry.deployment.title"),
-                panelX + 4, contentTop + 4, panelX + panelWidth - 4,
-                TacticalBoardTheme.ACCENT);
-
-        Component phase = Component.translatable("screen.wok_infantry.deployment.phase."
-                + deployment.phase().name().toLowerCase(java.util.Locale.ROOT));
-        renderStatusLine(graphics, panelX + 7, layout.phaseY(),
-                "screen.wok_infantry.deployment.phase", phase,
-                deployment.phase() == DeploymentPhase.ACTIVE
-                        ? TacticalBoardTheme.FRIENDLY : TacticalBoardTheme.TEXT);
-
-        MutableComponent squad = snapshot.ownSquad() == null
-                ? Component.translatable("screen.wok_infantry.status.none")
-                : callsign(snapshot.ownSquad()).copy();
-        int squadX = compact ? panelX + 7
-                : panelX + Math.max(118, panelWidth / 3);
-        renderStatusLine(graphics, squadX, layout.squadY(),
-                "screen.wok_infantry.status.squad", squad,
-                snapshot.ownSquad() == null ? TacticalBoardTheme.MUTED_TEXT
-                        : TacticalBoardTheme.FRIENDLY);
-
-        Component hint = deploymentHint(snapshot, deployment);
-        drawWrappedText(graphics, hint, panelX + 7, layout.hintY(), panelWidth - 14,
-                layout.maxHintLines(), TacticalBoardTheme.MUTED_TEXT);
-
-        int rowsPerPage = visibleDeploymentRows(layout.listTop(), contentBottom - 52,
-                layout.pointHeight(), layout.rowPitch());
-        DeploymentPagination pagination = deploymentPagination(
-                deployment.points().size(), rowsPerPage, deploymentPage);
-        MutableComponent pointsHeading = Component.translatable(
-                "screen.wok_infantry.deployment.points");
-        if (pagination.multiplePages()) {
-            pointsHeading.append(Component.literal("  " + (pagination.page() + 1)
-                    + "/" + pagination.pageCount()));
-        }
-        graphics.drawString(font, pointsHeading, panelX + 7, layout.pointsHeadingY(),
-                TacticalBoardTheme.TEXT, false);
-    }
-
-    private DeploymentLayout deploymentLayout() {
-        if (compact) {
-            return new DeploymentLayout(contentTop + 26, contentTop + 38,
-                    contentTop + 51, 2, contentTop + 76, contentTop + 90,
-                    18, 20);
-        }
-        return new DeploymentLayout(contentTop + 27, contentTop + 27,
-                contentTop + 47, 1, contentTop + 61, contentTop + 72,
-                20, 23);
-    }
-
+    /** Delegates to {@link SquadBoardModel.Page#visibleRows} (one paging rule, squad-01). */
     static int visibleDeploymentRows(int listTop, int listBottomExclusive,
                                      int pointHeight, int rowPitch) {
-        if (pointHeight <= 0 || rowPitch < pointHeight) {
-            throw new IllegalArgumentException("Invalid deployment row geometry");
-        }
-        int availableHeight = Math.max(0, listBottomExclusive - listTop);
-        if (availableHeight < pointHeight) {
-            return 0;
-        }
-        return 1 + (availableHeight - pointHeight) / rowPitch;
+        return SquadBoardModel.Page.visibleRows(listTop, listBottomExclusive, pointHeight,
+                rowPitch);
     }
 
     static int deploymentPageCount(int pointCount, int rowsPerPage) {
-        if (pointCount <= 0 || rowsPerPage <= 0) {
-            return 1;
-        }
-        return 1 + (pointCount - 1) / rowsPerPage;
+        return SquadBoardModel.Page.pageCount(pointCount, rowsPerPage);
     }
 
     static DeploymentPagination deploymentPagination(int pointCount, int rowsPerPage,
-                                                       int requestedPage) {
-        int safePointCount = Math.max(0, pointCount);
-        int pageCount = deploymentPageCount(safePointCount, rowsPerPage);
-        int page = Math.max(0, Math.min(requestedPage, pageCount - 1));
-        int start = rowsPerPage <= 0 ? 0 : Math.min(safePointCount, page * rowsPerPage);
-        int end = rowsPerPage <= 0 ? 0
-                : Math.min(safePointCount, start + rowsPerPage);
-        return new DeploymentPagination(page, pageCount, start, end);
-    }
-
-    private void drawWrappedText(GuiGraphics graphics, Component text, int x, int y,
-                                 int maxWidth, int maxLines, int color) {
-        List<FormattedCharSequence> lines = font.split(text, Math.max(1, maxWidth));
-        int visibleLines = Math.min(Math.max(0, maxLines), lines.size());
-        for (int index = 0; index < visibleLines; index++) {
-            graphics.drawString(font, lines.get(index), x, y + index * 10, color, false);
-        }
-    }
-
-    private record DeploymentLayout(int phaseY, int squadY, int hintY, int maxHintLines,
-                                    int pointsHeadingY, int listTop,
-                                    int pointHeight, int rowPitch) {
+                                                     int requestedPage) {
+        SquadBoardModel.Page result = SquadBoardModel.Page.of(pointCount, rowsPerPage,
+                requestedPage);
+        return new DeploymentPagination(result.page(), result.pageCount(), result.start(),
+                result.end());
     }
 
     record DeploymentPagination(int page, int pageCount,
@@ -830,195 +950,72 @@ public final class SquadScreen extends Screen {
         }
     }
 
-    private static Component deploymentHint(BattleSnapshot snapshot, DeploymentView deployment) {
-        if (deployment.phase() == DeploymentPhase.WAITING) {
-            long seconds = (deployment.waitingTicks() + 19L) / 20L;
-            return Component.translatable("screen.wok_infantry.deployment.waiting", seconds);
-        }
-        if (deployment.phase() == DeploymentPhase.ACTIVE) {
-            if (deployment.canResupply()) {
-                return Component.translatable("screen.wok_infantry.deployment.resupply_ready");
-            }
-            if (deployment.resupplyTicks() > 0L) {
-                long seconds = (deployment.resupplyTicks() + 19L) / 20L;
-                return Component.translatable("screen.wok_infantry.deployment.resupply_cooldown",
-                        seconds);
-            }
-            return Component.translatable("screen.wok_infantry.deployment.return_to_base");
-        }
-        if (snapshot.ownSquad() == null) {
-            return Component.translatable("screen.wok_infantry.deployment.join_squad_first");
-        }
-        if (deployment.points().isEmpty()) {
-            return Component.translatable("screen.wok_infantry.deployment.no_base");
-        }
-        if (deployment.selectedPointId() == null) {
-            return Component.translatable("screen.wok_infantry.deployment.select_point");
-        }
-        if (!deployment.canDeploy()) {
-            return Component.translatable("screen.wok_infantry.deployment.not_ready");
-        }
-        return Component.translatable("screen.wok_infantry.deployment.ready");
-    }
-
-    private void renderStatusLine(GuiGraphics graphics, int x, int y, String labelKey,
-                                  Component value, int valueColor) {
-        Component label = Component.translatable(labelKey);
-        graphics.drawString(font, label, x, y, TacticalBoardTheme.MUTED_TEXT, false);
-        graphics.drawString(font, value, x + font.width(label) + 4, y, valueColor, false);
-    }
-
-    @Override
-    public void onClose() {
-        Minecraft.getInstance().setScreen(previous);
-    }
-
-    @Override
-    public boolean isPauseScreen() {
-        return false;
-    }
-
-    private void normalizeSelection(BattleSnapshot snapshot) {
-        if (!ownSquadObserved || observedOwnSquad != snapshot.ownSquad()) {
-            observedOwnSquad = snapshot.ownSquad();
-            ownSquadObserved = true;
-            if (snapshot.ownSquad() != null) {
-                selectedSquad = snapshot.ownSquad();
-            }
-        }
-        if (selectedSquad == null) {
-            selectedSquad = snapshot.ownSquad();
-        }
-        if (selectedSquad == null && !snapshot.squads().isEmpty()) {
-            selectedSquad = snapshot.squads().get(0).callsign();
-        }
-        if (selectedSquad == null) {
-            selectedSquad = SquadCallsign.ALPHA;
-        }
-        MemberView member = ClientBattleState.member(selectedMember);
-        if (member == null || member.squad() != selectedSquad) {
-            selectedMember = null;
-        }
-    }
-
-    @Override
-    protected void rebuildWidgets() {
-        clearWidgets();
-        init();
-    }
-
-    private String currentClass(BattleSnapshot snapshot) {
-        MemberView viewer = ClientBattleState.member(snapshot.viewerId());
-        return viewer == null ? "assault" : viewer.classId();
-    }
-
-    private MutableComponent memberButtonLabel(BattleSnapshot snapshot, int index,
-                                               MemberView member) {
-        MutableComponent result = Component.literal(
-                        member.playerId().equals(selectedMember) ? "✓ " : "")
-                .append(Component.literal(index + "  "))
-                .append(member.online() ? "● " : "○ ");
-        if (member.commander()) {
-            result.append(Component.translatable("hud.wok_infantry.role.commander_short")).append(" ");
-        } else if (member.leader()) {
-            result.append(Component.translatable("hud.wok_infantry.role.leader_short")).append(" ");
-        }
-        result.append(Component.literal(member.name())).append("  ")
-                .append(className(snapshot, member.classId()));
-        return result;
-    }
-
-    private static MutableComponent role(BattleSnapshot snapshot) {
-        if (snapshot.commander()) {
-            return Component.translatable("role.wok_infantry.commander");
-        }
-        if (snapshot.squadLeader()) {
-            return Component.translatable("role.wok_infantry.squad_leader");
-        }
-        return Component.translatable("role.wok_infantry.member");
-    }
-
+    /** Full call sign; delegates to {@link SquadLabels#callsign} (signature kept for callers). */
     public static MutableComponent callsign(SquadCallsign value) {
-        return Component.translatable("squad.wok_infantry." + value.id());
+        return SquadLabels.callsign(value);
     }
 
-    private static MutableComponent squadButtonLabel(SquadCallsign callsign, SquadView squad,
-                                                      boolean own, boolean selected) {
-        MutableComponent label = Component.literal(selected ? "› " : "")
-                .append(callsign(callsign));
-        if (own) {
-            label.append(Component.literal(" ★"));
-        }
-        if (squad != null && squad.active()) {
-            label.append(Component.literal("  " + squad.members().size() + "/" + squad.capacity()));
-        }
-        return label;
-    }
-
-    private Component fittedSquadButtonLabel(SquadCallsign callsign, SquadView squad,
-                                             boolean own, boolean selected,
-                                             Component regular, int buttonWidth) {
-        if (font.width(regular) <= Math.max(1, buttonWidth - 6)) {
-            return regular;
-        }
-        String abbreviation = callsign.id().substring(0, 1).toUpperCase(Locale.ROOT);
-        MutableComponent compactLabel = Component.literal(selected ? "› " : "")
-                .append(Component.literal(abbreviation));
-        if (own) {
-            compactLabel.append(Component.literal(" ★"));
-        }
-        if (squad != null && squad.active()) {
-            compactLabel.append(Component.literal(" " + squad.members().size()
-                    + "/" + squad.capacity()));
-        }
-        return ellipsizedButtonLabel(compactLabel, buttonWidth);
-    }
-
-    private static Component targetActionLabel(String key, MemberView target) {
-        MutableComponent label = Component.translatable(key);
-        if (target != null) {
-            label.append(Component.literal(" · " + target.name()));
-        }
-        return label;
-    }
-
-    private Component fittedButtonLabel(String regularKey, String shortKey, int buttonWidth) {
-        return fittedButtonLabel(Component.translatable(regularKey), shortKey, buttonWidth);
-    }
-
-    private Component fittedButtonLabel(Component regular, String shortKey, int buttonWidth) {
-        Component candidate = font.width(regular) <= Math.max(1, buttonWidth - 6)
-                ? regular : Component.translatable(shortKey);
-        return ellipsizedButtonLabel(candidate, buttonWidth);
-    }
-
-    private Component ellipsizedButtonLabel(Component label, int buttonWidth) {
-        int available = Math.max(1, buttonWidth - 6);
-        if (font.width(label) <= available) {
-            return label;
-        }
-        String ellipsis = "…";
-        int bodyWidth = Math.max(1, available - font.width(ellipsis));
-        return Component.literal(font.plainSubstrByWidth(label.getString(), bodyWidth)
-                + ellipsis);
-    }
-
+    /** Delegates to {@link SquadLabels#className(String)} (signature kept for callers). */
     public static MutableComponent className(String classId) {
-        String safeId = classId == null || classId.isBlank() ? "assault" : classId;
-        return Component.translatableWithFallback("class.wok_infantry." + safeId, safeId);
+        return SquadLabels.className(classId);
     }
 
+    /** Delegates to {@link SquadLabels#className(BattleSnapshot, String)}. */
     public static MutableComponent className(BattleSnapshot snapshot, String classId) {
-        String configuredName = snapshot == null ? "" : snapshot.classQuotas().stream()
-                .filter(quota -> quota.classId().equals(classId))
-                .map(ClassQuotaView::displayName)
-                .findFirst().orElse("");
-        return className(classId, configuredName);
+        return SquadLabels.className(snapshot, classId);
     }
 
+    /** Delegates to {@link SquadLabels#className(String, String)}. */
     public static MutableComponent className(String classId, String configuredName) {
-        String safeConfiguredName = ClassQuotaView.sanitizeDisplayName(configuredName);
-        return safeConfiguredName.isBlank()
-                ? className(classId) : Component.literal(safeConfiguredName);
+        return SquadLabels.className(classId, configuredName);
+    }
+
+    // ---- placeholders -------------------------------------------------------------------------------
+
+    /**
+     * Sync placeholder (no snapshot yet: a refresh key; the snapshot was requested once on
+     * opening) or, with a snapshot but no faction, a key to the formation page.
+     */
+    private static final class PlaceholderPainter implements Painter {
+        private final SquadScreen host;
+        private final UiRect well;
+        private final UiRect empty;
+        private final boolean noFaction;
+
+        PlaceholderPainter(SquadScreen host, UiRect content, boolean noFaction) {
+            this.host = host;
+            this.noFaction = noFaction;
+            TacticalShellLayout.Metrics metrics = host.boardMetrics();
+            int width = Math.min(content.width() - 20, 260);
+            int height = metrics.tight() ? 92 : 104;
+            int left = content.left() + (content.width() - width) / 2;
+            int top = content.top() + (content.height() - height) / 2;
+            this.well = new UiRect(left, top, left + width, top + height);
+            this.empty = new UiRect(well.left(), well.top(), well.right(),
+                    well.bottom() - metrics.buttonHeight() - 8);
+            Component label = noFaction ? SquadBoardText.t(SquadBoardText.NOFACTION_OPEN)
+                    : Component.translatable("gui.wok_infantry.refresh");
+            int keyWidth = Math.min(width - 12, host.boardFont().width(label) + 36);
+            int keyLeft = well.left() + (width - keyWidth) / 2;
+            UiRect key = new UiRect(keyLeft, well.bottom() - metrics.buttonHeight() - 6,
+                    keyLeft + keyWidth, well.bottom() - 6);
+            host.addKey(key, label, noFaction ? TacticalIcon.FLAG : TacticalIcon.REFRESH, null,
+                    noFaction ? host::openFormationTab : BattleClientActions::requestSnapshot,
+                    noFaction ? VOTE_UI_ID : REFRESH_UI_ID);
+        }
+
+        @Override
+        public void render(GuiGraphics graphics, SquadBoardModel model, int mouseX, int mouseY) {
+            Font font = host.boardFont();
+            SquadBoardBlocks.region(graphics, "squad.sync", well);
+            TacticalDraw.well(graphics, well);
+            TacticalDraw.empty(graphics, font, empty,
+                    noFaction ? TacticalIcon.FLAG : TacticalIcon.REFRESH,
+                    SquadBoardText.t(noFaction ? SquadBoardText.NOFACTION_TITLE
+                            : SquadBoardText.SYNC_TITLE),
+                    SquadBoardText.t(noFaction ? SquadBoardText.NOFACTION_HINT
+                            : SquadBoardText.SYNC_HINT), false);
+            SquadBoardBlocks.endRegion(graphics);
+        }
     }
 }

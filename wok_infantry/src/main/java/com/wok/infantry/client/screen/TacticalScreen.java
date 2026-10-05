@@ -2,6 +2,7 @@ package com.wok.infantry.client.screen;
 
 import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.GameNarrator;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Tooltip;
@@ -162,6 +163,8 @@ public abstract class TacticalScreen extends Screen {
                 if (!modalLaidOut) {
                     layoutModal();
                 }
+                // A dialog key never adopts a page label drawn under it (uiTest probe only).
+                UiLayoutProbe.layer();
                 pose.pushPose();
                 pose.translate(0.0F, 0.0F, MODAL_Z);
                 graphics.fill(0, 0, width + 1, height + 1, TacticalBoardTheme.MODAL_DIM);

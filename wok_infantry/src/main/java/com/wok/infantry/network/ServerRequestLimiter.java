@@ -25,12 +25,18 @@ public final class ServerRequestLimiter {
         if (player == null || kind == null) {
             return false;
         }
-        long now = System.nanoTime();
+        return allow(player.getUUID(), kind, System.nanoTime());
+    }
+
+    /** Clock-injected core of {@link #allow(ServerPlayer, Kind)}, package-visible for tests. */
+    static synchronized boolean allow(UUID playerId, Kind kind, long now) {
+        if (playerId == null || kind == null) {
+            return false;
+        }
         if (--requestsUntilCleanup <= 0 || PLAYERS.size() >= MAX_TRACKED_PLAYERS) {
             cleanup(now);
             requestsUntilCleanup = 256;
         }
-        UUID playerId = player.getUUID();
         PlayerState state = PLAYERS.get(playerId);
         if (state == null) {
             if (PLAYERS.size() >= MAX_TRACKED_PLAYERS) {
@@ -73,6 +79,10 @@ public final class ServerRequestLimiter {
         // Formation catalog requests have their own budget, so opening the squad page (OPEN_UI)
         // and pressing its "编制" key within a second no longer drops the catalog request.
         FORMATION_CATALOG(1_000),
+        // Loadout screen requests (player and administrator) have their own budget too, so a
+        // quick "配装" tab press right after opening the terminal key is no longer dropped
+        // silently (squad-07).
+        LOADOUT_OPEN(1_000),
         FORMATION_SELECTION(500),
         SQUAD_ACTION(250),
         CLASS_SELECTION(500),
@@ -88,6 +98,11 @@ public final class ServerRequestLimiter {
 
         Kind(long cooldownMillis) {
             cooldownNanos = cooldownMillis * 1_000_000L;
+        }
+
+        /** Minimum spacing between two allowed requests of this kind from one player. */
+        public long cooldownMillis() {
+            return cooldownNanos / 1_000_000L;
         }
     }
 

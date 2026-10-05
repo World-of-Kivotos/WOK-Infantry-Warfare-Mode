@@ -2,6 +2,11 @@ package com.wok.infantry.client.screen;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.wok.infantry.battle.BattleSnapshot;
+import com.wok.infantry.battle.ClassQuotaView;
+import com.wok.infantry.battle.Faction;
+import com.wok.infantry.battle.FormationContextView;
+import com.wok.infantry.battle.PermissionView;
 import com.wok.infantry.battle.SquadCallsign;
 import com.wok.infantry.battle.SquadView;
 import net.minecraft.network.chat.Component;
@@ -59,6 +64,57 @@ class SquadLabelsTest {
         TranslatableContents contents = (TranslatableContents) count.getContents();
         assertEquals(SquadLabels.MEMBER_COUNT_KEY, contents.getKey());
         assertEquals(List.of(0, 6), List.of(contents.getArgs()));
+    }
+
+    @Test
+    void singleRoleNamesPutTheCommanderFirstAndNameTheUnassigned() {
+        assertEquals(SquadLabels.COMMANDER_KEY, key(SquadLabels.roleName(true, true, true)));
+        assertEquals(SquadLabels.COMMANDER_KEY, key(SquadLabels.roleName(false, false, true)));
+        assertEquals(SquadLabels.LEADER_KEY, key(SquadLabels.roleName(true, true, false)));
+        assertEquals(SquadLabels.MEMBER_KEY, key(SquadLabels.roleName(true, false, false)));
+        assertEquals(SquadLabels.UNASSIGNED_KEY, key(SquadLabels.roleName(false, false, false)));
+        assertEquals(SquadLabels.COMMANDER_SHORT_KEY,
+                key(SquadLabels.roleNameShort(true, true, true)));
+        assertEquals(SquadLabels.LEADER_SHORT_KEY,
+                key(SquadLabels.roleNameShort(true, true, false)));
+        assertEquals(SquadLabels.MEMBER_SHORT_KEY,
+                key(SquadLabels.roleNameShort(true, false, false)));
+        assertEquals(SquadLabels.UNASSIGNED_KEY,
+                key(SquadLabels.roleNameShort(false, false, false)));
+    }
+
+    @Test
+    void squadScreenStaticLabelsDelegateToSquadLabels() {
+        assertEquals(SquadLabels.callsign(SquadCallsign.DELTA),
+                SquadScreen.callsign(SquadCallsign.DELTA));
+        assertEquals(SquadLabels.className("medic"), SquadScreen.className("medic"));
+        assertEquals("class.wok_infantry.assault", key(SquadScreen.className((String) null)));
+        assertEquals("突击兵", SquadScreen.className("assault", " 突击兵 ").getString());
+        BattleSnapshot snapshot = new BattleSnapshot(new UUID(0L, 1L), Faction.BLUE, null,
+                false, false, 1, 0, 40, 8, List.of(), List.of(), List.of(),
+                new PermissionView(false, false, false, false, false, false, false),
+                List.of(new ClassQuotaView("medic", "医疗兵", 2, 0)), 0L, 0L);
+        assertEquals("医疗兵", SquadScreen.className(snapshot, "medic").getString());
+        assertEquals("class.wok_infantry.sniper", key(SquadLabels.className(snapshot,
+                "sniper")));
+    }
+
+    @Test
+    void publicFactionAndFormationNamesComeFromTheContext() {
+        BattleSnapshot plain = new BattleSnapshot(new UUID(0L, 1L), Faction.RED, null,
+                false, false, 1, 0, 40, 8, List.of(), List.of(), List.of(),
+                new PermissionView(false, false, false, false, false, false, false),
+                List.of(), 0L, 0L);
+        assertEquals("faction.wok_infantry.red", key(SquadLabels.factionName(plain)));
+        assertEquals("faction.wok_infantry.blue", key(SquadLabels.enemyFactionName(plain)));
+        assertNull(SquadLabels.formationName(plain), "no formation before the lock");
+        assertEquals("faction.wok_infantry.unassigned", key(SquadLabels.factionName(null)));
+
+        BattleSnapshot named = plain.withFormationContext(new FormationContextView("default",
+                "常规编制", "assault", "kaiser", "凯撒", 40, "academy", "学院军", 40));
+        assertEquals("凯撒", SquadLabels.factionName(named).getString());
+        assertEquals("学院军", SquadLabels.enemyFactionName(named).getString());
+        assertEquals("常规编制", SquadLabels.formationName(named).getString());
     }
 
     @Test

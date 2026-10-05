@@ -270,7 +270,8 @@ public final class HudFixtures {
                     real.factionCapacity(), real.squadCapacity(), real.squads(),
                     real.alliedPositions(), real.markers(), real.permissions(),
                     real.classQuotas(), real.support(), real.deployment(),
-                    real.serverTimeMillis(), real.revision());
+                    real.serverTimeMillis(), real.revision(), real.formationContext(),
+                    real.viewerClassId(), real.kickCooldowns());
         }
         SquadCallsign own = real.ownSquad() != null ? real.ownSquad() : SquadCallsign.ALPHA;
         List<MemberView> members = mode == Mode.ROSTER8 ? rosterOfEight(viewer, viewerName, own)
@@ -292,7 +293,8 @@ public final class HudFixtures {
                 real.factionMemberCount(), real.enemyFactionMemberCount(), real.factionCapacity(),
                 real.squadCapacity(), squads, real.alliedPositions(), real.markers(),
                 real.permissions(), real.classQuotas(), real.support(), real.deployment(),
-                real.serverTimeMillis(), real.revision());
+                real.serverTimeMillis(), real.revision(), real.formationContext(),
+                real.viewerClassId(), real.kickCooldowns());
     }
 
     /**

@@ -70,6 +70,60 @@ public final class BattleClientNetworkBridge {
         BattleNetwork.sendToServer(new BattleOpenPacket(BattleOpenTarget.DEPLOYMENT));
     }
 
+    /** What a deployment request ({@link BattleOpenTarget#DEPLOYMENT}) does to the open screen. */
+    enum DeploymentArrival {
+        /** The battle terminal is open: switch it to its deployment page (no second terminal). */
+        SWITCH_PAGE,
+        /** Open the deployment page (a terminal screen is replaced, other screens stay below). */
+        OPEN,
+        /** Leave the screen alone (already deployed, or the player is typing / in an inventory). */
+        IGNORE
+    }
+
+    /**
+     * Pure rule of the deployment request (text-state-08): an open battle terminal switches to its
+     * deployment page in place; nothing happens once the viewer is deployed or while a chat,
+     * inventory or WOK editor with a draft is open; otherwise the deployment page opens (login and
+     * respawn keep opening it).
+     */
+    static DeploymentArrival deploymentArrival(boolean terminalOpen, boolean deployed,
+                                               boolean busyScreen) {
+        if (deployed) {
+            return DeploymentArrival.IGNORE;
+        }
+        if (terminalOpen) {
+            return DeploymentArrival.SWITCH_PAGE;
+        }
+        return busyScreen ? DeploymentArrival.IGNORE : DeploymentArrival.OPEN;
+    }
+
+    /** Screens a deployment request must not replace: typing, inventories, WOK editors. */
+    static boolean busyScreen(Screen screen) {
+        return screen instanceof net.minecraft.client.gui.screens.ChatScreen
+                || screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>
+                || screen instanceof net.minecraft.client.gui.screens.inventory.AbstractSignEditScreen
+                || screen instanceof net.minecraft.client.gui.screens.inventory.BookEditScreen
+                || screen instanceof com.wok.infantry.client.screen.PlayerLoadoutScreen
+                || screen instanceof com.wok.infantry.client.screen.AdminLoadoutScreen
+                || screen instanceof com.wok.infantry.client.screen.WeaponTuningScreen
+                || screen instanceof com.wok.infantry.client.screen.AmmoSupplyScreen
+                || screen instanceof com.wok.infantry.client.screen.CatalogTransferScreen;
+    }
+
+    private static void openDeployment(Minecraft minecraft, Screen current,
+                                       BattleSnapshot snapshot) {
+        switch (deploymentArrival(current instanceof SquadScreen,
+                snapshot.deployment().phase() == com.wok.infantry.deployment.DeploymentPhase.ACTIVE,
+                busyScreen(current))) {
+            case SWITCH_PAGE -> ((SquadScreen) current).showPage(
+                    com.wok.infantry.client.screen.BattleTab.DEPLOYMENT);
+            // A terminal parent is replaced (the squad screen returns to its root).
+            case OPEN -> minecraft.setScreen(new SquadScreen(current, true));
+            case IGNORE -> {
+            }
+        }
+    }
+
     private static final class IncomingHandler implements BattleClientPacketBridge.Handler {
         @Override
         public void applySnapshot(BattleSnapshot snapshot, BattleOpenTarget openTarget) {
@@ -105,7 +159,7 @@ public final class BattleClientNetworkBridge {
                         minecraft.setScreen(new SquadScreen(current));
                     }
                 }
-                case DEPLOYMENT -> minecraft.setScreen(new SquadScreen(current, true));
+                case DEPLOYMENT -> openDeployment(minecraft, current, snapshot);
                 case MAP -> {
                     if (!(current instanceof TacticalMapScreen)) {
                         minecraft.setScreen(new TacticalMapScreen(current));

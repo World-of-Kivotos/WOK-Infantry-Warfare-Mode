@@ -80,6 +80,23 @@ public final class UiTestWidgets {
                 com.wok.infantry.client.ClientBattleState.snapshot()).getString();
     }
 
+    /**
+     * Pagination of the squad screen's point list as {@code [page, pageCount, start, end]}, or
+     * {@code null} when the deployment page is not shown (squad terminal, 0.5.0-beta.1).
+     */
+    public static int[] squadPointPage(SquadScreen screen) {
+        SquadBoardModel.Page page = screen.shownPointPage();
+        return page == null ? null : new int[]{page.page(), page.pageCount(), page.start(),
+                page.end()};
+    }
+
+    /** Pagination of the squad screen's class list, like {@link #squadPointPage}. */
+    public static int[] squadClassPage(SquadScreen screen) {
+        SquadBoardModel.Page page = screen.shownClassPage();
+        return page == null ? null : new int[]{page.page(), page.pageCount(), page.start(),
+                page.end()};
+    }
+
     private static int[] rect(TacticalMapLayout.Rect rect) {
         return new int[]{rect.left(), rect.top(), rect.right(), rect.bottom()};
     }

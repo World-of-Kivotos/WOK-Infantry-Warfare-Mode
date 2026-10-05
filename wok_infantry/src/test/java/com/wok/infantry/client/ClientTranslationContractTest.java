@@ -7,6 +7,7 @@ import com.wok.infantry.battle.BattleRules;
 import com.wok.infantry.battle.Faction;
 import com.wok.infantry.battle.SquadCallsign;
 import com.wok.infantry.battle.TacticalMarkerType;
+import com.wok.infantry.client.screen.SquadBoardModel;
 import com.wok.infantry.deployment.DeploymentPhase;
 import org.junit.jupiter.api.Test;
 
@@ -269,9 +270,10 @@ class ClientTranslationContractTest {
                 parameterizedKeys.add(key);
             }
         }
-        assertEquals(EXPECTED_ARGUMENT_COUNTS.keySet(), parameterizedKeys,
+        Map<String, Integer> expectedCounts = expectedArgumentCounts();
+        assertEquals(expectedCounts.keySet(), parameterizedKeys,
                 "every parameterized translation must declare its Java call-site contract");
-        EXPECTED_ARGUMENT_COUNTS.forEach((key, argumentCount) -> {
+        expectedCounts.forEach((key, argumentCount) -> {
             assertTrue(english.containsKey(key), () -> EN_US + " is missing " + key);
             assertEquals(sequentialArgumentSignature(argumentCount),
                     argumentSignature(english.get(key)),
@@ -285,6 +287,8 @@ class ClientTranslationContractTest {
         Map<String, String> chinese = readBundle(ZH_CN);
         Set<String> required = new TreeSet<>(requiredDynamicKeys());
         required.addAll(literalTranslationKeysFromCompiledMainClasses());
+        // Squad board keys are built from enum ids ("…reason.<id>_short"), not literals.
+        required.addAll(SquadBoardModel.translationKeys());
 
         required.forEach(key -> {
             assertTrue(english.containsKey(key), () -> EN_US + " is missing " + key);
@@ -301,6 +305,15 @@ class ClientTranslationContractTest {
                 assertEquals(value, english.get(key), () -> "unexpected compact label " + key));
         EXPECTED_CHINESE_COMPACT_LABELS.forEach((key, value) ->
                 assertEquals(value, chinese.get(key), () -> "unexpected compact label " + key));
+    }
+
+    /** Hand-declared counts plus the squad board's generated keys (0.5.0-beta.1). */
+    private static Map<String, Integer> expectedArgumentCounts() {
+        Map<String, Integer> counts = new TreeMap<>(EXPECTED_ARGUMENT_COUNTS);
+        SquadBoardModel.translationArgumentCounts().forEach((key, count) ->
+                assertEquals(null, counts.put(key, count),
+                        () -> "squad board key declared twice: " + key));
+        return counts;
     }
 
     private static Set<String> literalTranslationKeysFromCompiledMainClasses() throws Exception {
