@@ -2,8 +2,11 @@ package com.wok.infantry.network.battle;
 
 import com.wok.infantry.battle.BattleRules;
 import com.wok.infantry.battle.BattleSnapshot;
+import com.wok.infantry.battle.ClassLimitView;
 import com.wok.infantry.battle.ClassQuotaView;
 import com.wok.infantry.battle.Faction;
+import com.wok.infantry.battle.FormationContextView;
+import com.wok.infantry.battle.KickCooldownView;
 import com.wok.infantry.battle.MemberPosition;
 import com.wok.infantry.battle.MemberState;
 import com.wok.infantry.battle.MemberView;
@@ -267,7 +270,7 @@ class BattleSnapshotCodecTest {
 
     @Test
     void dynamicSupportCatalogUsesCurrentProtocolAndItsExactWireLimit() {
-        assertEquals("19", BattleNetwork.PROTOCOL_VERSION);
+        assertEquals("20", BattleNetwork.PROTOCOL_VERSION);
         assertEquals(32, BattleNetworkLimits.MAX_SUPPORT_OPTIONS);
 
         List<SupportOptionView> options = new ArrayList<>();
@@ -410,8 +413,8 @@ class BattleSnapshotCodecTest {
     }
 
     @Test
-    void protocolNineteenRoundTripsEveryMemberStateAndHealthRatio() {
-        assertEquals("19", BattleNetwork.PROTOCOL_VERSION);
+    void everyMemberStateAndHealthRatioRoundTrips() {
+        assertEquals("20", BattleNetwork.PROTOCOL_VERSION);
         SquadView squad = new SquadView(SquadCallsign.ALPHA, playerId(1), List.of(
                 stateMember(1, true, MemberState.DEPLOYED, 0.75F),
                 stateMember(2, false, MemberState.DOWNED, 0.05F),
@@ -494,6 +497,155 @@ class BattleSnapshotCodecTest {
     }
 
     @Test
+    void protocolTwentyViewerContextAndSquadClassLimitsRoundTrip() {
+        assertEquals("20", BattleNetwork.PROTOCOL_VERSION);
+        SquadView alpha = limitedSquad(SquadCallsign.ALPHA, 1, 3, 6,
+                List.of(new ClassLimitView("support", 1, 1),
+                        new ClassLimitView("assault", 4, 2),
+                        new ClassLimitView("medic", 0, 0)));
+        SquadView bravo = limitedSquad(SquadCallsign.BRAVO, 10, 2, 4,
+                List.of(new ClassLimitView("support", 1, 1),
+                        new ClassLimitView("assault", 3, 1)));
+        FormationContextView context = new FormationContextView("millennium_seminar_mobile",
+                "千禧年研讨会机动部队", "assault", "academy", "学院军", 40, "kaiser", "凯撒", 36);
+        List<KickCooldownView> cooldowns = List.of(
+                new KickCooldownView(SquadCallsign.CHARLIE, 5_000L + 59_000L),
+                new KickCooldownView(SquadCallsign.BRAVO, 5_000L + 1L));
+        BattleSnapshot original = snapshot(List.of(alpha, bravo), List.of(), List.of(),
+                LEADER_PERMISSIONS, emptyDeployment(), 5, 12)
+                .withViewerContext(context, "support", cooldowns);
+
+        BattleSnapshot decoded = decodeBytes(encodeBytes(original));
+
+        assertEquals(original, decoded);
+        assertEquals(context, decoded.formationContext());
+        assertEquals("support", decoded.viewerClassId());
+        assertEquals(List.of(SquadCallsign.BRAVO, SquadCallsign.CHARLIE),
+                decoded.kickCooldowns().stream().map(KickCooldownView::squad).toList(),
+                "cooldowns are kept in call sign order");
+        assertEquals(2, decoded.squad(SquadCallsign.ALPHA).classLimit("assault").used());
+        assertEquals(true, decoded.squad(SquadCallsign.ALPHA).classLimit("medic").closed());
+        assertEquals(59_000L, decoded.kickCooldownRemainingMillis(SquadCallsign.CHARLIE,
+                5_000L));
+        assertEquals(0L, decoded.kickCooldownRemainingMillis(SquadCallsign.ALPHA, 5_000L));
+        assertEquals(true, decoded.formationLocked());
+    }
+
+    @Test
+    void compatibilityConstructorsKeepTheProtocolNineteenShape() {
+        SquadView squad = new SquadView(SquadCallsign.ALPHA, playerId(1),
+                List.of(member(playerId(1), "Viewer", SquadCallsign.ALPHA, true, false)),
+                BattleRules.SQUAD_CAPACITY);
+        BattleSnapshot legacy = snapshot(List.of(squad), List.of(), List.of(),
+                LEADER_PERMISSIONS, emptyDeployment(), 1, 0);
+
+        assertEquals(List.of(), squad.classLimits());
+        assertEquals(FormationContextView.EMPTY, legacy.formationContext());
+        assertEquals("support", legacy.viewerClassId(),
+                "the 18-argument constructor takes the viewer class from the roster");
+        assertEquals(List.of(), legacy.kickCooldowns());
+        assertEquals(legacy, decodeBytes(encodeBytes(legacy)));
+
+        BattleSnapshot unassigned = snapshot(List.of(), List.of(), List.of(),
+                LEADER_PERMISSIONS, emptyDeployment(), 0, 0);
+        assertEquals("", unassigned.viewerClassId());
+        assertEquals(false, unassigned.formationLocked());
+        assertEquals(unassigned, decodeBytes(encodeBytes(unassigned)));
+    }
+
+    @Test
+    void encoderRejectsContradictorySquadClassLimits() {
+        // used must count exactly the members holding the class
+        assertEncodeRejected(snapshot(List.of(limitedSquad(SquadCallsign.ALPHA, 1, 2, 8,
+                        List.of(new ClassLimitView("assault", 4, 2)))), List.of(), List.of(),
+                LEADER_PERMISSIONS, emptyDeployment(), 2, 0));
+        // a limit above the squad's own capacity
+        assertEncodeRejected(snapshot(List.of(limitedSquad(SquadCallsign.ALPHA, 1, 2, 4,
+                        List.of(new ClassLimitView("assault", 5, 1)))), List.of(), List.of(),
+                LEADER_PERMISSIONS, emptyDeployment(), 2, 0));
+        // the same class twice
+        assertEncodeRejected(snapshot(List.of(limitedSquad(SquadCallsign.ALPHA, 1, 2, 8,
+                        List.of(new ClassLimitView("assault", 4, 1),
+                                new ClassLimitView("assault", 2, 1)))), List.of(), List.of(),
+                LEADER_PERMISSIONS, emptyDeployment(), 2, 0));
+        // more class limits than the wire allows
+        List<ClassLimitView> tooMany = new ArrayList<>();
+        for (int index = 0; index <= BattleNetworkLimits.MAX_SQUAD_CLASS_LIMITS; index++) {
+            tooMany.add(new ClassLimitView("class_" + index, 0, 0));
+        }
+        assertEncodeRejected(snapshot(List.of(limitedSquad(SquadCallsign.ALPHA, 1, 1, 8,
+                        tooMany)), List.of(), List.of(), LEADER_PERMISSIONS,
+                emptyDeployment(), 1, 0));
+    }
+
+    @Test
+    void encoderRejectsInvalidViewerContext() {
+        SquadView squad = limitedSquad(SquadCallsign.ALPHA, 1, 2, 8, List.of());
+        BattleSnapshot base = snapshot(List.of(squad), List.of(), List.of(),
+                LEADER_PERMISSIONS, emptyDeployment(), 2, 0);
+
+        assertEncodeRejected(base.withViewerContext(FormationContextView.EMPTY, "assault",
+                List.of()));
+        assertEncodeRejected(base.withViewerContext(FormationContextView.EMPTY, "Bad Id",
+                List.of()));
+        // an expired cooldown is never sent
+        assertEncodeRejected(base.withViewerContext(FormationContextView.EMPTY, "support",
+                List.of(new KickCooldownView(SquadCallsign.BRAVO, 5_000L))));
+        assertEncodeRejected(base.withViewerContext(FormationContextView.EMPTY, "support",
+                List.of(new KickCooldownView(SquadCallsign.BRAVO,
+                        5_000L + BattleNetworkLimits.MAX_KICK_COOLDOWN_MILLIS + 1L))));
+        assertEncodeRejected(base.withViewerContext(FormationContextView.EMPTY, "support",
+                List.of(new KickCooldownView(SquadCallsign.BRAVO, 6_000L),
+                        new KickCooldownView(SquadCallsign.BRAVO, 7_000L))));
+
+        BattleSnapshot unassigned = new BattleSnapshot(playerId(1), null, null, false, false,
+                0, 0, BattleRules.FACTION_CAPACITY, BattleRules.SQUAD_CAPACITY, List.of(),
+                List.of(), List.of(), LEADER_PERMISSIONS, List.of(), emptyDeployment(),
+                5_000L, 7L);
+        assertEncodeRejected(unassigned.withViewerContext(FormationContextView.EMPTY, "",
+                List.of(new KickCooldownView(SquadCallsign.ALPHA, 6_000L))));
+    }
+
+    @Test
+    void formationContextIsClippedBeforeItCanBreakTheEncoder() {
+        String longName = "名".repeat(FormationContextView.MAX_NAME_LENGTH + 20);
+        FormationContextView context = new FormationContextView("Default", longName + "\n",
+                "ASSAULT", "academy", "学院军\u0007", 400, "kaiser!", "凯撒", -3);
+
+        assertEquals("default", context.formationId());
+        assertEquals(FormationContextView.MAX_NAME_LENGTH, context.formationName().length());
+        assertEquals("assault", context.defaultClassId());
+        assertEquals("学院军", context.factionName());
+        assertEquals(FormationContextView.MAX_CAPACITY, context.factionCapacity());
+        assertEquals("", context.enemyFactionId(), "malformed ids become empty");
+        assertEquals(0, context.enemyFactionCapacity());
+
+        BattleSnapshot snapshot = snapshot(List.of(), List.of(), List.of(), LEADER_PERMISSIONS,
+                emptyDeployment(), 0, 0).withFormationContext(context);
+        assertEquals(snapshot, decodeBytes(encodeBytes(snapshot)));
+    }
+
+    @Test
+    void decoderRejectsUnsanitizedContextTextAndOverlongCooldownLists() {
+        FormationContextView context = new FormationContextView("default", "常规编制",
+                "assault", "academy", "Academy", 40, "kaiser", "Kaiser", 40);
+        BattleSnapshot snapshot = snapshot(List.of(), List.of(), List.of(), LEADER_PERMISSIONS,
+                emptyDeployment(), 0, 0).withFormationContext(context);
+        byte[] valid = encodeBytes(snapshot);
+
+        byte[] upperCaseId = replaceOnce(valid, utfBytes("academy"), utfBytes("ACADEMY"));
+        assertThrows(IllegalArgumentException.class, () -> decodeBytes(upperCaseId));
+        byte[] paddedName = replaceOnce(valid, utfBytes("Academy"), utfBytes(" Acad "));
+        assertThrows(IllegalArgumentException.class, () -> decodeBytes(paddedName));
+
+        // last byte is the cooldown count (0); a count above the call sign total is refused
+        byte[] tooManyCooldowns = valid.clone();
+        tooManyCooldowns[tooManyCooldowns.length - 1] =
+                (byte) (BattleNetworkLimits.MAX_KICK_COOLDOWNS + 1);
+        assertThrows(IllegalArgumentException.class, () -> decodeBytes(tooManyCooldowns));
+    }
+
+    @Test
     void completeSnapshotPacketRejectsTrailingPayload() {
         BattleSnapshotPacket packet = new BattleSnapshotPacket(
                 snapshot(List.of(), List.of(), List.of(), LEADER_PERMISSIONS,
@@ -509,6 +661,19 @@ class BattleSnapshotCodecTest {
         } finally {
             buffer.release();
         }
+    }
+
+    /** A squad whose first member leads (class support) and the rest are assault. */
+    private static SquadView limitedSquad(SquadCallsign callsign, int firstPlayerIndex,
+                                          int memberCount, int capacity,
+                                          List<ClassLimitView> limits) {
+        List<MemberView> members = new ArrayList<>();
+        for (int offset = 0; offset < memberCount; offset++) {
+            int playerIndex = firstPlayerIndex + offset;
+            members.add(member(playerId(playerIndex), "Player" + playerIndex, callsign,
+                    offset == 0, false));
+        }
+        return new SquadView(callsign, members.get(0).playerId(), members, capacity, limits);
     }
 
     private static List<SquadView> fullFactionSquads() {

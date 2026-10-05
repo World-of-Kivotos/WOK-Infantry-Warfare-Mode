@@ -1,6 +1,7 @@
 package com.wok.infantry.network.battle;
 
 import com.wok.infantry.battle.BattleRules;
+import com.wok.infantry.battle.FormationContextView;
 import com.wok.infantry.support.SupportDefinition;
 import com.wok.infantry.support.SupportOptionView;
 import com.wok.infantry.support.SupportView;
@@ -28,12 +29,22 @@ public final class BattleNetworkLimits {
             SupportOptionView.MAX_AVAILABILITY_REASON_LENGTH;
     public static final int MAX_SUPPORT_SERVICE_MESSAGE_LENGTH =
             SupportView.MAX_SERVICE_MESSAGE_LENGTH;
+    /** Protocol 20 formation context: catalog ids and public display names. */
+    public static final int MAX_CONTEXT_ID_LENGTH = FormationContextView.MAX_ID_LENGTH;
+    public static final int MAX_CONTEXT_NAME_LENGTH = FormationContextView.MAX_NAME_LENGTH;
 
     public static final int MAX_SQUADS = 5;
     public static final int MAX_MEMBERS_PER_SQUAD = BattleRules.SQUAD_CAPACITY;
     public static final int MAX_ALLIED_POSITIONS = BattleRules.FACTION_CAPACITY;
     public static final int MAX_MARKERS = BattleRules.MAX_MARKERS_PER_FACTION;
     public static final int MAX_CLASS_QUOTAS = 64;
+    /** Protocol 20: class limits per squad (same bound as a formation's class list). */
+    public static final int MAX_SQUAD_CLASS_LIMITS = 64;
+    /** Protocol 20: at most one kick cooldown per call sign. */
+    public static final int MAX_KICK_COOLDOWNS = MAX_SQUADS;
+    /** A cooldown never reaches further ahead of the snapshot clock than the rule allows. */
+    public static final long MAX_KICK_COOLDOWN_MILLIS =
+            BattleRules.SQUAD_KICK_REJOIN_COOLDOWN_MILLIS;
     public static final int MAX_DEPLOYMENT_POINTS = 16;
     /** Fixed wire caps keep a dynamic provider catalog from allocating unbounded collections. */
     public static final int MAX_SUPPORT_OPTIONS = 32;

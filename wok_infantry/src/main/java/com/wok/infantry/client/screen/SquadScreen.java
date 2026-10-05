@@ -763,34 +763,23 @@ public final class SquadScreen extends Screen {
                 20, 23);
     }
 
+    /** Delegates to {@link SquadBoardModel.Page#visibleRows} (one paging rule, squad-01). */
     static int visibleDeploymentRows(int listTop, int listBottomExclusive,
                                      int pointHeight, int rowPitch) {
-        if (pointHeight <= 0 || rowPitch < pointHeight) {
-            throw new IllegalArgumentException("Invalid deployment row geometry");
-        }
-        int availableHeight = Math.max(0, listBottomExclusive - listTop);
-        if (availableHeight < pointHeight) {
-            return 0;
-        }
-        return 1 + (availableHeight - pointHeight) / rowPitch;
+        return SquadBoardModel.Page.visibleRows(listTop, listBottomExclusive, pointHeight,
+                rowPitch);
     }
 
     static int deploymentPageCount(int pointCount, int rowsPerPage) {
-        if (pointCount <= 0 || rowsPerPage <= 0) {
-            return 1;
-        }
-        return 1 + (pointCount - 1) / rowsPerPage;
+        return SquadBoardModel.Page.pageCount(pointCount, rowsPerPage);
     }
 
     static DeploymentPagination deploymentPagination(int pointCount, int rowsPerPage,
                                                        int requestedPage) {
-        int safePointCount = Math.max(0, pointCount);
-        int pageCount = deploymentPageCount(safePointCount, rowsPerPage);
-        int page = Math.max(0, Math.min(requestedPage, pageCount - 1));
-        int start = rowsPerPage <= 0 ? 0 : Math.min(safePointCount, page * rowsPerPage);
-        int end = rowsPerPage <= 0 ? 0
-                : Math.min(safePointCount, start + rowsPerPage);
-        return new DeploymentPagination(page, pageCount, start, end);
+        SquadBoardModel.Page page = SquadBoardModel.Page.of(pointCount, rowsPerPage,
+                requestedPage);
+        return new DeploymentPagination(page.page(), page.pageCount(), page.start(),
+                page.end());
     }
 
     private void drawWrappedText(GuiGraphics graphics, Component text, int x, int y,
@@ -938,8 +927,9 @@ public final class SquadScreen extends Screen {
         return Component.translatable("role.wok_infantry.member");
     }
 
+    /** Full call sign; delegates to {@link SquadLabels#callsign} (signature kept for callers). */
     public static MutableComponent callsign(SquadCallsign value) {
-        return Component.translatable("squad.wok_infantry." + value.id());
+        return SquadLabels.callsign(value);
     }
 
     private static MutableComponent squadButtonLabel(SquadCallsign callsign, SquadView squad,
@@ -1003,22 +993,18 @@ public final class SquadScreen extends Screen {
                 + ellipsis);
     }
 
+    /** Delegates to {@link SquadLabels#className(String)} (signature kept for callers). */
     public static MutableComponent className(String classId) {
-        String safeId = classId == null || classId.isBlank() ? "assault" : classId;
-        return Component.translatableWithFallback("class.wok_infantry." + safeId, safeId);
+        return SquadLabels.className(classId);
     }
 
+    /** Delegates to {@link SquadLabels#className(BattleSnapshot, String)}. */
     public static MutableComponent className(BattleSnapshot snapshot, String classId) {
-        String configuredName = snapshot == null ? "" : snapshot.classQuotas().stream()
-                .filter(quota -> quota.classId().equals(classId))
-                .map(ClassQuotaView::displayName)
-                .findFirst().orElse("");
-        return className(classId, configuredName);
+        return SquadLabels.className(snapshot, classId);
     }
 
+    /** Delegates to {@link SquadLabels#className(String, String)}. */
     public static MutableComponent className(String classId, String configuredName) {
-        String safeConfiguredName = ClassQuotaView.sanitizeDisplayName(configuredName);
-        return safeConfiguredName.isBlank()
-                ? className(classId) : Component.literal(safeConfiguredName);
+        return SquadLabels.className(classId, configuredName);
     }
 }

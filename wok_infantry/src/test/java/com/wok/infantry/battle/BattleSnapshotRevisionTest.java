@@ -106,6 +106,41 @@ class BattleSnapshotRevisionTest {
         }
     }
 
+    @Test
+    void protocolTwentyContextIsStructuralButCooldownCountdownsAreNot() {
+        SquadView squad = squad(member(LEADER, true, MemberState.DEPLOYED, 20.0F, 1.0F));
+        FormationContextView context = new FormationContextView("default", "常规编制",
+                "assault", "academy", "学院军", 40, "kaiser", "凯撒", 40);
+        long baseline = revision(squad, context, "assault", List.of(SquadCallsign.BRAVO));
+
+        assertEquals(baseline, revision(squad, context, "assault",
+                List.of(SquadCallsign.BRAVO)), "same structure, same revision");
+        assertNotEquals(baseline, revision(squad, context, "assault", List.of()),
+                "an expired cooldown re-enables join, so it rebuilds once");
+        assertNotEquals(baseline, revision(squad, context, "medic",
+                List.of(SquadCallsign.BRAVO)), "a class change outside a squad is structural");
+        assertNotEquals(baseline, revision(squad, new FormationContextView("default",
+                "改名编制", "assault", "academy", "学院军", 40, "kaiser", "凯撒", 40), "assault",
+                List.of(SquadCallsign.BRAVO)), "a renamed formation is structural");
+        SquadView limited = new SquadView(SquadCallsign.ALPHA, LEADER, squad.members(),
+                BattleRules.SQUAD_CAPACITY, List.of(new ClassLimitView("assault", 4, 1)));
+        assertNotEquals(baseline, revision(limited, context, "assault",
+                List.of(SquadCallsign.BRAVO)), "class limits are part of the roster shape");
+        assertEquals(List.of(new ClassLimitView("assault", 4, 1)),
+                BattleSnapshotRevision.rosterStructure(List.of(limited)).get(0).classLimits());
+        assertEquals(revision(squad), BattleSnapshotRevision.visible(Faction.BLUE, "default",
+                SquadCallsign.ALPHA, true, false, 2, 3, List.of(squad), List.of(),
+                PERMISSIONS, QUOTAS, 7L, FormationContextView.EMPTY, "", List.of()),
+                "the protocol 19 overload is the empty protocol 20 context");
+    }
+
+    private static long revision(SquadView squad, FormationContextView context,
+                                 String viewerClassId, List<SquadCallsign> cooldowns) {
+        return BattleSnapshotRevision.visible(Faction.BLUE, "default", SquadCallsign.ALPHA,
+                true, false, 2, 3, List.of(squad), List.of(), PERMISSIONS, QUOTAS, 7L,
+                context, viewerClassId, cooldowns);
+    }
+
     private static BattleSnapshot clientSnapshot(SquadView squad, long serverTimeMillis) {
         return new BattleSnapshot(LEADER, Faction.BLUE, SquadCallsign.ALPHA, true, false, 2, 3,
                 BattleRules.FACTION_CAPACITY, BattleRules.SQUAD_CAPACITY, List.of(squad),

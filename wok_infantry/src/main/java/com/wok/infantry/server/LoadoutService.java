@@ -5,6 +5,7 @@ import com.wok.infantry.WokInfantryMod;
 import com.wok.infantry.battle.ActionResult;
 import com.wok.infantry.battle.BattleService;
 import com.wok.infantry.battle.ClassQuotaView;
+import com.wok.infantry.battle.SquadCallsign;
 import com.wok.infantry.deployment.DeploymentService;
 import com.wok.infantry.deployment.KitProvenance;
 import com.wok.infantry.formation.FormationClassEditAction;
@@ -34,6 +35,7 @@ import net.minecraft.world.item.Items;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.Collections;
 import java.util.HashSet;
@@ -211,10 +213,27 @@ public final class LoadoutService {
 
     /** Formation-scoped class limits for one player; global limits are only a safe fallback. */
     public Map<String, Integer> classLimits(ServerPlayer player) {
-        FormationService formations = FormationService.get(player).orElse(null);
         String callsign = BattleService.get(player).flatMap(service ->
                 service.squadOf(player.getUUID())).map(callsignValue -> callsignValue.id())
                 .orElse("");
+        return classLimits(player, callsign);
+    }
+
+    /**
+     * Class limits of every call sign of the player's formation (battle protocol 20 squad quota
+     * table), with the same enabled-class filter and fallback as {@link #classLimits(ServerPlayer)}.
+     * The battle service keeps only the call signs the formation actually configures.
+     */
+    public Map<SquadCallsign, Map<String, Integer>> squadClassLimits(ServerPlayer player) {
+        EnumMap<SquadCallsign, Map<String, Integer>> result = new EnumMap<>(SquadCallsign.class);
+        for (SquadCallsign callsign : SquadCallsign.values()) {
+            result.put(callsign, classLimits(player, callsign.id()));
+        }
+        return Collections.unmodifiableMap(result);
+    }
+
+    private Map<String, Integer> classLimits(ServerPlayer player, String callsign) {
+        FormationService formations = FormationService.get(player).orElse(null);
         Map<String, Integer> formationLimits = formations == null ? Map.of()
                 : formations.classLimits(player.getUUID(), callsign);
         if (formationLimits.isEmpty()) {

@@ -1,8 +1,11 @@
 package com.wok.infantry.network.battle;
 
 import com.wok.infantry.battle.BattleSnapshot;
+import com.wok.infantry.battle.ClassLimitView;
 import com.wok.infantry.battle.ClassQuotaView;
 import com.wok.infantry.battle.Faction;
+import com.wok.infantry.battle.FormationContextView;
+import com.wok.infantry.battle.KickCooldownView;
 import com.wok.infantry.battle.MemberPosition;
 import com.wok.infantry.battle.MemberState;
 import com.wok.infantry.battle.MemberView;
@@ -34,7 +37,11 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 
-/** A bounded binary codec for the already faction-filtered {@link BattleSnapshot}. */
+/**
+ * A bounded binary codec for the already faction-filtered {@link BattleSnapshot}. Protocol 20
+ * appends each squad's class limits after its capacity, and the viewer context (formation
+ * context, viewer class, kick cooldowns) after the revision.
+ */
 public final class BattleSnapshotCodec {
     private BattleSnapshotCodec() {
     }
@@ -44,6 +51,9 @@ public final class BattleSnapshotCodec {
                 snapshot.squadLeader(), snapshot.commander(), snapshot.factionMemberCount(),
                 snapshot.factionCapacity(), snapshot.squadCapacity(), snapshot.squads(),
                 snapshot.alliedPositions());
+        validateViewerContext(snapshot.viewerId(), snapshot.faction(), snapshot.squads(),
+                snapshot.formationContext(), snapshot.viewerClassId(), snapshot.kickCooldowns(),
+                snapshot.serverTimeMillis());
         buffer.writeUUID(snapshot.viewerId());
         writeNullableEnumId(buffer, snapshot.faction(), Faction::id);
         writeNullableEnumId(buffer, snapshot.ownSquad(), SquadCallsign::id);
@@ -88,6 +98,16 @@ public final class BattleSnapshotCodec {
         requireNonNegative(snapshot.revision(), "revision");
         buffer.writeLong(snapshot.serverTimeMillis());
         buffer.writeLong(snapshot.revision());
+
+        // Protocol 20 viewer context, appended after the protocol 19 layout.
+        writeFormationContext(buffer, snapshot.formationContext());
+        buffer.writeUtf(snapshot.viewerClassId(), BattleNetworkLimits.MAX_CLASS_ID_LENGTH);
+        writeListSize(buffer, snapshot.kickCooldowns().size(),
+                BattleNetworkLimits.MAX_KICK_COOLDOWNS, "kick cooldowns");
+        for (KickCooldownView cooldown : snapshot.kickCooldowns()) {
+            buffer.writeUtf(cooldown.squad().id(), BattleNetworkLimits.MAX_ENUM_ID_LENGTH);
+            buffer.writeLong(cooldown.expiresAtMillis());
+        }
     }
 
     public static BattleSnapshot decode(FriendlyByteBuf buffer) {
@@ -147,10 +167,116 @@ public final class BattleSnapshotCodec {
 
         long serverTimeMillis = readNonNegativeLong(buffer, "server time");
         long revision = readNonNegativeLong(buffer, "revision");
+
+        FormationContextView formationContext = readFormationContext(buffer);
+        String viewerClassId = buffer.readUtf(BattleNetworkLimits.MAX_CLASS_ID_LENGTH);
+        int cooldownCount = readListSize(buffer, BattleNetworkLimits.MAX_KICK_COOLDOWNS,
+                "kick cooldowns");
+        List<KickCooldownView> kickCooldowns = new ArrayList<>(cooldownCount);
+        for (int index = 0; index < cooldownCount; index++) {
+            SquadCallsign squad = readRequiredEnumId(buffer, SquadCallsign::byId,
+                    "kick cooldown squad");
+            kickCooldowns.add(new KickCooldownView(squad,
+                    readNonNegativeLong(buffer, "kick cooldown expiry")));
+        }
+        validateViewerContext(viewerId, faction, squads, formationContext, viewerClassId,
+                kickCooldowns, serverTimeMillis);
         return new BattleSnapshot(viewerId, faction, ownSquad, squadLeader, commander,
                 factionMemberCount, enemyFactionMemberCount, factionCapacity, squadCapacity,
                 squads, positions, markers, permissions, classQuotas, support, deployment,
-                serverTimeMillis, revision);
+                serverTimeMillis, revision, formationContext, viewerClassId, kickCooldowns);
+    }
+
+    private static void writeFormationContext(FriendlyByteBuf buffer,
+                                              FormationContextView context) {
+        buffer.writeUtf(context.formationId(), BattleNetworkLimits.MAX_CONTEXT_ID_LENGTH);
+        buffer.writeUtf(context.formationName(), BattleNetworkLimits.MAX_CONTEXT_NAME_LENGTH);
+        buffer.writeUtf(context.defaultClassId(), BattleNetworkLimits.MAX_CONTEXT_ID_LENGTH);
+        buffer.writeUtf(context.factionId(), BattleNetworkLimits.MAX_CONTEXT_ID_LENGTH);
+        buffer.writeUtf(context.factionName(), BattleNetworkLimits.MAX_CONTEXT_NAME_LENGTH);
+        writeBoundedVarInt(buffer, context.factionCapacity(),
+                BattleNetworkLimits.MAX_FACTION_CAPACITY, "context faction capacity");
+        buffer.writeUtf(context.enemyFactionId(), BattleNetworkLimits.MAX_CONTEXT_ID_LENGTH);
+        buffer.writeUtf(context.enemyFactionName(),
+                BattleNetworkLimits.MAX_CONTEXT_NAME_LENGTH);
+        writeBoundedVarInt(buffer, context.enemyFactionCapacity(),
+                BattleNetworkLimits.MAX_FACTION_CAPACITY, "context enemy faction capacity");
+    }
+
+    private static FormationContextView readFormationContext(FriendlyByteBuf buffer) {
+        String formationId = readContextId(buffer, "context formation id");
+        String formationName = readContextName(buffer, "context formation name");
+        String defaultClassId = readContextId(buffer, "context default class id");
+        String factionId = readContextId(buffer, "context faction id");
+        String factionName = readContextName(buffer, "context faction name");
+        int factionCapacity = readBoundedVarInt(buffer,
+                BattleNetworkLimits.MAX_FACTION_CAPACITY, "context faction capacity");
+        String enemyFactionId = readContextId(buffer, "context enemy faction id");
+        String enemyFactionName = readContextName(buffer, "context enemy faction name");
+        int enemyFactionCapacity = readBoundedVarInt(buffer,
+                BattleNetworkLimits.MAX_FACTION_CAPACITY, "context enemy faction capacity");
+        return new FormationContextView(formationId, formationName, defaultClassId,
+                factionId, factionName, factionCapacity, enemyFactionId, enemyFactionName,
+                enemyFactionCapacity);
+    }
+
+    /** A context id on the wire is already normalized; anything else is a malformed packet. */
+    private static String readContextId(FriendlyByteBuf buffer, String field) {
+        String value = buffer.readUtf(BattleNetworkLimits.MAX_CONTEXT_ID_LENGTH);
+        if (!value.equals(FormationContextView.sanitizeId(value))) {
+            throw invalid(field, value);
+        }
+        return value;
+    }
+
+    /** A context name on the wire is already sanitized; anything else is a malformed packet. */
+    private static String readContextName(FriendlyByteBuf buffer, String field) {
+        String value = buffer.readUtf(BattleNetworkLimits.MAX_CONTEXT_NAME_LENGTH);
+        if (!value.equals(FormationContextView.sanitizeName(value))) {
+            throw invalid(field, value);
+        }
+        return value;
+    }
+
+    /**
+     * Protocol 20 viewer fields: the viewer class is a class id or empty and agrees with the
+     * viewer's own roster entry; cooldowns exist only inside a faction, once per call sign, and
+     * expire after the snapshot clock but no later than the rejoin rule allows.
+     */
+    private static void validateViewerContext(UUID viewerId, Faction viewerFaction,
+                                              List<SquadView> squads,
+                                              FormationContextView context,
+                                              String viewerClassId,
+                                              List<KickCooldownView> kickCooldowns,
+                                              long serverTimeMillis) {
+        if (!viewerClassId.isEmpty()
+                && !viewerClassId.equals(FormationContextView.sanitizeId(viewerClassId))) {
+            throw invalid("viewer class id", viewerClassId);
+        }
+        for (SquadView squad : squads) {
+            for (MemberView member : squad.members()) {
+                if (member.playerId().equals(viewerId)
+                        && !member.classId().equals(viewerClassId)) {
+                    throw invalid("viewer class relationship", viewerClassId);
+                }
+            }
+        }
+        if (viewerFaction == null && (!kickCooldowns.isEmpty() || context.hasFormation())) {
+            throw invalid("unassigned viewer context", viewerId);
+        }
+        requireRange(kickCooldowns.size(), 0, BattleNetworkLimits.MAX_KICK_COOLDOWNS,
+                "kick cooldowns");
+        Set<SquadCallsign> cooledDown = new HashSet<>();
+        for (KickCooldownView cooldown : kickCooldowns) {
+            if (!cooledDown.add(cooldown.squad())) {
+                throw invalid("duplicate kick cooldown", cooldown.squad());
+            }
+            long remaining = cooldown.expiresAtMillis() - serverTimeMillis;
+            if (cooldown.expiresAtMillis() <= serverTimeMillis
+                    || remaining > BattleNetworkLimits.MAX_KICK_COOLDOWN_MILLIS) {
+                throw invalid("kick cooldown expiry", cooldown.expiresAtMillis());
+            }
+        }
     }
 
     private static void writeSquad(FriendlyByteBuf buffer, SquadView squad) {
@@ -161,6 +287,17 @@ public final class BattleSnapshotCodec {
         squad.members().forEach(member -> writeMember(buffer, member));
         writeBoundedVarInt(buffer, squad.capacity(),
                 BattleNetworkLimits.MAX_SQUAD_CAPACITY, "squad capacity");
+        writeListSize(buffer, squad.classLimits().size(),
+                BattleNetworkLimits.MAX_SQUAD_CLASS_LIMITS, "squad class limits");
+        for (ClassLimitView limit : squad.classLimits()) {
+            requireLength(limit.classId(), BattleNetworkLimits.MAX_CLASS_ID_LENGTH,
+                    "squad class id");
+            buffer.writeUtf(limit.classId(), BattleNetworkLimits.MAX_CLASS_ID_LENGTH);
+            writeBoundedVarInt(buffer, limit.limit(),
+                    BattleNetworkLimits.MAX_SQUAD_CAPACITY, "squad class limit");
+            writeBoundedVarInt(buffer, limit.used(),
+                    BattleNetworkLimits.MAX_SQUAD_CAPACITY, "squad class usage");
+        }
     }
 
     private static SquadView readSquad(FriendlyByteBuf buffer) {
@@ -174,7 +311,47 @@ public final class BattleSnapshotCodec {
         }
         int capacity = readBoundedVarInt(buffer,
                 BattleNetworkLimits.MAX_SQUAD_CAPACITY, "squad capacity");
-        return new SquadView(callsign, leaderId, members, capacity);
+        int limitCount = readListSize(buffer, BattleNetworkLimits.MAX_SQUAD_CLASS_LIMITS,
+                "squad class limits");
+        List<ClassLimitView> classLimits = new ArrayList<>(limitCount);
+        for (int index = 0; index < limitCount; index++) {
+            String classId = buffer.readUtf(BattleNetworkLimits.MAX_CLASS_ID_LENGTH);
+            int limit = readBoundedVarInt(buffer, BattleNetworkLimits.MAX_SQUAD_CAPACITY,
+                    "squad class limit");
+            int used = readBoundedVarInt(buffer, BattleNetworkLimits.MAX_SQUAD_CAPACITY,
+                    "squad class usage");
+            classLimits.add(new ClassLimitView(classId, limit, used));
+        }
+        return new SquadView(callsign, leaderId, members, capacity, classLimits);
+    }
+
+    /**
+     * A squad's class limits name each class once, never exceed the squad's capacity, and count
+     * exactly the members that hold the class, so the quota table can never contradict the
+     * roster it is drawn next to.
+     */
+    private static void validateSquadClassLimits(SquadView squad) {
+        Set<String> classIds = new HashSet<>();
+        for (ClassLimitView limit : squad.classLimits()) {
+            if (!classIds.add(limit.classId())) {
+                throw invalid("duplicate squad class limit", limit.classId());
+            }
+            if (limit.limit() > squad.capacity()) {
+                throw invalid("squad class limit exceeds capacity", limit.classId());
+            }
+            long holders = squad.members().stream()
+                    .filter(member -> member.classId().equals(limit.classId())).count();
+            if (limit.used() != holders) {
+                throw invalid("squad class usage", limit.classId() + " " + limit.used()
+                        + "/" + holders);
+            }
+        }
+    }
+
+    private static void requireLength(String value, int maximum, String field) {
+        if (value.length() > maximum) {
+            throw invalid(field, value.length());
+        }
     }
 
     private static void writeMember(FriendlyByteBuf buffer, MemberView member) {
@@ -346,6 +523,7 @@ public final class BattleSnapshotCodec {
             if (squad.members().size() > squad.capacity()) {
                 throw invalid("squad members exceed capacity", squad.callsign());
             }
+            validateSquadClassLimits(squad);
 
             Set<UUID> squadMemberIds = new HashSet<>();
             int leaderFlags = 0;

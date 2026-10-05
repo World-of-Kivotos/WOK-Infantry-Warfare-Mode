@@ -5,6 +5,7 @@ import com.wok.infantry.battle.ActionResult;
 import com.wok.infantry.battle.BattleService;
 import com.wok.infantry.battle.BattleRules;
 import com.wok.infantry.battle.Faction;
+import com.wok.infantry.battle.FormationContextView;
 import com.wok.infantry.battle.PlayerRecord;
 import com.wok.infantry.battle.SquadCallsign;
 import com.wok.infantry.deployment.DeploymentService;
@@ -757,6 +758,34 @@ public final class FormationService {
         FactionDefinition faction = active.findFaction(record.faction()).orElse(null);
         return faction != null && faction.enabled()
                 ? Optional.of(faction) : Optional.empty();
+    }
+
+    /**
+     * Public names for the battle snapshot's viewer context (battle protocol 20): the viewer's
+     * formation (only while it is a valid selection, the same rule the squad capacities use),
+     * its default class, and both public factions with their player caps. Reads the catalog
+     * only, never the battle service, so it is safe inside a battle snapshot build.
+     */
+    public FormationContextView formationContext(Faction battleSide, String formationId) {
+        if (battleSide == null) {
+            return FormationContextView.EMPTY;
+        }
+        FormationConfigData active = catalog;
+        FactionDefinition own = active.findFaction(battleSide).orElse(null);
+        FactionDefinition enemy = active.findFaction(battleSide.opposite()).orElse(null);
+        FormationDefinition formation = validSelection(active, battleSide, formationId)
+                ? active.findFormation(battleSide, formationId).orElse(null) : null;
+        return new FormationContextView(
+                formation == null ? "" : formation.id(),
+                formation == null ? "" : formation.displayName(),
+                formation == null ? "" : formation.defaultClass()
+                        .map(FormationClassRule::classId).orElse(""),
+                own == null ? "" : own.id(),
+                own == null ? "" : own.displayName(),
+                own == null ? 0 : own.maxPlayers(),
+                enemy == null ? "" : enemy.id(),
+                enemy == null ? "" : enemy.displayName(),
+                enemy == null ? 0 : enemy.maxPlayers());
     }
 
     /** Resolves a persisted public faction id (for example academy) to its blue/red battle side. */

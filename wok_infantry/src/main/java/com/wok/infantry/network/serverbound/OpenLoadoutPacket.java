@@ -20,7 +20,7 @@ public record OpenLoadoutPacket(boolean administrator) {
     public static void handle(OpenLoadoutPacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
         ServerPlayer sender = contextSupplier.get().getSender();
         if (sender == null || !ServerRequestLimiter.allow(sender,
-                ServerRequestLimiter.Kind.OPEN_UI)) {
+                ServerRequestLimiter.Kind.LOADOUT_OPEN)) {
             return;
         }
         LoadoutService.get(sender).ifPresent(service -> {

@@ -1,5 +1,40 @@
 # 更新日志
 
+## WOK步战核心 0.5.0-beta.1 — 2026-10-05
+
+> 用户需求（2026-10-05）：“按 ` 进入的主页面 UI 还是老版本的”，并选择“先做战斗终端”。本版是新版战斗终端（小队 / 兵种 / 部署三页）的第一步：先补齐小队终端需要的战局数据和不画图的纯逻辑层，界面绘制在后续提交里接着做，所以本版游戏内看到的仍是旧版小队页。战局协议 19→20，与 0.4.0 线不兼容，按 `docs/VERSIONING.md` 提升次版本号（用户此前已同意协议升级）。
+
+### 新增
+- 战局快照（协议 20）：每个小队多带各兵种的名额与已用数（`SquadView.classLimits`，`ClassLimitView`：兵种 id、本队名额、本队已用，按编制兵种顺序，名额不超过本队容量）；快照末尾多带本人视角的上下文：`FormationContextView`（本局编制 id 与公开名、编制默认兵种、己方与对方公开阵营 id、名称和人数上限；编制投票未锁定时编制为空）、`viewerClassId`（本人当前预留的兵种，不在小队里也有；没有编制时为空）、`kickCooldowns`（只发本人的踢出冷却，每个呼号至多一条，带到期时间）。
+- 纯逻辑 `SquadBoardModel`（`client/screen`，不画图）：权限（未入队 / 队员 / 队长 / 指挥官，另有管理员提示）；五个呼号的状态（待锁定、未开放、本队、可创建、未建立、已满、可加入、冷却中）；名单下方的操作组（查看本队时为移交队长、踢出 | 退出小队、解散小队，查看别队时只有加入或创建与返回本队）；指挥官面板（申请、卸任、移交指挥权——目标可以是任意小队的在线队长）；兵种行、部署点行、部署 / 重新部署 / 补给；部署清单；页头身份按“阵营 · 编制 · 小队 · 职务”逐级缩短的候选；终端页签的禁用原因；统一的分页规则 `Page`（标题页码、列表行和翻页键共用一次计算的结果）。每个操作都给出是否可用、禁用原因（长 / 短 / 极短三档语言键）或可用时的说明，以及是否需要二次确认和确认层文案。
+- 二次确认按用户拍板：踢出、退出小队、解散小队、重新部署（红色危险确认）、移交队长、移交指挥权（普通确认）；卸任指挥官不弹确认。踢出的确认写明 60 秒内不能重新加入，对方正在作战时另写会撤回等待区并收回配装；退出写明兵种重置为编制默认，指挥官退出会卸任，队长退出时队长交给谁（与服务端规则相同：先在线、再按入队顺序）；解散写明人数、作战中的队员会被撤回、本队指挥官会卸任。
+- `SquadLabels` 补齐：完整职务名与短职务名（指挥官 / 小队长 / 队员 / 未入队）、按任意人数与容量的“n/容量”、公开阵营名与对方阵营名（没有上下文时退回蓝方 / 红方）、本局编制名；兵种名的实现搬到这里。
+- 服务端：`LoadoutService.squadClassLimits(ServerPlayer)`（每个呼号的已启用兵种名额，与本人名额用同一套过滤和回退），`FormationService.formationContext(Faction, String)`（只读目录，不回读战局服务）。
+- 语言：中英成对新增 243 个语言键（各由 681 个增至 924 个）：小队终端的操作名与短名、呼号状态、禁用原因与说明（各三档）、确认层、部署清单、页头身份、部署点标题与坐标；另加 `role.wok_infantry.unassigned`、`role.wok_infantry.member_short` 和主世界 / 下界 / 末地三个维度名（部署点行用中文维度名代替 `minecraft:overworld`）。
+
+### 修改
+- `BattleNetwork.PROTOCOL_VERSION` 由 `19` 改为 `20`；包编号、原有字段的顺序与含义都不变，新字段只追加在每个小队末尾和快照末尾。快照编解码对新字段做上界校验并失败关闭：兵种名额最多 64 项、同一兵种不能重复、名额不超过本队容量、已用数必须等于名单里持有该兵种的人数；本人兵种必须与名单里本人那一行一致；踢出冷却每个呼号至多一条、到期时间必须晚于快照时间且不超过 60 秒；上下文里的 id 与名称在构造时就规范化和截断（名称最多 40 个 UTF-16 码元），过长的管理员命名不会让快照编不出来。
+- 快照版本指纹（`BattleSnapshotRevision`）把编制上下文、本人兵种、各小队兵种名额和“哪些呼号在冷却中”算进结构；冷却剩余秒数不算，倒计时不会让界面每秒重建，冷却到期那一次会重建以恢复“加入”。
+- 配装界面请求改用独立限流类别 `LOADOUT_OPEN`（1 秒），不再和战斗终端键的 `OPEN_UI` 共用窗口：按终端键后立刻点“配装”不再被无声丢弃（squad-07）。编制目录请求此前已是独立的 `FORMATION_CATALOG`。
+- `SquadScreen.callsign`、`className` 三个重载改为委托 `SquadLabels`（签名不变）；部署页的分页静态方法改为委托 `SquadBoardModel.Page`（签名和行为不变）。
+
+### 修复
+- 无（本版只增加数据和逻辑层，旧小队页的行为不变）。
+
+### 兼容性
+- 网络协议：战局协议 19→20（`BattleNetwork.PROTOCOL_VERSION`），版本严格相等，客户端与服务端必须同为 0.5.0-beta.1；与 0.4.0-beta.1 / 0.4.0-beta.2 混用时 Forge 在连接阶段拒绝。编制协议 `5`、兵力协议 `2`、体力协议 `2`、配装协议 `11` 不变。
+- 公共 API 只新增或保持兼容：`BattleSnapshot` 规范构造器改为 21 参（末尾追加 `formationContext`、`viewerClassId`、`kickCooldowns`），原 18 参、17 参、16 参构造器保留（18 参时本人兵种取名单里本人那一行）；新增 `withViewerContext`、`withFormationContext`、`formationLocked()`、`squad(SquadCallsign)`、`kickCooldown(...)`、`kickCooldownRemainingMillis(...)`；`SquadView` 规范构造器改为 5 参，原 4 参保留；新增记录 `ClassLimitView`、`KickCooldownView`、`FormationContextView`；`BattleSnapshotRevision.visible` 原 12 参重载保留；`BattleService.snapshotFor` 原三个重载保留，另加带各呼号名额的 4 参重载。`MemberView` 10 参兼容构造器、`SquadScreen` 三个构造器和 `callsign` / `className` 静态方法签名不变。
+- 附属 MOD：都不直接解码战局快照；占点 uiTest 只读 `ClientBattleState`。指挥官支援 0.1.0-beta.3 的依赖范围 `[0.3.0-beta.6,)` 包含本版，但测试端要把附属和本版核心一起装上验证。
+- 小队页、兵种页、部署页的画面本版还是旧版（新版绘制在后续提交），所以禁用原因、确认层等新文案本版在游戏里还看不到。
+
+### 配置/存档影响
+- 无。不新增配置项，不改任何存档格式（`wok_infantry_battle.dat` 仍为 Version 6；踢出冷却仍只在内存里，重启清空，与此前相同）。
+
+### 测试结果
+- 数据与逻辑层（本批）：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`，六个测试源集全部编译通过）；JUnit 938 项全部通过，0 失败、0 跳过（比 0.4.0-beta.2 多 31 项：`SquadBoardModelTest` 18 项——只配阿尔法/布拉沃的编制、8 人与 4 人混合容量、查看别队没有退出/解散、未入队取 `viewerClassId` 与编制默认兵种提示、踢出冷却禁用加入和创建且归零即恢复、队长管理与作战中仍可踢人、普通队员只能退出与退出确认的后果、非队长管理员、指挥官把指挥权移交给别队在线队长、申请指挥官的原因顺序、二次确认清单、兵种行规则、部署原因推断、作战中重新部署确认、2/3/16 个部署点的统一分页、投票锁定前一切不可点、同步中与页头身份逐级缩短、全部语言键中英都有；`BattleSnapshotCodecTest` 新增 6 项——协议 20 新字段往返、兼容构造器、兵种名额矛盾被拒、本人上下文非法被拒、上下文规范化与截断、解码拒绝未规范化文本与超长冷却表；`BattleServiceSnapshotContextTest` 2 项；`BattleSnapshotRevisionTest`、`ServerRequestLimiterTest` 各 1 项；`SquadLabelsTest` 3 项）。翻译契约测试把小队终端按枚举拼出的语言键与参数个数一并核对。
+- 产物 `wok_infantry-0.5.0-beta.1.jar`，2,139,592 字节，SHA-256 `43E72062A590B355929C6F578ACB3394BFA8098A36CD93134804422242E954E4`（数据与逻辑层构建，界面绘制完成后会重新构建，不部署这一个）。`tools/verify_versions.ps1 -Modules wok_infantry`：PASS；`tools/verify_mod_independence.ps1`：PASS，强制依赖只有 `forge`、`minecraft`。
+- 未做：GameTest、`runUiTestClient` 与真实客户端验收留到界面绘制完成之后；本版尚未部署到测试端。
+
 ## WOK步战核心 0.4.0-beta.2 — 2026-10-05
 
 > 用户需求（2026-10-05）：“加一个功能 测试模式，因为现在我需要部署点 没法测试功能”。选阵营/编制时人在黑色等待空间里，超平坦测试世界两方都没有主基地，没法测试部署后的功能。本版新增全服测试模式与一键测试开局（命令和编制页按钮），不改任何网络协议号，可与 0.4.0-beta.1 互连。
