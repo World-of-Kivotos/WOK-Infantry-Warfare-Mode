@@ -1,4 +1,4 @@
-# WOK步战核心 UI 自动验收（0.4.0-beta.1 档 1，0.4.0-beta.2 补测试开局）
+# WOK步战核心 UI 自动验收（0.4.0-beta.1 档 1，0.4.0-beta.2 补测试开局，0.4.0-beta.3 地图标点）
 
 `runUiTestClient` 启动一个开发用真实客户端，进入隔离存档，先走一遍实时流程（部署页、终端键、地图键、队长/指挥官、部署、标记、JourneyMap 地形），截下旧截图 01–09；再由用例运行器 `UiCaseRunner` 先跑 `legacy` 组补齐旧截图 10–14（编制 2 张、管理员 3 张，保留原名和顺序），然后把 `src/uiTest/.../cases/` 里登记的其余用例逐个档位截图、检查，最后写结果并自动退出。验收代码全部在 `src/uiTest`，不会进入生产 JAR。
 
@@ -71,11 +71,11 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<版本>\<标�
 
 | 组 / 界面 | 状态 | 档位 | 迁移 | 主要语义检查 |
 |---|---|---|---|---|
-| 实时流程（旧图 01–09） | deployment、squads、classes、map ×2、squads 960、commander、loadout ×2 | 各自原档位 | 否 | 终端键/地图键走真实按键与网络；兵种页真实鼠标点击；JM 小地图隐藏、全屏重定向、4/4 与 16/16 地形块；支援按钮与 R80/R64 |
+| 实时流程（旧图 01–09） | deployment、squads、classes、map ×2、squads 960、commander、loadout ×2 | 各自原档位 | 否 | 终端键/地图键走真实按键与网络；兵种页真实鼠标点击；JM 小地图隐藏、全屏重定向、4/4 与 16/16 地形块；支援按钮与 R80/R64；两张地图截图记录 `mapIcons[...]`（按种类计数、按方案 B 尺寸），一个新标点都没画出来即失败（0.4.0-beta.3） |
 | formation.legacy（旧图 10、11） | 320 待开启、960 投票中 | 320、960 | 否 | 管理员“开启编制投票 / 锁定投票结果”按 uiId `formation.admin.open` / `formation.admin.lock` 找到 |
 | admin.legacy_*（旧图 12–14） | 列表 320、职业管理 320、列表 960 | 320、960 | 否 | “+槽位”“设置”“职业管理”存在 |
 | kit（组件陈列页） | default、confirm、inputs、cards、hud、icons | 全部 5 档 | 是 | 按钮七态 + 焦点；超长键省略号带完整提示；危险确认默认焦点在“取消”、Enter 不确认、Esc 取消；45 个界面图标；10 种标点物理尺寸 |
-| mapicons（地图标点陈列） | dark（深色地形）、paper（浅色纸图） | 全部 5 档 | 是 | 10 种标点 + 名称；普通/悬停/选中/即将过期；宽屏另有 0.75×/1.25×/1.75× 旋钮；每个标点物理尺寸 = 15×15（定位针 15×18）美术像素 × 旋钮对应的整物理像素，不随 GUI 档变化 |
+| mapicons（地图标点陈列） | dark（深色地形）、paper（浅色纸图） | 全部 5 档 | 是 | 10 种标点 + 名称；普通/悬停/选中/即将过期；宽屏另有 0.75×/1.25×/1.75× 旋钮；每个标点物理尺寸 = 15×15（定位针 15×18）美术像素 × 旋钮对应的整物理像素（0.4.0-beta.3 起与地图同用 `TacticalMapIcons.mapArtPx`：GUI 1–3 不变，GUI 4 放大 4/3 后取整），与战术地图上一致 |
 | formation（编制页，预览 45-formation） | join、confirm、facfull、vote、detail、locked、latejoin、lateconfirm、waiting、waitover（目录请求 3 秒没有回应）、longcaps（玩家视角）；pending、full、admintie、admin，以及 0.4.0-beta.2 的 testmode（未加入阵营时的“测试开局”键，页面状态为 join）、testconfirm（测试开局确认层）（管理员视角） | 全部 5 档 | 是 | 页面自报预览状态；管理员在未加入阵营时看得到可用的“测试开局”键且它单独在列表面板的紧凑管理员区，pending 状态下它与“开启编制投票”同一行、不重叠，玩家视角看不到它；测试开局为普通确认、正文写出所加入的阵营、Esc 取消后留在本页；waitover 写出“编制目录没有送达”并保留重试键；夹具未被服务端目录替换；详情区没有内部 ID（player-09）；裁剪区内没有半行；浏览中的阵营是描边而非实心蓝；未加入时 Esc 能关页；加入为普通确认、锁定为危险确认且默认“取消”；阵营满员/容量不足时按键禁用并写原因；锁定后加入仍可加入；5 个白名单支援全部按名称显示；已加入阵营时逐档记录页头身份是否显示（`formationHeaderIdentity[...]`），中文 427×240 档必须显示（页面在不足 440 宽时用短标题“编制投票”；427 档只出报告，不显示记为 REPORT） |
 | admin.noclass（admin-01 回归） | 编制没有任何职业规则 | 320、960、640 | 否 | “职业管理”禁用并写原因；真实点击和强行 onPress 都不崩溃、不离开列表页 |
 | ammo.small320（player-01 回归） | 小型弹药箱 | 320（480 报告） | 否 | 剩余点数和点数条不在分区标题下面，位于面板顶和分区标题之间 |
@@ -93,6 +93,21 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<版本>\<标�
 | `run/ui-test/ui-test-results/index.html` | Java 截图与预览图并排，下面列违规 |
 | `run/ui-test/ui-test-results/wok_ui_progress.txt` | 进度；客户端没写结果就退出时，Gradle 报出最后到达的阶段 |
 | `run/ui-test/screenshots/` | 截图 |
+
+### 0.4.0-beta.3 最终验收（2026-10-05，final3：审查修正后）
+
+本版的自动验收以本节的 `zh_cn-final3` 归档为准；下一节首轮 `final`（`1814e74`）与第一次审查修正的 `zh_cn-final2`（`bec2438`，JUnit 920 项，SHA-256 `4DFFBABF…5C3B12`）的产物已作废，归档留作对照，三轮的 180 行用例结果逐行相同。
+
+- 代码：分支 `claude/地图标点` 的 `9db2698`（本版最后一个源码提交）。两处审查修正：悬停按光标的亚像素位置判定、光标下的图标优先于只压到进攻线身的命中（`bec2438`）；卫星/无人机红点在所属支援任务还会再扫描时不变淡，任务扫描完后最后一批照旧在租期最后 25% 变淡（`9db2698`，以前卫星红点每次扫描前会淡下去约 1 秒）。核心用限流脚本 `clean build`（连同六个附加测试源集的编译）：JUnit 922 项，0 失败、0 跳过；`runGameTestServer`：22 项必需 GameTest 全部通过。产物 `wok_infantry-0.4.0-beta.3.jar`，2,076,666 字节，SHA-256 `9B7C2890170CB7414DDFCF11DDFDFBC6E37877A017D0DE4D6EB91960B609360D`（跑完后重新核对，不变）。
+- zh_cn 严格轮（`runUiTestClient`）：`status=PASS`，4338 tick，40 个用例、189 张截图，`strictLayoutViolations=0`，`layoutViolations=169`；180 行用例结果与首轮 `zh_cn-final` 逐行相同。两张地图截图的 `mapIcons[...]` 与首轮相同（8 种标点各 1 个，牌 30 物理像素；960 档另有 6 个工具键图标）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.3\zh_cn-final3\`（`zh_cn-final2` 已被第一次审查修正那一轮占用，归档任务不覆盖已有目录）。
+- 本版没跑 en_us 报告轮（文案只改了一条滑杆提示）。
+
+### 0.4.0-beta.3 首轮验收（2026-10-05，final，产物已作废）
+
+- 代码：分支 `claude/地图标点` 的 `1814e74`（本版最后一个源码提交）。本版把战术地图的标点换成 Squad 式剪影图标（`TacticalMapIcons` + `TacticalMapPinPlanner`），地图布局与侧栏不变。核心先用限流脚本 `clean build`（连同六个附加测试源集的编译）：JUnit 919 项，0 失败、0 跳过；`runGameTestServer`：22 项必需 GameTest 全部通过。产物 `wok_infantry-0.4.0-beta.3.jar`，2,075,575 字节，SHA-256 `EDBC3FC186DDE7C8BD09533093F63F7305F93EF299EC654949B1F9390D0C4A70`（跑完后重新核对，不变）。
+- zh_cn 严格轮（`runUiTestClient`）：`status=PASS`，4336 tick，40 个用例、189 张截图，`strictLayoutViolations=0`，`layoutViolations=169`；180 行用例结果与 0.4.0-beta.2 的 `zh_cn-final2` 逐行相同。`mapIcons[wok_ui_04_map_320x240.png]`、`mapIcons[wok_ui_06_map_960x720.png]` 都画出 8 种标点（敌方步兵、坦克、步战车、卫星侦察目标、进攻方向、防守、集结点、主基地定位针），牌 30 物理像素；960 档另有 6 个侧栏工具键图标（1 物理像素一个美术像素）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.3\zh_cn-final\`。
+- 新旧对比：旧图看 `20261005-0.4.0-beta.2\zh_cn-final2\screenshots\wok_ui_04_map_320x240.png`、`wok_ui_06_map_960x720.png`（11×11 白线小图、坦克/步战车俯视贴图、橙色 B 方块），新图看本节归档的同名文件。
+- 本版没跑 en_us 报告轮（文案只改了一条滑杆提示）。
 
 ### 0.4.0-beta.2 最终验收（2026-10-05，final2：审查修正后）
 

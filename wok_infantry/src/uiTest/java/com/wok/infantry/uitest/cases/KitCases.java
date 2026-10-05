@@ -195,7 +195,7 @@ public final class KitCases {
         int expected = TacticalMapIcons.MapIcon.values().length * 4 * 2;
         context.require(icons.size() == expected,
                 "map icons drawn: " + icons.size() + " of " + expected);
-        int artPx = TacticalMapIcons.physicalPerArt(1.0D);
+        int artPx = TacticalMapIcons.mapArtPx(1.0D, capture.guiScale());
         for (UiLayoutFrame.Icon icon : icons) {
             TacticalMapIcons.MapIcon marker = TacticalMapIcons.MapIcon.valueOf(
                     icon.id().toUpperCase(Locale.ROOT));

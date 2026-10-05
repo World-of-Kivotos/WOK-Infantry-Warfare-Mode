@@ -127,7 +127,7 @@ public final class UiMapIconGalleryScreen extends TacticalScreen implements UiSu
         columns = (icons.length + rows - 1) / rows;
         int cellWidth = c.width() / columns;
         int cellHeight = c.height() / rows;
-        int artPx = TacticalMapIcons.physicalPerArt(1.0D);
+        int artPx = TacticalMapIcons.mapArtPx(1.0D);
         double physicalPerLogical = effectiveGuiScale();
         int plate = (int) Math.ceil(15 * artPx / physicalPerLogical);
         int pin = (int) Math.ceil(18 * artPx / physicalPerLogical);
@@ -162,7 +162,7 @@ public final class UiMapIconGalleryScreen extends TacticalScreen implements UiSu
         int labelTop = c.bottom() - 9;
         for (int index = 0; index < states.length; index++) {
             float x = c.left() + index * width + width / 2.0F;
-            int artPx = TacticalMapIcons.physicalPerArt(1.0D);
+            int artPx = TacticalMapIcons.mapArtPx(1.0D);
             float y = (c.top() + labelTop - 2) / 2.0F;
             TacticalMapIcons.draw(graphics, TacticalMapIcons.MapIcon.TANK, x, y, artPx,
                     states[index], index == 3 ? TacticalMapIcons.EXPIRING_ALPHA : 1.0F);
@@ -172,7 +172,7 @@ public final class UiMapIconGalleryScreen extends TacticalScreen implements UiSu
             for (int knob = 0; knob < KNOBS.length; knob++) {
                 int index = states.length + knob;
                 float x = c.left() + index * width + width / 2.0F;
-                int artPx = TacticalMapIcons.physicalPerArt(KNOBS[knob]);
+                int artPx = TacticalMapIcons.mapArtPx(KNOBS[knob]);
                 float y = (c.top() + labelTop - 2) / 2.0F;
                 TacticalMapIcons.draw(graphics, TacticalMapIcons.MapIcon.DEFEND, x, y, artPx,
                         TacticalMapIcons.IconState.NORMAL);
