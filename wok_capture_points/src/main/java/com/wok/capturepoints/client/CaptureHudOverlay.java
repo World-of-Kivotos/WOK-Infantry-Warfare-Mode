@@ -3,129 +3,193 @@ package com.wok.capturepoints.client;
 import com.wok.capturepoints.capture.CapturePointView;
 import com.wok.capturepoints.capture.CaptureTeam;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
+import net.minecraftforge.client.event.CustomizeGuiOverlayEvent;
+import net.minecraftforge.client.event.RenderGuiEvent;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 
+import java.util.Objects;
+
+/**
+ * The thin capture strip (0.1.0-alpha.4, replaces the 330×52 panel of alpha.3): one row "name │
+ * blue ▬▬|▬▬ red" at most 200 wide at the top centre, the status text in a second row on wide
+ * screens ({@link CaptureStripLayout}). Shown only while the viewer stands in a point and
+ * WOK步战核心 does not show the point in its own battle strip ({@link InfantryHudLink}).
+ *
+ * <p>Plate colours follow the core HUD's field plates (translucent fill, 1px edge, accent line on
+ * top), copied here so the add-on keeps no hard dependency. Text is never shadowed.
+ */
 public final class CaptureHudOverlay {
-    private static final int BLUE = 0xFF55A9E8;
-    private static final int RED = 0xFFE56D59;
-    private static final int ORANGE = 0xFFE0A04A;
-    private static final int GREEN = 0xFF75BE78;
-    private static final int MUTED = 0xFF91A09D;
+    private static final int PLATE = 0xB3121A1D;
+    private static final int EDGE = 0xCC56625F;
+    private static final int TRACK = 0xCC424E52;
+    private static final String ELLIPSIS = "…";
 
     public static final IGuiOverlay INSTANCE = (gui, graphics, partialTick, width, height) ->
-            render(graphics, width);
+            render(graphics, width, height);
+
+    /**
+     * Vanilla boss bars drawn in this frame and in the previous one (GUI y, as drawn): the first
+     * name row's top and the lowest bar's bottom; a bottom of 0 means none.
+     */
+    private static int bossTopThisFrame = Integer.MAX_VALUE;
+    private static int bossBottomThisFrame;
+    private static int bossTopLastFrame = Integer.MAX_VALUE;
+    private static int bossBottomLastFrame;
+
+    /** Status row text of {@link #statusPoint} in {@link #statusLanguage} (built once per sync). */
+    private static CapturePointView statusPoint;
+    private static String statusLanguage;
+    private static String statusText = "";
 
     private CaptureHudOverlay() {
     }
 
-    private static void render(GuiGraphics graphics, int width) {
-        Minecraft minecraft = Minecraft.getInstance();
-        CapturePointView point = ClientCaptureState.insidePoint();
-        if (minecraft.player == null || minecraft.options.hideGui || point == null) return;
+    /** Forge bus, start of a GUI frame: rolls the boss bar measurement over. */
+    static void onRenderGuiPre(RenderGuiEvent.Pre event) {
+        bossTopLastFrame = bossTopThisFrame;
+        bossBottomLastFrame = bossBottomThisFrame;
+        bossTopThisFrame = Integer.MAX_VALUE;
+        bossBottomThisFrame = 0;
+    }
 
-        if (width <= 360) {
-            renderCompact(graphics, minecraft, point, width);
+    /**
+     * Forge bus, lowest priority, drawn bars only: records where a vanilla boss bar is drawn,
+     * including any translation another MOD (WOK步战核心) applied to the boss overlay.
+     */
+    static void onBossEventProgress(CustomizeGuiOverlayEvent.BossEventProgress event) {
+        int shift = Math.round(event.getGuiGraphics().pose().last().pose().m31());
+        bossTopThisFrame = Math.min(bossTopThisFrame,
+                CaptureStripLayout.bossTop(event.getY(), shift));
+        bossBottomThisFrame = Math.max(bossBottomThisFrame,
+                CaptureStripLayout.bossBottom(event.getY(), shift));
+    }
+
+    /**
+     * The strip this add-on draws this frame as {@code {left, top, width, height}} GUI pixels,
+     * or null while it draws nothing (also while WOK步战核心 shows the point itself). Called by
+     * the core while it lays out its HUD, before the boss bars of this frame are drawn, so it
+     * uses the previous frame's boss bars.
+     */
+    public static int[] panelRect(int guiWidth, int guiHeight) {
+        CapturePointView point = shownPoint();
+        return point == null ? null
+                : plate(guiWidth, guiHeight, bossTopLastFrame, bossBottomLastFrame).guiRect();
+    }
+
+    private static CapturePointView shownPoint() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null || minecraft.options.hideGui
+                || ClientCaptureState.insidePointId() == null
+                || InfantryHudLink.coreRendersCapturePoints()) {
+            return null;
+        }
+        return ClientCaptureState.insidePoint();
+    }
+
+    private static CaptureStripLayout.Plate plate(int guiWidth, int guiHeight, int bossTop,
+                                                  int bossBottom) {
+        Minecraft minecraft = Minecraft.getInstance();
+        int factor = CaptureStripLayout.factor(minecraft.getWindow().getGuiScale(), guiWidth,
+                guiHeight);
+        boolean core = InfantryHudLink.coreLoaded();
+        int[] slot = core ? InfantryHudLink.topCenterNext(guiWidth, guiHeight) : null;
+        return CaptureStripLayout.place(guiWidth, guiHeight, factor, slot, core,
+                core && InfantryHudLink.coreMovesBossBars(), bossTop, bossBottom);
+    }
+
+    private static void render(GuiGraphics graphics, int width, int height) {
+        CapturePointView point = shownPoint();
+        if (point == null) {
             return;
         }
-        int panelWidth = Math.min(330, Math.max(190, width - 24));
-        int left = (width - panelWidth) / 2;
-        int top = net.minecraftforge.fml.ModList.get().isLoaded("wok_infantry") ? 28 : 8;
-        int right = left + panelWidth;
-        int bottom = top + 52;
-        graphics.fill(left, top, right, bottom, 0xE3141B1D);
-        graphics.fill(left, top, right, top + 2, ORANGE);
-        outline(graphics, left, top, right, bottom, 0xFF566461);
-
-        Component title = Component.translatable("hud.wok_capture_points.title",
-                point.displayName());
-        drawCentered(graphics, minecraft, title, width / 2, top + 6,
-                point.enabled() ? 0xFFF0F3ED : MUTED, panelWidth - 16);
-        Component ratio = Component.translatable("hud.wok_capture_points.ratio",
-                point.bluePlayers(), point.redPlayers());
-        drawCentered(graphics, minecraft, ratio, width / 2, top + 18,
-                0xFFE2E7E1, panelWidth - 16);
-
-        int barLeft = left + 12;
-        int barRight = right - 12;
-        int barTop = top + 31;
-        int center = (barLeft + barRight) / 2;
-        graphics.fill(barLeft, barTop, barRight, barTop + 7, 0xFF283235);
-        graphics.fill(center - 1, barTop - 1, center + 1, barTop + 8, 0xFFE2E7E1);
-        int controlX = (int) Math.round(center + point.control() * (barRight - barLeft) / 2.0D);
-        if (controlX >= center) graphics.fill(center, barTop, controlX, barTop + 7, BLUE);
-        else graphics.fill(controlX, barTop, center, barTop + 7, RED);
-        outline(graphics, barLeft, barTop, barRight, barTop + 7, 0xFF687673);
-
-        Component state = stateText(point);
-        drawCentered(graphics, minecraft, state, width / 2, top + 40,
-                stateColor(point), panelWidth - 16);
+        Minecraft minecraft = Minecraft.getInstance();
+        CaptureStripLayout.Plate plate = plate(width, height, bossTopThisFrame,
+                bossBottomThisFrame);
+        if (plate.width() <= 0) {
+            return;
+        }
+        graphics.pose().pushPose();
+        try {
+            if (plate.factor() > 1) {
+                graphics.pose().scale(plate.factor(), plate.factor(), 1.0F);
+            }
+            draw(graphics, minecraft.font, point, plate);
+        } finally {
+            graphics.pose().popPose();
+        }
     }
 
-    private static void renderCompact(GuiGraphics graphics, Minecraft minecraft,
-                                      CapturePointView point, int width) {
-        // Core's compact roster occupies x=8..128. Keep capture beside it on narrow screens.
-        boolean withCore = net.minecraftforge.fml.ModList.get().isLoaded("wok_infantry");
-        int left = withCore ? 140 : 8;
-        int right = width - 8;
-        int top = withCore ? 26 : 4;
-        int bottom = top + 35;
-        graphics.fill(left, top, right, bottom, 0xE3141B1D);
-        graphics.fill(left, top, right, top + 2, ORANGE);
-        outline(graphics, left, top, right, bottom, 0xFF566461);
+    private static void draw(GuiGraphics graphics, Font font, CapturePointView point,
+                             CaptureStripLayout.Plate plate) {
+        int left = plate.left();
+        int top = plate.top();
+        int right = plate.right();
+        int bottom = plate.bottom();
+        graphics.fill(left, top, right, bottom, PLATE);
+        outline(graphics, left, top, right, bottom, EDGE);
+        graphics.fill(left, top, right, top + 1, CaptureHudModel.accent(point));
 
-        Component heading = Component.translatable("hud.wok_capture_points.compact_heading",
-                point.displayName(), point.bluePlayers(), point.redPlayers());
-        drawCentered(graphics, minecraft, heading, (left + right) / 2, top + 5,
-                point.enabled() ? 0xFFF0F3ED : MUTED, right - left - 12);
+        String blue = String.valueOf(point.bluePlayers());
+        String red = String.valueOf(point.redPlayers());
+        String name = point.displayName() == null ? point.id() : point.displayName();
+        CaptureStripLayout.Row row = CaptureStripLayout.row(plate, font.width(name),
+                font.width(blue), font.width(red));
+        boolean enabled = point.enabled();
+        int y = row.textY();
+        if (row.nameRoom() > 0) {
+            graphics.drawString(font, fit(font, name, row.nameRoom()), row.nameX(), y,
+                    enabled ? CaptureHudModel.LIGHT : CaptureHudModel.MUTED, false);
+            graphics.fill(row.dividerX(), y - 1, row.dividerX() + 1, y + 8, EDGE);
+        }
+        graphics.drawString(font, blue, row.blueX(), y,
+                enabled ? CaptureHudModel.BLUE : CaptureHudModel.MUTED, false);
+        graphics.drawString(font, red, row.redX(), y,
+                enabled ? CaptureHudModel.RED : CaptureHudModel.MUTED, false);
 
-        int barLeft = left + 10;
-        int barRight = right - 10;
-        int barTop = top + 17;
-        int center = (barLeft + barRight) / 2;
-        graphics.fill(barLeft, barTop, barRight, barTop + 5, 0xFF283235);
-        graphics.fill(center - 1, barTop - 1, center + 1, barTop + 6, 0xFFE2E7E1);
-        int controlX = (int) Math.round(center + point.control() * (barRight - barLeft) / 2.0D);
-        if (controlX >= center) graphics.fill(center, barTop, controlX, barTop + 5, BLUE);
-        else graphics.fill(controlX, barTop, center, barTop + 5, RED);
-        outline(graphics, barLeft, barTop, barRight, barTop + 5, 0xFF687673);
+        graphics.fill(row.barLeft(), row.barTop(), row.barRight(), row.barBottom(), TRACK);
+        int[] fill = CaptureStripLayout.fill(row, point.control());
+        if (fill[1] > fill[0]) {
+            CaptureTeam leading = CaptureHudModel.leading(point.control());
+            int color = !enabled ? CaptureHudModel.MUTED : CaptureHudModel.teamColor(leading);
+            graphics.fill(fill[0], row.barTop(), fill[1], row.barBottom(), color);
+        }
+        graphics.fill(row.centre(), y + 1, row.centre() + 1, y + 6, CaptureHudModel.LIGHT);
 
-        Component state = stateText(point);
-        drawCentered(graphics, minecraft, state, (left + right) / 2, top + 26,
-                stateColor(point), right - left - 12);
+        if (plate.wide()) {
+            graphics.drawString(font, fit(font, statusText(point), row.statusRoom()),
+                    left + CaptureStripLayout.PAD, row.statusY(),
+                    CaptureHudModel.statusColor(point), false);
+        }
     }
 
-    private static Component stateText(CapturePointView point) {
-        if (!point.enabled()) return Component.translatable("hud.wok_capture_points.disabled");
-        if (point.bluePlayers() > 0 && point.redPlayers() > 0
-                && point.activeTeam() == CaptureTeam.NEUTRAL) {
-            return Component.translatable("hud.wok_capture_points.contested");
+    /**
+     * Status row text, translated once per synchronized point view (a new view arrives with
+     * every snapshot) and language, not every frame.
+     */
+    private static String statusText(CapturePointView point) {
+        String language = Minecraft.getInstance().getLanguageManager().getSelected();
+        if (point != statusPoint || !Objects.equals(language, statusLanguage)) {
+            Component status = CaptureHudModel.statusWithTime(point);
+            statusText = status.getString();
+            statusPoint = point;
+            statusLanguage = language;
         }
-        if (point.activeTeam() == CaptureTeam.BLUE && !point.blueAllowed()
-                || point.activeTeam() == CaptureTeam.RED && !point.redAllowed()
-                || point.activeTeam() == CaptureTeam.NEUTRAL
-                && ((point.bluePlayers() > 0 && !point.blueAllowed())
-                || (point.redPlayers() > 0 && !point.redAllowed()))) {
-            return Component.translatable("hud.wok_capture_points.locked");
-        }
-        if (point.activeTeam() != CaptureTeam.NEUTRAL) {
-            return Component.translatable("hud.wok_capture_points.capturing",
-                    Component.translatable("team.wok_capture_points." + point.activeTeam().id()),
-                    point.speedMultiplier());
-        }
-        if (point.owner() != CaptureTeam.NEUTRAL) {
-            return Component.translatable("hud.wok_capture_points.secured",
-                    Component.translatable("team.wok_capture_points." + point.owner().id()));
-        }
-        return Component.translatable("hud.wok_capture_points.neutral");
+        return statusText;
     }
 
-    private static int stateColor(CapturePointView point) {
-        if (point.activeTeam() == CaptureTeam.BLUE) return BLUE;
-        if (point.activeTeam() == CaptureTeam.RED) return RED;
-        if (point.owner() != CaptureTeam.NEUTRAL) return GREEN;
-        return MUTED;
+    /** {@code text} cut to {@code maxWidth} with a trailing "…" when it does not fit. */
+    static String fit(Font font, String text, int maxWidth) {
+        if (text == null || maxWidth <= 0) {
+            return "";
+        }
+        if (font.width(text) <= maxWidth) {
+            return text;
+        }
+        int room = maxWidth - font.width(ELLIPSIS);
+        return room <= 0 ? "" : font.plainSubstrByWidth(text, room) + ELLIPSIS;
     }
 
     private static void outline(GuiGraphics graphics, int left, int top, int right,
@@ -134,13 +198,5 @@ public final class CaptureHudOverlay {
         graphics.fill(left, bottom - 1, right, bottom, color);
         graphics.fill(left, top, left + 1, bottom, color);
         graphics.fill(right - 1, top, right, bottom, color);
-    }
-
-    private static void drawCentered(GuiGraphics graphics, Minecraft minecraft,
-                                     Component component, int centerX, int y, int color,
-                                     int maxWidth) {
-        String text = minecraft.font.plainSubstrByWidth(component.getString(), maxWidth);
-        graphics.drawString(minecraft.font, text, centerX - minecraft.font.width(text) / 2,
-                y, color, false);
     }
 }
