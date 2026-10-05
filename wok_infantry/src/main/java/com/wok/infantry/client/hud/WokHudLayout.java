@@ -535,7 +535,9 @@ public final class WokHudLayout {
         if (vote != null) {
             topCenterBottom = Math.max(topCenterBottom, vote.bottom());
         }
-        int nextTop = topCenterBottom > 0 ? topCenterBottom + gap : edge;
+        // With nothing on top the slot starts where the strip column itself would: at the edge,
+        // or below the status-effect icons when they leave the column too narrow beside them.
+        int nextTop = topCenterBottom > 0 ? topCenterBottom + gap : band.top();
         UiRect topCenterNext = UiRect.of(band.left(), nextTop, band.right(),
                 Math.max(nextTop, height / 2));
         int bossShift = bossShift(in.guiWidth(), topCenterBottom * factor, in.capturePanel());
@@ -663,7 +665,10 @@ public final class WokHudLayout {
      * it. Without core plates they keep their place when that already clears the panel's top
      * (alpha.3's panel at y 26–28); a panel reaching up into the first boss row (the thin capture
      * strip of 0.1.0-alpha.4 in the {@code top_center_next} slot at the top edge, drawn while
-     * {@code hud.showBattleStrip} is off) moves them below it as well.
+     * {@code hud.showBattleStrip} is off) moves them below it as well. The add-on in turn moves
+     * its strip only below bars that really cover it, never below bars already moved under it, so
+     * the two settle: bars that come while the strip is shown go under it; a strip that comes
+     * while bars are shown goes under them (then at y 21 or lower, and this leaves them).
      */
     static int bossShift(int guiWidth, int topCenterBottomGui, UiRect captureGui) {
         int bossLeft = guiWidth / 2 - BOSS_BAR_HALF_WIDTH;

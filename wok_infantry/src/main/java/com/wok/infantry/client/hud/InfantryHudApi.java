@@ -14,6 +14,8 @@ import com.wok.infantry.config.InfantryClientConfig;
  * <ul>
  *     <li>{@value #TOP_CENTER_NEXT}: the first free area under the core's top-centre plates
  *     (battle strip, notices, ballot), as wide as the strip column, down to the screen's middle;
+ *     with none of them shown it starts where the strip column would (the screen edge, or below
+ *     status-effect icons that leave the column too narrow beside them, since 0.5.0-beta.2);
  *     meant for WOK步战附属-占点's own strip while the core does not show the point
  *     ({@link #rendersCapturePoints()} false). A capture HUD placed here must also be reported by
  *     {@code CaptureHudApi.panelRect}, or the core keeps moving its plates out of the way of where

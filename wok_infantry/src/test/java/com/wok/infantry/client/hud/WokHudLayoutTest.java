@@ -212,6 +212,34 @@ class WokHudLayoutTest {
                 "beside the boss column");
     }
 
+    /**
+     * Review fix (0.5.0-beta.2): with nothing on top, top_center_next starts where the strip
+     * column does, so the add-on strip drawn there (core strip off) stays clear of status-effect
+     * icons that pushed the column below them, instead of starting at the screen edge over them.
+     */
+    @Test
+    void emptyTopCentreSlotStartsWhereTheColumnClearsTheEffectIcons() {
+        for (int[] tier : TIERS) {
+            for (int effects = 0; effects <= 8; effects++) {
+                Input input = Input.screen(tier[0], tier[1], tier[2]).withRoster(8, false)
+                        .withEffects(effects, effects / 2);
+                Layout layout = WokHudLayout.compute(input);
+                String where = tier[0] + "x" + tier[1] + "@" + tier[2] + " effects=" + effects;
+                UiRect next = layout.topCenterNext();
+                assertEquals(layout.band().top(), next.top(), where);
+                // the thin capture strip is at most 23 layout pixels tall
+                UiRect strip = UiRect.of(next.left(), next.top(), next.right(), next.top() + 23);
+                for (UiRect row : WokHudLayout.effectRects(input)) {
+                    assertFalse(strip.intersects(row), where + ": " + strip + " over " + row);
+                }
+            }
+        }
+        Layout pushed = WokHudLayout.compute(Input.screen(320, 240, 1).withRoster(8, false)
+                .withEffects(4, 0));
+        assertTrue(pushed.topCenterNext().top() > pushed.edge(),
+                "four icons leave the column too narrow: the slot starts under them");
+    }
+
     @Test
     void ballotIsCentredAndCappedPerTier() {
         Layout narrow = WokHudLayout.compute(Input.screen(320, 240, 1).withVote(400, false));
