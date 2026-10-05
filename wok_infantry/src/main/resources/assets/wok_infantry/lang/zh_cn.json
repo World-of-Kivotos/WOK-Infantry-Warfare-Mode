@@ -931,6 +931,7 @@
   "screen.wok_infantry.squad_board.nofaction.title": "尚未加入阵营",
   "screen.wok_infantry.squad_board.nofaction.hint": "在编制页签加入阵营后，这里会显示小队、兵种和部署",
   "screen.wok_infantry.squad_board.nofaction.open": "打开编制页",
+  "screen.wok_infantry.squad_board.confirm.stale": "情况已变化，“%s”未执行，请重新确认",
   "screen.wok_infantry.squad_board.list.meta": "%1$s · %2$s 个开放",
   "screen.wok_infantry.squad_board.list.meta_short": "%s 个开放",
   "screen.wok_infantry.squad_board.vote.meta_open": "编制投票中",

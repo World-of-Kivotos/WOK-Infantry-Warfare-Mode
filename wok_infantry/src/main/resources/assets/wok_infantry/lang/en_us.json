@@ -931,6 +931,7 @@
   "screen.wok_infantry.squad_board.nofaction.title": "Not in a faction",
   "screen.wok_infantry.squad_board.nofaction.hint": "Join a faction on the Formation tab to see squads, classes and deployment",
   "screen.wok_infantry.squad_board.nofaction.open": "Open formation page",
+  "screen.wok_infantry.squad_board.confirm.stale": "Things changed: \"%s\" was not sent, please confirm again",
   "screen.wok_infantry.squad_board.list.meta": "%1$s · %2$s open",
   "screen.wok_infantry.squad_board.list.meta_short": "%s open",
   "screen.wok_infantry.squad_board.vote.meta_open": "Voting on formation",

@@ -894,6 +894,35 @@ public final class SquadBoardModel {
     }
 
     /**
+     * The enabled operation this model still offers with the same intent as {@code original}
+     * (same action, call sign, target, class and deployment point), or {@code null} when it no
+     * longer applies. A confirmation opened for {@code original} is checked against every newer
+     * snapshot with this (its text follows the returned state) and once more before it is sent:
+     * a kick whose target has left, a disband after the squad went into combat or a hand-over
+     * after the viewer lost the leadership is dropped instead of being sent stale.
+     */
+    public ActionState stillOffered(ActionState original) {
+        if (original == null || !original.enabled()) {
+            return null;
+        }
+        for (ActionState candidate : actions()) {
+            if (candidate.enabled() && sameIntent(candidate, original)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /** Same operation on the same call sign, member, class and point. */
+    static boolean sameIntent(ActionState left, ActionState right) {
+        return left.action() == right.action()
+                && left.squad() == right.squad()
+                && Objects.equals(left.target(), right.target())
+                && Objects.equals(left.classId(), right.classId())
+                && Objects.equals(left.pointId(), right.pointId());
+    }
+
+    /**
      * Page identity, longest first ("阵营 · 编制 · 小队 · 职务" shortened step by step); the
      * shell shows the first that fits.
      */

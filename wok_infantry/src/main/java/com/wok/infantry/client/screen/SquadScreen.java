@@ -110,6 +110,10 @@ public final class SquadScreen extends TacticalScreen
             SquadBoardModel.ActionState> locator, Component label, boolean labelCut) {
     }
 
+    /** The open confirmation and the operation it asks about. */
+    private record OpenConfirm(TacticalConfirmDialog dialog, SquadBoardModel.ActionState state) {
+    }
+
     private final Screen previous;
     private Page page;
     private SquadCallsign viewedSquad;
@@ -126,12 +130,21 @@ public final class SquadScreen extends TacticalScreen
             new EnumMap<>(SquadBoardModel.Action.class);
     private SquadBoardModel model;
     private Painter painter;
+    /** The stage the painter was built for ({@code null} before the first init). */
+    private SquadBoardModel.Stage painterStage;
     private final List<ActionBinding> bindings = new ArrayList<>();
     private final Map<Button, Tooltip> tooltips = new IdentityHashMap<>();
     private final Map<Button, String> tooltipTexts = new IdentityHashMap<>();
     private final Map<GuiEventListener, String> roles = new IdentityHashMap<>();
-    /** The operation whose confirmation is open, for the probe state ({@code kick}). */
-    private SquadBoardModel.Action confirming;
+    /** Roles of the previous build: a click that rebuilt the board finds its control again. */
+    private Map<GuiEventListener, String> previousRoles = Map.of();
+    /**
+     * The model of the frame being drawn, shared by the widget callbacks of that frame (rows,
+     * cells, tooltips); {@code null} outside rendering, where callers build a fresh one.
+     */
+    private SquadBoardModel frameModel;
+    /** The confirmation that is open (also gives the probe state {@code kick}). */
+    private OpenConfirm openConfirm;
     private long respawnRevision = Long.MIN_VALUE;
     private long respawnTotalTicks;
 
@@ -197,9 +210,13 @@ public final class SquadScreen extends TacticalScreen
         return shellLayout().metrics();
     }
 
-    /** The model of this frame (fresh in event handlers). */
+    /**
+     * The model of the frame being drawn (built once per frame and shared by every row, cell and
+     * tooltip of that frame), or a fresh one in event handlers.
+     */
     SquadBoardModel liveModel() {
-        return buildModel();
+        SquadBoardModel frame = frameModel;
+        return frame != null ? frame : buildModel();
     }
 
     SquadCallsign viewedSquad() {
@@ -358,16 +375,61 @@ public final class SquadScreen extends TacticalScreen
             send(state);
             return;
         }
-        confirming = state.action();
-        openModal(TacticalConfirmDialog.builder(confirm.title(), confirm.joinedBody())
+        TacticalConfirmDialog dialog = TacticalConfirmDialog.builder(confirm.title(),
+                        confirm.joinedBody())
                 .danger(confirm.danger())
                 .confirmLabel(confirm.confirmLabel())
-                .onConfirm(() -> {
-                    confirming = null;
-                    send(state);
-                })
-                .onCancel(() -> confirming = null)
-                .build());
+                .onConfirm(() -> confirmed(state))
+                .onCancel(() -> openConfirm = null)
+                .build();
+        openConfirm = new OpenConfirm(dialog, state);
+        openModal(dialog);
+    }
+
+    /**
+     * The confirmation was accepted: sends the operation only if a model of the newest snapshot
+     * still offers it for the same target, never the intent as it stood when the dialog opened.
+     */
+    private void confirmed(SquadBoardModel.ActionState asked) {
+        openConfirm = null;
+        SquadBoardModel.ActionState current = buildModel().stillOffered(asked);
+        if (current == null) {
+            staleNotice(asked);
+            return;
+        }
+        send(current);
+    }
+
+    /**
+     * After a newer snapshot: an open confirmation whose operation is still offered for the same
+     * target gets the newest wording (a target that just deployed, a different successor); one
+     * that no longer applies (the target left, the squad went into combat, the viewer lost the
+     * leadership) closes without sending and says so in the footer.
+     */
+    private void revalidateConfirm() {
+        OpenConfirm open = openConfirm;
+        if (open == null) {
+            return;
+        }
+        if (open.dialog().closed() || modal() != open.dialog()) {
+            openConfirm = null;
+            return;
+        }
+        SquadBoardModel.ActionState current = buildModel().stillOffered(open.state());
+        if (current == null || current.confirm() == null) {
+            openConfirm = null;
+            open.dialog().dismiss();
+            staleNotice(open.state());
+            return;
+        }
+        open.dialog().updateBody(current.confirm().joinedBody());
+    }
+
+    private void staleNotice(SquadBoardModel.ActionState state) {
+        ClientBattleState.showFeedback(false, SquadBoardText.t(SquadBoardText.CONFIRM_STALE,
+                state.label()).getString());
+        // A local notice is not a server answer: intents still waiting keep waiting.
+        observedFeedback = ClientBattleState.feedback();
     }
 
     private void send(SquadBoardModel.ActionState state) {
@@ -464,6 +526,7 @@ public final class SquadScreen extends TacticalScreen
         bindings.clear();
         tooltips.clear();
         tooltipTexts.clear();
+        previousRoles = roles.isEmpty() ? Map.of() : new IdentityHashMap<>(roles);
         roles.clear();
         BattleSnapshot snapshot = ClientBattleState.snapshot();
         if (snapshot == null && !requestedSnapshot) {
@@ -481,6 +544,7 @@ public final class SquadScreen extends TacticalScreen
         TacticalBoardChrome.placeTabs(font, shellLayout(), title(), strip);
 
         UiRect content = shellLayout().content();
+        painterStage = model.stage();
         painter = switch (model.stage()) {
             case LOADING -> new PlaceholderPainter(this, content, false);
             case NO_FACTION -> new PlaceholderPainter(this, content, true);
@@ -532,21 +596,43 @@ public final class SquadScreen extends TacticalScreen
         String role = focused == null ? null : roles.get(focused);
         boolean keyboard = minecraft != null && minecraft.getLastInputType().isKeyboard();
         rebuildWidgets();
-        if (role == null || !(keyboard || modalOpen)) {
+        GuiEventListener replacement = role == null || !(keyboard || modalOpen) ? null
+                : widgetWithRole(role);
+        if (modalOpen) {
+            if (replacement != null) {
+                reparkFocus(replacement);
+            }
             return;
         }
+        // Never leave the keyboard focus on a control of the previous build.
+        setFocused(replacement);
+    }
+
+    /** The enabled control of this build with probe role {@code role}, or {@code null}. */
+    private GuiEventListener widgetWithRole(String role) {
         for (Map.Entry<GuiEventListener, String> entry : roles.entrySet()) {
             GuiEventListener widget = entry.getKey();
             if (role.equals(entry.getValue()) && children().contains(widget)
                     && !(widget instanceof AbstractWidget control && !control.active)) {
-                if (modalOpen) {
-                    reparkFocus(widget);
-                } else {
-                    setFocused(widget);
-                }
-                return;
+                return widget;
             }
         }
+        return null;
+    }
+
+    /**
+     * Vanilla focuses the clicked control after its handler returned; when that handler rebuilt
+     * the board (a call sign, a page switch) the control is already gone. Its rebuilt counterpart
+     * (same probe role) takes the focus instead, else nothing, so later keys never reach a
+     * control that is no longer on the screen.
+     */
+    private void adoptRebuiltFocus() {
+        GuiEventListener focused = getFocused();
+        if (focused == null || children().contains(focused)) {
+            return;
+        }
+        String role = previousRoles.get(focused);
+        setFocused(role == null ? null : widgetWithRole(role));
     }
 
     @Override
@@ -561,9 +647,15 @@ public final class SquadScreen extends TacticalScreen
         boolean catalogChanged = ClientFormationState.snapshot() != observedCatalog
                 && (model == null || model.stage() != SquadBoardModel.Stage.READY);
         if (ClientBattleState.generation() != observedGeneration || catalogChanged) {
-            pending.clear();
-            rebuildKeepingFocus();
+            snapshotChanged();
         }
+    }
+
+    /** A structurally new snapshot: stop waiting, rebuild the page, re-check a confirmation. */
+    private void snapshotChanged() {
+        pending.clear();
+        rebuildKeepingFocus();
+        revalidateConfirm();
     }
 
     // ---- rendering ----------------------------------------------------------------------------------
@@ -572,23 +664,36 @@ public final class SquadScreen extends TacticalScreen
     protected void renderTactical(GuiGraphics graphics, int mouseX, int mouseY,
                                   float partialTick) {
         model = buildModel();
-        for (ActionBinding binding : bindings) {
-            sync(binding, model);
+        if (painterStage != null && model.stage() != painterStage) {
+            // The snapshot changed what the page can show (cleared when the viewer left the
+            // battle, the vote reopened, the formation locked) between two ticks: rebuild
+            // before drawing, a page is never painted with a model it was not built for (a
+            // cleared snapshot would otherwise crash the READY painters).
+            snapshotChanged();
+            model = buildModel();
         }
-        BattleSnapshot snapshot = model.snapshot();
-        TacticalBoardChrome.ShellSpec spec = TacticalBoardChrome.ShellSpec.of(title())
-                .withIdentity(identity())
-                .withLink(TacticalBoardChrome.LinkState.forBattleSnapshot(snapshot))
-                .withTabs(tabStrip())
-                .withHints(hints())
-                .withFeedback(TacticalBoardChrome.Feedback.fromBattle());
-        drawShell(graphics, spec);
-        if (painter != null) {
-            painter.render(graphics, model, mouseX, mouseY);
-        }
-        renderWidgets(graphics, mouseX, mouseY, partialTick);
-        if (painter != null) {
-            painter.renderOverlay(graphics, model);
+        frameModel = model;
+        try {
+            for (ActionBinding binding : bindings) {
+                sync(binding, model);
+            }
+            BattleSnapshot snapshot = model.snapshot();
+            TacticalBoardChrome.ShellSpec spec = TacticalBoardChrome.ShellSpec.of(title())
+                    .withIdentity(identity())
+                    .withLink(TacticalBoardChrome.LinkState.forBattleSnapshot(snapshot))
+                    .withTabs(tabStrip())
+                    .withHints(hints())
+                    .withFeedback(TacticalBoardChrome.Feedback.fromBattle());
+            drawShell(graphics, spec);
+            if (painter != null) {
+                painter.render(graphics, model, mouseX, mouseY);
+            }
+            renderWidgets(graphics, mouseX, mouseY, partialTick);
+            if (painter != null) {
+                painter.renderOverlay(graphics, model);
+            }
+        } finally {
+            frameModel = null;
         }
     }
 
@@ -645,7 +750,9 @@ public final class SquadScreen extends TacticalScreen
     @Override
     public String uiStateId() {
         SquadBoardModel current = model == null ? buildModel() : model;
-        if (hasModal() && confirming == SquadBoardModel.Action.KICK_MEMBER) {
+        OpenConfirm open = openConfirm;
+        if (hasModal() && open != null && modal() == open.dialog()
+                && open.state().action() == SquadBoardModel.Action.KICK_MEMBER) {
             return "kick";
         }
         if (hasModal()) {
@@ -709,7 +816,9 @@ public final class SquadScreen extends TacticalScreen
         if (painter != null && painter.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
-        return super.onMouseClicked(mouseX, mouseY, button);
+        boolean handled = super.onMouseClicked(mouseX, mouseY, button);
+        adoptRebuiltFocus();
+        return handled;
     }
 
     @Override

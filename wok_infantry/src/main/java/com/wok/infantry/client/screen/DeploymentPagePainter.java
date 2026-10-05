@@ -798,7 +798,8 @@ final class DeploymentPagePainter implements SquadScreen.Painter {
                         "screen.wok_infantry.deployment_status")).withMeta(meta));
         int y = c.top();
         int x = c.left();
-        List<SquadBoardModel.ChecklistItem> items = model.checklist();
+        List<SquadBoardModel.ChecklistItem> items = active ? deployedItems(model)
+                : model.checklist();
         int slot = c.width() / 3;
         for (int index = 0; index < Math.min(3, items.size()); index++) {
             SquadBoardModel.ChecklistItem item = items.get(index);
@@ -824,6 +825,34 @@ final class DeploymentPagePainter implements SquadScreen.Painter {
         SquadBoardBlocks.fitted(graphics, font, List.of(line), c.left(), y, c.width(),
                 TacticalBoardTheme.MUTED, TextFit.Align.LEFT);
         SquadBoardBlocks.endRegion(graphics);
+    }
+
+    /**
+     * The compact status strip in combat (preview {@code deployCompact}): squad, class and the
+     * point deployed at, where waiting shows the checklist (it is empty in combat).
+     */
+    static List<SquadBoardModel.ChecklistItem> deployedItems(SquadBoardModel model) {
+        BattleSnapshot snapshot = model.snapshot();
+        if (snapshot == null) {
+            return List.of();
+        }
+        List<SquadBoardModel.ChecklistItem> items = new ArrayList<>(3);
+        items.add(snapshot.ownSquad() == null
+                ? new SquadBoardModel.ChecklistItem(SquadBoardModel.CheckItem.SQUAD,
+                SquadBoardModel.CheckState.TODO,
+                Component.translatable(SquadLabels.UNASSIGNED_KEY))
+                : new SquadBoardModel.ChecklistItem(SquadBoardModel.CheckItem.SQUAD,
+                SquadBoardModel.CheckState.DONE, SquadLabels.callsign(snapshot.ownSquad())));
+        String classId = model.currentClassId();
+        items.add(new SquadBoardModel.ChecklistItem(SquadBoardModel.CheckItem.CLASS,
+                SquadBoardModel.CheckState.DONE, SquadLabels.className(snapshot,
+                classId.isEmpty() ? null : classId)));
+        SquadBoardModel.PointRow point = model.selectedPoint();
+        if (point != null) {
+            items.add(new SquadBoardModel.ChecklistItem(SquadBoardModel.CheckItem.POINT,
+                    SquadBoardModel.CheckState.DONE, point.title()));
+        }
+        return List.copyOf(items);
     }
 
     private void renderActionReason(GuiGraphics graphics, SquadBoardModel model) {

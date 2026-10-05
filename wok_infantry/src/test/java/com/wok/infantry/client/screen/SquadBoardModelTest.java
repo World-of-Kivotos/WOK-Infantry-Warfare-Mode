@@ -400,6 +400,89 @@ class SquadBoardModelTest {
                 false, null, null, null, null, null, null, null));
     }
 
+    /** 审查修正: an open confirmation is checked again against the newest snapshot. */
+    @Test
+    void anOpenConfirmationOnlySendsWhatTheNewestSnapshotStillOffers() {
+        UUID rifleman = new UUID(0L, 12L);
+        UUID medic = new UUID(0L, 14L);
+        BattleSnapshot waiting = leaderSnapshot(defaultDeployment(), List.of());
+        SquadBoardModel opened = SquadBoardModel.of(waiting, SquadCallsign.ALPHA, rifleman, NOW);
+        ActionState kick = opened.rosterActions().button(Action.KICK_MEMBER);
+        ActionState disband = opened.rosterActions().button(Action.DISBAND_SQUAD);
+        ActionState leave = opened.rosterActions().button(Action.LEAVE_SQUAD);
+        ActionState transfer = opened.rosterActions().button(Action.TRANSFER_LEADER);
+
+        ActionState again = opened.stillOffered(kick);
+        assertNotNull(again, "nothing changed: the kick is still offered");
+        assertEquals(rifleman, again.target());
+        assertNotNull(again.confirm());
+
+        // the target left (the screen's selection is dropped) or another member is selected
+        assertNull(SquadBoardModel.of(waiting, SquadCallsign.ALPHA, null, NOW)
+                .stillOffered(kick));
+        assertNull(SquadBoardModel.of(waiting, SquadCallsign.ALPHA, medic, NOW)
+                .stillOffered(kick), "a different target is never kicked instead");
+
+        // the squad went into combat: kicking and handing over stay, leave / disband do not
+        SquadBoardModel combat = SquadBoardModel.of(leaderSnapshot(activeDeployment(),
+                List.of()), SquadCallsign.ALPHA, rifleman, NOW);
+        assertNotNull(combat.stillOffered(kick), "the server allows kicking in combat");
+        assertNotNull(combat.stillOffered(transfer));
+        assertNull(combat.stillOffered(disband));
+        assertNull(combat.stillOffered(leave));
+
+        // the viewer is no longer the leader: no management left, leaving still is
+        SquadView alpha = new SquadView(SquadCallsign.ALPHA, rifleman, List.of(
+                member(rifleman, "Rifleman12", SquadCallsign.ALPHA, true, false, true,
+                        "assault"),
+                member(VIEWER, "Viewer", SquadCallsign.ALPHA, false, false, true, "support")),
+                8, List.of());
+        SquadBoardModel demoted = SquadBoardModel.of(snapshot(SquadCallsign.ALPHA, false, false,
+                        List.of(alpha), MEMBER, defaultDeployment(), "support", List.of()),
+                SquadCallsign.ALPHA, rifleman, NOW);
+        assertNull(demoted.stillOffered(kick));
+        assertNull(demoted.stillOffered(transfer));
+        assertNull(demoted.stillOffered(disband));
+        assertNotNull(demoted.stillOffered(leave));
+
+        // waiting for the server's answer to the same operation also stops it
+        SquadBoardModel pending = SquadBoardModel.of(SquadBoardModel.Input.of(waiting)
+                .withViewedSquad(SquadCallsign.ALPHA).withSelectedMember(rifleman)
+                .withNow(NOW).withPending(EnumSet.of(Action.KICK_MEMBER)));
+        assertNull(pending.stillOffered(kick));
+        assertNull(opened.stillOffered(null));
+        ActionState noTarget = SquadBoardModel.of(waiting, SquadCallsign.ALPHA, null, NOW)
+                .rosterActions().button(Action.KICK_MEMBER);
+        assertFalse(noTarget.enabled());
+        assertNull(opened.stillOffered(noTarget), "a disabled state is never re-offered");
+    }
+
+    /** 审查修正: the 320-wide status strip in combat is not left empty. */
+    @Test
+    void compactCombatStripNamesSquadClassAndPoint() {
+        SquadBoardModel combat = SquadBoardModel.of(leaderSnapshot(activeDeployment(),
+                List.of()), null, null, NOW);
+        assertTrue(combat.checklist().isEmpty(), "the waiting checklist is empty in combat");
+        List<SquadBoardModel.ChecklistItem> items = DeploymentPagePainter.deployedItems(combat);
+        assertEquals(List.of(CheckItem.SQUAD, CheckItem.CLASS, CheckItem.POINT),
+                items.stream().map(SquadBoardModel.ChecklistItem::item).toList());
+        assertTrue(items.stream().allMatch(item -> item.state() == CheckState.DONE));
+        assertEquals("支援兵", items.get(1).value().getString());
+        assertEquals(KEY("point.main_base"), key(items.get(2).value()));
+    }
+
+    /** 审查修正: a redeploy confirmation lapses once the viewer is no longer in combat. */
+    @Test
+    void aRedeployConfirmationLapsesOutsideCombat() {
+        ActionState redeploy = SquadBoardModel.of(leaderSnapshot(activeDeployment(), List.of()),
+                null, null, NOW).redeploy();
+        assertTrue(redeploy.enabled());
+        assertNotNull(SquadBoardModel.of(leaderSnapshot(activeDeployment(), List.of()), null,
+                null, NOW).stillOffered(redeploy));
+        assertNull(SquadBoardModel.of(leaderSnapshot(defaultDeployment(), List.of()), null,
+                null, NOW).stillOffered(redeploy));
+    }
+
     // ---------------------------------------------------------------------- classes
 
     @Test

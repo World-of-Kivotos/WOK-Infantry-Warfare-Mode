@@ -32,6 +32,8 @@ final class SquadBoardText {
     static final String NOFACTION_TITLE = reg("nofaction.title", 0);
     static final String NOFACTION_HINT = reg("nofaction.hint", 0);
     static final String NOFACTION_OPEN = reg("nofaction.open", 0);
+    /** Footer notice: an open confirmation was closed because a newer snapshot changed it. */
+    static final String CONFIRM_STALE = reg("confirm.stale", 1);
 
     // ---- squad list / strip -----------------------------------------------------------------------
     static final String LIST_META = reg("list.meta", 2);
