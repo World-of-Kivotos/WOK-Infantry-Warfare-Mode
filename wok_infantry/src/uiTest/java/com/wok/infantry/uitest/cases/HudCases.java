@@ -273,11 +273,20 @@ public final class HudCases {
             context.require(note.contains(expected), "objective " + state.id + " should show '"
                     + expected + "': " + note);
         }
-        String line = hud.objective().line().getString();
-        boolean lineDrawn = frame.texts().stream().anyMatch(text ->
-                line.equals(text.fullText()) || line.equals(text.text()));
-        context.require(lineDrawn != tight, "second row '" + line + "' "
-                + (tight ? "drawn on a tight screen" : "missing on a wide screen"));
+        // The full row when it fits, else the row without the point name (never cut first).
+        int room = hud.layout().strip().width() - 2 * BattleStripModel.TEXT_INSET;
+        String line = BattleStripModel.line(hud.objective(), room,
+                context.minecraft().font::width).getString();
+        String full = hud.objective().line().getString();
+        String shortLine = hud.objective().shortLine().getString();
+        List<UiLayoutFrame.Text> rows = frame.texts().stream().filter(text ->
+                full.equals(text.fullText()) || full.equals(text.text())
+                        || shortLine.equals(text.fullText()) || shortLine.equals(text.text()))
+                .toList();
+        context.require(tight ? rows.isEmpty() : rows.size() == 1
+                        && line.equals(rows.get(0).text()) && !rows.get(0).truncated(),
+                "second row " + rows + " (expected " + (tight ? "none on a tight screen"
+                        : "'" + line + "' uncut") + ")");
         for (UiLayoutFrame.Text text : frame.texts()) {
             if ((text.text().equals(String.valueOf(MockData.TICKETS_BLUE))
                     || text.text().equals(String.valueOf(MockData.TICKETS_RED)))

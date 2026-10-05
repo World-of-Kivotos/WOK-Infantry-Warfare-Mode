@@ -129,10 +129,10 @@ public final class BattleStripOverlay {
         drawTile(graphics, font, tile, objective);
         boolean line = rect.height() >= WokHudLayout.STRIP_HEIGHT_WIDE;
         if (line) {
-            TextFit.draw(graphics, font, objective.line(),
+            int room = rect.width() - 2 * BattleStripModel.TEXT_INSET;
+            TextFit.draw(graphics, font, BattleStripModel.line(objective, room, font::width),
                     rect.left() + BattleStripModel.TEXT_INSET,
-                    rect.top() + BattleStripModel.LINE_TOP,
-                    rect.width() - 2 * BattleStripModel.TEXT_INSET,
+                    rect.top() + BattleStripModel.LINE_TOP, room,
                     TacticalBoardTheme.LIGHT_MUTED, TextFit.Align.CENTER);
         }
         if (UiLayoutProbe.recording()) {

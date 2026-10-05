@@ -6,6 +6,8 @@ import com.wok.infantry.client.screen.TacticalBoardTheme;
 import com.wok.infantry.client.screen.UiRect;
 import net.minecraft.network.chat.Component;
 
+import java.util.function.ToIntFunction;
+
 /**
  * Content of the top battle strip (preview {@code kit/hud-parts.js} {@code battle}) and its round
  * result notice. Pure, so the wording and geometry are unit-tested.
@@ -29,6 +31,8 @@ public final class BattleStripModel {
     /** Second row of the wide strip: "point name · status" and "… · 剩余 m:ss". */
     public static final String LINE_KEY = "hud.wok_infantry.capture.line";
     public static final String LINE_TIME_KEY = "hud.wok_infantry.capture.line_time";
+    /** Second row without the point name ("status · 剩余 m:ss"), when the full row is too wide. */
+    public static final String STATUS_TIME_KEY = "hud.wok_infantry.capture.status_time";
     /** Objective tile word for a disabled point, in place of its percentage. */
     public static final String DISABLED_KEY = "hud.wok_infantry.capture.disabled";
     /** Number x from the strip's edges; the first text row sits 5px under the top edge. */
@@ -84,14 +88,15 @@ public final class BattleStripModel {
      * @param name       short point name ("B")
      * @param value      "62%", or "停用" for a disabled point
      * @param line       second-row text: name, status and (while it is being taken) time left
+     * @param shortLine  the second row without the name, used when {@code line} is too wide
      * @param edge       the tile's left edge: the side taking it, orange when contested, the
      *                   owner when secured, gray when neutral or disabled
      * @param valueColor the side the control leans to (light at 0), orange when contested
      * @param solid      solid tile plate (a disabled point's tile is translucent)
      * @param lock       the viewer's side may not take the point yet: a lock icon before the name
      */
-    public record Objective(Component name, Component value, Component line, int edge,
-                            int nameColor, int valueColor, boolean solid, boolean lock,
+    public record Objective(Component name, Component value, Component line, Component shortLine,
+                            int edge, int nameColor, int valueColor, boolean solid, boolean lock,
                             CaptureObjective.Look look) {
     }
 
@@ -188,10 +193,14 @@ public final class BattleStripModel {
         Component value = look == CaptureObjective.Look.DISABLED
                 ? Component.translatable(DISABLED_KEY)
                 : Component.literal(point.percent() + "%");
-        Component line = point.remainingSeconds() >= 0
-                ? Component.translatable(LINE_TIME_KEY, point.name(), point.status(),
-                CaptureObjective.time(point.remainingSeconds()))
+        boolean timed = point.remainingSeconds() >= 0;
+        String time = timed ? CaptureObjective.time(point.remainingSeconds()) : "";
+        Component line = timed
+                ? Component.translatable(LINE_TIME_KEY, point.name(), point.status(), time)
                 : Component.translatable(LINE_KEY, point.name(), point.status());
+        Component shortLine = timed
+                ? Component.translatable(STATUS_TIME_KEY, point.status(), time)
+                : point.status();
         int leading = sideColor(point.leading(), viewer);
         int edge;
         int nameColor = TacticalBoardTheme.LIGHT;
@@ -212,8 +221,18 @@ public final class BattleStripModel {
             }
             default -> edge = TacticalBoardTheme.NEUTRAL_B;
         }
-        return new Objective(Component.literal(point.shortName()), value, line, edge, nameColor,
-                valueColor, solid, point.lockedFor(viewer), look);
+        return new Objective(Component.literal(point.shortName()), value, line, shortLine, edge,
+                nameColor, valueColor, solid, point.lockedFor(viewer), look);
+    }
+
+    /**
+     * The second row that fits {@code room}: the full row, else the row without the point name
+     * (the tile already shows its short name); that one is shortened with "…" only when even it
+     * does not fit.
+     */
+    public static Component line(Objective objective, int room, ToIntFunction<Component> width) {
+        return width.applyAsInt(objective.line()) <= room ? objective.line()
+                : objective.shortLine();
     }
 
     /** HUD colour of a side for the viewer: own side friendly blue, the other hostile red. */

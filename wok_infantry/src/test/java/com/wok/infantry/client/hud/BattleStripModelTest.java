@@ -12,6 +12,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BattleStripModelTest {
@@ -185,6 +186,30 @@ class BattleStripModelTest {
         assertEquals("B点 · 指挥所 · 争夺中 · 进度冻结", HudTestSupport.render(
                 BattleStripModel.objective(CaptureObjective.fromMap(frozen), Faction.BLUE)
                         .line(), ZH), "no time while nobody takes it");
+        assertEquals("蓝方正在占领 · 速度 ×2 · 剩余 0:09",
+                HudTestSupport.render(objective.shortLine(), ZH));
+        assertEquals("蓝方正在占领 · 速度 ×2 · 0:09 left",
+                HudTestSupport.render(objective.shortLine(), EN));
+    }
+
+    /** A row too wide for the strip drops the point name (the tile shows it) before any "…". */
+    @Test
+    void secondRowDropsTheNameBeforeItIsShortened() {
+        BattleStripModel.Objective objective = BattleStripModel.objective(
+                CaptureObjective.fromMap(CaptureObjectiveTest.pointB()), Faction.BLUE);
+        java.util.function.ToIntFunction<Component> zh =
+                component -> HudTestSupport.width(HudTestSupport.render(component, ZH));
+        int full = zh.applyAsInt(objective.line());
+        assertSame(objective.line(), BattleStripModel.line(objective, 284, zh),
+                "the 960×720 strip (292 wide, 284 room) fits the whole row: " + full);
+        assertSame(objective.line(), BattleStripModel.line(objective, full, zh));
+        assertSame(objective.shortLine(), BattleStripModel.line(objective, full - 1, zh));
+        Map<String, Object> frozen = CaptureObjectiveTest.pointB();
+        frozen.put("remainingSeconds", -1);
+        BattleStripModel.Objective noTime = BattleStripModel.objective(
+                CaptureObjective.fromMap(frozen), Faction.BLUE);
+        assertSame(frozen.get("status"), noTime.shortLine(),
+                "without a time the short row is the status alone");
     }
 
     private static String text(Outcome outcome, Map<String, String> bundle) {
