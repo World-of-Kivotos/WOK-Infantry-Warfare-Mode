@@ -6,10 +6,10 @@
 
 ### 新增
 - 战况条据点小牌（`BattleStripOverlay`）：玩家站在占点据点里时，第一行中间画一块实心 HUD 小底板“B 62%”（距战况条顶 3px、高 11px），左贴边颜色为正在占领的一方（己方友军蓝、敌方红）；争夺中贴边与数字为橙色，已控制时为拥有方颜色，中立为灰，停用时为灰色半透明底板并写“停用”代替百分比；本方暂时不能占（顺序占点未解锁）时名字前加锁图标；百分比为 `|control|`，颜色为领先一方。双方兵力条在小牌两侧 4px 处收住；名字放不下时先省略名字，百分比从不截断。
-- 非紧凑屏（布局宽 ≥400 且高 ≥280）在据点里时战况条变为 30 高的宽形，第二行居中写“据点名 · 占点给出的状态 · 剩余 m:ss”（剩余时间只在有人正在占领时写）；紧凑屏（320×240、480×270、427×240）仍是 17 高一行，只留小牌。没有兵力数据时战况条照样显示据点；编制投票条显示期间，据点条放在投票条下方。不在据点里时战况条与 0.5.0-beta.1 完全相同。
+- 非紧凑屏（布局宽 ≥400 且高 ≥280）在据点里时战况条变为 30 高的宽形，第二行居中写“据点名 · 占点给出的状态 · 剩余 m:ss”（剩余时间只在有人正在占领时写）；整行放不下时先省掉据点名（小牌上已有短名），写“状态 · 剩余 m:ss”，仍放不下才用省略号截断；紧凑屏（320×240、480×270、427×240）仍是 17 高一行，只留小牌。没有兵力数据时战况条照样显示据点；编制投票条显示期间，据点条放在投票条下方。不在据点里时战况条与 0.5.0-beta.1 完全相同。
 - `InfantryHudApi.rendersCapturePoints()`：客户端配置 `hud.showBattleStrip` 开着、且能读到占点的据点数据时为 true；占点 0.1.0-alpha.4 反射调用它决定自己画不画。
-- `CaptureHudBridge` 反射读取占点 `com.wok.capturepoints.api.CaptureHudApi.currentPoint()`（只按类名，不编译期依赖），解析成新记录 `CaptureObjective`（外观、对本方是否上锁、时间格式）；同一份 Map 只解析一次。`BattleStripModel` 新增 `objective`、`tile`、`tileMaxWidth`、带小牌的 `geometry` 重载；`WokHudLayout` 新增 `STRIP_HEIGHT_WIDE`（30）与 `Input.withStrip(shown, wide)`。
-- 语言：中英成对新增 3 个键 `hud.wok_infantry.capture.line`（“%s · %s”）、`hud.wok_infantry.capture.line_time`（“%s · %s · 剩余 %s” / “%s · %s · %s left”）、`hud.wok_infantry.capture.disabled`（“停用” / “Off”）。
+- `CaptureHudBridge` 反射读取占点 `com.wok.capturepoints.api.CaptureHudApi.currentPoint()`（只按类名，不编译期依赖），解析成新记录 `CaptureObjective`（外观、对本方是否上锁、时间格式）；同一份 Map 只解析一次。`BattleStripModel` 新增 `objective`、`line`、`tile`、`tileMaxWidth`、带小牌的 `geometry` 重载；`WokHudLayout` 新增 `STRIP_HEIGHT_WIDE`（30）与 `Input.withStrip(shown, wide)`。
+- 语言：中英成对新增 4 个键 `hud.wok_infantry.capture.line`（“%s · %s”）、`hud.wok_infantry.capture.line_time`（“%s · %s · 剩余 %s” / “%s · %s · %s left”）、`hud.wok_infantry.capture.status_time`（“%s · 剩余 %s” / “%s · %s left”）、`hud.wok_infantry.capture.disabled`（“停用” / “Off”）。
 - UI 验收新增 5 个用例：`hud.capture`、`hud.capture-contested`、`hud.capture-secured`、`hud.capture-disabled`、`hud.capture-locked`（全部 `migrated(true)`，5 个档位）；uiTest 语言成对新增 5 个据点夹具键。
 
 ### 修改
@@ -30,10 +30,21 @@
 
 ### 配置/存档影响
 - 不新增配置项；`hud.showBattleStrip` 的键名、默认值 `true` 不变，只改注释（配置文件里的英文注释在下次保存时更新）。
-- 不改任何存档格式。语言文件各新增 3 个键。
+- 不改任何存档格式。语言文件各新增 4 个键。
 
 ### 测试结果
-- 构建与验收结果在本轮构建完成后补记于此。
+- 以下为最终结果（代码 `4934b45`，本版最后一个源码提交；之后只有文档提交）。首轮（`241c403`/`e59803c`，第二行放不下时直接截断）跑过一轮 zh_cn 严格轮，归档 `…\20261005-0.5.0-beta.2\zh_cn\`，用例结果与最终一轮逐行相同，留作对照；那一轮的 en_us 报告轮里 640×336、960×720 两档的英文第二行被省略号截断 4 条，由 `4934b45` 修正（先省掉据点名），那一轮没有归档。
+- `wok_infantry`：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`，六个测试源集全部编译通过）；JUnit 1006 项全部通过，0 失败、0 跳过（比 0.5.0-beta.1 的 989 项多 17 项：`CaptureObjectiveTest` 7 项——读占点 Map 的全部字段、可选值回退与名称回退、缺必需键 / 类型不对 / 阵营名不对 / `version`≠1 / `status` 不是 Component 时拒绝、数值夹紧与名称截长、外观优先级（含自家人站在自家占满的据点算已控制）、对本方上锁、百分比与时间格式；`BattleStripModelTest` +4——小牌几何（距顶 3、高 11、名字后数字右对齐、锁图标、长名只省名字、最窄也放得下数字与锁）与兵力条在小牌两侧 4px 收住、按本方视角的贴边与数字颜色（占领中 / 被敌方占领 / 争夺 / 敌方已控制 / 停用）、第二行中英文案、放不下时先省掉据点名；`WokHudLayoutTest` +3——投票条期间据点条在其下方（8 个档位）、宽战况条 30 高把通知与 `top_center_next` 往下推且 8 个档位 × 有无状态效果图标都互不重叠、贴顶的占点薄条让 Boss 条下移；`CaptureHudBridgeTest` +2——没有占点时什么都不读也不避让、验收注入等同于新占点在据点里；`InfantryHudApiTest` +1——`rendersCapturePoints` 只在战况条开着且读得到据点时为 true）。翻译契约测试登记了 3 个带参数的新键。
+- 产物 `wok_infantry/build/libs/wok_infantry-0.5.0-beta.2.jar`，2,342,092 字节，SHA-256 `847D700262BA9F80BF371340ABDB5FDFCB6C4A658C3AAFE03E5E714C6FEF1E66`（GameTest、中英两轮 uiTest 与占点两轮 uiTest 跑完后重新核对，不变）。
+- `runGameTestServer`：22 项必需 GameTest 全部通过。
+- `runUiTestClient` zh_cn 严格轮：`status=PASS`，7174 tick，71 个用例、344 张截图，`strictLayoutViolations=0`，`layoutViolations=121`（与 0.5.0-beta.1 相同，全是只出报告的旧界面）。新增的 `hud.capture*` 5 个用例 × 5 档 = 25 张全部 PASS、0 违规（含 480×270、427×240 两个报告档）：探针记录的外观、贴边色、数字、锁、实心都符合各状态（例：`capture@960x720` 为 CAPTURING、贴边 `FF6FB1E6`、62%、第二行有；`capture-locked@640x336` 为 CAPTURING、贴边 `FFE8695D`、35%、锁；`capture-disabled` 为 DISABLED、贴边 `FF7D898A`、“停用”、半透明）；960×720 与 640×336 战况条 30 高并画出整行第二行，320×240、480×270、427×240 为 17 高只留小牌。其余 310 行用例结果与 0.5.0-beta.1 的 `zh_cn-merged` 逐行相同。`finalActiveMarkers=1`，`temporaryOperatorCleanup=revoked`。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.2\zh_cn-final\`（344 张截图与 5 个结果文件）。
+- 截图目视（Read）：320×240 的“B 62%”小牌在兵力条正中、左边蓝色贴边，两侧兵力数字与条不被压；锁定状态小牌前有锁图标、红贴边、红色 35%；960×720（2×）停用为灰色半透明小牌写“停用”，第二行“B点 · 指挥所 · 据点已停用”；640×336 第二行“B点 · 指挥所 · 蓝方正在占领 · 速度 ×2 · 剩余 0:09”居中，不碰顶边与底边；浅色天空背景下文字可读。
+- `runUiTestClient` en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`（语义检查全部通过），7173 tick，71 个用例、344 张截图，`strictLayoutViolations=0`，`layoutViolations=229`，与 0.5.0-beta.1 的 `en_us-merged` 相同；`hud.capture*` 25 张 0 违规（640×336 与 960×720 的英文整行放不下时改写“Red Force capturing · speed ×2 · 0:15 left”，不截断）；其余 310 行用例结果与 `en_us-merged` 逐行相同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.2\en_us\`。
+- 占点联动（真实反射链路，见下一条占点 0.1.0-alpha.4 的测试结果）：占点 uiTest 以本版最终 JAR 运行 PASS——本版读 `CaptureHudApi.currentPoint()` 画出小牌，占点不再画；关闭 `hud.showBattleStrip` 后本版不画小牌、占点画薄条进 `top_center_next`。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对本 JAR PASS，强制依赖只有 `forge`、`minecraft`；JAR 里没有占点或 uiTest 的类。
+- 版本核对：`tools/verify_versions.ps1 -Modules wok_infantry,wok_capture_points -Release`（Windows PowerShell 5.1）PASS（源码版本、根 README 与 VERSIONING 版本表、模块 README 产物名、CHANGELOG 标题、JAR 名、modId 与内部版本一致；两条条目六栏不空，JAR 晚于各自源码最后一次提交且源码没有未提交改动）。
+- 兼容矩阵覆盖：新核心 + 新占点、核心关闭战况条、旧核心 0.5.0-beta.1 + 新占点三种组合在真实开发客户端里跑过（上一条与占点条目）；新核心 + 旧占点 alpha.3 走的是未改动的镜像避让分支（`CaptureHudBridgeTest` 的 alpha.3 几何与 `WokHudLayoutTest` 的据点避让用例照旧通过），只装占点的位置由占点单测覆盖，这两种没有在客户端里跑。
+- 未做：真实客户端（PCL）人工验收——多人进出据点、争夺、顺序占点的锁图标、剩余时间随同步跳动、长据点名、GUI 1 下 2× 清晰度、投票条期间站进据点；部署由编排方进行。
 
 ## WOK步战附属-占点 0.1.0-alpha.4 — 2026-10-05
 
@@ -64,7 +75,14 @@
 - 无。不新增配置项，存档格式不变；语言文件各新增 2 个键。
 
 ### 测试结果
-- 构建与验收结果在本轮构建完成后补记于此。
+- `wok_capture_points`（生产源码最后一次提交 `d5b6f9a`，uiTest `67011d6`，版本号 `e59803c`），以核心 0.5.0-beta.2 的最终 JAR 编译：用限流脚本运行 `clean build compileUiTestJava`，BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 28 项全部通过，0 失败、0 跳过（比 alpha.3 的 9 项多 19 项：`CaptureHudModelTest` 6 项——状态优先级与“自家人站在自家占满的据点里算已控制”、百分比不提前到 100、剩余时间按当前速度、短名、中英状态文字、配色；`CaptureStripLayoutTest` 8 项——2× 规则、320 档进核心槽位、960 档 GUI 1 按 2× 带状态行且宽 200 居中于槽位、无槽位时贴顶或 GUI y 28、压到 Boss 条时下移、5 个档位宽 ≤200 不出屏且只在非紧凑屏有状态行、名字让位给最短进度条、进度条从中线向领先一方伸出；`CaptureHudApiTest` 3 项——给核心的 Map 的全部键、类型与含义、同一次同步返回同一实例、不在据点或据点已删时为 null；`CaptureLanguageTest` 2 项——中英键与参数一致、HUD 键齐全）。
+- 产物 `wok_capture_points/build/libs/wok_capture_points-0.1.0-alpha.4.jar`，81,635 字节，SHA-256 `E1C6A2770AA8B5C5E8C8D2E66A2DECAADE247FA64CF27D53FDFD82008BECE345`（两轮 uiTest 跑完后重新核对，不变）。JAR 里没有核心或 uiTest 的类。
+- `runUiTestClient`（在核心 `run/ui-test`，zh_cn）对核心 0.5.0-beta.2 最终 JAR：`PASS`，6 张截图。320×240 与 960×720 两档 `rendersCapturePoints=true`、本附属 `panelRect=null`、核心 `HudFrame.objective()` 有值（真实反射链路：核心读 `CaptureHudApi.currentPoint()` 画出“A 35%”小牌与“A点 · 火车站 · 蓝方正在占领 · 剩余 0:30”）；把核心 `hud.showBattleStrip` 临时关掉后 `rendersCapturePoints=false`、核心不再画小牌、本附属薄条 `[123, 2, 195, 14]`（320×240）与 `[460, 8, 400, 46]`（960×720，2× 时 200×23 布局像素）放进核心槽位；结束后配置还原为 true。
+- 同一套 uiTest 对测试端在用的核心 0.5.0-beta.1（`-Pinfantry_dev_jar_path` 指向从测试端只读复制的 `wok_infantry-0.5.0-beta.1.jar`，SHA-256 `A930A26E…FA0BFC`）：`PASS`，旧核心没有 `rendersCapturePoints`，四张 HUD 截图都是本附属薄条，放在旧核心 `top_center_next` 槽位里（320×240 `[123, 22, 195, 14]`，在旧核心战况条下方；960×720 `[460, 50, 400, 46]`），旧核心照 `panelRect` 让开。
+- 截图目视（Read）：新核心下据点小牌在战况条中间，没有兵力数据时小牌单独居中；薄条一行“A点 · 火车站 │ 3 ▬|▬ 2”，宽屏第二行蓝字“蓝方正在占领 · 剩余 0:30”；旧核心下薄条在旧战况条下方、不压名单。两组截图与结果文件保存在 `wok_capture_points/run/ui-acceptance/20261005-0.1.0-alpha.4/core-0.5.0-beta.2/` 与 `core-0.5.0-beta.1/`（被 Git 忽略；核心的 `archiveUiAcceptance` 只归档核心清单里的截图，所以没有进测试端 `ui-acceptance`）。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对本 JAR PASS，强制依赖只有 `forge`、`minecraft`。
+- 版本核对：`tools/verify_versions.ps1 -Modules wok_infantry,wok_capture_points -Release`（Windows PowerShell 5.1）PASS。
+- 未做：只装本附属（不装核心）的真实客户端没有跑（uiTest 依赖核心类）；薄条单装时的位置只有单测覆盖。真实对局里的人工验收（多人进出据点、争夺、顺序占点、Boss 条同屏）。部署由编排方进行。
 
 ## WOK步战核心 0.5.0-beta.1 — 2026-10-05
 
