@@ -607,6 +607,26 @@ class BattleSnapshotCodecTest {
     }
 
     @Test
+    void storedClassOutsideTheCatalogPatternStillEncodes() {
+        // 审查修正: a class id from an older save (upper case, a space) is sent verbatim in the
+        // roster; the viewer class that mirrors it must not make the whole snapshot unsendable.
+        String legacyClass = "Legacy Rifleman";
+        MemberView viewer = new MemberView(playerId(1), "Viewer", true, true, 20.0F, 20.0F,
+                true, false, SquadCallsign.ALPHA, legacyClass);
+        SquadView squad = new SquadView(SquadCallsign.ALPHA, playerId(1), List.of(viewer),
+                BattleRules.SQUAD_CAPACITY);
+        BattleSnapshot inSquad = snapshot(List.of(squad), List.of(), List.of(),
+                LEADER_PERMISSIONS, emptyDeployment(), 1, 0);
+        assertEquals(legacyClass, inSquad.viewerClassId());
+        assertEquals(inSquad, decodeBytes(encodeBytes(inSquad)));
+
+        BattleSnapshot outsideSquad = snapshot(List.of(), List.of(), List.of(),
+                LEADER_PERMISSIONS, emptyDeployment(), 1, 0)
+                .withViewerContext(FormationContextView.EMPTY, legacyClass, List.of());
+        assertEquals(outsideSquad, decodeBytes(encodeBytes(outsideSquad)));
+    }
+
+    @Test
     void formationContextIsClippedBeforeItCanBreakTheEncoder() {
         String longName = "名".repeat(FormationContextView.MAX_NAME_LENGTH + 20);
         FormationContextView context = new FormationContextView("Default", longName + "\n",

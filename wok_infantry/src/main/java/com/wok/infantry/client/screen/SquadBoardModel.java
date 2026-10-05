@@ -1555,8 +1555,9 @@ public final class SquadBoardModel {
         List<MemberView> others = squad.members().stream()
                 .filter(member -> !member.playerId().equals(snapshot.viewerId())).toList();
         List<Component> body = new ArrayList<>();
+        // "全部 N 名队员退出小队": the leader leaves too, so N counts everyone (审查修正).
         body.add(Component.translatable(KEY_PREFIX + "confirm.disband.body",
-                SquadLabels.callsign(squad.callsign()), others.size()));
+                SquadLabels.callsign(squad.callsign()), squad.members().size()));
         if (others.stream().anyMatch(member -> member.state().hasVitals())) {
             body.add(Component.translatable(KEY_PREFIX + "confirm.disband.active"));
         }

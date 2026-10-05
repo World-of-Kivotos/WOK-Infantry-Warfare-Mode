@@ -252,6 +252,10 @@ class SquadBoardModelTest {
                 args(kick.confirm().body().get(0)));
         assertEquals(KEY("confirm.kick.active"), key(kick.confirm().body().get(1)),
                 "a deployed target is warned about the pull-back");
+        ActionState disband = picked.rosterActions().button(Action.DISBAND_SQUAD);
+        assertEquals(List.of(SquadLabels.callsign(SquadCallsign.ALPHA), 4),
+                args(disband.confirm().body().get(0)),
+                "\"全部 N 名队员\" counts the leader too (审查修正)");
 
         BattleSnapshot combat = leaderSnapshot(activeDeployment(), List.of());
         SquadBoardModel fighting = SquadBoardModel.of(combat, SquadCallsign.ALPHA, online, NOW);

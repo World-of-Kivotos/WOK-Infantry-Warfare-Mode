@@ -239,9 +239,14 @@ public final class BattleSnapshotCodec {
     }
 
     /**
-     * Protocol 20 viewer fields: the viewer class is a class id or empty and agrees with the
-     * viewer's own roster entry; cooldowns exist only inside a faction, once per call sign, and
-     * expire after the snapshot clock but no later than the rejoin rule allows.
+     * Protocol 20 viewer fields: the viewer class agrees with the viewer's own roster entry;
+     * cooldowns exist only inside a faction, once per call sign, and expire after the snapshot
+     * clock but no later than the rejoin rule allows.
+     *
+     * <p>The viewer class is the stored class exactly as the roster carries it (bounded by the
+     * class id length on the wire, like every member's class). It is deliberately not held to the
+     * catalog id pattern: a save written by an older version may hold a class the roster still
+     * sends verbatim, and refusing it would stop every snapshot to that player (审查修正).
      */
     private static void validateViewerContext(UUID viewerId, Faction viewerFaction,
                                               List<SquadView> squads,
@@ -249,10 +254,6 @@ public final class BattleSnapshotCodec {
                                               String viewerClassId,
                                               List<KickCooldownView> kickCooldowns,
                                               long serverTimeMillis) {
-        if (!viewerClassId.isEmpty()
-                && !viewerClassId.equals(FormationContextView.sanitizeId(viewerClassId))) {
-            throw invalid("viewer class id", viewerClassId);
-        }
         for (SquadView squad : squads) {
             for (MemberView member : squad.members()) {
                 if (member.playerId().equals(viewerId)
