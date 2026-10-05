@@ -11,14 +11,17 @@ import com.wok.infantry.battle.TacticalMarkerType;
 import com.wok.infantry.client.BattleClientActions;
 import com.wok.infantry.client.ClientBattleState;
 import com.wok.infantry.client.ClientFormationState;
+import com.wok.infantry.client.map.TacticalMapIcons;
 import com.wok.infantry.client.map.TacticalMapTerrainRequest;
 import com.wok.infantry.client.map.TacticalMapTerrainRegistry;
 import com.wok.infantry.client.map.TacticalSupportMapPresentationRegistry;
 import com.wok.infantry.client.screen.PlayerLoadoutScreen;
 import com.wok.infantry.client.screen.SquadScreen;
 import com.wok.infantry.client.screen.TacticalMapScreen;
+import com.wok.infantry.client.ui.probe.UiLayoutFrame;
 import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import com.wok.infantry.client.ui.probe.UiLayoutReport;
+import com.wok.infantry.config.InfantryClientConfig;
 import com.wok.infantry.integration.journeymap.JourneyMapUiPolicy;
 import com.wok.infantry.deployment.DeploymentPoint;
 import com.wok.infantry.deployment.DeploymentPhase;
@@ -76,6 +79,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 
 /**
  * Development-only, real-client acceptance harness for the tactical UI.
@@ -1601,8 +1605,42 @@ public final class UiRuntimeAcceptanceHarness {
                 && phaseTicks >= SCREEN_SETTLE_TICKS) {
             waitingForCapture = fileName;
             String language = minecraft.getLanguageManager().getSelected();
-            UiCapture.arm(fileName, minecraft.screen,
-                    result -> liveCaptures.add(liveResult(fileName, result, language)));
+            UiCapture.arm(fileName, minecraft.screen, result -> {
+                if (result.screen() instanceof TacticalMapScreen) {
+                    checkMapIcons(fileName, result);
+                }
+                liveCaptures.add(liveResult(fileName, result, language));
+            });
+        }
+    }
+
+    /**
+     * The live map captures must draw the Squad-style marker icons (0.4.0-beta.3): records every
+     * kind drawn at the map size of the current icon knob (size scheme B,
+     * {@link TacticalMapIcons#mapArtPx}) and fails when none is. Marker-tool keys may draw their
+     * icons smaller; they are counted apart.
+     */
+    private static void checkMapIcons(String fileName, UiCapture.Result capture) {
+        int mapArt = TacticalMapIcons.mapArtPx(InfantryClientConfig.markerScale(),
+                capture.guiScale());
+        Map<String, Integer> mapSized = new TreeMap<>();
+        int otherSize = 0;
+        for (UiLayoutFrame.Icon icon : capture.frame().icons()) {
+            TacticalMapIcons.MapIcon marker = TacticalMapIcons.MapIcon.valueOf(
+                    icon.id().toUpperCase(Locale.ROOT));
+            if (icon.physicalWidth() == marker.plate().width() * mapArt
+                    && icon.physicalHeight() == marker.plate().height() * mapArt) {
+                mapSized.merge(icon.id(), 1, Integer::sum);
+            } else {
+                otherSize++;
+            }
+        }
+        observations.add("mapIcons[" + fileName + "]=" + mapSized + " artPx=" + mapArt
+                + " plate=" + 15 * mapArt + "px guiScale=" + capture.guiScale()
+                + " otherSize=" + otherSize);
+        if (mapSized.isEmpty()) {
+            fail("The tactical map capture " + fileName + " drew no Squad-style marker icon at "
+                    + mapArt + " physical px per art px");
         }
     }
 

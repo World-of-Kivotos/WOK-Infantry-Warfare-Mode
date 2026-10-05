@@ -1,7 +1,6 @@
 package com.wok.infantry.client.screen;
 
 import com.mojang.blaze3d.platform.NativeImage;
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.math.Axis;
 import com.wok.infantry.WokInfantryMod;
 import com.wok.infantry.battle.BattleSnapshot;
@@ -14,6 +13,8 @@ import com.wok.infantry.battle.TacticalMarker;
 import com.wok.infantry.battle.TacticalMarkerType;
 import com.wok.infantry.client.BattleClientActions;
 import com.wok.infantry.client.ClientBattleState;
+import com.wok.infantry.client.map.TacticalMapIcons;
+import com.wok.infantry.client.map.TacticalMapPinPlanner;
 import com.wok.infantry.client.map.TacticalMapSegmentClipper;
 import com.wok.infantry.client.map.TacticalMapAreaOverlay;
 import com.wok.infantry.client.map.TacticalMapAreaOverlayRegistry;
@@ -60,19 +61,10 @@ import java.lang.ref.WeakReference;
 public final class TacticalMapScreen extends Screen {
     static final int COMPASS_TOP_OFFSET = 36;
     static final int MARKER_DELETE_HEIGHT = 20;
-    static final int MARKER_ICON_SIZE = 11;
-    static final int INFANTRY_MARKER_ICON_SIZE = 16;
-    static final int INFANTRY_TOOL_ICON_SIZE = 14;
-    static final int ORDER_MARKER_ICON_SIZE = 16;
-    static final int ORDER_TOOL_ICON_SIZE = 14;
-    static final int TANK_MARKER_TEXTURE_WIDTH = 128;
-    static final int TANK_MARKER_TEXTURE_HEIGHT = 192;
-    static final int IFV_MARKER_TEXTURE_WIDTH = 128;
-    static final int IFV_MARKER_TEXTURE_HEIGHT = 256;
-    static final int TANK_MARKER_ICON_WIDTH = 20;
-    static final int TANK_MARKER_ICON_HEIGHT = 30;
-    static final int IFV_MARKER_ICON_WIDTH = 14;
-    static final int IFV_MARKER_ICON_HEIGHT = 31;
+    /** Physical pixels a marker-tool icon keeps clear above and below it inside its key. */
+    static final int TOOL_ICON_MARGIN_PHYSICAL = 2;
+    /** Hit tolerance around an attack-order line, in physical pixels. */
+    static final double ATTACK_LINE_HIT_PHYSICAL = 10.0D;
     static final int ALLIED_PLAYER_MARKER_RADIUS = 5;
     static final int ALLIED_LEADER_MARKER_RADIUS = 6;
     static final int ALLIED_COMMANDER_MARKER_RADIUS = 7;
@@ -83,8 +75,9 @@ public final class TacticalMapScreen extends Screen {
     static final double MAX_INTEL_MARKER_SCALE =
             InfantryClientConfig.MAX_MAP_MARKER_SCALE;
     static final double INTEL_MARKER_SCALE_STEP = 0.05D;
-    private static final int MARKER_ICON_FOREGROUND = 0xFFF4F7F7;
-    private static final int MARKER_SELECTED_INDICATOR = 0xFFFFF2C4;
+    /** Leader of a deployment pin that stepped aside: friendly blue on the dark symbol casing. */
+    private static final int PIN_LEADER_COLOR = TacticalBoardTheme.MAP_ICON_FRIENDLY;
+    private static final int PIN_LEADER_CASING = TacticalBoardTheme.MAP_ICON_OUTLINE;
     private static final int SUPPORT_AREA_ALPHA = 0x38;
     private static final int SUPPORT_ACTIVE_AREA_ALPHA = 0x48;
     private static final float MAP_TEXT_PHYSICAL_SCALE = 2.0F;
@@ -103,75 +96,6 @@ public final class TacticalMapScreen extends Screen {
     private static final int SUPPORT_GUIDANCE_DASH_PHYSICAL = 9;
     private static final int SUPPORT_GUIDANCE_GAP_PHYSICAL = 6;
     private static final int SUPPORT_PAGE_SIZE = 3;
-    private static final ResourceLocation TANK_MARKER_TEXTURE = ResourceLocation.fromNamespaceAndPath(
-            WokInfantryMod.MOD_ID, "textures/gui/tactical_markers/tank.png");
-    private static final ResourceLocation IFV_MARKER_TEXTURE = ResourceLocation.fromNamespaceAndPath(
-            WokInfantryMod.MOD_ID, "textures/gui/tactical_markers/ifv.png");
-    private static final String[] INFANTRY_MARKER_ICON = {
-            "...WWWWW...",
-            "..W.....WW.",
-            ".W......A.W",
-            "W.........W",
-            "W.........W",
-            "W.......WWW",
-            ".WWWWWWW...",
-            "..W..WWW...",
-            "..W..W.....",
-            "...W..W....",
-            "....WW....."
-    };
-    private static final String[] RECON_CONTACT_MARKER_ICON = {
-            "...........",
-            "...........",
-            "....AAA....",
-            "...AAAAA...",
-            "..AAAAAAA..",
-            "..AAAAAAA..",
-            "..AAAAAAA..",
-            "...AAAAA...",
-            "....AAA....",
-            "...........",
-            "..........."
-    };
-    private static final String[] DEFEND_MARKER_ICON = {
-            "..WWWWWWW..",
-            ".W.......W.",
-            ".W..AAA..W.",
-            ".W...A...W.",
-            ".W.AAAAA.W.",
-            "..W..A..W..",
-            "..W..A..W..",
-            "...W...W...",
-            "....W.W....",
-            ".....W.....",
-            "..........."
-    };
-    private static final String[] RALLY_MARKER_ICON = {
-            "...WWWWWW..",
-            "...W....AW.",
-            "...W...A.W.",
-            "...W..A..W.",
-            "...W.A...W.",
-            "...WWWWWWW.",
-            "...W.......",
-            "...W.......",
-            "...W.......",
-            "..WWW......",
-            ".WWWWW....."
-    };
-    private static final String[] ATTACK_MARKER_ICON = {
-            "...........",
-            ".......W...",
-            "........W..",
-            ".........W.",
-            ".AAAAAAAAAW",
-            ".AAAAAAAAAA",
-            ".AAAAAAAAAW",
-            ".........W.",
-            "........W..",
-            ".......W...",
-            "..........."
-    };
     private static final double MIN_ZOOM = 0.02D;
     private static final double MAX_ZOOM = 4.0D;
     // Keeps a 1080p/1440p tactical overview useful while staying inside the terrain tile budget.
@@ -236,6 +160,11 @@ public final class TacticalMapScreen extends Screen {
     private final Map<TacticalMapTerrainRequest, InFlightTerrainTile> timedOutTerrainRequests =
             new HashMap<>();
     private final List<MarkerToolIconSlot> markerToolIconSlots = new ArrayList<>();
+    /**
+     * Label panels drawn so far this frame (support cards and tags, area notes): a deployment pin
+     * that has to step aside avoids landing on them.
+     */
+    private final List<TacticalMapLayout.Rect> frameLabels = new ArrayList<>();
     private final Map<ResourceLocation, TacticalBoardButton> supportButtons =
             new LinkedHashMap<>();
     private long terrainRequestDueNanos;
@@ -525,7 +454,7 @@ public final class TacticalMapScreen extends Screen {
             if (compactTools || richBoard) {
                 markerToolIconSlots.add(new MarkerToolIconSlot(tool,
                         compactTools ? x + buttonWidth / 2 : x + 14,
-                        y + buttonHeight / 2));
+                        y + buttonHeight / 2, buttonHeight));
             }
             index++;
         }
@@ -942,22 +871,33 @@ public final class TacticalMapScreen extends Screen {
         renderGrid(graphics);
         ResourceLocation dimension = currentDimension();
         List<TacticalMapAreaOverlay> addonAreas = TacticalMapAreaOverlayRegistry.overlays();
+        // One marker list per frame: the server already merged and capped it (reserved intel and
+        // manual quotas), so the map only filters by dimension and layer, never trims or reorders.
+        List<TacticalMarker> markers = visibleMarkers(dimension);
+        int artPx = mapIconArtPx();
+        frameLabels.clear();
+        UUID hovered = panningMap ? null : hoveredMarkerId(markers, mouseX, mouseY, artPx);
 
         // Area / order geometry.
         renderAddonAreaGeometry(graphics, dimension, addonAreas);
         renderSupportMissions(graphics, snapshot, dimension);
-        renderAttackDirectionMarkers(graphics, dimension);
+        renderAttackDirectionLines(graphics, markers);
 
-        // World annotations are below discrete tactical symbols.
+        // World annotations are below discrete tactical symbols. Deployment pins that found a
+        // clear spot go below the marker icons; a pin that could not get clear of every icon is
+        // drawn above them so its head is never hidden.
         renderAddonAreaAnnotations(graphics, dimension, addonAreas);
-        renderDeploymentPoints(graphics, snapshot, dimension);
-        renderPointMarkers(graphics, dimension);
+        List<TacticalMapPinPlanner.Plan> pins = planDeploymentPins(snapshot, dimension, markers,
+                hovered, artPx);
+        renderDeploymentPins(graphics, pins, false, artPx);
+        renderMarkerIcons(graphics, markers, hovered, artPx);
+        renderDeploymentPins(graphics, pins, true, artPx);
 
         // Live units and active previews take precedence over static map content.
         if (showPlayers) {
             renderPlayers(graphics, snapshot, dimension, mouseX, mouseY);
         }
-        renderAttackPreview(graphics, dimension, mouseX, mouseY);
+        renderAttackPreview(graphics, dimension, mouseX, mouseY, artPx);
         renderSupportPreview(graphics, dimension, mouseX, mouseY);
 
         // Map chrome always remains readable regardless of add-on content beneath it.
@@ -1196,29 +1136,151 @@ public final class TacticalMapScreen extends Screen {
         }
     }
 
-    private void renderDeploymentPoints(GuiGraphics graphics, BattleSnapshot snapshot,
-                                        ResourceLocation dimension) {
+    /**
+     * Deployment points as friendly pins (main base, field beacon, squad rally pack) with the tip
+     * on the point. A pin whose spot is taken by a marker icon, an attack order or an earlier pin
+     * steps aside and draws a leader back ({@link TacticalMapPinPlanner}); the spawn point the
+     * player picked carries a green check badge, the yellow ring stays "selected on this map".
+     */
+    private List<TacticalMapPinPlanner.Plan> planDeploymentPins(BattleSnapshot snapshot,
+                                                                ResourceLocation dimension,
+                                                                List<TacticalMarker> markers,
+                                                                UUID hovered, int artPx) {
+        double scale = mapGuiScale();
+        UUID spawn = snapshot.deployment().selectedPointId();
+        List<TacticalMapPinPlanner.Pin> pins = new ArrayList<>();
         for (DeploymentPoint point : snapshot.deployment().points()) {
             if (!point.dimension().equals(dimension)) {
                 continue;
             }
-            int x = worldToScreenX(point.position().getX() + 0.5D);
-            int y = worldToScreenY(point.position().getZ() + 0.5D);
+            double x = screenX(point.position().getX() + 0.5D);
+            double y = screenY(point.position().getZ() + 0.5D);
             if (!insideMap(x, y)) {
                 continue;
             }
-            boolean selected = point.id().equals(snapshot.deployment().selectedPointId());
-            int radius = selected ? 8 : 7;
-            drawMapSquare(graphics, x, y, radius, 0xE615242A,
-                    selected ? BattleUiTheme.ACCENT : BattleUiTheme.FRIENDLY);
-            String symbol = switch (point.kind()) {
-                case MAIN_BASE -> "B";
-                case FIELD_BEACON -> "D";
-                case RALLY -> "R";
-            };
-            drawMapCenteredString(graphics, symbol, x, y,
-                    selected ? BattleUiTheme.ACCENT : BattleUiTheme.FRIENDLY);
+            pins.add(new TacticalMapPinPlanner.Pin(TacticalMapIcons.MapIcon.of(point.kind()),
+                    Math.round(x * scale), Math.round(y * scale), point.id().equals(spawn)));
         }
+        if (pins.isEmpty()) {
+            return List.of();
+        }
+        List<TacticalMapPinPlanner.Box> avoid = new ArrayList<>();
+        List<TacticalMapLayout.Rect> labels = new ArrayList<>(frameLabels);
+        labels.addAll(mapChrome());
+        for (TacticalMapLayout.Rect label : labels) {
+            avoid.add(new TacticalMapPinPlanner.Box(label.left() * scale, label.top() * scale,
+                    label.right() * scale, label.bottom() * scale, 1.0D, false));
+        }
+        return TacticalMapPinPlanner.plan(pins, pinObstacles(markers, hovered, artPx), avoid,
+                artPx, physicalViewport(1), 6.0D * scale, symbolPhysical(3), spawnBadgeHalf());
+    }
+
+    /**
+     * What a deployment pin must not sit on: every drawn marker icon (with its ring when selected
+     * or hovered), the start icon of an attack order being placed, the attack orders' heads and,
+     * at a quarter weight, their shafts.
+     */
+    private List<TacticalMapPinPlanner.Box> pinObstacles(List<TacticalMarker> markers,
+                                                         UUID hovered, int artPx) {
+        double scale = mapGuiScale();
+        TacticalMapPinPlanner.Box viewport = physicalViewport(0);
+        List<TacticalMapPinPlanner.Box> obstacles = new ArrayList<>();
+        for (TacticalMarker marker : markers) {
+            boolean ring = marker.id().equals(selectedMarkerId) || marker.id().equals(hovered);
+            int pad = ring ? 3 : 1;
+            double x = screenX(marker.x());
+            double y = screenY(marker.z());
+            if (marker.type() == TacticalMarkerType.ATTACK_DIRECTION) {
+                double endX = screenX(marker.endX());
+                double endY = screenY(marker.endZ());
+                TacticalMapSegmentClipper.ClippedSegment clipped = TacticalMapSegmentClipper.clip(
+                        x, y, endX, endY, mapLeft, mapTop, mapRight - 1.0D, mapBottom - 1.0D);
+                if (clipped == null) {
+                    continue;
+                }
+                double x0 = clipped.startX() * scale;
+                double y0 = clipped.startY() * scale;
+                double x1 = clipped.endX() * scale;
+                double y1 = clipped.endY() * scale;
+                obstacles.addAll(TacticalMapPinPlanner.lineBoxes(x0, y0, x1, y1, 6.0D * scale,
+                        symbolPhysical(ring ? 7 : 4), TacticalMapPinPlanner.SHAFT_WEIGHT,
+                        viewport));
+                double length = Math.max(1.0E-3D, Math.hypot(x1 - x0, y1 - y0));
+                double back = symbolPhysical(7);
+                obstacles.add(TacticalMapPinPlanner.Box.around(
+                        x1 - (x1 - x0) / length * back, y1 - (y1 - y0) / length * back,
+                        symbolPhysical(10), 1.0D, false));
+            }
+            if (insideMap(x, y)) {
+                obstacles.add(TacticalMapPinPlanner.iconBox(
+                        TacticalMapIcons.MapIcon.of(marker.type()), x * scale, y * scale, artPx,
+                        pad, 1.0D, true));
+            }
+        }
+        if (selectedTool == BattleClientActions.MarkerTool.ATTACK_DIRECTION && attackStart != null
+                && attackStart.dimension().equals(currentDimension())) {
+            double x = screenX(attackStart.x());
+            double y = screenY(attackStart.z());
+            if (insideMap(x, y)) {
+                obstacles.add(TacticalMapPinPlanner.iconBox(
+                        TacticalMapIcons.MapIcon.ATTACK_DIRECTION, x * scale, y * scale, artPx, 1,
+                        1.0D, true));
+            }
+        }
+        return obstacles;
+    }
+
+    /**
+     * Pins of one layer: the ones clear of the marker icons ({@code over} false, drawn below the
+     * icons) or the ones that could not get clear ({@code over} true, drawn above them). A moved pin
+     * first draws its leader from the true spot (friendly blue on a dark casing, a small diamond on
+     * the spot) to its tip.
+     */
+    private void renderDeploymentPins(GuiGraphics graphics,
+                                      List<TacticalMapPinPlanner.Plan> pins, boolean over,
+                                      int artPx) {
+        double scale = mapGuiScale();
+        for (TacticalMapPinPlanner.Plan plan : pins) {
+            if (plan.over() != over) {
+                continue;
+            }
+            double x = plan.pin().x();
+            double y = plan.pin().y();
+            if (plan.moved()) {
+                drawPhysicalLine(graphics, x, y, plan.tipX(), plan.tipY(), PIN_LEADER_CASING,
+                        symbolPhysical(4));
+                drawPhysicalLine(graphics, x, y, plan.tipX(), plan.tipY(), PIN_LEADER_COLOR,
+                        symbolPhysical(2));
+                drawPhysicalDiamond(graphics, x, y, symbolPhysical(3), PIN_LEADER_CASING);
+                drawPhysicalDiamond(graphics, x, y, symbolPhysical(2), PIN_LEADER_COLOR);
+            }
+            TacticalMapIcons.draw(graphics, plan.pin().icon(), (float) (plan.tipX() / scale),
+                    (float) (plan.tipY() / scale), artPx, TacticalMapIcons.IconState.NORMAL);
+            if (plan.badge() != null) {
+                renderSpawnBadge(graphics, plan.badge());
+            }
+        }
+    }
+
+    /** Green check badge (preview {@code spawnBadge}): "this is the spawn point you picked". */
+    private void renderSpawnBadge(GuiGraphics graphics, TacticalMapPinPlanner.Badge badge) {
+        int iconPx = spawnBadgeIconPx();
+        int half = badge.half();
+        int centerX = (int) Math.round(badge.x());
+        int centerY = (int) Math.round(badge.y());
+        int iconSize = TacticalIcon.SIZE * iconPx;
+        int iconLeft = centerX - half + (2 * half + 1 - iconSize) / 2;
+        int iconTop = centerY - half + (2 * half + 1 - iconSize) / 2;
+        graphics.pose().pushPose();
+        graphics.pose().scale(mapInverseGuiScale(), mapInverseGuiScale(), 1.0F);
+        graphics.fill(centerX - half - 1, centerY - half - 1, centerX + half + 2,
+                centerY + half + 2, TacticalBoardTheme.MAP_ICON_OUTLINE);
+        graphics.fill(centerX - half, centerY - half, centerX + half + 1, centerY + half + 1,
+                TacticalBoardTheme.SUCCESS_B);
+        graphics.pose().translate(iconLeft, iconTop, 0.0F);
+        graphics.pose().scale(iconPx, iconPx, 1.0F);
+        TacticalIcon.CHECK.draw(graphics, 0, 0, TacticalBoardTheme.WELL);
+        graphics.pose().popPose();
     }
 
     private void renderAddonAreaGeometry(GuiGraphics graphics, ResourceLocation dimension,
@@ -1284,174 +1346,131 @@ public final class TacticalMapScreen extends Screen {
             graphics.fill(barLeft, barTop,
                     barLeft + (int) Math.round(barWidth * area.progress()),
                     barTop + barHeight, color);
+            frameLabels.add(new TacticalMapLayout.Rect(
+                    Math.min(labelLeft - horizontalPadding, barLeft),
+                    labelTop - verticalPadding,
+                    Math.max(labelLeft + labelWidth + horizontalPadding, barLeft + barWidth),
+                    barTop + barHeight));
         }
     }
 
-    private void renderAttackDirectionMarkers(GuiGraphics graphics,
-                                              ResourceLocation dimension) {
-        ClientBattleState.activeMarkers().stream()
-                .filter(marker -> marker.dimension().equals(dimension))
-                .filter(marker -> layerVisible(marker.type()))
-                .filter(marker -> marker.type() == TacticalMarkerType.ATTACK_DIRECTION)
-                .forEach(marker -> renderMarker(graphics, marker));
-    }
-
-    private void renderPointMarkers(GuiGraphics graphics, ResourceLocation dimension) {
-        ClientBattleState.activeMarkers().stream()
-                .filter(marker -> marker.dimension().equals(dimension))
-                .filter(marker -> layerVisible(marker.type()))
-                .filter(marker -> marker.type() != TacticalMarkerType.ATTACK_DIRECTION)
-                .forEach(marker -> renderMarker(graphics, marker));
-    }
-
-    private void renderMarker(GuiGraphics graphics, TacticalMarker marker) {
-        int x = worldToScreenX(marker.x());
-        int y = worldToScreenY(marker.z());
-        boolean selected = marker.id().equals(selectedMarkerId);
-        int color = markerColor(marker.type());
-        if (marker.type() == TacticalMarkerType.ATTACK_DIRECTION) {
-            int endX = worldToScreenX(marker.endX());
-            int endY = worldToScreenY(marker.endZ());
-            renderAttackArrow(graphics, x, y, endX, endY, color, selected);
-            return;
+    /**
+     * Markers of this map, in the server's order: on the current dimension and on a visible layer.
+     * The snapshot is already merged and capped (reserved intel and manual quotas), so the map never
+     * trims, reorders or de-duplicates it.
+     */
+    private List<TacticalMarker> visibleMarkers(ResourceLocation dimension) {
+        List<TacticalMarker> visible = new ArrayList<>();
+        for (TacticalMarker marker : ClientBattleState.activeMarkers()) {
+            if (marker.dimension().equals(dimension) && layerVisible(marker.type())) {
+                visible.add(marker);
+            }
         }
+        return visible;
+    }
+
+    /** Attack-order lines; their start icons are drawn with the other marker icons, above them. */
+    private void renderAttackDirectionLines(GuiGraphics graphics, List<TacticalMarker> markers) {
+        for (TacticalMarker marker : markers) {
+            if (marker.type() != TacticalMarkerType.ATTACK_DIRECTION) {
+                continue;
+            }
+            renderAttackArrow(graphics,
+                    worldToScreenX(marker.x()), worldToScreenY(marker.z()),
+                    worldToScreenX(marker.endX()), worldToScreenY(marker.endZ()),
+                    markerColor(marker.type()), marker.id().equals(selectedMarkerId));
+        }
+    }
+
+    /**
+     * Squad-style marker icons ({@link TacticalMapIcons}): enemy circles and order squares on their
+     * spot, an attack order's icon on its start (only while the start is on the map). The hovered
+     * and the selected marker are drawn last so their rings stay on top; a marker about to expire is
+     * faded.
+     */
+    private void renderMarkerIcons(GuiGraphics graphics, List<TacticalMarker> markers,
+                                   UUID hovered, int artPx) {
+        long now = ClientBattleState.estimatedServerTimeMillis();
+        TacticalMarker hoveredMarker = null;
+        TacticalMarker selected = null;
+        for (TacticalMarker marker : markers) {
+            if (marker.id().equals(selectedMarkerId)) {
+                selected = marker;
+            } else if (marker.id().equals(hovered)) {
+                hoveredMarker = marker;
+            } else {
+                renderMarkerIcon(graphics, marker, TacticalMapIcons.IconState.NORMAL, artPx, now);
+            }
+        }
+        if (hoveredMarker != null) {
+            renderMarkerIcon(graphics, hoveredMarker, TacticalMapIcons.IconState.HOVER, artPx, now);
+        }
+        if (selected != null) {
+            renderMarkerIcon(graphics, selected, TacticalMapIcons.IconState.SELECTED, artPx, now);
+        }
+    }
+
+    private void renderMarkerIcon(GuiGraphics graphics, TacticalMarker marker,
+                                  TacticalMapIcons.IconState state, int artPx, long now) {
+        double x = screenX(marker.x());
+        double y = screenY(marker.z());
         if (!insideMap(x, y)) {
             return;
         }
-        renderMapMarkerSymbol(graphics, marker.type(), x, y, color, selected);
+        TacticalMapIcons.draw(graphics, TacticalMapIcons.MapIcon.of(marker.type()),
+                (float) x, (float) y, artPx, state,
+                TacticalMapIcons.alpha(marker.type(), marker.createdAtMillis(),
+                        marker.expiresAtMillis(), now));
     }
 
+    /**
+     * Marker-tool keys show their marker's map icon: 2 physical pixels per art pixel, as on the
+     * map, when the key keeps {@link #TOOL_ICON_MARGIN_PHYSICAL} above and below the plate, else 1.
+     */
     private void renderCompactMarkerToolIcons(GuiGraphics graphics) {
         if (markerToolIconSlots.isEmpty()) {
             return;
         }
+        double scale = mapGuiScale();
         for (MarkerToolIconSlot slot : markerToolIconSlots) {
-            TacticalMarkerType type = markerType(slot.tool());
-            renderMarkerSymbol(graphics, type, slot.centerX(), slot.centerY(),
-                    markerColor(type), selectedTool == slot.tool(), true);
+            TacticalMapIcons.draw(graphics,
+                    TacticalMapIcons.MapIcon.of(markerType(slot.tool())),
+                    slot.centerX(), slot.centerY(), toolIconArtPx(slot.keyHeight(), scale),
+                    TacticalMapIcons.IconState.NORMAL);
         }
     }
 
-    private static void renderMarkerSymbol(GuiGraphics graphics, TacticalMarkerType type,
-                                           int centerX, int centerY, int color,
-                                           boolean selected, boolean compact) {
-        renderMarkerSymbol(graphics, type, centerX, centerY, color, selected,
-                markerIconSize(type, compact), compact);
+    /** Physical pixels per art pixel of a marker-tool icon in a key {@code keyHeight} GUI tall. */
+    static int toolIconArtPx(int keyHeight, double guiScale) {
+        double physical = keyHeight * (Double.isFinite(guiScale) && guiScale > 0.0D
+                ? guiScale : 1.0D);
+        int mapSize = TacticalMapIcons.Plate.CIRCLE.height()
+                * TacticalMapIcons.BASE_PHYSICAL_PER_ART;
+        return physical >= mapSize + 2 * TOOL_ICON_MARGIN_PHYSICAL
+                ? TacticalMapIcons.BASE_PHYSICAL_PER_ART : 1;
     }
 
-    private static void renderMarkerSymbol(GuiGraphics graphics, TacticalMarkerType type,
-                                           int centerX, int centerY, int color,
-                                           boolean selected, MarkerIconSize iconSize,
-                                           boolean compact) {
-        renderMarkerIcon(graphics, type, centerX, centerY, color, iconSize);
-        if (selected) {
-            renderMarkerSelectionIndicator(graphics, centerX, centerY, color,
-                    iconSize, compact);
-        }
-    }
-
-    private static void renderMarkerIcon(GuiGraphics graphics, TacticalMarkerType type,
-                                          int centerX, int centerY, int accentColor,
-                                          MarkerIconSize iconSize) {
-        ResourceLocation texture = markerIconTexture(type);
-        if (texture != null) {
-            MarkerIconSize sourceSize = markerTextureSize(type);
-            int left = centerX - iconSize.width() / 2;
-            int top = centerY - iconSize.height() / 2;
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
-            if (type != TacticalMarkerType.TANK) {
-                RenderSystem.setShaderColor(0.0F, 0.0F, 0.0F, 0.72F);
-                graphics.blit(texture, left + 1, top + 1,
-                        iconSize.width(), iconSize.height(),
-                        0.0F, 0.0F, sourceSize.width(), sourceSize.height(),
-                        sourceSize.width(), sourceSize.height());
-            }
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-            graphics.blit(texture, left, top, iconSize.width(), iconSize.height(),
-                    0.0F, 0.0F, sourceSize.width(), sourceSize.height(),
-                    sourceSize.width(), sourceSize.height());
-            RenderSystem.disableBlend();
-            return;
-        }
-        String[] pattern = markerIconPattern(type);
-        int left = centerX - iconSize.width() / 2;
-        int top = centerY - iconSize.height() / 2;
-        renderMarkerPattern(graphics, pattern, left + 1, top + 1,
-                iconSize.width(), iconSize.height(), 0xB0000000, 0xB0000000);
-        renderMarkerPattern(graphics, pattern, left, top,
-                iconSize.width(), iconSize.height(),
-                markerForegroundColor(type, accentColor), accentColor);
-    }
-
-    private static void renderMarkerPattern(GuiGraphics graphics, String[] pattern,
-                                            int left, int top, int targetWidth,
-                                            int targetHeight, int foregroundColor,
-                                            int accentColor) {
-        int sourceHeight = pattern.length;
-        int sourceWidth = pattern[0].length();
-        for (int targetY = 0; targetY < targetHeight; targetY++) {
-            int sourceTop = targetY * sourceHeight / targetHeight;
-            int sourceBottom = Math.max(sourceTop + 1,
-                    (targetY + 1) * sourceHeight / targetHeight);
-            for (int targetX = 0; targetX < targetWidth; targetX++) {
-                int sourceLeft = targetX * sourceWidth / targetWidth;
-                int sourceRight = Math.max(sourceLeft + 1,
-                        (targetX + 1) * sourceWidth / targetWidth);
-                char pixel = sampleMarkerPixel(pattern, sourceLeft, sourceTop,
-                        sourceRight, sourceBottom);
-                if (pixel != '.') {
-                    graphics.fill(left + targetX, top + targetY,
-                            left + targetX + 1, top + targetY + 1,
-                            pixel == 'A' ? accentColor : foregroundColor);
-                }
-            }
-        }
-    }
-
-    private static char sampleMarkerPixel(String[] pattern, int left, int top,
-                                          int right, int bottom) {
-        boolean foreground = false;
-        for (int y = top; y < Math.min(bottom, pattern.length); y++) {
-            String row = pattern[y];
-            for (int x = left; x < Math.min(right, row.length()); x++) {
-                char pixel = row.charAt(x);
-                if (pixel == 'A') {
-                    return 'A';
-                }
-                foreground |= pixel == 'W';
-            }
-        }
-        return foreground ? 'W' : '.';
-    }
-
-    private static void renderMarkerSelectionIndicator(GuiGraphics graphics,
-                                                       int centerX, int centerY,
-                                                       int color,
-                                                       MarkerIconSize iconSize,
-                                                       boolean compact) {
-        if (compact) {
-            int y = centerY + iconSize.height() / 2;
-            graphics.fill(centerX - 3, y, centerX + 4, y + 1, color);
-            graphics.fill(centerX - 1, y + 1, centerX + 2, y + 2,
-                    MARKER_SELECTED_INDICATOR);
-            return;
-        }
-        int indicatorY = centerY - iconSize.height() / 2 - 4;
-        drawDiamond(graphics, centerX, indicatorY, 2, MARKER_SELECTED_INDICATOR);
-        drawDiamond(graphics, centerX, indicatorY, 0, color);
-    }
-
+    /**
+     * Attack order being placed: the recorded start wears the attack-direction icon (also while
+     * the cursor is off the map), the preview line runs from it to the cursor.
+     */
     private void renderAttackPreview(GuiGraphics graphics, ResourceLocation dimension,
-                                     int mouseX, int mouseY) {
+                                     int mouseX, int mouseY, int artPx) {
         if (selectedTool != BattleClientActions.MarkerTool.ATTACK_DIRECTION
-                || attackStart == null || !insideMap(mouseX, mouseY)
-                || !attackStart.dimension().equals(dimension)) {
+                || attackStart == null || !attackStart.dimension().equals(dimension)) {
             return;
         }
-        renderAttackArrow(graphics,
-                worldToScreenX(attackStart.x()), worldToScreenY(attackStart.z()),
-                mouseX, mouseY, BattleUiTheme.ACCENT, false);
+        if (insideMap(mouseX, mouseY)) {
+            renderAttackArrow(graphics,
+                    worldToScreenX(attackStart.x()), worldToScreenY(attackStart.z()),
+                    mouseX, mouseY, BattleUiTheme.ACCENT, false);
+        }
+        double x = screenX(attackStart.x());
+        double y = screenY(attackStart.z());
+        if (insideMap(x, y)) {
+            TacticalMapIcons.draw(graphics, TacticalMapIcons.MapIcon.ATTACK_DIRECTION,
+                    (float) x, (float) y, artPx, TacticalMapIcons.IconState.NORMAL);
+        }
     }
 
     private void renderSupportMissions(GuiGraphics graphics, BattleSnapshot snapshot,
@@ -1912,7 +1931,8 @@ public final class TacticalMapScreen extends Screen {
         int visibleEndX = (int) Math.round(clipped.endX());
         int visibleEndY = (int) Math.round(clipped.endY());
         if (selected) {
-            int highlight = 0xFFFFF2B8;
+            // The same yellow as the selection ring on the order's start icon.
+            int highlight = TacticalMapIcons.SELECTED_RING;
             drawMapArrow(graphics, visibleStartX, visibleStartY,
                     visibleEndX, visibleEndY, highlight, 4);
             drawMapDiamond(graphics, visibleStartX, visibleStartY, 3, highlight);
@@ -3006,51 +3026,16 @@ public final class TacticalMapScreen extends Screen {
         return new TerrainProgress(loaded, desiredTerrainRequests.size(), failed);
     }
 
+    /**
+     * Marker under the cursor for a click: never a drone or satellite contact (they cannot be
+     * selected or removed). Clicking repeatedly over overlapping markers cycles through them.
+     */
     private TacticalMarker markerAt(double mouseX, double mouseY) {
-        ResourceLocation dimension = currentDimension();
-        List<MarkerHit> hits = new ArrayList<>();
-        double guiScale = mapGuiScale();
-        double hitPadding = 3.0D;
-        double fallbackRadius = 10.0D;
-        for (TacticalMarker marker : ClientBattleState.activeMarkers()) {
-            if (marker.type() == TacticalMarkerType.RECON_CONTACT
-                    || !marker.dimension().equals(dimension) || !layerVisible(marker.type())) {
-                continue;
-            }
-            int startX = worldToScreenX(marker.x());
-            int startY = worldToScreenY(marker.z());
-            double distance;
-            if (marker.type() == TacticalMarkerType.ATTACK_DIRECTION) {
-                int endX = worldToScreenX(marker.endX());
-                int endY = worldToScreenY(marker.endZ());
-                if (!segmentIntersectsMap(startX, startY, endX, endY)) {
-                    continue;
-                }
-                distance = distanceToSegmentSquared(mouseX, mouseY,
-                        startX, startY, endX, endY) * guiScale * guiScale;
-            } else {
-                if (!insideMap(startX, startY)) {
-                    continue;
-                }
-                double dx = (startX - mouseX) * guiScale;
-                double dy = (startY - mouseY) * guiScale;
-                distance = dx * dx + dy * dy;
-                MarkerIconSize iconSize = mapMarkerPhysicalIconSize(marker.type());
-                if (Math.abs(dx) <= iconSize.width() * 0.5D + hitPadding
-                        && Math.abs(dy) <= iconSize.height() * 0.5D + hitPadding) {
-                    hits.add(new MarkerHit(marker, distance));
-                    continue;
-                }
-            }
-            if (distance < fallbackRadius * fallbackRadius) {
-                hits.add(new MarkerHit(marker, distance));
-            }
-        }
+        List<MarkerHit> hits = markerHits(visibleMarkers(currentDimension()), mouseX, mouseY,
+                mapIconArtPx(), false);
         if (hits.isEmpty()) {
             return null;
         }
-        hits.sort(Comparator.comparingDouble(MarkerHit::distanceSquared)
-                .thenComparing(hit -> hit.marker().id()));
         if (selectedMarkerId != null && hits.size() > 1) {
             for (int index = 0; index < hits.size(); index++) {
                 if (hits.get(index).marker().id().equals(selectedMarkerId)) {
@@ -3059,6 +3044,58 @@ public final class TacticalMapScreen extends Screen {
             }
         }
         return hits.get(0).marker();
+    }
+
+    /** Marker under the cursor for the white hover ring; contacts can be hovered too. */
+    private UUID hoveredMarkerId(List<TacticalMarker> markers, int mouseX, int mouseY,
+                                 int artPx) {
+        if (!insideMap(mouseX, mouseY)) {
+            return null;
+        }
+        List<MarkerHit> hits = markerHits(markers, mouseX, mouseY, artPx, true);
+        return hits.isEmpty() ? null : hits.get(0).marker().id();
+    }
+
+    /**
+     * Markers under the cursor, nearest first: a marker icon hits on its plate plus one art pixel
+     * all round ({@link TacticalMapIcons.Placement#hit}); an attack order also hits within
+     * {@link #ATTACK_LINE_HIT_PHYSICAL} of its visible line.
+     */
+    private List<MarkerHit> markerHits(List<TacticalMarker> markers, double mouseX,
+                                       double mouseY, int artPx, boolean includeContacts) {
+        double scale = mapGuiScale();
+        List<MarkerHit> hits = new ArrayList<>();
+        for (TacticalMarker marker : markers) {
+            if (marker.type() == TacticalMarkerType.RECON_CONTACT && !includeContacts) {
+                continue;
+            }
+            double x = screenX(marker.x());
+            double y = screenY(marker.z());
+            double dx = (x - mouseX) * scale;
+            double dy = (y - mouseY) * scale;
+            double distance = dx * dx + dy * dy;
+            boolean onIcon = insideMap(x, y) && TacticalMapIcons.hitGui(
+                    TacticalMapIcons.MapIcon.of(marker.type()), x, y, artPx, scale,
+                    mouseX, mouseY);
+            if (marker.type() == TacticalMarkerType.ATTACK_DIRECTION) {
+                double endX = screenX(marker.endX());
+                double endY = screenY(marker.endZ());
+                if (segmentIntersectsMap(x, y, endX, endY)) {
+                    double line = distanceToSegmentSquared(mouseX, mouseY, x, y, endX, endY)
+                            * scale * scale;
+                    if (line < ATTACK_LINE_HIT_PHYSICAL * ATTACK_LINE_HIT_PHYSICAL) {
+                        hits.add(new MarkerHit(marker, onIcon ? Math.min(line, distance) : line));
+                        continue;
+                    }
+                }
+            }
+            if (onIcon) {
+                hits.add(new MarkerHit(marker, distance));
+            }
+        }
+        hits.sort(Comparator.comparingDouble(MarkerHit::distanceSquared)
+                .thenComparing(hit -> hit.marker().id()));
+        return hits;
     }
 
     private TacticalMarker selectedMarker() {
@@ -3081,12 +3118,21 @@ public final class TacticalMapScreen extends Screen {
         };
     }
 
+    /** Unrounded screen x of a world x (marker icons round to whole physical pixels instead). */
+    private double screenX(double x) {
+        return (mapLeft + mapRight) * 0.5D + (x - centerWorldX) * zoom;
+    }
+
+    private double screenY(double z) {
+        return (mapTop + mapBottom) * 0.5D + (z - centerWorldZ) * zoom;
+    }
+
     private int worldToScreenX(double x) {
-        return (int) Math.round((mapLeft + mapRight) * 0.5D + (x - centerWorldX) * zoom);
+        return (int) Math.round(screenX(x));
     }
 
     private int worldToScreenY(double z) {
-        return (int) Math.round((mapTop + mapBottom) * 0.5D + (z - centerWorldZ) * zoom);
+        return (int) Math.round(screenY(z));
     }
 
     private double screenToWorldX(double x) {
@@ -3169,47 +3215,36 @@ public final class TacticalMapScreen extends Screen {
         };
     }
 
-    static String[] markerIconPattern(TacticalMarkerType type) {
-        return switch (type) {
-            case RECON_CONTACT -> RECON_CONTACT_MARKER_ICON;
-            case INFANTRY -> INFANTRY_MARKER_ICON;
-            case DEFEND -> DEFEND_MARKER_ICON;
-            case RALLY -> RALLY_MARKER_ICON;
-            case ATTACK_DIRECTION -> ATTACK_MARKER_ICON;
-            case TANK, IFV -> throw new IllegalArgumentException(
-                    type + " uses a high-resolution texture");
-        };
+    /**
+     * Physical pixels per art pixel of the map markers: size scheme B times the icon-size knob
+     * ({@link TacticalMapIcons#mapArtPx}); the map zoom never changes it.
+     */
+    private int mapIconArtPx() {
+        return TacticalMapIcons.mapArtPx(intelMarkerScale, mapGuiScale());
     }
 
-    static ResourceLocation markerIconTexture(TacticalMarkerType type) {
-        return switch (type) {
-            case TANK -> TANK_MARKER_TEXTURE;
-            case IFV -> IFV_MARKER_TEXTURE;
-            default -> null;
-        };
+    /** A symbol dimension in physical pixels under size scheme B (the preview's {@code KP}). */
+    private int symbolPhysical(int physical) {
+        return Math.max(1, (int) Math.round(
+                physical * TacticalMapIcons.symbolScale(mapGuiScale())));
     }
 
-    static MarkerIconSize markerIconSize(TacticalMarkerType type, boolean compact) {
-        return switch (type) {
-            case RECON_CONTACT -> new MarkerIconSize(compact ? 8 : 10, compact ? 8 : 10);
-            case INFANTRY -> new MarkerIconSize(
-                    compact ? INFANTRY_TOOL_ICON_SIZE : INFANTRY_MARKER_ICON_SIZE,
-                    compact ? INFANTRY_TOOL_ICON_SIZE : INFANTRY_MARKER_ICON_SIZE);
-            case TANK -> compact
-                    ? new MarkerIconSize(10, 15)
-                    : new MarkerIconSize(TANK_MARKER_ICON_WIDTH, TANK_MARKER_ICON_HEIGHT);
-            case IFV -> compact
-                    ? new MarkerIconSize(8, 16)
-                    : new MarkerIconSize(IFV_MARKER_ICON_WIDTH, IFV_MARKER_ICON_HEIGHT);
-            case DEFEND, RALLY, ATTACK_DIRECTION -> new MarkerIconSize(
-                    compact ? ORDER_TOOL_ICON_SIZE : ORDER_MARKER_ICON_SIZE,
-                    compact ? ORDER_TOOL_ICON_SIZE : ORDER_MARKER_ICON_SIZE);
-            default -> new MarkerIconSize(MARKER_ICON_SIZE, MARKER_ICON_SIZE);
-        };
+    /** The map viewport in physical pixels, inset by {@code insetGui} GUI pixels. */
+    private TacticalMapPinPlanner.Box physicalViewport(int insetGui) {
+        double scale = mapGuiScale();
+        return new TacticalMapPinPlanner.Box((mapLeft + insetGui) * scale,
+                (mapTop + insetGui) * scale, (mapRight - insetGui) * scale,
+                (mapBottom - insetGui) * scale, 0.0D, false);
     }
 
-    private MarkerIconSize mapMarkerPhysicalIconSize(TacticalMarkerType type) {
-        return markerPhysicalIconSizeForMap(type, zoom, intelMarkerScale);
+    /** Physical pixels per texel of the spawn badge's check mark. */
+    private int spawnBadgeIconPx() {
+        return Math.max(1, (int) Math.round(TacticalMapIcons.symbolScale(mapGuiScale())));
+    }
+
+    /** Half size of the spawn badge's green square: the check mark plus 2 px all round. */
+    private int spawnBadgeHalf() {
+        return (TacticalIcon.SIZE * spawnBadgeIconPx() + 1) / 2 + 2;
     }
 
     private double mapGuiScale() {
@@ -3304,6 +3339,7 @@ public final class TacticalMapScreen extends Screen {
                 mapLeft + 2, mapLabelMaxLeft(panelWidth), mapPhysicalToLogical(4), mapChrome());
         int right = Math.min(mapRight - 2, left + panelWidth);
         int bottom = Math.min(mapBottom - 2, top + panelHeight);
+        frameLabels.add(new TacticalMapLayout.Rect(left, top, right, bottom));
         graphics.fill(left, top, right, bottom, 0xE4141B1D);
         BattleUiTheme.outline(graphics, left, top, right, bottom, accent);
         graphics.fill(left + 1, top + 1, left + accentWidth, bottom - 1, accent);
@@ -3335,6 +3371,7 @@ public final class TacticalMapScreen extends Screen {
                 mapLeft + 2, mapLabelMaxLeft(panelWidth), mapPhysicalToLogical(4), mapChrome());
         int right = Math.min(mapRight - 2, left + panelWidth);
         int bottom = Math.min(mapBottom - 2, top + panelHeight);
+        frameLabels.add(new TacticalMapLayout.Rect(left, top, right, bottom));
         graphics.fill(left, top, right, bottom, 0xE8141B1D);
         BattleUiTheme.outline(graphics, left, top, right, bottom, accent);
         graphics.fill(left + 1, top + 1, left + accentWidth, bottom - 1, accent);
@@ -3394,23 +3431,6 @@ public final class TacticalMapScreen extends Screen {
         return best;
     }
 
-    private void renderMapMarkerSymbol(GuiGraphics graphics, TacticalMarkerType type,
-                                       int centerX, int centerY, int color,
-                                       boolean selected) {
-        MarkerIconSize physicalSize = mapMarkerPhysicalIconSize(type);
-        graphics.pose().pushPose();
-        graphics.pose().translate(centerX, centerY, 0.0D);
-        graphics.pose().scale(mapInverseGuiScale(), mapInverseGuiScale(), 1.0F);
-        renderMarkerSymbol(graphics, type, 0, 0, color, selected,
-                physicalSize, false);
-        graphics.pose().popPose();
-    }
-
-    static MarkerIconSize markerPhysicalIconSizeForMap(TacticalMarkerType type,
-                                                        double mapZoom) {
-        return markerPhysicalIconSizeForMap(type, mapZoom, 1.0D);
-    }
-
     static int alliedPlayerMarkerRadius(boolean self, boolean commander,
                                         boolean leader) {
         if (self || commander) {
@@ -3419,76 +3439,16 @@ public final class TacticalMapScreen extends Screen {
         return leader ? ALLIED_LEADER_MARKER_RADIUS : ALLIED_PLAYER_MARKER_RADIUS;
     }
 
-    static MarkerIconSize markerPhysicalIconSizeForMap(TacticalMarkerType type,
-                                                        double mapZoom,
-                                                        double userScale) {
-        MarkerIconSize base = markerIconSize(type, false);
-        double safeZoom = Double.isFinite(mapZoom) && mapZoom > 0.0D
-                ? mapZoom : DEFAULT_ZOOM;
-        double zoomScale = clamp(Math.sqrt(safeZoom / DEFAULT_ZOOM), 0.42D, 1.0D);
-        MarkerIconSize minimumPhysical = switch (type) {
-            case RECON_CONTACT -> new MarkerIconSize(6, 6);
-            case TANK -> new MarkerIconSize(10, 15);
-            case IFV -> new MarkerIconSize(7, 15);
-            case INFANTRY, DEFEND, RALLY -> new MarkerIconSize(8, 8);
-            default -> new MarkerIconSize(5, 5);
-        };
-        double appliedUserScale = isIntelMarker(type)
-                ? clampIntelMarkerScale(userScale) : 1.0D;
-        return new MarkerIconSize(
-                Math.max(minimumPhysical.width(), (int) Math.round(
-                        base.width() * zoomScale * appliedUserScale)),
-                Math.max(minimumPhysical.height(), (int) Math.round(
-                        base.height() * zoomScale * appliedUserScale)));
-    }
-
-    static MarkerIconSize markerIconSizeForMap(TacticalMarkerType type,
-                                                double mapZoom, double guiScale) {
-        return markerIconSizeForMap(type, mapZoom, guiScale, 1.0D);
-    }
-
-    static MarkerIconSize markerIconSizeForMap(TacticalMarkerType type,
-                                                double mapZoom, double guiScale,
-                                                double userScale) {
-        MarkerIconSize physical = markerPhysicalIconSizeForMap(
-                type, mapZoom, userScale);
-        double safeGuiScale = Double.isFinite(guiScale) && guiScale >= 1.0D
-                ? guiScale : 1.0D;
-        return new MarkerIconSize(
-                Math.max(1, (int) Math.round(physical.width() / safeGuiScale)),
-                Math.max(1, (int) Math.round(physical.height() / safeGuiScale)));
-    }
-
-    static MarkerIconSize markerTextureSize(TacticalMarkerType type) {
-        return switch (type) {
-            case TANK -> new MarkerIconSize(
-                    TANK_MARKER_TEXTURE_WIDTH, TANK_MARKER_TEXTURE_HEIGHT);
-            case IFV -> new MarkerIconSize(
-                    IFV_MARKER_TEXTURE_WIDTH, IFV_MARKER_TEXTURE_HEIGHT);
-            default -> throw new IllegalArgumentException(type + " has no texture");
-        };
-    }
-
     private static Component markerName(TacticalMarkerType type) {
         return Component.translatable("marker.wok_infantry." + type.id());
     }
 
-    static int markerForegroundColor(TacticalMarkerType type, int accentColor) {
-        return type == TacticalMarkerType.INFANTRY
-                || type == TacticalMarkerType.RECON_CONTACT
-                ? accentColor : MARKER_ICON_FOREGROUND;
-    }
-
+    /**
+     * Colour of a marker kind: its map icon's plate colour, so the attack-order line, the selected
+     * marker card and the tool keys match the icon on the map.
+     */
     static int markerColor(TacticalMarkerType type) {
-        return switch (type) {
-            case RECON_CONTACT -> 0xFFFF2020;
-            case INFANTRY -> 0xFFFF3030;
-            case TANK -> 0xFFFF3038;
-            case IFV -> 0xFFFFD166;
-            case ATTACK_DIRECTION -> 0xFFFF5449;
-            case DEFEND -> 0xFF69C8FF;
-            case RALLY -> 0xFF7DE28D;
-        };
+        return TacticalMapIcons.MapIcon.of(type).color();
     }
 
     static double clampIntelMarkerScale(double value) {
@@ -3496,13 +3456,6 @@ public final class TacticalMapScreen extends Screen {
             return 1.0D;
         }
         return clamp(value, MIN_INTEL_MARKER_SCALE, MAX_INTEL_MARKER_SCALE);
-    }
-
-    private static boolean isIntelMarker(TacticalMarkerType type) {
-        return type == TacticalMarkerType.RECON_CONTACT
-                || type == TacticalMarkerType.INFANTRY
-                || type == TacticalMarkerType.TANK
-                || type == TacticalMarkerType.IFV;
     }
 
     private static int squadColor(SquadCallsign squad, boolean sameSquad) {
@@ -3561,15 +3514,23 @@ public final class TacticalMapScreen extends Screen {
         graphics.pose().popPose();
     }
 
-    private void drawMapSquare(GuiGraphics graphics, int centerX, int centerY,
-                               int physicalRadius, int fillColor, int borderColor) {
+    /** A line between two points given in physical pixels, {@code thickness} physical pixels. */
+    private void drawPhysicalLine(GuiGraphics graphics, double startX, double startY,
+                                  double endX, double endY, int color, int thickness) {
         graphics.pose().pushPose();
-        graphics.pose().translate(centerX, centerY, 0.0D);
         graphics.pose().scale(mapInverseGuiScale(), mapInverseGuiScale(), 1.0F);
-        graphics.fill(-physicalRadius, -physicalRadius,
-                physicalRadius + 1, physicalRadius + 1, fillColor);
-        BattleUiTheme.outline(graphics, -physicalRadius, -physicalRadius,
-                physicalRadius + 1, physicalRadius + 1, borderColor);
+        drawLine(graphics, (int) Math.round(startX), (int) Math.round(startY),
+                (int) Math.round(endX), (int) Math.round(endY), color, thickness);
+        graphics.pose().popPose();
+    }
+
+    /** A diamond centred on a point given in physical pixels. */
+    private void drawPhysicalDiamond(GuiGraphics graphics, double centerX, double centerY,
+                                     int physicalRadius, int color) {
+        graphics.pose().pushPose();
+        graphics.pose().scale(mapInverseGuiScale(), mapInverseGuiScale(), 1.0F);
+        drawDiamond(graphics, (int) Math.round(centerX), (int) Math.round(centerY),
+                physicalRadius, color);
         graphics.pose().popPose();
     }
 
@@ -3689,7 +3650,7 @@ public final class TacticalMapScreen extends Screen {
     }
 
     private record MarkerToolIconSlot(BattleClientActions.MarkerTool tool,
-                                      int centerX, int centerY) {
+                                      int centerX, int centerY, int keyHeight) {
     }
 
     private record SupportUiStatus(Component label, Component shortLabel) {
@@ -3716,9 +3677,6 @@ public final class TacticalMapScreen extends Screen {
     private enum SidebarToolMode {
         MARKERS,
         SUPPORT
-    }
-
-    record MarkerIconSize(int width, int height) {
     }
 
     private record InFlightTerrainTile(long serial, long epoch, long providerGeneration,

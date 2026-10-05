@@ -16,7 +16,8 @@ import java.util.Locale;
  * Map marker sheet (preview surface {@code 36-map-icons}) on dark terrain and on the paper map
  * ({@link UiMapIconGalleryScreen}). Migrated: layout violations fail required tiers. The probe's
  * icon records must show every marker at its fixed physical size — 15×15 art pixels (pins 15×18)
- * × the whole physical pixels per art pixel of the size knob — on every GUI scale.
+ * × the whole physical pixels per art pixel of the size knob — on every GUI scale, the same size
+ * the tactical map draws ({@link TacticalMapIcons#mapArtPx}, size scheme B).
  */
 public final class MapIconCases {
     private MapIconCases() {
@@ -44,13 +45,13 @@ public final class MapIconCases {
         context.require(context.uiCase().stateId().equals(screen.uiStateId()),
                 "the sheet shows " + screen.uiStateId());
         List<Integer> expectedArt = new ArrayList<>();
-        int base = TacticalMapIcons.physicalPerArt(1.0D);
+        int base = TacticalMapIcons.mapArtPx(1.0D, capture.guiScale());
         for (int index = 0; index < TacticalMapIcons.MapIcon.values().length + 4; index++) {
             expectedArt.add(base);
         }
         if (screen.showsSizes()) {
             for (double knob : UiMapIconGalleryScreen.KNOBS) {
-                expectedArt.add(TacticalMapIcons.physicalPerArt(knob));
+                expectedArt.add(TacticalMapIcons.mapArtPx(knob, capture.guiScale()));
             }
         }
         List<UiLayoutFrame.Icon> icons = capture.frame().icons();

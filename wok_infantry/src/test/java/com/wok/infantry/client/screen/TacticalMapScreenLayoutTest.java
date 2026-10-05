@@ -1,25 +1,18 @@
 package com.wok.infantry.client.screen;
 
 import com.wok.infantry.battle.TacticalMarkerType;
+import com.wok.infantry.client.map.TacticalMapIcons;
 import com.wok.infantry.client.ui.UiTierMatrix;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.opentest4j.AssertionFailedError;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -304,73 +297,41 @@ class TacticalMapScreenLayoutTest {
     }
 
     @Test
-    void tacticalMarkerIconsAreDistinctNativePixelPatterns() {
-        Set<String> distinctPatterns = new HashSet<>();
-        for (TacticalMarkerType type : List.of(
-                TacticalMarkerType.RECON_CONTACT,
-                TacticalMarkerType.INFANTRY,
-                TacticalMarkerType.DEFEND,
-                TacticalMarkerType.RALLY,
-                TacticalMarkerType.ATTACK_DIRECTION)) {
-            String[] pattern = TacticalMapScreen.markerIconPattern(type);
-            assertEquals(TacticalMapScreen.MARKER_ICON_SIZE, pattern.length,
-                    type + " icon height");
-            for (String row : pattern) {
-                assertEquals(TacticalMapScreen.MARKER_ICON_SIZE, row.length(),
-                        type + " icon width");
-                assertTrue(row.matches("[.WA]+"), type + " icon pixel palette");
-            }
-            assertTrue(distinctPatterns.add(String.join("/", pattern)),
-                    type + " must have a unique silhouette");
+    void markerColoursAreTheMapIconPlateColours() {
+        for (TacticalMarkerType type : TacticalMarkerType.values()) {
+            assertEquals(TacticalMapIcons.MapIcon.of(type).color(),
+                    TacticalMapScreen.markerColor(type),
+                    type + " line, card and tool accents match the icon on the map");
         }
-    }
-
-    @Test
-    void satelliteContactsRenderAsCompactRedDots() {
-        assertEquals(new TacticalMapScreen.MarkerIconSize(10, 10),
-                TacticalMapScreen.markerIconSize(TacticalMarkerType.RECON_CONTACT, false));
-        assertEquals(0xFFFF2020,
+        assertEquals(TacticalBoardTheme.MAP_ICON_ATTACK,
+                TacticalMapScreen.markerColor(TacticalMarkerType.ATTACK_DIRECTION));
+        assertEquals(TacticalBoardTheme.MAP_ICON_RECON,
                 TacticalMapScreen.markerColor(TacticalMarkerType.RECON_CONTACT));
-        String joined = String.join("", TacticalMapScreen.markerIconPattern(
-                TacticalMarkerType.RECON_CONTACT));
-        assertFalse(joined.contains("W"), "satellite contact must be a solid red dot");
-        assertTrue(joined.contains("A"), "satellite contact dot must contain red pixels");
     }
 
     @Test
-    void infantryHelmetIsLargerAndUsesPureRedLineWork() {
-        assertEquals(new TacticalMapScreen.MarkerIconSize(16, 16),
-                TacticalMapScreen.markerIconSize(TacticalMarkerType.INFANTRY, false));
-        assertEquals(new TacticalMapScreen.MarkerIconSize(14, 14),
-                TacticalMapScreen.markerIconSize(TacticalMarkerType.INFANTRY, true));
-        int red = TacticalMapScreen.markerColor(TacticalMarkerType.INFANTRY);
-        assertEquals(0xFFFF3030, red);
-        assertEquals(red, TacticalMapScreen.markerForegroundColor(
-                TacticalMarkerType.INFANTRY, red));
+    void markerToolIconsUseTheMapSizeWhenTheKeyHasRoomAndOneArtPixelOtherwise() {
+        // GUI 1: a 20 or 24 px key is 20 / 24 physical px, too short for a 30 px plate + 2 + 2.
+        assertEquals(1, TacticalMapScreen.toolIconArtPx(20, 1.0D));
+        assertEquals(1, TacticalMapScreen.toolIconArtPx(24, 1.0D));
+        // GUI 2 and 3 (960×540, 320×240): 40 / 48 / 60 physical px keep 2 px above and below.
+        assertEquals(2, TacticalMapScreen.toolIconArtPx(20, 2.0D));
+        assertEquals(2, TacticalMapScreen.toolIconArtPx(24, 2.0D));
+        assertEquals(2, TacticalMapScreen.toolIconArtPx(20, 3.0D));
+        assertEquals(2, TacticalMapScreen.toolIconArtPx(17, 2.0D), "34 px is exactly enough");
+        assertEquals(1, TacticalMapScreen.toolIconArtPx(16, 2.0D));
+        assertEquals(1, TacticalMapScreen.toolIconArtPx(20, Double.NaN));
     }
 
     @Test
-    void orderMarkersUseReadableMapAndToolbarSizes() {
-        for (TacticalMarkerType type : List.of(
-                TacticalMarkerType.DEFEND,
-                TacticalMarkerType.RALLY)) {
-            assertEquals(new TacticalMapScreen.MarkerIconSize(16, 16),
-                    TacticalMapScreen.markerIconSize(type, false),
-                    type + " map icon must match the enlarged infantry silhouette");
-            assertEquals(new TacticalMapScreen.MarkerIconSize(14, 14),
-                    TacticalMapScreen.markerIconSize(type, true),
-                    type + " toolbar preview must remain legible");
-            TacticalMapScreen.MarkerIconSize strategic =
-                    TacticalMapScreen.markerPhysicalIconSizeForMap(type, 0.02D);
-            assertTrue(strategic.width() >= 8,
-                    type + " must remain visible at strategic zoom");
-            assertTrue(strategic.height() >= 8,
-                    type + " must remain visible at strategic zoom");
-        }
-        assertEquals(new TacticalMapScreen.MarkerIconSize(14, 14),
-                TacticalMapScreen.markerIconSize(
-                        TacticalMarkerType.ATTACK_DIRECTION, true),
-                "attack-direction toolbar arrow must match the other order tools");
+    void iconScaleKnobKeepsItsConfiguredRange() {
+        assertEquals(TacticalMapScreen.MIN_INTEL_MARKER_SCALE,
+                TacticalMapScreen.clampIntelMarkerScale(-10.0D));
+        assertEquals(TacticalMapScreen.MAX_INTEL_MARKER_SCALE,
+                TacticalMapScreen.clampIntelMarkerScale(10.0D));
+        assertEquals(1.0D, TacticalMapScreen.clampIntelMarkerScale(Double.NaN));
+        assertEquals(0.75D, TacticalMapScreen.MIN_INTEL_MARKER_SCALE);
+        assertEquals(1.75D, TacticalMapScreen.MAX_INTEL_MARKER_SCALE);
     }
 
     @Test
@@ -385,245 +346,6 @@ class TacticalMapScreenLayoutTest {
                 true, false, false));
         assertEquals(12, TacticalMapScreen.ALLIED_PLAYER_DIRECTION_LENGTH);
         assertEquals(13, TacticalMapScreen.ALLIED_PLAYER_HOVER_RADIUS);
-    }
-
-    @Test
-    void approvedVehicleTexturesKeepTheirDistinctTopDownProportions() throws IOException {
-        assertMarkerTexture(TacticalMarkerType.TANK,
-                TacticalMapScreen.TANK_MARKER_TEXTURE_WIDTH,
-                TacticalMapScreen.TANK_MARKER_TEXTURE_HEIGHT);
-        assertMarkerTexture(TacticalMarkerType.IFV,
-                TacticalMapScreen.IFV_MARKER_TEXTURE_WIDTH,
-                TacticalMapScreen.IFV_MARKER_TEXTURE_HEIGHT);
-
-        TacticalMapScreen.MarkerIconSize tank = TacticalMapScreen.markerIconSize(
-                TacticalMarkerType.TANK, false);
-        TacticalMapScreen.MarkerIconSize ifv = TacticalMapScreen.markerIconSize(
-                TacticalMarkerType.IFV, false);
-        assertEquals(new TacticalMapScreen.MarkerIconSize(20, 30), tank);
-        assertEquals(new TacticalMapScreen.MarkerIconSize(14, 31), ifv);
-        assertEquals(new TacticalMapScreen.MarkerIconSize(10, 15),
-                TacticalMapScreen.markerIconSize(TacticalMarkerType.TANK, true));
-        assertEquals(0xFFFF3038,
-                TacticalMapScreen.markerColor(TacticalMarkerType.TANK));
-        assertTrue(tank.width() * ifv.height() > tank.height() * ifv.width(),
-                "the Squad-style tank must be visibly squatter than the IFV");
-        assertTrue(tank.height() > tank.width(),
-                "the user-specified tank must retain its portrait silhouette");
-        assertTrue(ifv.height() > ifv.width(),
-                "the Bradley muzzle must point down on a portrait canvas");
-        assertTrue(TacticalMapScreen.markerIconSize(TacticalMarkerType.TANK, true).height() <= 18,
-                "the compact tank icon must fit its toolbar button without a frame");
-    }
-
-    @Test
-    void vehicleMarkersUseMatchedVisibleMapFootprints() throws IOException {
-        double[] tank = visibleMarkerFootprint(TacticalMarkerType.TANK);
-        double[] ifv = visibleMarkerFootprint(TacticalMarkerType.IFV);
-
-        assertEquals(tank[0], ifv[0], 0.75D,
-                "tank and IFV visible widths must match after transparent margins");
-        assertEquals(tank[1], ifv[1], 0.75D,
-                "tank and IFV visible heights must match after transparent margins");
-    }
-
-    @Test
-    void tankTextureDisablesBlurAtMapScale() throws IOException {
-        String resourcePath = "/assets/wok_infantry/textures/gui/tactical_markers/"
-                + "tank.png.mcmeta";
-        try (InputStream stream = TacticalMapScreenLayoutTest.class
-                .getResourceAsStream(resourcePath)) {
-            assertNotNull(stream, "tank texture metadata");
-            String metadata = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-            assertTrue(metadata.matches("(?s).*\\\"blur\\\"\\s*:\\s*false.*"),
-                    "the user-specified tank texture must use crisp nearest sampling");
-        }
-    }
-
-    @Test
-    void mapMarkerIconsKeepStablePhysicalSizeAndShrinkAtStrategicZoom() {
-        for (TacticalMarkerType type : TacticalMarkerType.values()) {
-            TacticalMapScreen.MarkerIconSize base =
-                    TacticalMapScreen.markerIconSize(type, false);
-            TacticalMapScreen.MarkerIconSize physicalDefault =
-                    TacticalMapScreen.markerPhysicalIconSizeForMap(type, 0.45D);
-            TacticalMapScreen.MarkerIconSize logicalScaleOne =
-                    TacticalMapScreen.markerIconSizeForMap(type, 0.45D, 1.0D);
-            TacticalMapScreen.MarkerIconSize logicalScaleThree =
-                    TacticalMapScreen.markerIconSizeForMap(type, 0.45D, 3.0D);
-            assertEquals(base, physicalDefault,
-                    type + " default physical size must match its authored icon");
-            assertEquals(physicalDefault, logicalScaleOne);
-            assertTrue(Math.abs(physicalDefault.width()
-                            - logicalScaleThree.width() * 3) <= 1,
-                    type + " GUI scale must not inflate physical width");
-            assertTrue(Math.abs(physicalDefault.height()
-                            - logicalScaleThree.height() * 3) <= 1,
-                    type + " GUI scale must not inflate physical height");
-
-            TacticalMapScreen.MarkerIconSize strategic =
-                    TacticalMapScreen.markerPhysicalIconSizeForMap(type, 0.02D);
-            assertTrue(strategic.width() <= physicalDefault.width(),
-                    type + " must not grow at strategic zoom");
-            assertTrue(strategic.height() <= physicalDefault.height(),
-                    type + " must not grow at strategic zoom");
-            assertEquals(physicalDefault,
-                    TacticalMapScreen.markerPhysicalIconSizeForMap(type, 4.0D),
-                    type + " must not inflate beyond its base size when zooming in");
-        }
-
-        TacticalMapScreen.MarkerIconSize strategicTank =
-                TacticalMapScreen.markerPhysicalIconSizeForMap(
-                        TacticalMarkerType.TANK, 0.02D);
-        assertTrue(strategicTank.width() >= 10);
-        assertTrue(strategicTank.height() >= 15);
-        assertEquals(strategicTank,
-                TacticalMapScreen.markerPhysicalIconSizeForMap(
-                        TacticalMarkerType.TANK, 0.02D, 0.75D),
-                "the player scale knob must not shrink a strategic tank below its readable floor");
-    }
-
-    @Test
-    void userScaleChangesIntelMarkersButLeavesOrdersAndToolbarStable() {
-        for (TacticalMarkerType type : List.of(
-                TacticalMarkerType.INFANTRY,
-                TacticalMarkerType.TANK,
-                TacticalMarkerType.IFV)) {
-            TacticalMapScreen.MarkerIconSize small =
-                    TacticalMapScreen.markerPhysicalIconSizeForMap(type, 0.45D, 0.75D);
-            TacticalMapScreen.MarkerIconSize normal =
-                    TacticalMapScreen.markerPhysicalIconSizeForMap(type, 0.45D, 1.0D);
-            TacticalMapScreen.MarkerIconSize large =
-                    TacticalMapScreen.markerPhysicalIconSizeForMap(type, 0.45D, 1.75D);
-            assertTrue(small.width() < normal.width(), type + " must shrink");
-            assertTrue(small.height() < normal.height(), type + " must shrink");
-            assertTrue(large.width() > normal.width(), type + " must grow");
-            assertTrue(large.height() > normal.height(), type + " must grow");
-
-            TacticalMapScreen.MarkerIconSize logicalAtScaleThree =
-                    TacticalMapScreen.markerIconSizeForMap(type, 0.45D, 3.0D, 1.75D);
-            assertTrue(Math.abs(large.width()
-                            - logicalAtScaleThree.width() * 3) <= 1,
-                    type + " scaled physical width must survive GUI scaling");
-            assertTrue(Math.abs(large.height()
-                            - logicalAtScaleThree.height() * 3) <= 1,
-                    type + " scaled physical height must survive GUI scaling");
-        }
-
-        for (TacticalMarkerType type : List.of(
-                TacticalMarkerType.DEFEND,
-                TacticalMarkerType.RALLY,
-                TacticalMarkerType.ATTACK_DIRECTION)) {
-            assertEquals(
-                    TacticalMapScreen.markerPhysicalIconSizeForMap(type, 0.45D, 0.75D),
-                    TacticalMapScreen.markerPhysicalIconSizeForMap(type, 0.45D, 1.75D),
-                    type + " is an order marker and must not use the intel scale");
-        }
-
-        assertEquals(TacticalMapScreen.MIN_INTEL_MARKER_SCALE,
-                TacticalMapScreen.clampIntelMarkerScale(-10.0D));
-        assertEquals(TacticalMapScreen.MAX_INTEL_MARKER_SCALE,
-                TacticalMapScreen.clampIntelMarkerScale(10.0D));
-        assertEquals(1.0D, TacticalMapScreen.clampIntelMarkerScale(Double.NaN));
-        assertEquals(new TacticalMapScreen.MarkerIconSize(14, 14),
-                TacticalMapScreen.markerIconSize(TacticalMarkerType.INFANTRY, true),
-                "toolbar preview must stay fixed while the map scale changes");
-    }
-
-    private static void assertMarkerTexture(TacticalMarkerType type,
-                                            int expectedWidth,
-                                            int expectedHeight) throws IOException {
-        ResourceLocation location = TacticalMapScreen.markerIconTexture(type);
-        assertNotNull(location, type + " texture location");
-        String resourcePath = "/assets/" + location.getNamespace() + "/" + location.getPath();
-        try (InputStream stream = TacticalMapScreenLayoutTest.class
-                .getResourceAsStream(resourcePath)) {
-            assertNotNull(stream, type + " texture resource");
-            BufferedImage image = ImageIO.read(stream);
-            assertNotNull(image, type + " readable PNG");
-            assertEquals(expectedWidth, image.getWidth(), type + " texture width");
-            assertEquals(expectedHeight, image.getHeight(), type + " texture height");
-            assertTrue(image.getColorModel().hasAlpha(), type + " transparent background");
-            boolean hasTransparentPixel = false;
-            boolean hasOpaquePixel = false;
-            boolean hasRedLine = false;
-            boolean hasNeutralFill = false;
-            boolean hasDarkRedFill = false;
-            boolean hasWhiteOrYellowLine = false;
-            boolean hasAccentNearBottom = false;
-            for (int y = 0; y < image.getHeight(); y++) {
-                for (int x = 0; x < image.getWidth(); x++) {
-                    int argb = image.getRGB(x, y);
-                    int alpha = argb >>> 24;
-                    hasTransparentPixel |= alpha == 0;
-                    hasOpaquePixel |= alpha == 255;
-                    int red = argb >> 16 & 0xFF;
-                    int green = argb >> 8 & 0xFF;
-                    int blue = argb & 0xFF;
-                    boolean redLine = alpha >= 64
-                            && red >= 220 && green <= 80 && blue <= 80;
-                    hasRedLine |= redLine;
-                    hasNeutralFill |= alpha >= 64 && !redLine
-                            && red >= 45 && red <= 140
-                            && green >= 45 && green <= 140
-                            && blue >= 35 && blue <= 130
-                            && Math.max(red, Math.max(green, blue))
-                            - Math.min(red, Math.min(green, blue)) <= 30;
-                    hasDarkRedFill |= alpha >= 64 && !redLine
-                            && red >= 55 && red <= 150
-                            && green >= 10 && green <= 70
-                            && blue >= 10 && blue <= 70;
-                    hasWhiteOrYellowLine |= alpha >= 64
-                            && (Math.min(red, Math.min(green, blue)) >= 150
-                            || red >= 180 && green >= 130 && blue <= 100);
-                    hasAccentNearBottom |= y >= image.getHeight() * 3 / 4 && redLine;
-                }
-            }
-            assertTrue(hasTransparentPixel, type + " must not contain a baked background");
-            assertTrue(hasOpaquePixel, type + " must retain fully legible line work");
-            assertTrue(hasRedLine, type + " must use red tactical line work");
-            assertTrue(hasNeutralFill || hasDarkRedFill,
-                    type + " must retain a layered tactical vehicle body");
-            assertFalse(hasWhiteOrYellowLine,
-                    type + " must not retain white or yellow line work");
-            assertTrue(hasAccentNearBottom,
-                    type + " red cannon stroke must reach toward the bottom edge");
-        }
-    }
-
-    private static double[] visibleMarkerFootprint(TacticalMarkerType type)
-            throws IOException {
-        ResourceLocation location = TacticalMapScreen.markerIconTexture(type);
-        assertNotNull(location, type + " texture location");
-        String resourcePath = "/assets/" + location.getNamespace() + "/"
-                + location.getPath();
-        try (InputStream stream = TacticalMapScreenLayoutTest.class
-                .getResourceAsStream(resourcePath)) {
-            assertNotNull(stream, type + " texture resource");
-            BufferedImage image = ImageIO.read(stream);
-            assertNotNull(image, type + " readable PNG");
-            int minX = image.getWidth();
-            int minY = image.getHeight();
-            int maxX = -1;
-            int maxY = -1;
-            for (int y = 0; y < image.getHeight(); y++) {
-                for (int x = 0; x < image.getWidth(); x++) {
-                    if ((image.getRGB(x, y) >>> 24) != 0) {
-                        minX = Math.min(minX, x);
-                        minY = Math.min(minY, y);
-                        maxX = Math.max(maxX, x);
-                        maxY = Math.max(maxY, y);
-                    }
-                }
-            }
-            assertTrue(maxX >= minX && maxY >= minY, type + " visible texture bounds");
-            TacticalMapScreen.MarkerIconSize display =
-                    TacticalMapScreen.markerIconSize(type, false);
-            return new double[] {
-                    display.width() * (maxX - minX + 1.0D) / image.getWidth(),
-                    display.height() * (maxY - minY + 1.0D) / image.getHeight()
-            };
-        }
     }
 
     private static void assertInsideScreen(TacticalMapLayout.Rect rect,

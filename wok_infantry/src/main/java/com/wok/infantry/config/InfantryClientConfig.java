@@ -38,7 +38,8 @@ public final class InfantryClientConfig {
         builder.comment("Tactical map presentation settings")
                 .push("tacticalMap");
         MAP_MARKER_SCALE = builder
-                .comment("Scale for infantry, tank, and IFV tactical-map markers")
+                .comment("Scale for every tactical-map marker (intel, orders and deployment "
+                        + "points); markers snap to whole physical pixels")
                 .defineInRange("intelMarkerScale", DEFAULT_MAP_MARKER_SCALE,
                         MIN_MAP_MARKER_SCALE, MAX_MAP_MARKER_SCALE);
         REDIRECT_XAERO_WORLD_MAP = builder
