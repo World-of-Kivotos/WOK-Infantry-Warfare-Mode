@@ -5,27 +5,36 @@ import com.wok.infantry.client.screen.UiRect;
 import net.minecraftforge.fml.ModList;
 
 import java.lang.reflect.Method;
+import java.util.Map;
 
 /**
- * Optional WOK步战附属-占点 bridge (client only): whether its capture panel is on screen and
- * where, so the core HUD can move out of its way. The core never links against the add-on: it
- * checks {@link ModList} first, then reflects; any failure is logged once and the panel is
- * treated as hidden.
+ * Optional WOK步战附属-占点 bridge (client only). The core never links against the add-on: it
+ * checks {@link ModList} first, then reflects; each call that fails is logged once and then
+ * treated as missing.
  *
- * <p>Preferred source is a future {@code com.wok.capturepoints.api.CaptureHudApi.panelRect(int,
- * int)} returning {@code {left, top, width, height}} in GUI pixels (null while hidden). Until the
- * add-on provides it, the panel rectangle mirrors {@code CaptureHudOverlay} of 0.1.0-alpha.3
- * (lines 28–36 and 66–73): with the core installed, screens up to 360 wide get the compact panel
- * at [140, w − 8) × [26, 61), wider screens the wide panel centred at
- * {@code pw = min(330, max(190, w − 24))} × [28, 80). Keep {@link #mirroredPanel} in step with the
- * add-on; {@code CaptureHudBridgeTest} pins these numbers.
+ * <p>Two things are read:
+ * <ul>
+ *     <li>{@link #objective()}: the point the viewer stands in, from
+ *     {@code com.wok.capturepoints.api.CaptureHudApi.currentPoint()} (add-on 0.1.0-alpha.4+), shown
+ *     by the core as the battle strip's objective tile. While the core can read it
+ *     ({@link #readsObjective()}) and its strip is on,
+ *     {@link InfantryHudApi#rendersCapturePoints()} tells the add-on so, and the add-on draws
+ *     nothing itself.</li>
+ *     <li>{@link #panelRect}: where the add-on's own capture HUD is on screen, so the core HUD
+ *     moves out of its way. Preferred source is {@code CaptureHudApi.panelRect(int, int)}
+ *     returning {@code {left, top, width, height}} in GUI pixels (null while the add-on draws
+ *     nothing, e.g. while the core shows the point). Without it (add-on 0.1.0-alpha.3) the panel
+ *     rectangle mirrors alpha.3's {@code CaptureHudOverlay} (lines 28–36 and 66–73): with the core
+ *     installed, screens up to 360 wide get the compact panel at [140, w − 8) × [26, 61), wider
+ *     screens the wide panel centred at {@code pw = min(330, max(190, w − 24))} × [28, 80). Keep
+ *     {@link #mirroredPanel} in step with alpha.3; {@code CaptureHudBridgeTest} pins these
+ *     numbers.</li>
+ * </ul>
  *
- * <p>Contract for the add-on: any version whose panel is not where alpha.3 draws it, including
- * one that places it in {@link InfantryHudApi#TOP_CENTER_NEXT}, must provide
- * {@code CaptureHudApi.panelRect}; a panel placed under the core's plates returns null there, so
- * the core does not also move out of its way. Without that API the core keeps the alpha.3
- * rectangle (a version check would drop the avoidance for every later release that kept the
- * panel), and logs once when the installed version is not alpha.3.
+ * <p>Fallbacks: when reading the point fails, the core stops showing it and
+ * {@code rendersCapturePoints()} turns false, so the add-on draws its own strip again and reports
+ * it through {@code panelRect}; when {@code panelRect} fails, the core keeps the alpha.3
+ * rectangle while the viewer stands in a point (the existing avoidance).
  */
 public final class CaptureHudBridge {
     public static final String CAPTURE_MOD_ID = "wok_capture_points";
@@ -48,31 +57,103 @@ public final class CaptureHudBridge {
     private static boolean resolved;
     private static Method insidePoint;
     private static Method panelRect;
+    private static Method currentPoint;
+    private static Object lastMap;
+    private static CaptureObjective lastObjective;
+    private static boolean pinned;
+    private static CaptureObjective pinnedObjective;
 
     private CaptureHudBridge() {
     }
 
     /**
-     * The capture panel in GUI pixels while it is drawn, otherwise null. Call from the client
-     * render thread only.
+     * UI acceptance only: shows {@code objective} as the point the viewer stands in, as if a new
+     * add-on reported it, and reports no add-on panel; {@code null} returns to the add-on.
      */
-    public static UiRect panelRect(int guiWidth, int guiHeight) {
-        if (!resolve()) {
+    public static void pinForAcceptance(CaptureObjective objective) {
+        pinnedObjective = objective;
+        pinned = objective != null;
+    }
+
+    /**
+     * The point the viewer stands in, or null (none, add-on missing or older than 0.1.0-alpha.4,
+     * or its description broke the contract). Client render thread only.
+     */
+    public static CaptureObjective objective() {
+        if (pinned) {
+            return pinnedObjective;
+        }
+        if (!resolve() || currentPoint == null) {
             return null;
         }
         try {
-            if (panelRect != null) {
+            Object result = currentPoint.invoke(null);
+            if (result == null) {
+                lastMap = null;
+                lastObjective = null;
+                return null;
+            }
+            if (result == lastMap) {
+                return lastObjective;
+            }
+            if (!(result instanceof Map<?, ?> map)) {
+                throw new IllegalArgumentException("currentPoint() returned "
+                        + result.getClass().getName());
+            }
+            CaptureObjective objective = CaptureObjective.fromMap(map);
+            lastMap = result;
+            lastObjective = objective;
+            return objective;
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
+            WokInfantryMod.LOGGER.error("WOK Capture Points HUD API currentPoint() failed; the "
+                    + "battle strip no longer shows capture points and the add-on draws its "
+                    + "own strip again.", exception);
+            currentPoint = null;
+            lastMap = null;
+            lastObjective = null;
+            return null;
+        }
+    }
+
+    /**
+     * Whether the core can read the point the viewer stands in (an add-on with
+     * {@code CaptureHudApi.currentPoint()} that has not failed, or the acceptance pin).
+     */
+    public static boolean readsObjective() {
+        return pinned || resolve() && currentPoint != null;
+    }
+
+    /**
+     * The add-on's own capture HUD in GUI pixels while it is drawn, otherwise null. Call from the
+     * client render thread only.
+     */
+    public static UiRect panelRect(int guiWidth, int guiHeight) {
+        if (pinned || !resolve()) {
+            return null;
+        }
+        if (panelRect != null) {
+            try {
                 Object result = panelRect.invoke(null, guiWidth, guiHeight);
                 return result instanceof int[] slot && slot.length == 4 && slot[2] > 0
-                        && slot[3] > 0 ? UiRect.ofSize(slot[0], slot[1], slot[2], slot[3]) : null;
+                        && slot[3] > 0 ? UiRect.ofSize(slot[0], slot[1], slot[2], slot[3])
+                        : null;
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
+                WokInfantryMod.LOGGER.error("WOK Capture Points HUD API panelRect() failed; the "
+                        + "core HUD falls back to moving out of the 0.1.0-alpha.3 panel's way.",
+                        exception);
+                panelRect = null;
+                insidePoint = method(STATE_CLASS, "insidePoint");
             }
-            return insidePoint != null && insidePoint.invoke(null) != null
-                    ? mirroredPanel(guiWidth) : null;
+        }
+        if (insidePoint == null) {
+            return null;
+        }
+        try {
+            return insidePoint.invoke(null) != null ? mirroredPanel(guiWidth) : null;
         } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
             WokInfantryMod.LOGGER.error("WOK Capture Points HUD bridge failed; the core HUD no "
                     + "longer moves out of the capture panel's way.", exception);
             insidePoint = null;
-            panelRect = null;
             return null;
         }
     }
@@ -90,8 +171,13 @@ public final class CaptureHudBridge {
 
     private static boolean resolve() {
         if (!resolved) {
+            ModList mods = ModList.get();
+            if (mods == null) {
+                return false;
+            }
             resolved = true;
-            if (ModList.get() != null && ModList.get().isLoaded(CAPTURE_MOD_ID)) {
+            if (mods.isLoaded(CAPTURE_MOD_ID)) {
+                currentPoint = method(API_CLASS, "currentPoint");
                 try {
                     panelRect = Class.forName(API_CLASS).getMethod("panelRect", int.class,
                             int.class);
@@ -99,13 +185,12 @@ public final class CaptureHudBridge {
                     panelRect = null;
                 }
                 if (panelRect == null) {
-                    try {
-                        insidePoint = Class.forName(STATE_CLASS).getMethod("insidePoint");
-                    } catch (ReflectiveOperationException | LinkageError exception) {
+                    insidePoint = method(STATE_CLASS, "insidePoint");
+                    if (insidePoint == null) {
                         WokInfantryMod.LOGGER.info("Installed WOK Capture Points exposes no "
                                 + "capture state; the core HUD keeps its default places.");
                     }
-                    String version = ModList.get().getModContainerById(CAPTURE_MOD_ID)
+                    String version = mods.getModContainerById(CAPTURE_MOD_ID)
                             .map(container -> container.getModInfo().getVersion().toString())
                             .orElse("?");
                     if (insidePoint != null && !MIRRORED_VERSION.equals(version)) {
@@ -114,8 +199,21 @@ public final class CaptureHudBridge {
                                 + "where {} draws it.", version, MIRRORED_VERSION);
                     }
                 }
+                if (currentPoint == null) {
+                    WokInfantryMod.LOGGER.info("Installed WOK Capture Points has no "
+                            + "CaptureHudApi.currentPoint (before 0.1.0-alpha.4); it keeps "
+                            + "drawing its own capture HUD.");
+                }
             }
         }
-        return panelRect != null || insidePoint != null;
+        return currentPoint != null || panelRect != null || insidePoint != null;
+    }
+
+    private static Method method(String className, String name) {
+        try {
+            return Class.forName(className).getMethod(name);
+        } catch (ReflectiveOperationException | LinkageError exception) {
+            return null;
+        }
     }
 }

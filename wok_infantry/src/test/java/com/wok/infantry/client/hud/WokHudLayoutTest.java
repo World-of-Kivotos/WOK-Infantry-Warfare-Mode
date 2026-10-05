@@ -134,9 +134,9 @@ class WokHudLayoutTest {
     void everyTierKeepsTheBallotApartFromARosterAndOnScreen() {
         for (int[] tier : TIERS) {
             for (boolean meter : new boolean[]{false, true}) {
+                // HudFrame never asks for the manpower strip while the ballot is shown
                 Input input = Input.screen(tier[0], tier[1], tier[2]).withRoster(3, false)
-                        .withStrip(true).withToasts(List.of(80)).withVote(400, meter)
-                        .withEffects(2, 1);
+                        .withToasts(List.of(80)).withVote(400, meter).withEffects(2, 1);
                 Layout layout = WokHudLayout.compute(input);
                 String where = tier[0] + "x" + tier[1] + "@" + tier[2];
                 assertNull(layout.strip(), where + ": the ballot replaces the strip");
@@ -146,6 +146,70 @@ class WokHudLayoutTest {
                 assertSound(input, layout, where);
             }
         }
+    }
+
+    /** 0.5.0-beta.2: a capture objective during the ballot gets its strip under the ballot. */
+    @Test
+    void anObjectiveStripGoesUnderTheBallot() {
+        for (int[] tier : TIERS) {
+            Input input = Input.screen(tier[0], tier[1], tier[2]).withRoster(3, false)
+                    .withVote(400, true).withEffects(2, 1)
+                    .withStrip(true, !WokHudLayout.isTight(tier[0] / tier[2], tier[1] / tier[2]));
+            Layout layout = WokHudLayout.compute(input);
+            String where = tier[0] + "x" + tier[1] + "@" + tier[2];
+            assertTrue(layout.strip() != null && layout.vote() != null, where);
+            assertTrue(layout.strip().top() >= layout.vote().bottom() + layout.gap(), where);
+            assertEquals(layout.tight() ? WokHudLayout.STRIP_HEIGHT
+                    : WokHudLayout.STRIP_HEIGHT_WIDE, layout.strip().height(), where);
+            assertSound(input, layout, where);
+        }
+    }
+
+    /** 0.5.0-beta.2: inside a capture point the strip takes its 30px wide form. */
+    @Test
+    void wideStripPushesNoticesAndTheNextSlotDown() {
+        Layout scaled = WokHudLayout.compute(Input.screen(960, 720, 2).withRoster(8, false)
+                .withStrip(true, true).withToasts(List.of(50)));
+        assertEquals(UiRect.of(184, 4, 476, 34), scaled.strip(), "30 tall, same column");
+        assertEquals(34 + 5, scaled.toasts().get(0).top(), "the notice under it");
+        assertEquals(34 + 5 + 12, scaled.topCenterBottom());
+        assertEquals((34 + 5 + 12 + 4) * 2, InfantryHudApi.slot(scaled,
+                InfantryHudApi.TOP_CENTER_NEXT)[1]);
+        assertEquals((34 + 5 + 12) * 2 + 1, scaled.bossShift(), "the boss bars under it all");
+        Layout narrow = WokHudLayout.compute(Input.screen(320, 240, 1).withRoster(8, false)
+                .withStrip(true, false));
+        assertEquals(UiRect.of(123, 2, 318, 19), narrow.strip(), "tight screens keep one row");
+        Layout notShown = WokHudLayout.compute(Input.screen(960, 720, 1).withStrip(false, true));
+        assertNull(notShown.strip());
+        assertEquals(4, InfantryHudApi.slot(notShown, InfantryHudApi.TOP_CENTER_NEXT)[1],
+                "no strip, no wide band");
+        for (int[] tier : TIERS) {
+            for (int effects : new int[]{0, 3}) {
+                Input input = Input.screen(tier[0], tier[1], tier[2]).withRoster(8, false)
+                        .withStrip(true, true).withToasts(List.of(150, 60))
+                        .withEffects(effects, effects == 0 ? 0 : 2);
+                Layout layout = WokHudLayout.compute(input);
+                String where = tier[0] + "x" + tier[1] + "@" + tier[2] + " effects=" + effects;
+                assertEquals(WokHudLayout.STRIP_HEIGHT_WIDE, layout.strip().height(), where);
+                assertSound(input, layout, where);
+            }
+        }
+    }
+
+    /**
+     * 0.5.0-beta.2: with the strip off, WOK步战附属-占点 0.1.0-alpha.4 draws its thin strip in the
+     * top_center_next slot at the top edge; the boss bars then move below it.
+     */
+    @Test
+    void bossBarsMoveBelowAThinCaptureStripAtTheTopEdge() {
+        UiRect thin = UiRect.of(60, 4, 260, 18);
+        assertEquals(18 + 4 - 3, WokHudLayout.compute(Input.screen(320, 240, 1)
+                .withCapturePanel(thin)).bossShift());
+        assertEquals(0, WokHudLayout.compute(Input.screen(320, 240, 1)
+                        .withCapturePanel(UiRect.of(60, 22, 260, 36))).bossShift(),
+                "a strip already under the first boss row leaves the bars in place");
+        assertEquals(0, WokHudLayout.bossShift(1200, 0, UiRect.of(900, 4, 1100, 18)),
+                "beside the boss column");
     }
 
     @Test

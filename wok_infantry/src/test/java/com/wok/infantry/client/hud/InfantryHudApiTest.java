@@ -6,7 +6,9 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class InfantryHudApiTest {
     @Test
@@ -31,6 +33,19 @@ class InfantryHudApiTest {
         assertEquals(38 * 2, InfantryHudApi.topCenterBottom(scaled));
         assertArrayEquals(new int[]{8, 682, 220, 30},
                 InfantryHudApi.slot(scaled, InfantryHudApi.VITALS));
+    }
+
+    /**
+     * WOK步战附属-占点 0.1.0-alpha.4 draws its own strip unless this is true: only with the strip
+     * on and a readable add-on point.
+     */
+    @Test
+    void capturePointsAreShownByTheCoreOnlyWithTheStripOnAndAReadablePoint() {
+        assertTrue(InfantryHudApi.rendersCapturePoints(true, true));
+        assertFalse(InfantryHudApi.rendersCapturePoints(false, true), "hud.showBattleStrip off");
+        assertFalse(InfantryHudApi.rendersCapturePoints(true, false),
+                "an add-on without currentPoint, or one whose map broke the contract");
+        assertFalse(InfantryHudApi.rendersCapturePoints(false, false));
     }
 
     @Test
