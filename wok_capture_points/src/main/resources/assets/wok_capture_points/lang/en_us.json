@@ -9,6 +9,8 @@
   "hud.wok_capture_points.contested": "Contested · progress frozen",
   "hud.wok_capture_points.locked": "Locked by capture order",
   "hud.wok_capture_points.capturing": "%s capturing · speed ×%s",
+  "hud.wok_capture_points.capturing_plain": "%s capturing",
+  "hud.wok_capture_points.remaining": "%s · %s left",
   "hud.wok_capture_points.secured": "Controlled by %s",
   "hud.wok_capture_points.neutral": "Neutral · awaiting capture",
   "message.wok_capture_points.first_selected": "First corner selected: %s",
