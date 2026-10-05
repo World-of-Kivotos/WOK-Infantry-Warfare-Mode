@@ -56,8 +56,10 @@ public final class TacticalMapIcons {
     /** A placed marker fades for its last 30 seconds. */
     public static final long MANUAL_EXPIRING_MILLIS = 30_000L;
     /**
-     * A drone or satellite contact fades for the last quarter of its life instead: those live for
-     * seconds to a few minutes, so a fixed 30 seconds would show some of them faded from the start.
+     * A drone or satellite contact fades for the last quarter of its lease instead: a batch lives
+     * 5.5 s (satellite) or 12 s (drone), so a fixed 30 seconds would show them faded from the
+     * start. Only once its mission has no scans left (see
+     * {@link #expiring(TacticalMarkerType, long, long, long, boolean)}).
      */
     public static final double CONTACT_EXPIRING_FRACTION = 0.25D;
     /** GUI scale up to which scheme B keeps the marker size; above it markers grow by GUI / 3. */
@@ -301,8 +303,26 @@ public final class TacticalMapIcons {
      */
     public static boolean expiring(TacticalMarkerType type, long createdAtMillis,
                                    long expiresAtMillis, long nowMillis) {
+        return expiring(type, createdAtMillis, expiresAtMillis, nowMillis, false);
+    }
+
+    /**
+     * {@link #expiring(TacticalMarkerType, long, long, long)} for a contact whose support mission
+     * still has scans to run ({@code refreshPending}): such a contact never fades. Each scan
+     * replaces the mission's whole batch, so the lease of a batch says nothing about how long a
+     * contact stays on the map — a satellite batch lives 5.5 s and is replaced every 5 s, and
+     * fading its last quarter would blink every contact for about a second per scan. Only the
+     * mission's last batch fades, for the last quarter of its lease. Placed markers ignore
+     * {@code refreshPending}.
+     */
+    public static boolean expiring(TacticalMarkerType type, long createdAtMillis,
+                                   long expiresAtMillis, long nowMillis,
+                                   boolean refreshPending) {
         long remaining = expiresAtMillis - nowMillis;
         if (type == TacticalMarkerType.RECON_CONTACT) {
+            if (refreshPending) {
+                return false;
+            }
             long lifetime = Math.max(0L, expiresAtMillis - createdAtMillis);
             return remaining <= lifetime * CONTACT_EXPIRING_FRACTION;
         }
@@ -312,7 +332,13 @@ public final class TacticalMapIcons {
     /** Whole-marker alpha for {@link #draw}: {@link #EXPIRING_ALPHA} while {@link #expiring}. */
     public static float alpha(TacticalMarkerType type, long createdAtMillis, long expiresAtMillis,
                               long nowMillis) {
-        return expiring(type, createdAtMillis, expiresAtMillis, nowMillis)
+        return alpha(type, createdAtMillis, expiresAtMillis, nowMillis, false);
+    }
+
+    /** {@link #alpha(TacticalMarkerType, long, long, long)} with a pending contact refresh. */
+    public static float alpha(TacticalMarkerType type, long createdAtMillis, long expiresAtMillis,
+                              long nowMillis, boolean refreshPending) {
+        return expiring(type, createdAtMillis, expiresAtMillis, nowMillis, refreshPending)
                 ? EXPIRING_ALPHA : 1.0F;
     }
 

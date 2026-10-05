@@ -898,7 +898,7 @@ public final class TacticalMapScreen extends Screen {
         List<TacticalMapPinPlanner.Plan> pins = planDeploymentPins(snapshot, dimension, markers,
                 hovered, artPx);
         renderDeploymentPins(graphics, pins, false, artPx);
-        renderMarkerIcons(graphics, markers, hovered, artPx);
+        renderMarkerIcons(graphics, snapshot, markers, hovered, artPx);
         renderDeploymentPins(graphics, pins, true, artPx);
 
         // Live units and active previews take precedence over static map content.
@@ -1394,11 +1394,14 @@ public final class TacticalMapScreen extends Screen {
      * Squad-style marker icons ({@link TacticalMapIcons}): enemy circles and order squares on their
      * spot, an attack order's icon on its start (only while the start is on the map). The hovered
      * and the selected marker are drawn last so their rings stay on top; a marker about to expire is
-     * faded.
+     * faded (a drone or satellite contact only once no mission will scan it again,
+     * {@link #contactRefreshPending}).
      */
-    private void renderMarkerIcons(GuiGraphics graphics, List<TacticalMarker> markers,
-                                   UUID hovered, int artPx) {
+    private void renderMarkerIcons(GuiGraphics graphics, BattleSnapshot snapshot,
+                                   List<TacticalMarker> markers, UUID hovered, int artPx) {
         long now = ClientBattleState.estimatedServerTimeMillis();
+        List<SupportMissionView> missions = snapshot.support().activeMissions();
+        List<SupportOptionView> options = snapshot.support().options();
         TacticalMarker hoveredMarker = null;
         TacticalMarker selected = null;
         for (TacticalMarker marker : markers) {
@@ -1407,19 +1410,24 @@ public final class TacticalMapScreen extends Screen {
             } else if (marker.id().equals(hovered)) {
                 hoveredMarker = marker;
             } else {
-                renderMarkerIcon(graphics, marker, TacticalMapIcons.IconState.NORMAL, artPx, now);
+                renderMarkerIcon(graphics, marker, TacticalMapIcons.IconState.NORMAL, artPx, now,
+                        missions, options);
             }
         }
         if (hoveredMarker != null) {
-            renderMarkerIcon(graphics, hoveredMarker, TacticalMapIcons.IconState.HOVER, artPx, now);
+            renderMarkerIcon(graphics, hoveredMarker, TacticalMapIcons.IconState.HOVER, artPx, now,
+                    missions, options);
         }
         if (selected != null) {
-            renderMarkerIcon(graphics, selected, TacticalMapIcons.IconState.SELECTED, artPx, now);
+            renderMarkerIcon(graphics, selected, TacticalMapIcons.IconState.SELECTED, artPx, now,
+                    missions, options);
         }
     }
 
     private void renderMarkerIcon(GuiGraphics graphics, TacticalMarker marker,
-                                  TacticalMapIcons.IconState state, int artPx, long now) {
+                                  TacticalMapIcons.IconState state, int artPx, long now,
+                                  List<SupportMissionView> missions,
+                                  List<SupportOptionView> options) {
         double x = screenX(marker.x());
         double y = screenY(marker.z());
         if (!insideMap(x, y)) {
@@ -1428,7 +1436,40 @@ public final class TacticalMapScreen extends Screen {
         TacticalMapIcons.draw(graphics, TacticalMapIcons.MapIcon.of(marker.type()),
                 (float) x, (float) y, artPx, state,
                 TacticalMapIcons.alpha(marker.type(), marker.createdAtMillis(),
-                        marker.expiresAtMillis(), now));
+                        marker.expiresAtMillis(), now,
+                        contactRefreshPending(marker, missions, options)));
+    }
+
+    /**
+     * Whether a drone or satellite contact will be replaced by a later scan: a support mission of
+     * the viewer's faction (the snapshot only carries those) on the contact's dimension still has
+     * steps to run, and the contact lies inside that mission's scan area — its start point and the
+     * option's radius, plus a block of slack (a provider may only publish contacts in there). A
+     * mission whose option is missing counts as covering everything. Placed markers never are.
+     */
+    static boolean contactRefreshPending(TacticalMarker marker, List<SupportMissionView> missions,
+                                         List<SupportOptionView> options) {
+        if (marker.type() != TacticalMarkerType.RECON_CONTACT || missions.isEmpty()) {
+            return false;
+        }
+        for (SupportMissionView mission : missions) {
+            if (mission.remainingSteps() <= 0 || !mission.dimension().equals(marker.dimension())) {
+                continue;
+            }
+            double radius = Double.POSITIVE_INFINITY;
+            for (SupportOptionView option : options) {
+                if (option.id().equals(mission.supportId())) {
+                    radius = option.radius() + 1.0D;
+                    break;
+                }
+            }
+            double dx = marker.x() - mission.startX();
+            double dz = marker.z() - mission.startZ();
+            if (dx * dx + dz * dz <= radius * radius) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

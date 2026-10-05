@@ -121,16 +121,33 @@ class TacticalMapIconsSizingTest {
                 drone - 3_001L));
         assertTrue(TacticalMapIcons.expiring(TacticalMarkerType.RECON_CONTACT, created, drone,
                 drone - 3_000L));
-        // A 10 min satellite contact: faded for its last 150 s.
-        long satellite = created + 600_000L;
+        // The longest lease a publisher may ask for (10 min): faded for its last 150 s.
+        long longest = created + 600_000L;
         assertFalse(TacticalMapIcons.expiring(TacticalMarkerType.RECON_CONTACT, created,
-                satellite, satellite - 150_001L));
+                longest, longest - 150_001L));
         assertTrue(TacticalMapIcons.expiring(TacticalMarkerType.RECON_CONTACT, created,
-                satellite, satellite - 150_000L));
+                longest, longest - 150_000L));
         assertEquals(TacticalMapIcons.EXPIRING_ALPHA, TacticalMapIcons.alpha(
                 TacticalMarkerType.RECON_CONTACT, created, drone, drone - 1L));
         // A contact without a life span (created == expires) is faded, not divided by zero.
         assertTrue(TacticalMapIcons.expiring(TacticalMarkerType.RECON_CONTACT, created, created,
                 created));
+    }
+
+    @Test
+    void contactsOfAMissionThatStillScansNeverFade() {
+        // A satellite batch: 5.5 s lease, replaced by the next scan 5 s after it was published.
+        long created = 5_000L;
+        long expires = created + 5_500L;
+        long beforeNextScan = created + 4_900L;
+        assertTrue(TacticalMapIcons.expiring(TacticalMarkerType.RECON_CONTACT, created, expires,
+                beforeNextScan, false), "the mission's last batch fades in its last 1.375 s");
+        assertFalse(TacticalMapIcons.expiring(TacticalMarkerType.RECON_CONTACT, created, expires,
+                beforeNextScan, true), "no blink before every scan while the mission runs");
+        assertEquals(1.0F, TacticalMapIcons.alpha(TacticalMarkerType.RECON_CONTACT, created,
+                expires, beforeNextScan, true));
+        // Placed markers ignore it and keep the 30 s rule.
+        assertTrue(TacticalMapIcons.expiring(TacticalMarkerType.DEFEND, created, expires,
+                created, true));
     }
 }

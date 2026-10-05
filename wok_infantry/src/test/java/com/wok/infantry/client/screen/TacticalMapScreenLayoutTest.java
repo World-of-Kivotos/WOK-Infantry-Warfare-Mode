@@ -6,6 +6,9 @@ import com.wok.infantry.battle.TacticalMarker;
 import com.wok.infantry.battle.TacticalMarkerType;
 import com.wok.infantry.client.map.TacticalMapIcons;
 import com.wok.infantry.client.ui.UiTierMatrix;
+import com.wok.infantry.support.SupportMissionView;
+import com.wok.infantry.support.SupportOptionView;
+import com.wok.infantry.support.SupportTargetMode;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
@@ -341,6 +344,43 @@ class TacticalMapScreenLayoutTest {
                 new TacticalMapScreen.MarkerHit(tank, true, 25.0D)));
         ties.sort(TacticalMapScreen.MARKER_HIT_ORDER);
         assertEquals(tank, ties.get(0).marker());
+    }
+
+    @Test
+    void contactsInsideARunningScanAreaWaitForTheNextScanInsteadOfFading() {
+        ResourceLocation overworld = ResourceLocation.fromNamespaceAndPath("minecraft",
+                "overworld");
+        ResourceLocation nether = ResourceLocation.fromNamespaceAndPath("minecraft",
+                "the_nether");
+        ResourceLocation satellite = ResourceLocation.fromNamespaceAndPath(
+                "wok_commander_support", "recon_satellite");
+        SupportOptionView option = new SupportOptionView(satellite, "support.test.satellite",
+                "侦察卫星", "卫星侦察", SupportTargetMode.POINT, 150.0D, true, "", 0L, true);
+        SupportMissionView scanning = new SupportMissionView(new UUID(1L, 1L), satellite,
+                overworld, 100.0D, 100.0D, 100.0D, 100.0D, 2_000L, 3);
+        TacticalMarker inside = contact(overworld, 200.0D, 200.0D); // 141 blocks out
+        TacticalMarker outside = contact(overworld, 260.0D, 100.0D); // 160 blocks out
+        assertTrue(TacticalMapScreen.contactRefreshPending(inside, List.of(scanning),
+                List.of(option)));
+        assertFalse(TacticalMapScreen.contactRefreshPending(outside, List.of(scanning),
+                List.of(option)));
+        assertFalse(TacticalMapScreen.contactRefreshPending(contact(nether, 100.0D, 100.0D),
+                List.of(scanning), List.of(option)), "another dimension");
+        assertFalse(TacticalMapScreen.contactRefreshPending(inside, List.of(), List.of(option)),
+                "the mission has finished: its last batch fades");
+        assertTrue(TacticalMapScreen.contactRefreshPending(outside, List.of(scanning),
+                List.of()), "a mission without its option covers every contact");
+        TacticalMarker placed = new TacticalMarker(new UUID(0L, 5L), Faction.BLUE,
+                TacticalMarkerType.TANK, overworld, 100.0D, 64.0D, 100.0D, 100.0D, 100.0D,
+                new UUID(0L, 9L), SquadCallsign.ALPHA, 1_000L, 2_000L);
+        assertFalse(TacticalMapScreen.contactRefreshPending(placed, List.of(scanning),
+                List.of(option)), "placed markers keep their 30 s rule");
+    }
+
+    private static TacticalMarker contact(ResourceLocation dimension, double x, double z) {
+        return new TacticalMarker(new UUID(0L, 7L), Faction.BLUE,
+                TacticalMarkerType.RECON_CONTACT, dimension, x, 64.0D, z, x, z,
+                new UUID(0L, 9L), SquadCallsign.ALPHA, 1_000L, 6_500L);
     }
 
     @Test
