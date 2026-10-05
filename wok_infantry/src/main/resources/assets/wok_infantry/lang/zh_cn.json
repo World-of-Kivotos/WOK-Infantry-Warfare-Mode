@@ -456,7 +456,7 @@
   "screen.wok_infantry.map.layer.vehicles": "载具情报",
   "screen.wok_infantry.map.layer.orders": "命令",
   "screen.wok_infantry.map.icon_scale": "情报图标",
-  "screen.wok_infantry.map.icon_scale.tooltip": "调整步兵、坦克和步战车在地图上的图标大小",
+  "screen.wok_infantry.map.icon_scale.tooltip": "调整地图上全部标点（敌情、命令、部署点）的图标大小",
   "gui.wok_infantry.refresh": "刷新",
   "gui.wok_infantry.loadout.save": "保存选择",
   "gui.wok_infantry.create": "创建",

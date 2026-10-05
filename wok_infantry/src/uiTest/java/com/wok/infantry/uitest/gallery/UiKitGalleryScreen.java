@@ -908,7 +908,7 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
         } else {
             TacticalDraw.well(graphics, c);
         }
-        int artPx = TacticalMapIcons.physicalPerArt(1.0D);
+        int artPx = TacticalMapIcons.mapArtPx(1.0D);
         double physicalPerLogical = effectiveGuiScale();
         int plate = (int) Math.ceil(15 * artPx / physicalPerLogical);
         int pin = (int) Math.ceil(18 * artPx / physicalPerLogical);

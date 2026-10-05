@@ -456,7 +456,7 @@
   "screen.wok_infantry.map.layer.vehicles": "Vehicle Intel",
   "screen.wok_infantry.map.layer.orders": "Orders",
   "screen.wok_infantry.map.icon_scale": "Intel Icons",
-  "screen.wok_infantry.map.icon_scale.tooltip": "Adjust infantry, tank, and IFV marker size on the map",
+  "screen.wok_infantry.map.icon_scale.tooltip": "Adjust the size of every map marker (intel, orders and deployment points)",
   "gui.wok_infantry.refresh": "Refresh",
   "gui.wok_infantry.loadout.save": "Save Selection",
   "gui.wok_infantry.create": "Create",
