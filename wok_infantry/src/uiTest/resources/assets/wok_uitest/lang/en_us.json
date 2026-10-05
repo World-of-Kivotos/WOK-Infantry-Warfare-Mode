@@ -94,5 +94,10 @@
   "uitest.wok_infantry.hud.downed.title": "Down · waiting for a medic",
   "uitest.wok_infantry.hud.downed.hint": "Hold Shift to give up",
   "uitest.wok_infantry.hud.downed.seconds": "%ss",
-  "uitest.wok_infantry.hud.boss": "Wither"
+  "uitest.wok_infantry.hud.boss": "Wither",
+  "uitest.wok_infantry.hud.capture.name": "B · Command Post",
+  "uitest.wok_infantry.hud.capture.capturing": "%s capturing · speed ×2",
+  "uitest.wok_infantry.hud.capture.contested": "Contested · progress frozen",
+  "uitest.wok_infantry.hud.capture.secured": "Controlled by %s",
+  "uitest.wok_infantry.hud.capture.disabled": "Objective disabled"
 }
