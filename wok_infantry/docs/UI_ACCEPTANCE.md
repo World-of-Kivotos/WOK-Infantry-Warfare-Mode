@@ -97,10 +97,11 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<版本>\<标�
 | `run/ui-test/ui-test-results/wok_ui_progress.txt` | 进度；客户端没写结果就退出时，Gradle 报出最后到达的阶段 |
 | `run/ui-test/screenshots/` | 截图 |
 
-### 0.5.0-beta.2 验收（2026-10-05，战况条据点小牌：zh_cn-final、en_us）
+### 0.5.0-beta.2 验收（2026-10-05，战况条据点小牌：zh_cn-final2、en_us）
 
-- 代码：分支 `claude/占点HUD` 的 `4934b45`（本版最后一个源码提交）。核心用限流脚本 `clean build`（连同六个附加测试源集的编译）：JUnit 1006 项，0 失败、0 跳过（0.5.0-beta.1 的 989 + 据点小牌 17）；`runGameTestServer`：22 项必需 GameTest 全部通过。产物 `wok_infantry-0.5.0-beta.2.jar`，2,342,092 字节，SHA-256 `847D700262BA9F80BF371340ABDB5FDFCB6C4A658C3AAFE03E5E714C6FEF1E66`。
-- zh_cn 严格轮：`status=PASS`，7174 tick，71 个用例、344 张截图，`strictLayoutViolations=0`，`layoutViolations=121`（与 0.5.0-beta.1 相同，全是只出报告的旧界面）。新增 `hud.capture*` 5 个用例 × 5 档 = 25 张全部 PASS、0 违规；其余 310 行与 `20261005-0.5.0-beta.1\zh_cn-merged` 逐行相同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.2\zh_cn-final\`。同目录的 `zh_cn\` 是第二行加“先省据点名”之前的首轮，用例结果与 `zh_cn-final` 逐行相同，只作对照。
+- 最终（独立审查修正后）：代码 `565a16f`（本版最后一个源码提交；审查修正只改了顶部没有底板时 `top_center_next` 槽位的起点）。限流脚本 `clean build`（连同六个附加测试源集的编译）：JUnit 1007 项，0 失败、0 跳过；`runGameTestServer`：22 项必需 GameTest 全部通过。产物 `wok_infantry-0.5.0-beta.2.jar`，2,342,088 字节，SHA-256 `4727A2CBB64B24C34079FD185DA9E79A6DB7A0C74073C2764178A4E6583551A9`。zh_cn 严格轮：`status=PASS`，7177 tick，71 个用例、344 张截图，`strictLayoutViolations=0`，`layoutViolations=121`，335 行用例结果与下面审查前的 `zh_cn-final` 逐行相同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.2\zh_cn-final2\`。en_us 报告轮没有重跑（见下面审查前的数字）。占点附属的 `runUiTestClient` 审查后每张 HUD 图带一条原版 Boss 条，对本版与 0.5.0-beta.1 都 PASS（截图在 `wok_capture_points/run/ui-acceptance/20261005-0.1.0-alpha.4/review-core-0.5.0-beta.*/`）。
+- 审查前：分支 `claude/占点HUD` 的 `4934b45`。核心用限流脚本 `clean build`（连同六个附加测试源集的编译）：JUnit 1006 项，0 失败、0 跳过（0.5.0-beta.1 的 989 + 据点小牌 17）；`runGameTestServer`：22 项必需 GameTest 全部通过。产物（已作废）2,342,092 字节，SHA-256 `847D700262BA9F80BF371340ABDB5FDFCB6C4A658C3AAFE03E5E714C6FEF1E66`。
+- 审查前 zh_cn 严格轮：`status=PASS`，7174 tick，71 个用例、344 张截图，`strictLayoutViolations=0`，`layoutViolations=121`（与 0.5.0-beta.1 相同，全是只出报告的旧界面）。新增 `hud.capture*` 5 个用例 × 5 档 = 25 张全部 PASS、0 违规；其余 310 行与 `20261005-0.5.0-beta.1\zh_cn-merged` 逐行相同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.2\zh_cn-final\`。同目录的 `zh_cn\` 是第二行加“先省据点名”之前的首轮，用例结果与 `zh_cn-final` 逐行相同，只作对照。
 - en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`，7173 tick，344 张截图，`strictLayoutViolations=0`，`layoutViolations=229`（与 `en_us-merged` 相同）；`hud.capture*` 25 张 0 违规；其余 310 行与 `en_us-merged` 逐行相同。归档 `…\20261005-0.5.0-beta.2\en_us\`。
 - 占点附属自己的 `runUiTestClient`（共用 `run/ui-test`）对本版与 0.5.0-beta.1 各跑一轮，都 PASS：本版读到据点就画小牌、占点不画；关闭 `hud.showBattleStrip` 后占点薄条进 `top_center_next`；0.5.0-beta.1 下占点画薄条。截图在 `wok_capture_points/run/ui-acceptance/20261005-0.1.0-alpha.4/`（不在核心清单里，不进 `archiveUiAcceptance`）。
 
