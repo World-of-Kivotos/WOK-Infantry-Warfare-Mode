@@ -14,8 +14,12 @@ package com.wok.capturepoints.client;
  * <p>Layout pixels are GUI pixels divided by {@link #factor}: at GUI scale 1 on a large window
  * the strip is drawn at 2× (as the core HUD) so CJK text stays readable. With the core installed
  * the strip goes into the core's {@code top_center_next} slot (under its plates, in the strip
- * column); without a slot it sits under the core's old banner ({@value #FALLBACK_TOP_WITH_CORE})
- * or at the top edge. Either way it moves below vanilla boss bars it would cover.
+ * column); without a slot it sits where alpha.3 kept its panel clear of the core's old banner and
+ * roster (GUI y {@value #FALLBACK_TOP_WITH_CORE} centred, or from x {@value #FALLBACK_COMPACT_LEFT}
+ * at y {@value #FALLBACK_COMPACT_TOP} on screens up to {@value #FALLBACK_COMPACT_MAX_WIDTH} wide),
+ * or at the top edge without the core. Either way it moves below vanilla boss bars that really
+ * cover it; bars a core has already moved below it are left alone (moving under those would make
+ * the core move them again, and the two would chase each other off the screen).
  */
 public final class CaptureStripLayout {
     public static final int MAX_WIDTH = 200;
@@ -27,6 +31,15 @@ public final class CaptureStripLayout {
     public static final int EDGE = 4;
     /** GUI y under the core's top plates when the core gives no slot (alpha.3's place). */
     public static final int FALLBACK_TOP_WITH_CORE = 28;
+    /**
+     * Without a slot on screens up to this GUI width alpha.3 drew its compact panel right of the
+     * core's roster, from {@link #FALLBACK_COMPACT_LEFT} to the right edge less
+     * {@link #FALLBACK_COMPACT_RIGHT}, at {@link #FALLBACK_COMPACT_TOP}.
+     */
+    public static final int FALLBACK_COMPACT_MAX_WIDTH = 360;
+    public static final int FALLBACK_COMPACT_LEFT = 140;
+    public static final int FALLBACK_COMPACT_RIGHT = 8;
+    public static final int FALLBACK_COMPACT_TOP = 26;
     /** Text inset from the plate's left and right edges. */
     public static final int PAD = 4;
     /** First and second text rows below the plate's top. */
@@ -38,8 +51,11 @@ public final class CaptureStripLayout {
     public static final int COUNT_GAP = 3;
     /** The bar never gets narrower than this; a long name is shortened instead. */
     public static final int BAR_MIN = 20;
-    /** GUI pixels kept under the lowest vanilla boss bar. */
+    /** GUI pixels kept between the strip and the vanilla boss bars. */
     public static final int BOSS_CLEARANCE = 4;
+    /** A vanilla boss bar at y: its name row starts this far above y, the bar is this tall. */
+    public static final int BOSS_TITLE_ABOVE = 9;
+    public static final int BOSS_BAR_HEIGHT = 5;
     /** Vanilla boss bars span the screen centre ± this (BossHealthOverlay). */
     public static final int BOSS_HALF_WIDTH = 91;
     /** Smallest layout the 2× rule may produce (WOK步战核心 {@code UiScale}). */
@@ -100,15 +116,30 @@ public final class CaptureStripLayout {
     }
 
     /**
+     * GUI y where the name row of a boss bar drawn at {@code barY} (moved down by {@code shiftY})
+     * starts.
+     */
+    public static int bossTop(int barY, int shiftY) {
+        return barY + shiftY - BOSS_TITLE_ABOVE;
+    }
+
+    /** GUI y under a boss bar drawn at {@code barY} (moved down by {@code shiftY}). */
+    public static int bossBottom(int barY, int shiftY) {
+        return barY + shiftY + BOSS_BAR_HEIGHT;
+    }
+
+    /**
      * The plate on a {@code guiWidth}×{@code guiHeight} screen.
      *
      * @param slot          the core's {@code top_center_next} slot {@code {left, top, width,
      *                      height}} in GUI pixels, or null without one
      * @param coreLoaded    WOK步战核心 is installed (used only without a slot)
-     * @param bossBottomGui GUI y under the lowest vanilla boss bar drawn (0 = none)
+     * @param bossTopGui    GUI y of the first boss bar's name row as drawn ({@link #bossTop})
+     * @param bossBottomGui GUI y under the lowest vanilla boss bar drawn ({@link #bossBottom});
+     *                      0 or less = no boss bar
      */
     public static Plate place(int guiWidth, int guiHeight, int factor, int[] slot,
-                              boolean coreLoaded, int bossBottomGui) {
+                              boolean coreLoaded, int bossTopGui, int bossBottomGui) {
         int f = Math.max(1, factor);
         int width = Math.max(1, guiWidth / f);
         int height = Math.max(1, guiHeight / f);
@@ -123,6 +154,11 @@ public final class CaptureStripLayout {
             plateWidth = Math.max(0, Math.min(MAX_WIDTH, slotRight - slotLeft));
             left = slotLeft + (slotRight - slotLeft - plateWidth) / 2;
             top = ceilDiv(slot[1], f);
+        } else if (coreLoaded && guiWidth <= FALLBACK_COMPACT_MAX_WIDTH) {
+            left = ceilDiv(FALLBACK_COMPACT_LEFT, f);
+            plateWidth = Math.max(0, Math.min(MAX_WIDTH,
+                    Math.floorDiv(guiWidth - FALLBACK_COMPACT_RIGHT, f) - left));
+            top = ceilDiv(FALLBACK_COMPACT_TOP, f);
         } else {
             plateWidth = Math.max(0, Math.min(MAX_WIDTH, width - 2 * EDGE));
             left = (width - plateWidth) / 2;
@@ -133,9 +169,13 @@ public final class CaptureStripLayout {
             int guiRight = (left + plateWidth) * f;
             boolean sharesColumn = guiLeft < guiWidth / 2 + BOSS_HALF_WIDTH
                     && guiRight > guiWidth / 2 - BOSS_HALF_WIDTH;
-            int clear = ceilDiv(bossBottomGui + BOSS_CLEARANCE, f);
-            if (sharesColumn && top < clear) {
-                top = clear;
+            // Only bars that reach into the strip (clearance included) push it down. Bars already
+            // under it stay there: a core that moved them below the strip would otherwise move
+            // them again below the moved strip, every frame.
+            boolean covered = top * f < bossBottomGui + BOSS_CLEARANCE
+                    && (top + plateHeight) * f + BOSS_CLEARANCE > bossTopGui;
+            if (sharesColumn && covered) {
+                top = ceilDiv(bossBottomGui + BOSS_CLEARANCE, f);
             }
         }
         return new Plate(f, left, top, left + plateWidth, top + plateHeight, wide);

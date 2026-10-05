@@ -26,10 +26,24 @@ class CaptureStripLayoutTest {
         assertEquals(1, CaptureStripLayout.factor(3.0, 320, 240));
     }
 
+    /** {@link CaptureStripLayout#place} without boss bars. */
+    private static Plate place(int guiWidth, int guiHeight, int factor, int[] slot,
+                               boolean core) {
+        return CaptureStripLayout.place(guiWidth, guiHeight, factor, slot, core,
+                Integer.MAX_VALUE, 0);
+    }
+
+    /** {@link CaptureStripLayout#place} under one vanilla boss bar at y 12 moved down {@code shift}. */
+    private static Plate placeUnderBoss(int guiWidth, int guiHeight, int factor, int[] slot,
+                                        boolean core, int shift) {
+        return CaptureStripLayout.place(guiWidth, guiHeight, factor, slot, core,
+                CaptureStripLayout.bossTop(12, shift), CaptureStripLayout.bossBottom(12, shift));
+    }
+
     @Test
     void narrowScreenTakesTheCoreSlotInOneRow() {
         // core 0.5.0-beta.1 at 320×240: top_center_next = {123, 22, 195, 98}
-        Plate plate = CaptureStripLayout.place(320, 240, 1, new int[]{123, 22, 195, 98}, true, 0);
+        Plate plate = place(320, 240, 1, new int[]{123, 22, 195, 98}, true);
         assertEquals(new Plate(1, 123, 22, 318, 36, false), plate);
         assertArrayEquals(new int[]{123, 22, 195, 14}, plate.guiRect());
     }
@@ -37,7 +51,7 @@ class CaptureStripLayoutTest {
     @Test
     void wideScreenAtGuiOneIsDrawnAtTwiceWithTheStatusRow() {
         // the 2× core HUD: strip column [184, 476) layout = [368, 952) GUI, next row at 25 → 50
-        Plate plate = CaptureStripLayout.place(960, 720, 2, new int[]{368, 50, 584, 310}, true, 0);
+        Plate plate = place(960, 720, 2, new int[]{368, 50, 584, 310}, true);
         assertEquals(new Plate(2, 230, 25, 430, 48, true), plate, "200 wide, centred in the slot");
         assertArrayEquals(new int[]{460, 50, 400, 46}, plate.guiRect());
         assertEquals(CaptureStripLayout.HEIGHT_WIDE, plate.height());
@@ -46,29 +60,43 @@ class CaptureStripLayoutTest {
     @Test
     void withoutASlotItKeepsItsOwnPlace() {
         assertEquals(new Plate(1, 220, 4, 420, 27, true),
-                CaptureStripLayout.place(640, 336, 1, null, false, 0), "alone: top edge");
-        assertEquals(new Plate(1, 60, 4, 260, 18, false),
-                CaptureStripLayout.place(320, 240, 1, null, false, 0));
-        assertEquals(14, CaptureStripLayout.place(960, 720, 2, null, true, 0).top(),
+                place(640, 336, 1, null, false), "alone: top edge");
+        assertEquals(new Plate(1, 60, 4, 260, 18, false), place(320, 240, 1, null, false));
+        assertEquals(14, place(960, 720, 2, null, true).top(),
                 "a core without InfantryHudApi: under its old banner (GUI y 28)");
         assertEquals(new Plate(1, 60, 4, 260, 18, false),
-                CaptureStripLayout.place(320, 240, 1, new int[]{0, 0, 0, 0}, false, 0),
-                "an empty slot counts as none");
+                place(320, 240, 1, new int[]{0, 0, 0, 0}, false), "an empty slot counts as none");
+    }
+
+    /**
+     * Review fix: a core without the slot API on a narrow screen keeps its roster at the top left
+     * (x 8–128); like alpha.3's compact panel the strip then starts at x 140, y 26.
+     */
+    @Test
+    void narrowScreenWithAnOldCoreAndNoSlotStaysRightOfTheRoster() {
+        assertEquals(new Plate(1, 140, 26, 312, 40, false), place(320, 240, 1, null, true));
+        assertEquals(new Plate(1, 140, 26, 340, 40, false), place(360, 240, 1, null, true),
+                "200 wide at most");
+        assertEquals(new Plate(1, 80, 28, 280, 42, false), place(361, 240, 1, null, true),
+                "wider screens: centred under the old banner");
     }
 
     @Test
     void itMovesBelowVanillaBossBarsItWouldCover() {
-        // one boss bar: title at y 3, bar 12..17
-        Plate plate = CaptureStripLayout.place(640, 336, 1, null, false, 17);
-        assertEquals(21, plate.top(), "4px under the bar");
-        Plate scaled = CaptureStripLayout.place(960, 720, 2, null, false, 17);
-        assertEquals(11, scaled.top(), "ceil(21 / 2) at the 2x size");
-        Plate below = CaptureStripLayout.place(320, 240, 1, new int[]{123, 40, 195, 80}, true,
-                17);
-        assertEquals(40, below.top(), "already below the bars: stays");
-        Plate beside = CaptureStripLayout.place(1200, 600, 1, new int[]{900, 4, 200, 80}, true,
-                36);
-        assertEquals(4, beside.top(), "outside the boss column: stays");
+        // one boss bar in place: name row from y 3, bar 12..17
+        assertEquals(21, placeUnderBoss(640, 336, 1, null, false, 0).top(),
+                "4px under the bar");
+        assertEquals(11, placeUnderBoss(960, 720, 2, null, false, 0).top(),
+                "ceil(21 / 2) at the 2x size");
+        assertEquals(40, placeUnderBoss(320, 240, 1, new int[]{123, 40, 195, 80}, true, 0).top(),
+                "already below the bars: stays");
+        assertEquals(4, placeUnderBoss(1200, 600, 1, new int[]{900, 4, 200, 80}, true, 19).top(),
+                "outside the boss column: stays");
+        int[] slot = {170, 4, 300, 160};
+        assertEquals(4, placeUnderBoss(640, 336, 1, slot, true, 28).top(),
+                "bars a core moved 4px under the strip (name row at 4 + 23 + 4): stays");
+        assertEquals(30, placeUnderBoss(640, 336, 1, slot, true, 9).top(),
+                "bars moved only part of the way still cover it: under them");
     }
 
     @Test
@@ -76,7 +104,7 @@ class CaptureStripLayoutTest {
         for (int[] tier : TIERS) {
             int factor = CaptureStripLayout.factor(tier[2], tier[0], tier[1]);
             for (boolean core : new boolean[]{false, true}) {
-                Plate plate = CaptureStripLayout.place(tier[0], tier[1], factor, null, core, 0);
+                Plate plate = place(tier[0], tier[1], factor, null, core);
                 int[] gui = plate.guiRect();
                 String where = tier[0] + "x" + tier[1] + "@" + tier[2] + " core=" + core;
                 assertTrue(plate.width() <= CaptureStripLayout.MAX_WIDTH, where);

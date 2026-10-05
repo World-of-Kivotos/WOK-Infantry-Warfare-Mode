@@ -14,6 +14,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import net.minecraft.client.tutorial.TutorialSteps;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundBossEventPacket;
+import net.minecraft.server.level.ServerBossEvent;
+import net.minecraft.world.BossEvent;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ScreenEvent;
@@ -45,6 +49,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * add-on's thin strip in the core's {@code top_center_next} slot. With an older core every HUD
  * capture shows the thin strip. The core is only read by reflection here, so the same harness
  * runs against either core JAR ({@code -Pinfantry_dev_jar_path}).
+ *
+ * <p>Review fix: a vanilla boss bar (client overlay only) is shown during every HUD capture, and
+ * the thin strip must hold the same place four ticks apart, inside the top half of the screen.
+ * Before the fix the strip and core 0.5.0-beta.1's boss bar shift chased each other down and the
+ * strip left the screen within a few frames.
  */
 @Mod.EventBusSubscriber(modid = WokCapturePointsMod.MOD_ID, value = Dist.CLIENT,
         bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -76,6 +85,8 @@ public final class CaptureUiAcceptanceHarness {
     private static boolean resultWritten;
     /** The core's original {@code hud.showBattleStrip}, while the harness has it switched off. */
     private static Boolean savedShowBattleStrip;
+    /** The add-on's panelRect four ticks before a HUD check (the strip must have settled). */
+    private static int[] settlingPanel;
 
     private CaptureUiAcceptanceHarness() {
     }
@@ -189,6 +200,11 @@ public final class CaptureUiAcceptanceHarness {
         }
         OBSERVATIONS.add("integratedWorld=true");
         OBSERVATIONS.add("mapOverlayRegistered=true");
+        minecraft.gui.getBossOverlay().reset();
+        minecraft.gui.getBossOverlay().update(ClientboundBossEventPacket.createAddPacket(
+                new ServerBossEvent(Component.literal("Boss"), BossEvent.BossBarColor.RED,
+                        BossEvent.BossBarOverlay.PROGRESS)));
+        OBSERVATIONS.add("bossBar=1 (client overlay only)");
         transition(Phase.PREPARE_COMPACT_HUD);
     }
 
@@ -197,6 +213,12 @@ public final class CaptureUiAcceptanceHarness {
         setSize(minecraft, guiScale);
         minecraft.setScreen(null);
         if (phaseTicks < 12) return;
+        if (phaseTicks == 12) {
+            settlingPanel = CaptureHudApi.panelRect(minecraft.getWindow().getGuiScaledWidth(),
+                    minecraft.getWindow().getGuiScaledHeight());
+            return;
+        }
+        if (phaseTicks < 16) return;
         if (!logicalSize(minecraft).equals(expectedWidth + "x" + expectedHeight)) {
             fail("HUD logical size mismatch: expected " + expectedWidth + 'x' + expectedHeight
                     + ", got " + logicalSize(minecraft));
@@ -243,9 +265,15 @@ public final class CaptureUiAcceptanceHarness {
         }
         if (panel[2] > CaptureStripLayout.MAX_WIDTH * factor
                 || panel[3] > CaptureStripLayout.HEIGHT_WIDE * factor
-                || panel[0] < 0 || panel[0] + panel[2] > width) {
+                || panel[0] < 0 || panel[0] + panel[2] > width
+                || panel[1] < 0 || panel[1] + panel[3] > height / 2) {
             fail("thin strip out of bounds: " + Arrays.toString(panel) + " on " + width + "x"
                     + height + " at " + factor + "x");
+            return false;
+        }
+        if (!Arrays.equals(settlingPanel, panel)) {
+            fail("thin strip still moving under the boss bar: " + Arrays.toString(settlingPanel)
+                    + " four ticks ago, now " + Arrays.toString(panel));
             return false;
         }
         if (objective != null) {
@@ -437,6 +465,7 @@ public final class CaptureUiAcceptanceHarness {
     private static void finish(Minecraft minecraft, boolean success) throws IOException {
         if (!resultWritten) {
             restoreBattleStrip();
+            minecraft.gui.getBossOverlay().reset();
             Path result = minecraft.gameDirectory.toPath().resolve("ui-test-results")
                     .resolve("wok_capture_points_ui_acceptance.txt");
             Files.createDirectories(result.getParent());

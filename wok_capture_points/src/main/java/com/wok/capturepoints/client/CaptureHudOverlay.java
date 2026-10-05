@@ -10,6 +10,8 @@ import net.minecraftforge.client.event.CustomizeGuiOverlayEvent;
 import net.minecraftforge.client.event.RenderGuiEvent;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 
+import java.util.Objects;
+
 /**
  * The thin capture strip (0.1.0-alpha.4, replaces the 330×52 panel of alpha.3): one row "name │
  * blue ▬▬|▬▬ red" at most 200 wide at the top centre, the status text in a second row on wide
@@ -28,26 +30,41 @@ public final class CaptureHudOverlay {
     public static final IGuiOverlay INSTANCE = (gui, graphics, partialTick, width, height) ->
             render(graphics, width, height);
 
-    /** Lowest vanilla boss bar bottom (GUI y) drawn in this frame and in the previous one. */
+    /**
+     * Vanilla boss bars drawn in this frame and in the previous one (GUI y, as drawn): the first
+     * name row's top and the lowest bar's bottom; a bottom of 0 means none.
+     */
+    private static int bossTopThisFrame = Integer.MAX_VALUE;
     private static int bossBottomThisFrame;
+    private static int bossTopLastFrame = Integer.MAX_VALUE;
     private static int bossBottomLastFrame;
+
+    /** Status row text of {@link #statusPoint} in {@link #statusLanguage} (built once per sync). */
+    private static CapturePointView statusPoint;
+    private static String statusLanguage;
+    private static String statusText = "";
 
     private CaptureHudOverlay() {
     }
 
     /** Forge bus, start of a GUI frame: rolls the boss bar measurement over. */
     static void onRenderGuiPre(RenderGuiEvent.Pre event) {
+        bossTopLastFrame = bossTopThisFrame;
         bossBottomLastFrame = bossBottomThisFrame;
+        bossTopThisFrame = Integer.MAX_VALUE;
         bossBottomThisFrame = 0;
     }
 
     /**
-     * Forge bus, lowest priority, drawn bars only: records where a vanilla boss bar ends,
+     * Forge bus, lowest priority, drawn bars only: records where a vanilla boss bar is drawn,
      * including any translation another MOD (WOK步战核心) applied to the boss overlay.
      */
     static void onBossEventProgress(CustomizeGuiOverlayEvent.BossEventProgress event) {
         int shift = Math.round(event.getGuiGraphics().pose().last().pose().m31());
-        bossBottomThisFrame = Math.max(bossBottomThisFrame, event.getY() + shift + 5);
+        bossTopThisFrame = Math.min(bossTopThisFrame,
+                CaptureStripLayout.bossTop(event.getY(), shift));
+        bossBottomThisFrame = Math.max(bossBottomThisFrame,
+                CaptureStripLayout.bossBottom(event.getY(), shift));
     }
 
     /**
@@ -58,28 +75,29 @@ public final class CaptureHudOverlay {
      */
     public static int[] panelRect(int guiWidth, int guiHeight) {
         CapturePointView point = shownPoint();
-        return point == null ? null : plate(guiWidth, guiHeight, bossBottomLastFrame).guiRect();
+        return point == null ? null
+                : plate(guiWidth, guiHeight, bossTopLastFrame, bossBottomLastFrame).guiRect();
     }
 
     private static CapturePointView shownPoint() {
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.player == null || minecraft.options.hideGui) {
+        if (minecraft.player == null || minecraft.options.hideGui
+                || ClientCaptureState.insidePointId() == null
+                || InfantryHudLink.coreRendersCapturePoints()) {
             return null;
         }
-        CapturePointView point = ClientCaptureState.insidePoint();
-        if (point == null || InfantryHudLink.coreRendersCapturePoints()) {
-            return null;
-        }
-        return point;
+        return ClientCaptureState.insidePoint();
     }
 
-    private static CaptureStripLayout.Plate plate(int guiWidth, int guiHeight, int bossBottom) {
+    private static CaptureStripLayout.Plate plate(int guiWidth, int guiHeight, int bossTop,
+                                                  int bossBottom) {
         Minecraft minecraft = Minecraft.getInstance();
         int factor = CaptureStripLayout.factor(minecraft.getWindow().getGuiScale(), guiWidth,
                 guiHeight);
         boolean core = InfantryHudLink.coreLoaded();
         int[] slot = core ? InfantryHudLink.topCenterNext(guiWidth, guiHeight) : null;
-        return CaptureStripLayout.place(guiWidth, guiHeight, factor, slot, core, bossBottom);
+        return CaptureStripLayout.place(guiWidth, guiHeight, factor, slot, core, bossTop,
+                bossBottom);
     }
 
     private static void render(GuiGraphics graphics, int width, int height) {
@@ -88,7 +106,8 @@ public final class CaptureHudOverlay {
             return;
         }
         Minecraft minecraft = Minecraft.getInstance();
-        CaptureStripLayout.Plate plate = plate(width, height, bossBottomThisFrame);
+        CaptureStripLayout.Plate plate = plate(width, height, bossTopThisFrame,
+                bossBottomThisFrame);
         if (plate.width() <= 0) {
             return;
         }
@@ -140,11 +159,25 @@ public final class CaptureHudOverlay {
         graphics.fill(row.centre(), y + 1, row.centre() + 1, y + 6, CaptureHudModel.LIGHT);
 
         if (plate.wide()) {
-            Component status = CaptureHudModel.statusWithTime(point);
-            graphics.drawString(font, fit(font, status.getString(), row.statusRoom()),
+            graphics.drawString(font, fit(font, statusText(point), row.statusRoom()),
                     left + CaptureStripLayout.PAD, row.statusY(),
                     CaptureHudModel.statusColor(point), false);
         }
+    }
+
+    /**
+     * Status row text, translated once per synchronized point view (a new view arrives with
+     * every snapshot) and language, not every frame.
+     */
+    private static String statusText(CapturePointView point) {
+        String language = Minecraft.getInstance().getLanguageManager().getSelected();
+        if (point != statusPoint || !Objects.equals(language, statusLanguage)) {
+            Component status = CaptureHudModel.statusWithTime(point);
+            statusText = status.getString();
+            statusPoint = point;
+            statusLanguage = language;
+        }
+        return statusText;
     }
 
     /** {@code text} cut to {@code maxWidth} with a trailing "…" when it does not fit. */
