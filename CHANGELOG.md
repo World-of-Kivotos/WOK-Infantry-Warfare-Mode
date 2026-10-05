@@ -108,7 +108,7 @@
 - 合并后版本核对：`tools/verify_versions.ps1 -Modules wok_infantry -Release`（Windows PowerShell 5.1）PASS（源码版本、文档、JAR 名、modId 与内部版本一致；本条目六栏不空，JAR 晚于核心源码最后一次提交且源码没有未提交改动）。
 - 合并后占点兼容：`wok_capture_points` 的 `compileJava compileUiTestJava`（`--rerun` 强制重编）以合并后的核心 JAR 编译通过；占点 uiTest 本身没有运行。
 - 合并后的构建与验收没有发现合并引入的问题，没有额外修复。
-- 尚未部署：测试端 `mods` 里仍是 0.4.0-beta.3；部署到测试端由编排方进行。
+- 已部署：2026-10-05 把 SHA-256 为 `A930A26E…FA0BFC` 的 `wok_infantry-0.5.0-beta.1.jar` 部署到测试端 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，部署后哈希与构建产物一致；0.4.0-beta.3 改名为 `wok_infantry-0.4.0-beta.3.jar.backup-20261005-204832-before-0.5.0-beta.1.bak`。测试端 8 个 WOK步战 JAR 的独立安装检查全部 PASS。同日测试端 `config/superbwarfare-client.toml` 的 `stamina_hud` 改为 `false`（用户同意，原文件备份为 `.bak`），避免卓越前线自带体力线压在本版体力条凹槽下沿。
 - 未做：真实客户端人工验收——战斗终端（窄屏与大屏、文字、按键状态、确认层、部署流程，以及需要两个号的踢人冷却、移交队长、跨队移交指挥权、作战中踢人）；体力条（联网时的残影和恢复节奏、真骑马和骆驼冲刺冷却、坐 SBW 载具、与部位血量人形和 TaCZ 读数同屏、`hud.staminaBar` 开关切换；uiTest 里体力状态是固定注入的，玩家没有真的骑乘，截图里没有坐骑血量行）。新增英文文案的母语审校。`networkTest` 的 `NetworkRuntimeAcceptanceHarness` 仍期待战局协议 `"14"`（早于本版即已过时，本版没有动）。
 
 ## WOK步战核心 0.4.0-beta.3 — 2026-10-05
