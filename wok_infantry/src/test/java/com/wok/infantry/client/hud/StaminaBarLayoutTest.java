@@ -12,7 +12,9 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -195,6 +197,22 @@ class StaminaBarLayoutTest {
         assertEquals(201, layout(320, 240, 1).band().right(), "cut 2px before w − 117");
         assertEquals(UiRect.of(102, 211, 267, 218), layout(386, 241, 1).band(),
                 "below 420 wide the row ends 2px before TaCZ's keep-out");
+    }
+
+    @Test
+    void theHudReusesTheLastLayoutWhileNothingChanges() {
+        // the HUD lays the bar out every frame: same inputs, same (immutable) layout, so the
+        // outline is not traced again
+        Layout first = layout(640, 336, 1);
+        assertSame(first, layout(640, 336, 1));
+        Layout taller = layout(640, 360, 1);
+        assertNotSame(first, taller);
+        assertEquals(UiRect.of(229, 330, 411, 337), taller.band());
+        Layout unicode = StaminaBarLayout.compute(640, 360, 1, NUMBER_WIDTH + 4,
+                StaminaBarLayout.DEFAULT_CHAT_RIGHT);
+        assertEquals(StaminaBarLayout.earWidth(NUMBER_WIDTH + 4), unicode.earWidth(),
+                "a different font width is a different layout");
+        assertEquals(first, layout(640, 336, 1), "recomputed after the cache moved on");
     }
 
     @Test

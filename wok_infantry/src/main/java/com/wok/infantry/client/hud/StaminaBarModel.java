@@ -4,8 +4,6 @@ import com.wok.infantry.client.screen.TacticalBoardTheme;
 import com.wok.infantry.client.screen.TacticalIcon;
 import com.wok.infantry.stamina.StaminaRules;
 
-import java.util.Locale;
-
 /**
  * What the stamina bar shows (preview {@code surfaces/16-stamina.js}, {@code stamina-a4}):
  * the state of one frame and the colours, marks and fill spans derived from it. Pure, so the
@@ -34,6 +32,14 @@ public final class StaminaBarModel {
     public static final int GHOST_ALPHA = 0x66;
     /** Ticks per blink phase: 5 on, 5 off = 2 Hz. */
     public static final int BLINK_TICKS = 5;
+    /** "0%" … "100%", so drawing the percentages formats nothing per frame. */
+    private static final String[] PERCENT_TEXT = new String[(int) StaminaRules.MAX_STAMINA + 1];
+
+    static {
+        for (int value = 0; value < PERCENT_TEXT.length; value++) {
+            PERCENT_TEXT[value] = value + "%";
+        }
+    }
 
     private StaminaBarModel() {
     }
@@ -206,9 +212,9 @@ public final class StaminaBarModel {
         return Math.round(Math.max(0, width) * ratio);
     }
 
-    /** {@code round(value)%}. */
+    /** {@code round(value)%}, from a table: the HUD asks twice per frame. */
     public static String percent(float value) {
-        return String.format(Locale.ROOT, "%d%%", Math.round(clamp(value)));
+        return PERCENT_TEXT[Math.round(clamp(value))];
     }
 
     private static float clamp(float value) {

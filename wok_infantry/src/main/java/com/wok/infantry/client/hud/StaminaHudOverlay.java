@@ -136,10 +136,12 @@ public final class StaminaHudOverlay {
         StaminaBarModel.Tone arms = StaminaBarModel.arms(state, blinkOn);
         StaminaBarModel.Tone legs = StaminaBarModel.legs(state, blinkOn);
         // Plate: each piece filled once (translucent, the pieces only touch), one outline around
-        // the union, the status accents on top of it (HUD plate language).
-        for (UiRect piece : bar.pieces()) {
-            fill(graphics, piece, TacticalBoardTheme.HUD_PLATE);
-        }
+        // the union, the status accents on top of it (HUD plate language). The pieces are filled
+        // one by one instead of through Layout.pieces(), which builds a list.
+        fill(graphics, bar.band(), TacticalBoardTheme.HUD_PLATE);
+        fill(graphics, bar.earLeft(), TacticalBoardTheme.HUD_PLATE);
+        fill(graphics, bar.earRight(), TacticalBoardTheme.HUD_PLATE);
+        fill(graphics, bar.tab(), TacticalBoardTheme.HUD_PLATE);
         for (UiRect segment : bar.outline()) {
             fill(graphics, segment, TacticalBoardTheme.HUD_EDGE);
         }

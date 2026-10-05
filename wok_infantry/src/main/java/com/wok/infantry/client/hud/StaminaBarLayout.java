@@ -78,6 +78,17 @@ public final class StaminaBarLayout {
     /** The tick on the legs groove: sprint unlocks at the default 15 % (and a mantle costs 15). */
     public static final float LEGS_TICK = 0.15F;
 
+    /**
+     * The last layout and its inputs: the HUD lays the bar out every frame with the same inputs
+     * until the window, GUI scale, font or chat settings change, so the outline is not traced
+     * again each frame. {@link Layout} is immutable.
+     */
+    private static volatile Cached last;
+
+    private record Cached(int guiWidth, int guiHeight, int factor, int numberWidth,
+                          int chatRight, Layout layout) {
+    }
+
     private StaminaBarLayout() {
     }
 
@@ -168,6 +179,19 @@ public final class StaminaBarLayout {
      * @param chatRight   background right edge of the vanilla chat ({@link #chatRight})
      */
     public static Layout compute(int guiWidth, int guiHeight, int factor, int numberWidth,
+                                 int chatRight) {
+        Cached cached = last;
+        if (cached != null && cached.guiWidth() == guiWidth && cached.guiHeight() == guiHeight
+                && cached.factor() == factor && cached.numberWidth() == numberWidth
+                && cached.chatRight() == chatRight) {
+            return cached.layout();
+        }
+        Layout layout = layout(guiWidth, guiHeight, factor, numberWidth, chatRight);
+        last = new Cached(guiWidth, guiHeight, factor, numberWidth, chatRight, layout);
+        return layout;
+    }
+
+    private static Layout layout(int guiWidth, int guiHeight, int factor, int numberWidth,
                                  int chatRight) {
         int width = Math.max(1, guiWidth);
         int height = Math.max(1, guiHeight);

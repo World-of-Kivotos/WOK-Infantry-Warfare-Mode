@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** State rules of the A4 stamina bar, one test per preview state (surfaces/16-stamina.js DEMO). */
@@ -174,6 +175,12 @@ class StaminaBarModelTest {
         assertEquals("43%", StaminaBarModel.percent(42.5F));
         assertEquals("100%", StaminaBarModel.percent(140.0F));
         assertEquals("0%", StaminaBarModel.percent(Float.NaN));
+        assertEquals("0%", StaminaBarModel.percent(-3.0F));
+        for (int value = 0; value <= 100; value++) {
+            assertEquals(value + "%", StaminaBarModel.percent(value));
+        }
+        assertSame(StaminaBarModel.percent(64.2F), StaminaBarModel.percent(63.6F),
+                "from a table: nothing is formatted per frame");
         assertEquals(new Pool(30.0F, 30.0F, false), new Pool(30.0F, 10.0F, false),
                 "a remnant below the value is no remnant");
     }

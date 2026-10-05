@@ -43,6 +43,7 @@ TaCZ 的枪械识别与开镜状态通过 1.1.8 API 的反射边界读取。API 
 - 状态：常态灰绿 `NEUTRAL_B`（剪影、数字 `LIGHT_MUTED`）；低于 50 橙 `ACCENT_B`；15 及以下红 `DANGER_B`，贴边、剪影和数字 2Hz 闪（填充本身不闪）。刚消耗掉的一段留 0.6 秒残影（填充色 40% 不透明，取最近 0.6 秒内收到的最高值），恢复中（最近 0.4 秒内上升过）条头亮 1px。腿耗尽锁疾跑期间腿槽空段换成暗红（`DANGER` 与 `FRAME` 各半，读作红色空槽而不是满条）、内阴影更暗、刻度变亮，靴子换成红锁，贴边和数字红；回到 15 解锁时靴子换成绿勾、贴边变绿 1 秒。骑马、驴、骆驼等可跳坐骑时腿槽改显示跳跃蓄力（浅色、向上箭头，百分比为蓄力；骆驼冲刺冷却中整组变灰），手槽照常；乘坐其他载具（船、矿车、卓越前线载具等）时腿槽、靴子、数字变灰（坐着不消耗腿）。腿槽刻度按默认门槛 15 画；服务端改了 `legExhaustedResumeThreshold` 时刻度不跟着变（体力协议不变）。
 - 原版让位：体力条显示时（生存/冒险模式、服务端启用体力、活着、未按 F1、客户端配置 `hud.staminaBar` 开）在 `RenderGuiOverlayEvent.Pre` 里取消原版 `EXPERIENCE_BAR`（经验条和等级数字）与 `JUMP_BAR`（骑马跳跃条）。监听用最高优先级，先于其他 MOD 的监听取消，不会留下没配对的 Post；这两个覆盖层都不改 Forge 的 `leftHeight`/`rightHeight`，红心、护甲、饱食度、氧气、坐骑血量、物品名、动作栏、聊天和其他 MOD 往状态栈加的行都不动。创造、旁观、死亡或服务端关闭体力时不画体力，原版经验条照常；`hud.staminaBar = false` 时始终显示原版经验条和跳跃条、不显示体力（腿耗尽照样锁疾跑）。
 - 部位血量：核心不再往 `BodyHealthHudApi.companionSlot` 里画，那条伴随槽空着，部位血量这一轮不用发版，新旧核心与新旧部位血量都能各自独立安装；核心仍调用它来定位人形，让小队名单停在人形上方。`ClientStaminaState.snapshot().enabled()` 的签名与语义不变。部位血量以后可反射调用 `InfantryHudApi.usesBodyHealthCompanionSlot()`（返回 `false`）决定不再预留这条槽；方法不存在时（旧核心仍画在那里）应照旧预留。
+- 卓越前线 0.8.9 自带一条体力线（`StaminaOverlay`，客户端配置 `superbwarfare-client.toml` 的 `stamina_hud`，默认开）：反汇编核实它在它自己的体力动作进行时画在 `[cx−90, cx+90) × [h−24, h−23)`，正好压在本体力条凹槽的底边外轮廓那一行。核心不去取消别的 MOD 的覆盖层，整合包应把 `stamina_hud` 设为 `false`（步战测试端目前仍为 `true`）。
 - 管理员需要精确值时可用 `/battle admin stamina status`。
 
 权限等级 2 的服主可用 `/battle admin stamina status` 查看自身当前数值，用 `/battle admin stamina set <手部0-100> <腿部0-100>` 复现疲劳状态，或用 `/battle admin stamina reset` 恢复双池。该入口用于验收和调参，普通玩家无权调用。
