@@ -94,7 +94,15 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<版本>\<标�
 | `run/ui-test/ui-test-results/wok_ui_progress.txt` | 进度；客户端没写结果就退出时，Gradle 报出最后到达的阶段 |
 | `run/ui-test/screenshots/` | 截图 |
 
-### 0.4.0-beta.3 最终验收（2026-10-05，final）
+### 0.4.0-beta.3 最终验收（2026-10-05，final3：审查修正后）
+
+本版的自动验收以本节的 `zh_cn-final3` 归档为准；下一节首轮 `final`（`1814e74`）与第一次审查修正的 `zh_cn-final2`（`bec2438`，JUnit 920 项，SHA-256 `4DFFBABF…5C3B12`）的产物已作废，归档留作对照，三轮的 180 行用例结果逐行相同。
+
+- 代码：分支 `claude/地图标点` 的 `9db2698`（本版最后一个源码提交）。两处审查修正：悬停按光标的亚像素位置判定、光标下的图标优先于只压到进攻线身的命中（`bec2438`）；卫星/无人机红点在所属支援任务还会再扫描时不变淡，任务扫描完后最后一批照旧在租期最后 25% 变淡（`9db2698`，以前卫星红点每次扫描前会淡下去约 1 秒）。核心用限流脚本 `clean build`（连同六个附加测试源集的编译）：JUnit 922 项，0 失败、0 跳过；`runGameTestServer`：22 项必需 GameTest 全部通过。产物 `wok_infantry-0.4.0-beta.3.jar`，2,076,666 字节，SHA-256 `9B7C2890170CB7414DDFCF11DDFDFBC6E37877A017D0DE4D6EB91960B609360D`（跑完后重新核对，不变）。
+- zh_cn 严格轮（`runUiTestClient`）：`status=PASS`，4338 tick，40 个用例、189 张截图，`strictLayoutViolations=0`，`layoutViolations=169`；180 行用例结果与首轮 `zh_cn-final` 逐行相同。两张地图截图的 `mapIcons[...]` 与首轮相同（8 种标点各 1 个，牌 30 物理像素；960 档另有 6 个工具键图标）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.3\zh_cn-final3\`（`zh_cn-final2` 已被第一次审查修正那一轮占用，归档任务不覆盖已有目录）。
+- 本版没跑 en_us 报告轮（文案只改了一条滑杆提示）。
+
+### 0.4.0-beta.3 首轮验收（2026-10-05，final，产物已作废）
 
 - 代码：分支 `claude/地图标点` 的 `1814e74`（本版最后一个源码提交）。本版把战术地图的标点换成 Squad 式剪影图标（`TacticalMapIcons` + `TacticalMapPinPlanner`），地图布局与侧栏不变。核心先用限流脚本 `clean build`（连同六个附加测试源集的编译）：JUnit 919 项，0 失败、0 跳过；`runGameTestServer`：22 项必需 GameTest 全部通过。产物 `wok_infantry-0.4.0-beta.3.jar`，2,075,575 字节，SHA-256 `EDBC3FC186DDE7C8BD09533093F63F7305F93EF299EC654949B1F9390D0C4A70`（跑完后重新核对，不变）。
 - zh_cn 严格轮（`runUiTestClient`）：`status=PASS`，4336 tick，40 个用例、189 张截图，`strictLayoutViolations=0`，`layoutViolations=169`；180 行用例结果与 0.4.0-beta.2 的 `zh_cn-final2` 逐行相同。`mapIcons[wok_ui_04_map_320x240.png]`、`mapIcons[wok_ui_06_map_960x720.png]` 都画出 8 种标点（敌方步兵、坦克、步战车、卫星侦察目标、进攻方向、防守、集结点、主基地定位针），牌 30 物理像素；960 档另有 6 个侧栏工具键图标（1 物理像素一个美术像素）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.3\zh_cn-final\`。
