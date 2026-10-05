@@ -7,12 +7,14 @@ import net.minecraftforge.fml.ModList;
 import java.lang.reflect.Method;
 
 /**
- * Optional WOK步战附属-部位血量 bridge. The stamina panel occupies the strip that
- * body health reserves under its figure; the core never links against it.
- * Called only from the client render thread.
+ * Optional WOK步战附属-部位血量 bridge; the core never links against it. Called only from the
+ * client render thread.
  *
- * <p>The squad roster must also stay clear of the figure column above that strip
- * ({@link #hudRect}). Preferred source is a future
+ * <p>Up to 0.4.0 the core drew its stamina into the strip body health reserves under its figure
+ * (the companion slot). Since 0.5.0-beta.1 the stamina bar sits above the hotbar and the strip
+ * stays empty ({@link InfantryHudApi#usesBodyHealthCompanionSlot()}); the slot is still asked for
+ * because it locates the figure. The squad roster must stay clear of the figure column above that
+ * strip ({@link #hudRect}). Preferred source is a future
  * {@code com.wok.bodyhealth.api.BodyHealthHudApi.hudRect(int, int)} returning
  * {@code {left, top, width, height}} in GUI pixels (null while hidden). Until the add-on
  * provides it, the column is derived from the companion slot with the geometry of
@@ -39,7 +41,10 @@ final class BodyHealthHudBridge {
     private static Method companionSlot;
     private static Method hudRect;
 
-    /** Returns {@code {left, top, width, height}}, or null when the core should place the panel itself. */
+    /**
+     * The add-on's companion slot {@code {left, top, width, height}} (it locates the figure), or
+     * null without body health, while its HUD is hidden or when the lookup failed.
+     */
     static int[] companionSlot(int screenWidth, int screenHeight) {
         Method method = resolve();
         if (method == null) {
@@ -49,9 +54,8 @@ final class BodyHealthHudBridge {
             Object result = method.invoke(null, screenWidth, screenHeight);
             return result instanceof int[] slot && slot.length == 4 ? slot : null;
         } catch (ReflectiveOperationException | RuntimeException exception) {
-            WokInfantryMod.LOGGER.error(
-                    "WOK Body Health HUD bridge failed; the stamina panel keeps its own position.",
-                    exception);
+            WokInfantryMod.LOGGER.error("WOK Body Health HUD bridge failed; the squad roster no "
+                    + "longer keeps clear of the body-health figure.", exception);
             companionSlot = null;
             hudRect = null;
             return null;
@@ -113,8 +117,8 @@ final class BodyHealthHudBridge {
                         hudRect = null;
                     }
                 } catch (ReflectiveOperationException | LinkageError exception) {
-                    WokInfantryMod.LOGGER.info(
-                            "Installed WOK Body Health has no HUD slot API; the stamina panel keeps its own position.");
+                    WokInfantryMod.LOGGER.info("Installed WOK Body Health has no HUD slot API; "
+                            + "the squad roster cannot locate its figure.");
                 }
             }
         }

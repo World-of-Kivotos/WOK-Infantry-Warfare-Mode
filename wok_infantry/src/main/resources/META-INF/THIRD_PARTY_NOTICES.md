@@ -36,7 +36,7 @@ WOK 与龙之崛起为合作关系，上述素材经项目合作授权用于
 
 文件（0.4.0-beta.1 新增，路径都在 `assets/wok_infantry/` 下）：
 
-- `textures/gui/ui_icons.png`（界面图标图集，45 个图标）
+- `textures/gui/ui_icons.png`（界面图标图集，48 个图标；0.5.0-beta.1 追加体力条的手掌、靴子、跳跃箭头 3 个）
 - `textures/gui/ui_hatch.png`（禁用斜纹）
 - `textures/gui/map_icons.png`（战术地图标点图集，10 种标点）
 

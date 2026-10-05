@@ -50,8 +50,9 @@ import java.util.Objects;
  * @param strip        battle strip content, or null when the strip is hidden
  * @param notices      notices under the strip, top first (round result, base supply)
  * @param vote         formation ballot plate, or null (it replaces strip and notices)
- * @param staminaShown standalone stamina plate shown (no body-health companion slot)
- * @param companionSlot body-health companion slot {left, top, width, height} in GUI pixels, or null
+ * @param staminaShown the stamina bar is drawn above the hotbar this frame (stamina on, survival
+ *                     or adventure, alive, {@code hud.staminaBar} on); it then also replaces the
+ *                     vanilla experience and mount jump bars
  */
 public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, boolean hidden,
                        boolean chatOpen, boolean debugScreen, boolean playerListHeld,
@@ -59,7 +60,7 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
                        WokHudLayout.RosterPresence rosterPresence, SquadRosterModel.Roster roster,
                        TicketNetwork.Snapshot tickets, BattleStripModel.Sides strip,
                        List<Notice> notices, FormationVoteHudModel.Plate vote,
-                       StaminaSnapshot stamina, boolean staminaShown, int[] companionSlot,
+                       StaminaSnapshot stamina, boolean staminaShown,
                        WokHudLayout.Layout layout) {
     /** One notice under the battle strip. */
     public record Notice(Component text, TacticalHud.Tone tone) {
@@ -229,12 +230,12 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
         }
 
         StaminaSnapshot stamina = ClientStaminaState.snapshot();
-        boolean staminaAllowed = stamina.enabled() && !creative && !spectator;
-        // Asked for even without stamina: the roster keeps clear of the body-health figure.
+        boolean staminaShown = stamina.enabled() && !creative && !spectator && player.isAlive()
+                && InfantryClientConfig.hudStaminaBar();
+        // The core no longer draws into the body-health companion strip; the slot is still asked
+        // for because it locates the figure the roster keeps clear of.
         int[] bodyHealthSlot = hidden ? null
                 : BodyHealthHudBridge.companionSlot(guiWidth, guiHeight);
-        int[] companionSlot = staminaAllowed ? bodyHealthSlot : null;
-        boolean staminaShown = staminaAllowed && companionSlot == null;
         List<UiRect> addonPanels = new ArrayList<>(2);
         UiRect bodyHealth = BodyHealthHudBridge.hudRect(guiWidth, guiHeight, bodyHealthSlot);
         if (bodyHealth != null) {
@@ -277,7 +278,9 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
                 .withVote(vote == null ? 0
                                 : vote.contentWidth(line -> TacticalHud.segmentsWidth(font, line)),
                         vote != null && vote.meter())
-                .withStamina(staminaShown)
+                .withStaminaText(font.width(StaminaBarLayout.NUMBER_SAMPLE),
+                        StaminaBarLayout.chatRight(minecraft.gui.getChat().getWidth(),
+                                minecraft.gui.getChat().getScale()))
                 .withHotbarNeighbours(offhandLeft, indicatorLeft)
                 .withEffects(beneficial, harmful)
                 .withEffectOffset(effectOffsetX, effectOffsetY)
@@ -286,8 +289,7 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
                 .withCenterLowInUse(!hidden && centerLowInUse(frameCounter, centerLowAskedFrame));
         return new HudFrame(frameCounter, guiWidth, guiHeight, factor, hidden, chatOpen,
                 debugScreen, playerListHeld, spectator, creative, presence, roster, tickets,
-                strip, notices, vote, stamina, staminaShown, companionSlot,
-                WokHudLayout.compute(input));
+                strip, notices, vote, stamina, staminaShown, WokHudLayout.compute(input));
     }
 
     /**
