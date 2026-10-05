@@ -42,13 +42,16 @@ public final class ClientBattleUi {
                 RenderGuiOverlayEvent.Post.class, BattleStripOverlay::onOverlayPost);
         MinecraftForge.EVENT_BUS.addListener(EventPriority.LOWEST, false,
                 RenderGuiEvent.Post.class, BattleStripOverlay::onGuiPost);
+        MinecraftForge.EVENT_BUS.addListener(EventPriority.HIGHEST, false,
+                RenderGuiOverlayEvent.Pre.class, StaminaHudOverlay::onOverlayPre);
     }
 
     /**
-     * Every core HUD overlay sits just below the vanilla F3 text, so F3, the chat and the player
-     * list (and add-on overlays registered above all) draw over it. Order, bottom to top: battle
-     * strip, formation ballot, squad roster, stamina. Ids squad_roster, stamina and tickets are
-     * kept from earlier versions.
+     * The core HUD overlays sit just below the vanilla F3 text, so F3, the chat and the player
+     * list (and add-on overlays registered above all) draw over them. Order, bottom to top: battle
+     * strip, formation ballot, squad roster. The stamina bar instead sits right above the vanilla
+     * experience bar, whose row it takes. Ids squad_roster, stamina and tickets are kept from
+     * earlier versions.
      */
     private static void registerOverlays(RegisterGuiOverlaysEvent event) {
         BattleStripOverlay.register(event);

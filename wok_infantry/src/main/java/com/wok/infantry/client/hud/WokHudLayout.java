@@ -21,8 +21,10 @@ import java.util.List;
  * {@link Layout#toGui} converts a result back for add-ons.
  *
  * <p>Slots: squad roster at the top left; the battle strip (or, before the lock, the formation
- * ballot) at the top centre with notices under it; vitals at the bottom left under the chat and
- * left of the hotbar; a centre-low slot for the downed panel. Add-on panels drawn above the core
+ * ballot) at the top centre with notices under it; the stamina bar in the vanilla experience row
+ * above the hotbar ({@link StaminaBarLayout}, GUI pixels); vitals at the bottom left under the chat
+ * and left of the hotbar and the stamina bar's left ear (free for add-ons since the stamina moved
+ * above the hotbar); a centre-low slot for the downed panel. Add-on panels drawn above the core
  * HUD further down the screen (WOK步战附属-部位血量's figure, WOK步战附属-倒地's panel) are kept
  * clear by the roster, which drops its last member rows when the capture panel pushes it down
  * that far.
@@ -63,10 +65,8 @@ public final class WokHudLayout {
     public static final int VITALS_TOP_FROM_BOTTOM = 37;
     public static final int VITALS_MAX_WIDTH_TIGHT = 64;
     public static final int VITALS_MAX_WIDTH = 110;
-    /** Standalone stamina plate: two labelled rows (手 over 腿). */
-    public static final int STAMINA_PLATE_HEIGHT = 27;
-    /** One-row stamina plate ("手 ▬ 腿 ▬") where the stacked plate would reach into the chat. */
-    public static final int STAMINA_ROW_HEIGHT = 15;
+    /** The vitals slot is at least this tall, also where the 2× HUD leaves one row under the chat. */
+    public static final int VITALS_MIN_HEIGHT = 15;
     /** Vanilla chat lines end this far above the bottom, GUI pixels (ChatComponent). */
     public static final int CHAT_BOTTOM_FROM_BOTTOM = 40;
     /** GUI pixels kept between the chat's last line and the vitals slot. */
@@ -120,7 +120,10 @@ public final class WokHudLayout {
      * @param toastTextWidths   text widths (layout pixels) of the notices under the strip, top first
      * @param voteContentWidth  natural width of the ballot plate (0 = none); replaces strip and notices
      * @param voteMeter         ballot plate carries the tally meter (32px instead of 27px)
-     * @param stamina           standalone stamina plate shown (no body-health companion slot)
+     * @param staminaNumberWidth font width of the stamina bar's widest percentage ("100%"), which
+     *                          sizes its ears ({@link StaminaBarLayout#NUMBER_SAMPLE})
+     * @param chatRight         background right edge of the vanilla chat, GUI pixels (the 2×
+     *                          stamina ears keep out of its columns, see {@link StaminaBarLayout})
      * @param offhandLeft       the off-hand slot is drawn left of the hotbar
      * @param attackIndicatorLeft the hotbar attack indicator is drawn left of the hotbar
      * @param beneficialEffects status-effect icons in the top row
@@ -141,7 +144,7 @@ public final class WokHudLayout {
                         int rosterRows, boolean rosterCollapsed,
                         boolean strip, List<Integer> toastTextWidths,
                         int voteContentWidth, boolean voteMeter,
-                        boolean stamina,
+                        int staminaNumberWidth, int chatRight,
                         boolean offhandLeft, boolean attackIndicatorLeft,
                         int beneficialEffects, int harmfulEffects,
                         int effectOffsetX, int effectOffsetY,
@@ -151,6 +154,7 @@ public final class WokHudLayout {
             rosterRows = Math.max(0, Math.min(MAX_ROSTER_ROWS, rosterRows));
             toastTextWidths = List.copyOf(toastTextWidths == null ? List.of() : toastTextWidths);
             voteContentWidth = Math.max(0, voteContentWidth);
+            staminaNumberWidth = Math.max(0, staminaNumberWidth);
             beneficialEffects = Math.max(0, beneficialEffects);
             harmfulEffects = Math.max(0, harmfulEffects);
             List<UiRect> panels = new ArrayList<>();
@@ -164,59 +168,67 @@ public final class WokHudLayout {
             addonPanels = List.copyOf(panels);
         }
 
-        /** Empty HUD on a {@code guiWidth}×{@code guiHeight} screen drawn at {@code factor}. */
+        /**
+         * Empty HUD on a {@code guiWidth}×{@code guiHeight} screen drawn at {@code factor}, with
+         * the vanilla font's "100%" width and the chat at its default width and scale.
+         */
         public static Input screen(int guiWidth, int guiHeight, int factor) {
             return new Input(guiWidth, guiHeight, factor, 0, false, false, List.of(), 0, false,
-                    false, false, false, 0, 0, 0, 0, null, List.of(), false);
+                    StaminaBarLayout.DEFAULT_NUMBER_WIDTH, StaminaBarLayout.DEFAULT_CHAT_RIGHT,
+                    false, false, 0, 0, 0, 0, null, List.of(), false);
         }
 
         public Input withRoster(int rows, boolean collapsed) {
             return new Input(guiWidth, guiHeight, factor, rows, collapsed, strip, toastTextWidths,
-                    voteContentWidth, voteMeter, stamina, offhandLeft, attackIndicatorLeft,
-                    beneficialEffects, harmfulEffects, effectOffsetX, effectOffsetY, capturePanel,
-                    addonPanels, centerLowInUse);
+                    voteContentWidth, voteMeter, staminaNumberWidth, chatRight, offhandLeft,
+                    attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
+                    effectOffsetY, capturePanel, addonPanels, centerLowInUse);
         }
 
         public Input withStrip(boolean shown) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, shown,
-                    toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
-                    attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
-                    effectOffsetY, capturePanel, addonPanels, centerLowInUse);
+                    toastTextWidths, voteContentWidth, voteMeter, staminaNumberWidth, chatRight,
+                    offhandLeft, attackIndicatorLeft, beneficialEffects, harmfulEffects,
+                    effectOffsetX, effectOffsetY, capturePanel, addonPanels, centerLowInUse);
         }
 
         public Input withToasts(List<Integer> textWidths) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
-                    textWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
-                    attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
-                    effectOffsetY, capturePanel, addonPanels, centerLowInUse);
+                    textWidths, voteContentWidth, voteMeter, staminaNumberWidth, chatRight,
+                    offhandLeft, attackIndicatorLeft, beneficialEffects, harmfulEffects,
+                    effectOffsetX, effectOffsetY, capturePanel, addonPanels, centerLowInUse);
         }
 
         public Input withVote(int contentWidth, boolean meter) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
-                    toastTextWidths, contentWidth, meter, stamina, offhandLeft,
-                    attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
-                    effectOffsetY, capturePanel, addonPanels, centerLowInUse);
+                    toastTextWidths, contentWidth, meter, staminaNumberWidth, chatRight,
+                    offhandLeft, attackIndicatorLeft, beneficialEffects, harmfulEffects,
+                    effectOffsetX, effectOffsetY, capturePanel, addonPanels, centerLowInUse);
         }
 
-        public Input withStamina(boolean shown) {
+        /**
+         * The client's font width of "100%" and the vanilla chat's background right edge (GUI
+         * pixels), which shape the stamina bar's ears.
+         */
+        public Input withStaminaText(int numberWidth, int chatRightEdge) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
-                    toastTextWidths, voteContentWidth, voteMeter, shown, offhandLeft,
-                    attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
-                    effectOffsetY, capturePanel, addonPanels, centerLowInUse);
+                    toastTextWidths, voteContentWidth, voteMeter, numberWidth, chatRightEdge,
+                    offhandLeft, attackIndicatorLeft, beneficialEffects, harmfulEffects,
+                    effectOffsetX, effectOffsetY, capturePanel, addonPanels, centerLowInUse);
         }
 
         public Input withHotbarNeighbours(boolean offhandOnLeft, boolean indicatorOnLeft) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
-                    toastTextWidths, voteContentWidth, voteMeter, stamina, offhandOnLeft,
-                    indicatorOnLeft, beneficialEffects, harmfulEffects, effectOffsetX,
-                    effectOffsetY, capturePanel, addonPanels, centerLowInUse);
+                    toastTextWidths, voteContentWidth, voteMeter, staminaNumberWidth, chatRight,
+                    offhandOnLeft, indicatorOnLeft, beneficialEffects, harmfulEffects,
+                    effectOffsetX, effectOffsetY, capturePanel, addonPanels, centerLowInUse);
         }
 
         public Input withEffects(int beneficial, int harmful) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
-                    toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
-                    attackIndicatorLeft, beneficial, harmful, effectOffsetX, effectOffsetY,
-                    capturePanel, addonPanels, centerLowInUse);
+                    toastTextWidths, voteContentWidth, voteMeter, staminaNumberWidth, chatRight,
+                    offhandLeft, attackIndicatorLeft, beneficial, harmful, effectOffsetX,
+                    effectOffsetY, capturePanel, addonPanels, centerLowInUse);
         }
 
         /**
@@ -225,31 +237,31 @@ public final class WokHudLayout {
          */
         public Input withEffectOffset(int dx, int dy) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
-                    toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
-                    attackIndicatorLeft, beneficialEffects, harmfulEffects, dx, dy, capturePanel,
-                    addonPanels, centerLowInUse);
+                    toastTextWidths, voteContentWidth, voteMeter, staminaNumberWidth, chatRight,
+                    offhandLeft, attackIndicatorLeft, beneficialEffects, harmfulEffects, dx, dy,
+                    capturePanel, addonPanels, centerLowInUse);
         }
 
         public Input withCapturePanel(UiRect guiRect) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
-                    toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
-                    attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
-                    effectOffsetY, guiRect, addonPanels, centerLowInUse);
+                    toastTextWidths, voteContentWidth, voteMeter, staminaNumberWidth, chatRight,
+                    offhandLeft, attackIndicatorLeft, beneficialEffects, harmfulEffects,
+                    effectOffsetX, effectOffsetY, guiRect, addonPanels, centerLowInUse);
         }
 
         /** Add-on panels (GUI pixels) the roster must end above; null entries are ignored. */
         public Input withAddonPanels(List<UiRect> guiRects) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
-                    toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
-                    attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
-                    effectOffsetY, capturePanel, guiRects, centerLowInUse);
+                    toastTextWidths, voteContentWidth, voteMeter, staminaNumberWidth, chatRight,
+                    offhandLeft, attackIndicatorLeft, beneficialEffects, harmfulEffects,
+                    effectOffsetX, effectOffsetY, capturePanel, guiRects, centerLowInUse);
         }
 
         public Input withCenterLowInUse(boolean inUse) {
             return new Input(guiWidth, guiHeight, factor, rosterRows, rosterCollapsed, strip,
-                    toastTextWidths, voteContentWidth, voteMeter, stamina, offhandLeft,
-                    attackIndicatorLeft, beneficialEffects, harmfulEffects, effectOffsetX,
-                    effectOffsetY, capturePanel, addonPanels, inUse);
+                    toastTextWidths, voteContentWidth, voteMeter, staminaNumberWidth, chatRight,
+                    offhandLeft, attackIndicatorLeft, beneficialEffects, harmfulEffects,
+                    effectOffsetX, effectOffsetY, capturePanel, addonPanels, inUse);
         }
     }
 
@@ -258,11 +270,12 @@ public final class WokHudLayout {
      *
      * @param band            the top-centre column: where the strip sits (or would sit) and
      *                        what notices centre in
-     * @param vitals          bottom-left vitals slot (always present); it starts under the
-     *                        vanilla chat, so at the 2× HUD it is only one row tall
-     * @param staminaPlate    standalone stamina plate: the bottom of {@code vitals}, 27px
-     *                        stacked or 15px in one row
-     * @param staminaRow      the stamina plate is the one-row form
+     * @param vitals          bottom-left vitals slot (always present, free for add-ons); it
+     *                        starts under the vanilla chat, so at the 2× HUD it is only one row
+     *                        tall, and ends left of the hotbar's neighbours and of the stamina
+     *                        bar's left ear
+     * @param staminaBar      the stamina bar in the vanilla experience row, GUI pixels (always
+     *                        laid out; drawn while stamina is shown, see {@code HudFrame})
      * @param centerLow       slot for a centre-low panel such as the downed panel
      * @param topCenterNext   first free slot under the top-centre plates, for an add-on panel
      * @param topCenterBottom bottom of the lowest top-centre plate, or 0 when none is shown
@@ -280,7 +293,7 @@ public final class WokHudLayout {
     public record Layout(int width, int height, int factor, boolean tight, boolean narrow,
                          int edge, int gap,
                          UiRect roster, UiRect strip, List<UiRect> toasts, UiRect vote,
-                         UiRect band, UiRect vitals, UiRect staminaPlate, boolean staminaRow,
+                         UiRect band, UiRect vitals, StaminaBarLayout.Layout staminaBar,
                          UiRect centerLow, UiRect topCenterNext, int topCenterBottom,
                          int bossShift, UiRect capturePanel, int bossShiftX, int rosterRows) {
         public Layout {
@@ -296,7 +309,10 @@ public final class WokHudLayout {
                     rect.bottom() * factor);
         }
 
-        /** Every core plate drawn this frame (roster, strip, notices, ballot, stamina). */
+        /**
+         * Every core plate drawn this frame in layout pixels (roster, strip, notices, ballot);
+         * the stamina bar is in GUI pixels ({@link #staminaBar}).
+         */
         public List<UiRect> plates() {
             List<UiRect> plates = new ArrayList<>();
             if (roster != null) {
@@ -308,9 +324,6 @@ public final class WokHudLayout {
             plates.addAll(toasts);
             if (vote != null) {
                 plates.add(vote);
-            }
-            if (staminaPlate != null) {
-                plates.add(staminaPlate);
             }
             return plates;
         }
@@ -494,25 +507,25 @@ public final class WokHudLayout {
                         roster.right() * factor, roster.bottom() * factor),
                 bossObstacles, edge * factor);
 
-        int vitalsRight = Math.max(edge, Math.min(
-                Math.floorDiv(hotbarObstacleLeft(in), factor) - OBSTACLE_CLEARANCE,
+        // The stamina bar keeps the vanilla experience row (GUI pixels). It is laid out whether
+        // or not stamina is shown, so the vitals slot an add-on draws in never jumps.
+        StaminaBarLayout.Layout staminaBar = StaminaBarLayout.compute(in.guiWidth(),
+                in.guiHeight(), factor, in.staminaNumberWidth(), in.chatRight());
+        int vitalsRight = Math.max(edge, Math.min(Math.min(
+                Math.floorDiv(hotbarObstacleLeft(in), factor),
+                Math.floorDiv(staminaBar.earLeft().left(), factor)) - OBSTACLE_CLEARANCE,
                 edge + (tight ? VITALS_MAX_WIDTH_TIGHT : VITALS_MAX_WIDTH)));
         // Under the vanilla chat, whose last line ends 40 GUI pixels above the bottom: at the
         // 2x HUD that leaves room for one row only.
         int chatClearTop = -Math.floorDiv(-(in.guiHeight() - CHAT_BOTTOM_FROM_BOTTOM
                 + CHAT_CLEARANCE), factor);
         int vitalsTop = Math.min(Math.max(height - VITALS_TOP_FROM_BOTTOM, chatClearTop),
-                height - edge - STAMINA_ROW_HEIGHT);
+                height - edge - VITALS_MIN_HEIGHT);
         UiRect vitals = UiRect.of(edge, vitalsTop, vitalsRight, height - edge);
-        boolean staminaRow = vitals.height() < STAMINA_PLATE_HEIGHT;
-        UiRect staminaPlate = in.stamina()
-                ? UiRect.of(edge, height - edge - (staminaRow ? STAMINA_ROW_HEIGHT
-                : STAMINA_PLATE_HEIGHT), vitalsRight, height - edge)
-                : null;
 
         return new Layout(width, height, factor, tight, narrow, edge, gap, roster, strip, toasts,
-                vote, band, vitals, staminaPlate, staminaRow, centerLow, topCenterNext,
-                topCenterBottom, bossShift, capture, bossShiftX, rosterRows);
+                vote, band, vitals, staminaBar, centerLow, topCenterNext, topCenterBottom,
+                bossShift, capture, bossShiftX, rosterRows);
     }
 
     /**

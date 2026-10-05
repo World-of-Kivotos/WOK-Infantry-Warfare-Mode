@@ -1,17 +1,20 @@
 package com.wok.infantry.client.hud;
 
+import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Contracts other packs and MODs rely on: overlay ids (hidden by id in configs), the HUD words
  * in both languages, and the hud-stack-01 regression (the manpower strip and supply notice ship
- * with the core, and stamina keeps clear of the hotbar).
+ * with the core, and stamina keeps the experience row above the hotbar), the vanilla overlays the
+ * stamina bar replaces, and the hook that tells WOK步战附属-部位血量 its companion strip is free.
  */
 class HudOverlayContractTest {
     @Test
@@ -57,8 +60,31 @@ class HudOverlayContractTest {
     void manpowerStripAndSupplyNoticeStayInTheCoreHud() {
         // hud-stack-01: the D: copy's manpower banner and supply panel must never regress.
         WokHudLayout.Layout layout = WokHudLayout.compute(WokHudLayout.Input.screen(320, 240, 1)
-                .withRoster(8, false).withStrip(true).withToasts(List.of(150)).withStamina(true));
+                .withRoster(8, false).withStrip(true).withToasts(List.of(150)));
         assertTrue(layout.strip() != null && layout.toasts().size() == 1);
-        assertTrue(layout.staminaPlate().right() <= 320 / 2 - 91 - 4);
+        StaminaBarLayout.Layout stamina = layout.staminaBar();
+        assertTrue(stamina.band().left() >= 320 / 2 - 91 && stamina.band().right() <= 320 / 2 + 91,
+                "stamina sits in the experience row of the hotbar column");
+        assertEquals(240 - 23, stamina.band().bottom(), "and never on the hotbar itself");
+    }
+
+    @Test
+    void staminaBarReplacesOnlyTheExperienceAndJumpBars() {
+        assertTrue(StaminaHudOverlay.replacesVanillaOverlay(
+                new ResourceLocation("minecraft", "experience_bar")));
+        assertTrue(StaminaHudOverlay.replacesVanillaOverlay(
+                new ResourceLocation("minecraft", "jump_bar")));
+        for (String kept : List.of("hotbar", "player_health", "armor_level", "food_level",
+                "air_level", "mount_health", "item_name", "chat_panel")) {
+            assertFalse(StaminaHudOverlay.replacesVanillaOverlay(
+                    new ResourceLocation("minecraft", kept)), kept);
+        }
+        assertFalse(StaminaHudOverlay.replacesVanillaOverlay(
+                new ResourceLocation("wok_infantry", "experience_bar")));
+    }
+
+    @Test
+    void bodyHealthCompanionStripIsNoLongerUsed() {
+        assertFalse(InfantryHudApi.usesBodyHealthCompanionSlot());
     }
 }

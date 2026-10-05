@@ -22,8 +22,12 @@ import com.wok.infantry.client.screen.UiRect;
  *     roster (pushed down by the capture panel on low screens) ends above it. Ask only in the
  *     frames the panel is drawn.</li>
  *     <li>{@value #VITALS}: the bottom-left vitals area under the chat, left of the hotbar,
- *     off-hand slot and attack indicator.</li>
+ *     off-hand slot, attack indicator and the stamina bar's left ear. Since 0.5.0-beta.1 the
+ *     core's stamina is drawn above the hotbar, so the core itself leaves this area empty.</li>
  * </ul>
+ *
+ * <p>The core's stamina bar takes the vanilla experience row above the hotbar and no longer draws
+ * into WOK步战附属-部位血量's companion strip ({@link #usesBodyHealthCompanionSlot()}).
  */
 public final class InfantryHudApi {
     public static final String TOP_CENTER_NEXT = "top_center_next";
@@ -58,6 +62,17 @@ public final class InfantryHudApi {
             return 0;
         }
         return topCenterBottom(frame.layout());
+    }
+
+    /**
+     * Whether the core draws into the companion strip WOK步战附属-部位血量 reserves under its
+     * figure ({@code BodyHealthHudApi.companionSlot}): {@code false} since the stamina bar moved
+     * above the hotbar. A body-health release may call this reflectively and stop reserving the
+     * strip when it returns false; when the method is missing (an older core that still draws
+     * there) it should keep reserving it. Independent of whether stamina is enabled.
+     */
+    public static boolean usesBodyHealthCompanionSlot() {
+        return false;
     }
 
     static int[] slot(WokHudLayout.Layout layout, String id) {

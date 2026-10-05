@@ -15,7 +15,9 @@ class InfantryHudApiTest {
                 .withRoster(8, false).withStrip(true));
         assertArrayEquals(new int[]{60, 136, 200, 48},
                 InfantryHudApi.slot(narrow, InfantryHudApi.CENTER_LOW));
-        assertArrayEquals(new int[]{2, 203, 63, 35},
+        // since the stamina bar moved above the hotbar the vitals slot only ends 4px left of its
+        // narrow left ear [59, 69)
+        assertArrayEquals(new int[]{2, 203, 53, 35},
                 InfantryHudApi.slot(narrow, InfantryHudApi.VITALS));
         assertArrayEquals(new int[]{123, 22, 195, 120 - 22},
                 InfantryHudApi.slot(narrow, InfantryHudApi.TOP_CENTER_NEXT),
