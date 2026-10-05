@@ -18,18 +18,20 @@ import java.util.Locale;
  * colour the side and the white silhouette the kind. The unconfirmed satellite contact has a
  * dashed outline.
  *
- * <p>Every marker is four blits from {@link TacticalTextures#MAP_ICONS}: the hover / selection
- * ring (only when hovered or selected), the edge layer (outline plus drop shadow) tinted
- * {@link #OUTLINE}, the plate fill tinted with the marker colour, and the white silhouette.
+ * <p>Every marker is three blits from {@link TacticalTextures#MAP_ICONS}: the edge layer (outline
+ * plus drop shadow) tinted {@link #OUTLINE}, the plate fill tinted with the marker colour, and the
+ * white silhouette. A hovered or selected marker first gets its ring, laid on a dark casing one
+ * art pixel wider (five more blits, as the preview's {@code mapIcon}).
  * Together they reproduce the preview's {@code drawMapIcon} pixel for pixel when opaque; a faded
  * marker ({@link #EXPIRING_ALPHA}) differs only where the drop shadow lies under the outline.
  * Each call flushes pending batched fills and text and issues its own blits: it is safe inside
  * {@code drawManaged}, but it ends the batch there, so markers are not batched with fills.
  *
  * <p>Markers keep a stable physical size: one art pixel is {@link #physicalPerArt} physical
- * pixels whatever the GUI scale, the 2× tactical screen scale or the map zoom. The icon is drawn
- * in physical-pixel space and its anchor is rounded to a whole physical pixel first, so odd art
- * pixel sizes never straddle half pixels.
+ * pixels whatever the GUI scale, the 2× tactical screen scale or the map zoom. The tactical map
+ * uses {@link #mapArtPx}, which follows size scheme B: the same physical size at GUI 1–3 and 4/3
+ * of it at GUI 4. The icon is drawn in physical-pixel space and its anchor is rounded to a whole
+ * physical pixel first, so odd art pixel sizes never straddle half pixels.
  */
 public final class TacticalMapIcons {
     /** Edge length of one sheet cell in texels. */
@@ -43,10 +45,25 @@ public final class TacticalMapIcons {
     /** Drop shadow alpha baked into the edge layers. */
     public static final int SHADOW_ALPHA = 0x50;
     public static final int OUTLINE = TacticalBoardTheme.MAP_ICON_OUTLINE;
+    /**
+     * Hover ring colour of the generated sheet. {@link #draw} lays every ring on a dark casing and
+     * paints it opaque there, so the hover ring shows white rather than grey.
+     */
     public static final int HOVER_RING = 0xB0FFFFFF;
     public static final int SELECTED_RING = TacticalBoardTheme.MAP_ICON_RING;
     /** Alpha of a marker about to expire (the preview's "即将过期"). */
     public static final float EXPIRING_ALPHA = 0.45F;
+    /** A placed marker fades for its last 30 seconds. */
+    public static final long MANUAL_EXPIRING_MILLIS = 30_000L;
+    /**
+     * A drone or satellite contact fades for the last quarter of its life instead: those live for
+     * seconds to a few minutes, so a fixed 30 seconds would show some of them faded from the start.
+     */
+    public static final double CONTACT_EXPIRING_FRACTION = 0.25D;
+    /** GUI scale up to which scheme B keeps the marker size; above it markers grow by GUI / 3. */
+    public static final double SYMBOL_SCALE_GUI = 3.0D;
+    /** One-art-pixel shifts that lay the dark casing just outside a hover / selection ring. */
+    private static final int[][] CASING_SHIFTS = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
 
     // Sheet cells, in the order written by export-ui-atlas.mjs.
     static final int CELL_GLYPH_FIRST = 11;
@@ -197,7 +214,7 @@ public final class TacticalMapIcons {
         }
     }
 
-    /** Interaction state: hover draws a translucent white ring, selection a yellow one. */
+    /** Interaction state: hover draws a white ring, selection a yellow one (both on a casing). */
     public enum IconState {
         NORMAL,
         HOVER,
@@ -248,6 +265,55 @@ public final class TacticalMapIcons {
     public static int physicalPerArt(double iconScale) {
         double safe = Double.isFinite(iconScale) ? iconScale : 1.0D;
         return Math.max(1, (int) Math.round(BASE_PHYSICAL_PER_ART * safe));
+    }
+
+    /**
+     * Symbol scale of size scheme B for a window GUI scale (physical pixels per GUI unit):
+     * {@code max(1, guiScale / 3)}, so GUI 1–3 share one physical size and GUI 4 is 4/3 of it.
+     */
+    public static double symbolScale(double guiScale) {
+        double safe = Double.isFinite(guiScale) && guiScale > 0.0D ? guiScale : 1.0D;
+        return Math.max(1.0D, safe / SYMBOL_SCALE_GUI);
+    }
+
+    /**
+     * Physical pixels per art pixel of a tactical-map marker (scheme B): {@code max(1,
+     * round(2 × iconScale × symbolScale(guiScale)))}. At GUI 1–3 this equals
+     * {@link #physicalPerArt}; at GUI 4 the 1.0 knob gives 3 (45 px plates) instead of 2. The map
+     * zoom never enters, so zooming the map does not change a marker's size.
+     */
+    public static int mapArtPx(double iconScale, double guiScale) {
+        double safe = Double.isFinite(iconScale) ? iconScale : 1.0D;
+        return Math.max(1, (int) Math.round(
+                BASE_PHYSICAL_PER_ART * safe * symbolScale(guiScale)));
+    }
+
+    /** {@link #mapArtPx(double, double)} at the window's current GUI scale. */
+    public static int mapArtPx(double iconScale) {
+        return mapArtPx(iconScale, Minecraft.getInstance().getWindow().getGuiScale());
+    }
+
+    /**
+     * Whether a marker is about to expire and is drawn faded ({@link #EXPIRING_ALPHA}): a drone or
+     * satellite contact ({@link TacticalMarkerType#RECON_CONTACT}) for the last
+     * {@link #CONTACT_EXPIRING_FRACTION} of its life, every placed marker for its last
+     * {@link #MANUAL_EXPIRING_MILLIS}.
+     */
+    public static boolean expiring(TacticalMarkerType type, long createdAtMillis,
+                                   long expiresAtMillis, long nowMillis) {
+        long remaining = expiresAtMillis - nowMillis;
+        if (type == TacticalMarkerType.RECON_CONTACT) {
+            long lifetime = Math.max(0L, expiresAtMillis - createdAtMillis);
+            return remaining <= lifetime * CONTACT_EXPIRING_FRACTION;
+        }
+        return remaining <= MANUAL_EXPIRING_MILLIS;
+    }
+
+    /** Whole-marker alpha for {@link #draw}: {@link #EXPIRING_ALPHA} while {@link #expiring}. */
+    public static float alpha(TacticalMarkerType type, long createdAtMillis, long expiresAtMillis,
+                              long nowMillis) {
+        return expiring(type, createdAtMillis, expiresAtMillis, nowMillis)
+                ? EXPIRING_ALPHA : 1.0F;
     }
 
     /** Left texel of a sheet cell. */
@@ -352,7 +418,16 @@ public final class TacticalMapIcons {
         TacticalTextures.begin(graphics);
         int ring = ringColor(state);
         if (ring != 0) {
-            layer(graphics, icon.plate().ringCell(), left, top, size, ring, alpha);
+            // Dark casing one art pixel outside the ring ("dark - light - dark", readable on pale
+            // terrain too): the ring cell shifted one art pixel each way in the outline colour.
+            // The shifts also darken the ring's own texels, so the ring goes on top opaque (the
+            // translucent hover white would turn grey over the casing); the plate covers the rest.
+            int step = placement.artPx();
+            for (int[] shift : CASING_SHIFTS) {
+                layer(graphics, icon.plate().ringCell(), left + shift[0] * step,
+                        top + shift[1] * step, size, OUTLINE, alpha);
+            }
+            layer(graphics, icon.plate().ringCell(), left, top, size, ring | 0xFF000000, alpha);
         }
         layer(graphics, icon.plate().edgeCell(), left, top, size, OUTLINE, alpha);
         layer(graphics, icon.plate().fillCell(), left, top, size, icon.color(), alpha);
