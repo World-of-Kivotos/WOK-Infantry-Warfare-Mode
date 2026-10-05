@@ -30,6 +30,7 @@ import java.util.EnumSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -40,8 +41,10 @@ import java.util.function.Function;
  * switch in place. The loadout, map and formation tabs go through {@link BattleTerminalNav} with
  * replace semantics, so one Esc always closes the whole terminal.
  *
- * <p>What every page shows and allows comes from {@link SquadBoardModel}, rebuilt from the latest
- * battle snapshot each frame; the widgets are rebuilt only when the snapshot's structure changes
+ * <p>What every page shows and allows comes from {@link SquadBoardModel}, read from the latest
+ * battle snapshot every frame (re-derived only when the snapshot, the selection, the waiting
+ * intents or the 250 ms clock step changed); the widgets are rebuilt only when the snapshot's
+ * structure changes
  * (its generation), on a page or squad switch and on resize, so a teammate losing health or a
  * ticking countdown never moves the keyboard focus. Destructive or hand-over operations ask for a
  * confirmation inside the screen ({@link TacticalConfirmDialog}; kick, leave, disband and
@@ -64,6 +67,8 @@ public final class SquadScreen extends TacticalScreen
     public static final String ACTION_UI_ID_PREFIX = "squad.action.";
 
     private static final long PENDING_TIMEOUT_NANOS = 3_000_000_000L;
+    /** Clock granularity of the cached draw model (only the kick countdown reads the clock). */
+    private static final long MODEL_CLOCK_STEP_MILLIS = 250L;
     private static final String TABS_ROLE = "squad.tabs";
 
     /** The three pages of this screen. */
@@ -143,6 +148,15 @@ public final class SquadScreen extends TacticalScreen
      * cells, tooltips); {@code null} outside rendering, where callers build a fresh one.
      */
     private SquadBoardModel frameModel;
+    /** The last draw model and the clock step it was built in (see {@link #drawModel}). */
+    private SquadBoardModel cachedModel;
+    private long cachedClockStep = Long.MIN_VALUE;
+    /** The model the operation keys were last synchronised with. */
+    private SquadBoardModel syncedModel;
+    /** The header identity chosen for {@link #identityModel} next to {@link #identityStrip}. */
+    private SquadBoardModel identityModel;
+    private TacticalTabStrip identityStrip;
+    private Component identityChoice;
     /** The confirmation that is open (also gives the probe state {@code kick}). */
     private OpenConfirm openConfirm;
     private long respawnRevision = Long.MIN_VALUE;
@@ -503,6 +517,43 @@ public final class SquadScreen extends TacticalScreen
                 .withPending(activePending()));
     }
 
+    /**
+     * The model to draw this frame. It is rebuilt only when one of its inputs changed: another
+     * snapshot or vote phase object, the viewed squad, the target, the administrator hint, the
+     * waiting intents, or the clock moved into the next {@link #MODEL_CLOCK_STEP_MILLIS} step
+     * (the kick countdown is the only clock-driven value; it may show up to that much late).
+     * Every other frame reuses the previous model instead of re-deriving every row, reason and
+     * confirmation text (审查修正: per-frame allocation).
+     */
+    private SquadBoardModel drawModel() {
+        BattleSnapshot snapshot = ClientBattleState.snapshot();
+        FormationSelectionSnapshot catalog = ClientFormationState.snapshot();
+        FormationVotePhase phase = catalog == null ? null : catalog.votePhase();
+        long now = ClientBattleState.estimatedServerTimeMillis();
+        long clockStep = Math.floorDiv(now, MODEL_CLOCK_STEP_MILLIS);
+        boolean administrator = isAdministrator();
+        Set<SquadBoardModel.Action> waiting = activePending();
+        SquadBoardModel cached = cachedModel;
+        if (cached != null && cached.snapshot() == snapshot
+                && cached.input().votePhase() == phase
+                && cached.input().viewedSquad() == viewedSquad
+                && Objects.equals(cached.input().selectedMember(), selectedMember)
+                && cached.input().administrator() == administrator
+                && cached.input().pending().equals(waiting)
+                && cachedClockStep == clockStep) {
+            return cached;
+        }
+        cachedModel = SquadBoardModel.of(SquadBoardModel.Input.of(snapshot)
+                .withViewedSquad(viewedSquad)
+                .withSelectedMember(selectedMember)
+                .withNow(now)
+                .withAdministrator(administrator)
+                .withVotePhase(phase)
+                .withPending(waiting));
+        cachedClockStep = clockStep;
+        return cachedModel;
+    }
+
     private Set<SquadBoardModel.Action> activePending() {
         if (pending.isEmpty()) {
             return Set.of();
@@ -524,6 +575,7 @@ public final class SquadScreen extends TacticalScreen
         observedGeneration = ClientBattleState.generation();
         observedCatalog = ClientFormationState.snapshot();
         bindings.clear();
+        syncedModel = null;
         tooltips.clear();
         tooltipTexts.clear();
         previousRoles = roles.isEmpty() ? Map.of() : new IdentityHashMap<>(roles);
@@ -663,19 +715,23 @@ public final class SquadScreen extends TacticalScreen
     @Override
     protected void renderTactical(GuiGraphics graphics, int mouseX, int mouseY,
                                   float partialTick) {
-        model = buildModel();
+        model = drawModel();
         if (painterStage != null && model.stage() != painterStage) {
             // The snapshot changed what the page can show (cleared when the viewer left the
             // battle, the vote reopened, the formation locked) between two ticks: rebuild
             // before drawing, a page is never painted with a model it was not built for (a
             // cleared snapshot would otherwise crash the READY painters).
             snapshotChanged();
-            model = buildModel();
+            model = drawModel();
         }
         frameModel = model;
         try {
-            for (ActionBinding binding : bindings) {
-                sync(binding, model);
+            if (model != syncedModel) {
+                // The keys only change with the model; an unchanged model needs no new state.
+                for (ActionBinding binding : bindings) {
+                    sync(binding, model);
+                }
+                syncedModel = model;
             }
             BattleSnapshot snapshot = model.snapshot();
             TacticalBoardChrome.ShellSpec spec = TacticalBoardChrome.ShellSpec.of(title())
@@ -702,19 +758,28 @@ public final class SquadScreen extends TacticalScreen
      * the header can show next to the full tab names (preview {@code identityCaps}).
      */
     private Component identity() {
+        TacticalTabStrip strip = tabStrip();
+        if (model == identityModel && strip == identityStrip) {
+            // Same model, same strip (rebuilt with the layout): the same choice as last frame.
+            return identityChoice;
+        }
         List<Component> candidates = model.identityCandidates();
         TacticalShellLayout layout = shellLayout();
-        TacticalTabStrip strip = tabStrip();
         int tabs = strip == null ? 0 : strip.preferredWidth(font, false, layout.tight());
         int available = layout.header().width() - 14;
         int cap = Math.min(layout.header().width() * 3 / 10,
                 available - font.width(title()) - (tabs > 0 ? tabs + 10 : 0) - 10);
+        Component chosen = candidates.isEmpty() ? null : candidates.get(candidates.size() - 1);
         for (Component candidate : candidates) {
             if (font.width(candidate) <= cap) {
-                return candidate;
+                chosen = candidate;
+                break;
             }
         }
-        return candidates.isEmpty() ? null : candidates.get(candidates.size() - 1);
+        identityModel = model;
+        identityStrip = strip;
+        identityChoice = chosen;
+        return chosen;
     }
 
     private List<TacticalBoardChrome.KeyHint> hints() {
