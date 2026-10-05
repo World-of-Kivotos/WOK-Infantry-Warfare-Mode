@@ -46,7 +46,8 @@
 - 独立安装检查：`tools/verify_mod_independence.ps1` 对本 JAR PASS，强制依赖只有 `forge`、`minecraft`；JAR 里没有占点或 uiTest 的类。
 - 版本核对：`tools/verify_versions.ps1 -Modules wok_infantry,wok_capture_points -Release`（Windows PowerShell 5.1）PASS（源码版本、根 README 与 VERSIONING 版本表、模块 README 产物名、CHANGELOG 标题、JAR 名、modId 与内部版本一致；两条条目六栏不空，JAR 晚于各自源码最后一次提交且源码没有未提交改动）。
 - 兼容矩阵覆盖：新核心 + 新占点、核心关闭战况条、旧核心 0.5.0-beta.1 + 新占点三种组合在真实开发客户端里跑过（上一条与占点条目，审查修正后都带 Boss 条重跑）；新核心 + 旧占点 alpha.3 走的是未改动的镜像避让分支（`CaptureHudBridgeTest` 的 alpha.3 几何与 `WokHudLayoutTest` 的据点避让用例照旧通过；`bossShift` 新分支对 alpha.3 面板（y 26/28 起）不生效），只装占点的位置由占点单测覆盖，这两种没有在客户端里跑。
-- 未做：真实客户端（PCL）人工验收——多人进出据点、争夺、顺序占点的锁图标、剩余时间随同步跳动、长据点名、GUI 1 下 2× 清晰度、投票条期间站进据点；部署由编排方进行。
+- 未做：真实客户端（PCL）人工验收——多人进出据点、争夺、顺序占点的锁图标、剩余时间随同步跳动、长据点名、GUI 1 下 2× 清晰度、投票条期间站进据点。
+- 已部署：2026-10-05 把 SHA-256 为 `4727A2CB…5551A9` 的 `wok_infantry-0.5.0-beta.2.jar` 与占点 0.1.0-alpha.4 一起部署到测试端 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，部署后哈希与构建产物一致；0.5.0-beta.1 改名为 `wok_infantry-0.5.0-beta.1.jar.backup-20261005-234524-before-0.5.0-beta.2.bak`。测试端 8 个 WOK步战 JAR 的独立安装检查全部 PASS。
 
 ## WOK步战附属-占点 0.1.0-alpha.4 — 2026-10-05
 
@@ -86,7 +87,8 @@
 - 截图目视（Read）：新核心下据点小牌在战况条中间；薄条一行“A点 · 火车站 │ 3 ▬|▬ 2”，宽屏第二行蓝字“蓝方正在占领 · 剩余 0:30”；新核心关战况条时薄条贴顶、Boss 条在其下且不压名单；旧核心开战况条时薄条在旧战况条下方、Boss 条在薄条下方，都不压名单；旧核心关战况条（非默认）的 320×240 截图里 Boss 条压到名单标题行（见“兼容性”已知限制）。截图与结果文件保存在 `wok_capture_points/run/ui-acceptance/20261005-0.1.0-alpha.4/review-core-0.5.0-beta.2/` 与 `review-core-0.5.0-beta.1/`（审查前的 `core-0.5.0-*` 两组没有 Boss 条，只作对照；都被 Git 忽略，核心的 `archiveUiAcceptance` 只归档核心清单里的截图）。
 - 独立安装检查：`tools/verify_mod_independence.ps1` 对本 JAR PASS，强制依赖只有 `forge`、`minecraft`。
 - 版本核对：`tools/verify_versions.ps1 -Modules wok_infantry,wok_capture_points -Release`（Windows PowerShell 5.1）PASS。
-- 未做：只装本附属（不装核心）与新核心 + 旧占点 alpha.3 的真实客户端没有跑（uiTest 依赖核心类；alpha.3 是重混淆过的生产 JAR，要反混淆后才能放进开发客户端，本轮没做），这两种只有单测覆盖。真实对局里的人工验收（多人进出据点、争夺、顺序占点、真实 Boss 战同屏、剩余时间随同步每 10 tick 跳一次）。部署由编排方进行。
+- 未做：只装本附属（不装核心）与新核心 + 旧占点 alpha.3 的真实客户端没有跑（uiTest 依赖核心类；alpha.3 是重混淆过的生产 JAR，要反混淆后才能放进开发客户端，本轮没做），这两种只有单测覆盖。真实对局里的人工验收（多人进出据点、争夺、顺序占点、真实 Boss 战同屏、剩余时间随同步每 10 tick 跳一次）。
+- 已部署：2026-10-05 把 SHA-256 为 `B718BB4B…B9EF07` 的 `wok_capture_points-0.1.0-alpha.4.jar` 与核心 0.5.0-beta.2 一起部署到测试端 `mods`，部署后哈希与构建产物一致；0.1.0-alpha.3 改名为 `wok_capture_points-0.1.0-alpha.3.jar.backup-20261005-234524-before-0.1.0-alpha.4.bak`。
 
 ## WOK步战核心 0.5.0-beta.1 — 2026-10-05
 
