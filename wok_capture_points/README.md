@@ -1,6 +1,6 @@
 # WOK步战附属-占点
 
-Minecraft 1.20.1 / Forge 47.4.22 的独立占点附属，modId 为 `wok_capture_points`。当前开发版本为 `0.1.0-alpha.3`。可选核心联动要求 `wok_infantry` 0.1.0 或更高版本，未安装核心时仍可独立运行。
+Minecraft 1.20.1 / Forge 47.4.22 的独立占点附属，modId 为 `wok_capture_points`。当前开发版本为 `0.1.0-alpha.4`。可选核心联动要求 `wok_infantry` 0.1.0 或更高版本，未安装核心时仍可独立运行。
 
 ## 快速设置 A/B/C/D
 
@@ -23,9 +23,22 @@ Minecraft 1.20.1 / Forge 47.4.22 的独立占点附属，modId 为 `wok_capture_
 
 ## UI 与地图
 
-玩家进入据点后，屏幕顶部显示战术拼板风格的据点名、蓝红人数比、连续控制条、争夺/锁定/占领状态和人数速度倍率。安装 `WOK步战核心` 时，据点区域、名称、归属颜色和进度会显示在 WOK 战术地图中；未安装核心时占点与 HUD 仍可独立工作。
+玩家站进据点后才显示据点 HUD（0.1.0-alpha.4 起不再画 alpha.3 那块 330×52 的大面板）：
 
-与核心 `0.4.0-beta.1` 或更新版本同装时，核心 HUD（小队名单、战况条、通知、投票条）在玩家站进据点后会按本附属 `0.1.0-alpha.3` 的面板位置自动让开（核心反射 `ClientCaptureState.insidePoint()`，并照抄面板坐标）。以后改动面板位置或尺寸，或改为向核心 `InfantryHudApi.slot("top_center_next", 宽, 高)` 取位置时，必须同时提供 `com.wok.capturepoints.api.CaptureHudApi.panelRect(int, int)`，返回 `{left, top, width, height}`（GUI 像素，面板不显示时返回 `null`；面板已放进核心给的槽位时也返回 `null`，表示核心不用再避让），否则核心会继续避让 alpha.3 的旧位置。
+- 与核心 `0.5.0-beta.2` 或更新版本同装、且核心客户端配置 `hud.showBattleStrip` 开着（默认）时，据点由核心画进顶部兵力战况条：中间一个“B 62%”小牌（左贴边颜色表示正在占领的一方，争夺、停用、本方无资格各有样式），宽屏第二行写“据点名 · 状态 · 剩余 m:ss”。本附属自己什么都不画。
+- 其余情况（未装核心、核心早于 0.5.0-beta.2、或核心关闭了战况条）由本附属画一条薄条：顶部居中、宽不超过 200、一行“据点名 │ 蓝方人数 ▬|▬ 红方人数”（进度条从中线向领先一方伸出，蓝左红右），宽屏（布局宽 ≥400 且高 ≥280）第二行写状态与剩余时间。有核心时放进核心 `InfantryHudApi.slot("top_center_next", 宽, 高)` 给的位置（核心早于 0.4.0-beta.1 时放在 GUI y 28），单独安装时贴顶；会压到原版 Boss 条时移到它下面；GUI 缩放 1 的大窗口按 2× 画。文字无阴影，底板配色与核心 HUD 一致（颜色常量在本附属内定义，不依赖核心）。
+
+安装 `WOK步战核心` 时，据点区域、名称、归属颜色和进度还会显示在 WOK 战术地图中；未安装核心时占点与 HUD 仍可独立工作。
+
+### 给核心的只读接口（0.1.0-alpha.4）
+
+`com.wok.capturepoints.api.CaptureHudApi`（仅客户端、按类名反射调用，不需要链接本附属的类）：
+
+- `currentPoint()`：玩家所在据点的只读 `Map<String, Object>`，不在据点里时为 `null`。键：`version`（1）、`id`、`name`、`shortName`（不超过 3 个字符的 id 转大写，否则为显示名）、`control`（−1 红方占满 … 1 蓝方占满）、`percent`（`|control|` 百分比，未真正占满前最多 99）、`leading` / `owner` / `capturing`（`neutral|blue|red`）、`bluePlayers`、`redPlayers`、`enabled`、`blueAllowed`、`redAllowed`、`speed`、`captureSeconds`、`remainingSeconds`（正在占领时到占满的秒数，否则 −1）、`state`（`disabled|contested|locked|capturing|secured|neutral`）、`status`（本附属语言文件翻译的状态 `Component`）。同一次同步内返回同一个 Map 实例。
+- `panelRect(int, int)`：本附属薄条的 `{left, top, width, height}`（GUI 像素），不画时（含核心接管时）为 `null`。核心 0.4.0-beta.1 起据此让开名单、战况条和 Boss 条。
+- 本附属反射调用核心的 `InfantryHudApi.rendersCapturePoints()`（核心 0.5.0-beta.2 新增）：为 true 时不画薄条；方法不存在或调用失败时只记一次日志并改画薄条。
+
+兼容：新核心 + 本版＝据点并入战况条；核心 0.5.0-beta.1 或更早 + 本版＝本附属薄条（放进核心槽位，核心照 `panelRect` 让开）；只装本附属＝薄条；核心关闭战况条＝薄条。新核心 + 占点 alpha.3＝alpha.3 的大面板 + 核心照旧避让。
 
 ## 主要指令
 
@@ -55,4 +68,6 @@ cd ..\wok_capture_points
 ..\gradlew.bat test jar
 ```
 
-成品位于 `wok_capture_points/build/libs/wok_capture_points-0.1.0-alpha.3.jar`；核心 class 不会被打进该 JAR，运行时不安装核心也可加载。
+成品位于 `wok_capture_points/build/libs/wok_capture_points-0.1.0-alpha.4.jar`；核心 class 不会被打进该 JAR，运行时不安装核心也可加载。
+
+`..\gradlew.bat runUiTestClient` 在核心的 `run/ui-test` 里截 6 张图（HUD 与战术地图各两档，再加关闭核心战况条后的两张薄条图），并核对据点由谁画；加 `-Pinfantry_dev_jar_path=<旧核心 JAR>` 可对旧核心跑同一套验收。

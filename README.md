@@ -9,13 +9,13 @@
 
 | 模块 | 正式名称 | 当前版本 | 源码目录 |
 | --- | --- | --- | --- |
-| `wok_infantry` | WOK步战核心 | `0.5.0-beta.1` | `wok_infantry/` |
+| `wok_infantry` | WOK步战核心 | `0.5.0-beta.2` | `wok_infantry/` |
 | `wok_trauma` | WOK步战附属-创伤治疗 | `0.1.0-beta.1` | 仓库根目录 |
 | `wok_body_health` | WOK步战附属-部位血量 | `0.1.0-beta.10` | `wok_body_health/` |
 | `wok_infantry_armor` | WOK步战附属-独立护甲 | `1.2.0-beta.1` | `wok_infantry_armor/` |
 | `wok_vehicle_health` | WOK步战附属-载具部位血量 | `0.1.0-beta.1` | `wok_vehicle_health/` |
 | `wok_commander_support` | WOK步战附属-指挥官支援 | `0.1.0-beta.3` | `wok_commander_support/` |
-| `wok_capture_points` | WOK步战附属-占点 | `0.1.0-alpha.3` | `wok_capture_points/` |
+| `wok_capture_points` | WOK步战附属-占点 | `0.1.0-alpha.4` | `wok_capture_points/` |
 | `wok_downed` | WOK步战附属-倒地救援 | `0.1.0-alpha.3` | `wok_downed/` |
 
 `WOK` 与 `WOK步战` 是两个不同产品线；本仓库不属于 WOK 本体项目。
