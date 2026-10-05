@@ -112,7 +112,7 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<版本>\<标�
 
 - 代码：分支 `claude/战斗终端` 的 `60abe6d`（分支最后一个源码提交，在 0.4.0-beta.2 之上，不含 0.4.0-beta.3 的地图标点）。核心先用限流脚本 `clean build`（连同六个附加测试源集的编译）：JUnit 953 项，0 失败、0 跳过；`runGameTestServer`：22 项必需 GameTest 全部通过。产物 `wok_infantry-0.5.0-beta.1.jar`，2,292,921 字节，SHA-256 `5423FADFF84A2FFA4742EC41079252ED35B471258A79B3791DB4E75CC94C3D5F`（两轮跑完后重新核对，不变）。
 - zh_cn 严格轮（`runUiTestClient`）：`status=PASS`，6029 tick，58 个用例、279 张截图，`strictLayoutViolations=0`，`layoutViolations=121`（全是未迁移的旧界面；0.4.0-beta.2 为 169，少掉的是旧小队页）。新迁移的 `squad.*` 18 个用例在 5 个档位（含 480×270、427×240 报告档）共 90 张截图全部 PASS、0 违规；14 张旧截图名称和顺序不变，01–09 里的小队 / 兵种 / 部署画面换成新界面（预期）；`finalActiveMarkers=1`。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.1\zh_cn-final3\`。
-- en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`，6042 tick，279 张截图，`strictLayoutViolations=0`，`layoutViolations=229`。新三页 77 条，全部是英文较长被省略号截断、没有完整提示（部署页作战区说明 “Resupply needs you deployed inside the main base” 一句占 18 条，其余是投票等待区、部署清单、320 档指挥官名、640 档“我的状态”编制名和 320 档 “Promote” 键）；其余 152 条是旧界面。留给 i18n 收尾。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.1\en_us-final\`。
+- en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`，6042 tick，279 张截图，`strictLayoutViolations=0`，`layoutViolations=229`。新三页 77 条，全部是英文较长被省略号截断、没有完整提示（部署页作战区说明 “Resupply needs you deployed inside the main base” 一句占 18 条，其余是投票等待区、部署清单、320 档指挥官名、640 档“我的状态”编制名和 320 档 “Promote” 键）；其余 152 条不在新三页：已迁移界面原有的英文截断 51 条（编制页 37、陈列页 8、HUD 4、标点陈列 2），只出报告的旧界面 101 条（管理员终端 64、实时流程截图 32、旧图 10/11 编制页 3、弹药补给 2）。留给 i18n 收尾。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.1\en_us-final\`。
 
 体力条分支（审查修正后：stamina-a4-review-zh_cn）。分支在 0.4.0-beta.3 之上、没有改版本号，所以归档在 0.4.0-beta.3 的日期目录下；产物仍叫 `wok_infantry-0.4.0-beta.3.jar`，作废、未部署。
 
@@ -222,7 +222,7 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<版本>\<标�
 
 10. 战斗终端（0.5.0-beta.1）：按 `` ` `` 打开后小队 / 兵种 / 部署三页在窄屏（320×240）与大屏（640×336 实际 GUI 3）的文字、按键状态和确认层；真实鼠标点呼号、名单行、兵种行和部署点（部署页方位图上的点也能点选）；踢出、退出、解散、重新部署的红色确认只能用鼠标点、Enter 不确认，移交队长、移交指挥权为普通确认，卸任指挥官不弹；确认层开着时对方离队或小队进入作战，确认层自动关闭并在页脚写“情况已变化，未执行”；部署成功后终端自动关闭，登录与重生自动打开部署页（终端已开着时原地切到部署页）；投票锁定前三页都是投票等待区。需要两个号的：踢人与 60 秒冷却倒计时、移交队长、把指挥权移交给别队在线队长、作战中踢人。
 
-11. 体力条 A4（0.5.0-beta.1）：联网时疾跑、开镜的残影和恢复节奏；腿耗尽锁疾跑、回到 15 时的绿勾；真骑马的跳跃蓄力与骆驼冲刺冷却变灰、坐卓越前线载具时腿段变灰（uiTest 里体力状态是固定注入的，玩家没有真的骑乘，截图里没有坐骑血量行）；和部位血量人形、TaCZ 弹药读数同屏；854×480 GUI 1 窗口的耳朵是否太小（左耳会碰聊天时退回 1×）；`hud.staminaBar` 开关切换后原版经验条与跳跃条是否回来；卓越前线自带的体力线 `stamina_hud` 开着时是否压在凹槽底边（测试端目前开着，整合包应关）。
+11. 体力条 A4（0.5.0-beta.1）：联网时疾跑、开镜的残影和恢复节奏；腿耗尽锁疾跑、回到 15 时的绿勾；真骑马的跳跃蓄力与骆驼冲刺冷却变灰、坐卓越前线载具时腿段变灰（uiTest 里体力状态是固定注入的，玩家没有真的骑乘，截图里没有坐骑血量行）；和部位血量人形、TaCZ 弹药读数同屏；854×480 GUI 1 窗口的耳朵是否太小（左耳会碰聊天时退回 1×）；`hud.staminaBar` 开关切换后原版经验条与跳跃条是否回来；卓越前线自带的体力线 `stamina_hud` 关掉后凹槽底边是否干净（开着时它压在凹槽底边；测试端 2026-10-05 已改为 `false`，原文件备份为 `superbwarfare-client.toml.backup-20261005-203838-before-stamina-hud-off.bak`，整合包也应关）。
 
 ## 8. 维护
 
