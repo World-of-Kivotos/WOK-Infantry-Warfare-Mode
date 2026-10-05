@@ -35,7 +35,13 @@
 - 存档格式不变。语言文件只改了 `screen.wok_infantry.map.icon_scale.tooltip` 一条的中英文措辞，键数不变（各 681 个）。
 
 ### 测试结果
-- 构建与验收进行到此提交之后，结果见本条目下一次更新。
+- `wok_infantry` 在 `1814e74`（本版最后一个源码提交）：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 919 项全部通过，0 失败、0 跳过。比 0.4.0-beta.2 的 907 项多 12 项：`TacticalMapScreenLayoutTest` 删去 9 项旧标点用例（11×11 图案、红点、步兵线框、命令尺寸、坦克/步战车贴图 3 项、按缩放缩小、只缩放情报标记），补 3 项（牌色、工具键图标尺寸、旋钮范围）；新增 `TacticalMapIconsSizingTest` 7 项（方案 B 在 GUI 1–3 与 `physicalPerArt` 一致、GUI 4 取整为 3/5 等、旋钮单调且不低于 1、所有标点锚点落在整物理像素且牌宽 = 15 × 美术像素、手工标记剩余 30 秒变淡、侦察红点寿命最后 25% 变淡）和 `TacticalMapPinPlannerTest` 11 项（空位不动、压集结点时左移并画引线、擦边 ≤6 美术像素² 不动、视口外候选跳过、无空位时画在图标之上、挪不动时留在下层、三根针互相让开、线身按 1/4 计、出生点对勾角标左右规则、角标和引线也挡住后来的针、标签只在让位时避开）。产物 `wok_infantry-0.4.0-beta.3.jar`，2,075,575 字节，SHA-256 `EDBC3FC186DDE7C8BD09533093F63F7305F93EF299EC654949B1F9390D0C4A70`；GameTest 与 UI 验收跑完后重新核对，SHA-256 不变。
+- `runGameTestServer`（同一提交）：22 项必需 GameTest 全部通过。
+- `runUiTestClient` zh_cn 严格轮（同一提交）：`status=PASS`，4336 tick，40 个用例、189 张截图，`strictLayoutViolations=0`，`layoutViolations=169`；180 行用例结果与 0.4.0-beta.2 的 `zh_cn-final2` 逐行相同（战术地图仍是旧界面，只出报告）。实时流程的两张地图截图新增记录：`mapIcons[wok_ui_04_map_320x240.png]` 与 `mapIcons[wok_ui_06_map_960x720.png]` 都画出 8 种标点（敌方步兵、坦克、步战车、卫星侦察目标、进攻方向、防守、集结点、主基地定位针）各 1 个，每美术像素 2 物理像素（牌 30 物理像素；320 档 GUI 3、960 档 GUI 1），960 档另有 6 个侧栏工具键图标为 1 物理像素一个美术像素；没有画出新标点会判整轮失败。地图标点陈列页与组件陈列页的标点在 5 个档位都是 30 物理像素，与地图上一致。`finalActiveMarkers=1`，与 0.4.0-beta.2 相同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.3\zh_cn-final\`。
+- 截图目视（Read 放大查看）：320×240（`wok_ui_04`）8 种标点都清楚，像素边缘整齐、带深色描边和投影；主基地定位针针尖压在基地上、右上角挂绿色对勾；进攻方向线从进攻方向图标下面出发；没有标点压到罗盘和比例尺。960×720（`wok_ui_06`，默认缩放下 7 个标记挤在约 90 GUI 像素内）：主基地定位针原位会压住卫星侦察目标和防守图标，让到步战车左边并用友军蓝引线指回基地，对勾挂在左上；比例尺和罗盘都没被压。验收前用 `-PuiCases=legacy+mapicons` 试跑过两轮（都 PASS、24 张截图）：第一轮里这根针让到了上方、压住了 F-15EX 任务卡，因此加了“让位时避开本帧已画的标签、罗盘和比例尺”，第二轮起不再压卡。悬停白圈、选中黄圈和即将过期在标点陈列页检查（深色衬边可见，悬停圈为白色）。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_infantry-0.4.0-beta.3.jar` PASS，强制依赖只有 `forge`、`minecraft`；连同测试端 `mods` 里其余 7 个 WOK步战附属 JAR（只读取，版本未变）一起核对，8 个全部 PASS。
+- `tools/verify_versions.ps1 -Modules wok_infantry -Release`（Windows PowerShell 5.1）：PASS（源码版本、根 README 与 VERSIONING 版本表、模块 README 产物名、CHANGELOG 标题、JAR 名、modId 与内部版本一致；本条目六栏不空，JAR 晚于核心源码最后一次提交 `1814e74` 且源码没有未提交改动）。
+- 未做：en_us 报告轮；部署到测试端（由编排方进行）；真实客户端（PCL）里的游戏内验收——鼠标悬停白圈、点选黄圈、30 秒变淡、无人机红点变淡、集结点上放小队队包看定位针让位，以及 1080p GUI 4（自动验收的 480×270 档实际是 GUI 2，GUI 4 的 45 物理像素牌子只有单测）。
 
 ## WOK步战核心 0.4.0-beta.2 — 2026-10-05
 
