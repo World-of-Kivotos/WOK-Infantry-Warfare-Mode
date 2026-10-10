@@ -330,7 +330,6 @@
   "screen.wok_infantry.tabs.position": "%1$s（第 %2$s/%3$s 页）",
   "screen.wok_infantry.hint.close": "关闭",
   "screen.wok_infantry.hint.back": "返回",
-  "screen.wok_infantry.hint.switch_tab": "切页",
   "screen.wok_infantry.confirm.ok": "确认",
   "screen.wok_infantry.confirm.cancel": "取消",
   "screen.wok_infantry.confirm.mouse_only": "需鼠标点击确认",

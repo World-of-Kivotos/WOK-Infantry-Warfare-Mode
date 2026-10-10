@@ -765,7 +765,7 @@ public final class TacticalDraw {
             // Above the item model, as vanilla's own stack count.
             graphics.pose().translate(0.0F, 0.0F, 200.0F);
             graphics.drawString(font, text, x + size - font.width(text), y + size - 8,
-                    TacticalBoardTheme.LIGHT, false);
+                    slotCountColor(selected), false);
             if (UiLayoutProbe.recording()) {
                 UiLayoutProbe.rawText(graphics, font, text, x + size - font.width(text),
                         y + size - 8);
@@ -780,6 +780,14 @@ public final class TacticalDraw {
      */
     static int slotIconInset(int size) {
         return Math.max(0, Math.floorDiv(size - TacticalIcon.SIZE + 1, 2));
+    }
+
+    /**
+     * Pure: colour of a slot's stack count, the selected slot's ink like its warning icon. Neutral's
+     * {@code LIGHT} is dark ink, about 1.5:1 on its graphite {@code SELECT}.
+     */
+    public static int slotCountColor(boolean selected) {
+        return selected ? TacticalBoardTheme.ON_SELECT : TacticalBoardTheme.LIGHT;
     }
 
     /** Pure: slot outline colour; an error wins over the selection. */

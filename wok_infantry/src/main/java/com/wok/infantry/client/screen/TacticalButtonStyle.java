@@ -521,10 +521,18 @@ public final class TacticalButtonStyle {
         };
     }
 
-    /** Keyboard focus ring 2px outside the key. */
+    /**
+     * Keyboard focus ring 2px outside the key, two-tone: the 1px {@link TacticalBoardTheme#FOCUS}
+     * line of the preview's {@code UI.focusRing} with a 1px {@link TacticalBoardTheme#SELECT_EDGE}
+     * line inside it, so one of the two reads on any ground. The near-white Academy and Caesar
+     * {@code FOCUS} is only about 1.4:1 on their pale boards, where the dark line carries the ring
+     * (7:1 and 10:1); on dark chrome and wells the light line does.
+     */
     public static void focusRing(GuiGraphics graphics, int left, int top, int right, int bottom) {
         BattleUiTheme.outline(graphics, left - 2, top - 2, right + 2, bottom + 2,
                 TacticalBoardTheme.FOCUS);
+        BattleUiTheme.outline(graphics, left - 1, top - 1, right + 1, bottom + 1,
+                TacticalBoardTheme.SELECT_EDGE);
     }
 
     /**

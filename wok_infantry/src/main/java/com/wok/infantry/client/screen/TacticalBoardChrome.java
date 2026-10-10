@@ -141,11 +141,6 @@ public final class TacticalBoardChrome {
         public static KeyHint back() {
             return literal("Esc", Component.translatable("screen.wok_infantry.hint.back"));
         }
-
-        /** {@code [Ctrl+Tab] 切页}: the terminal tab shortcut of {@link TacticalTabStrip}. */
-        public static KeyHint switchTab() {
-            return literal("Ctrl+Tab", Component.translatable("screen.wok_infantry.hint.switch_tab"));
-        }
     }
 
     /**
@@ -238,7 +233,7 @@ public final class TacticalBoardChrome {
      * What {@link #shell} draws. {@code identity}, {@code tabs} and {@code feedback} may be
      * {@code null}; unbound key hints ({@code null} entries) are dropped. The shell reads the
      * current page of {@code tabs} for the status bar's "title › page"; the strip itself is a
-     * widget of the screen, placed on the bezel by {@link #placeBezel} (or {@link #placeTabs}).
+     * widget of the screen, placed on the bezel by {@link #placeBezel}.
      * The device draws no {@code hints}: Esc and R are hardware keys of the bezel
      * ({@link TacticalScreen#setBezelKeys}).
      */
@@ -591,28 +586,6 @@ public final class TacticalBoardChrome {
     }
 
     /**
-     * Places {@code tabs} across the key row of the bottom bezel ({@link #planBezel}); call from
-     * {@link TacticalScreen#initTactical()} after adding the strip, so it is clickable before the
-     * first frame. The status bar shows {@code title} and the current page itself. A
-     * {@link TacticalTabStrip.Skin#BEZEL} strip goes through {@link #placeBezel} without Esc / R
-     * keys (LEDs included); screens with hardware keys call {@link #placeBezel} themselves.
-     */
-    public static void placeTabs(Font font, TacticalShellLayout layout, Component title,
-                                 TacticalTabStrip tabs) {
-        if (tabs == null) {
-            return;
-        }
-        if (tabs.skin() == TacticalTabStrip.Skin.BEZEL) {
-            placeBezel(font, layout, tabs, List.of());
-            return;
-        }
-        UiRect row = planBezel(layout).keyRow();
-        tabs.setCompact(layout.tight());
-        tabs.setBounds(row.left(), row.top(), row.width(), row.height());
-        tabs.visible = !row.isEmpty();
-    }
-
-    /**
      * Places {@code tabs} (a {@link TacticalTabStrip.Skin#BEZEL} strip, may be {@code null}) as
      * the page keys of the bottom bezel, between the hardware Esc and R keys of {@code hints} (the
      * screen's {@link TacticalScreen#bezelHints()}); call from
@@ -632,12 +605,6 @@ public final class TacticalBoardChrome {
     }
 
     // ---- drawing ------------------------------------------------------------------------------
-
-    /** The device shell in the viewer's livery ({@link TacticalLivery#current()}). */
-    public static Shell shell(GuiGraphics graphics, Font font, TacticalShellLayout layout,
-                              ShellSpec spec) {
-        return shell(graphics, font, layout, TacticalLivery.current(), spec);
-    }
 
     /**
      * Draws the D2 device for {@code layout} painted in {@code livery} (case, status bar, board)

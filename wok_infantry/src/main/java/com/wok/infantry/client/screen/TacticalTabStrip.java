@@ -576,6 +576,7 @@ public final class TacticalTabStrip extends AbstractWidget {
                 if (focusRing) {
                     BezelKey.focusRing(graphics, cell, paint);
                 }
+                // The cap's ink: KEY_TEXT, SELECT_B when pressed, the dimmed keyOff when disabled.
                 return renderLabel(graphics, font, cell, label, tab, cap.text(),
                         BezelKey.textY(cell, cap), LABEL_PAD, TacticalBoardTheme.BADGE_ON_CARD,
                         cap.text());

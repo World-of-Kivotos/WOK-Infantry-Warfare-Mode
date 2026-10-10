@@ -3,6 +3,9 @@ package com.wok.infantry.client.screen;
 import net.minecraft.network.chat.Component;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -208,8 +211,29 @@ class TacticalDrawTest {
         assertEquals(14, TacticalDraw.slotIconInset(TacticalDraw.SLOT_SIZE * 2));
 
         assertEquals(TacticalBoardTheme.DANGER_B, TacticalDraw.inputEdge(true, true, false));
+        assertEquals(TacticalBoardTheme.ON_SELECT, TacticalDraw.slotCountColor(true));
+        assertEquals(TacticalBoardTheme.LIGHT, TacticalDraw.slotCountColor(false));
         assertEquals(TacticalBoardTheme.WELL_EDGE, TacticalDraw.inputEdge(true, false, false));
         assertEquals(TacticalBoardTheme.SELECT_B, TacticalDraw.inputEdge(true, false, true));
         assertEquals(TacticalBoardTheme.INPUT_EDGE, TacticalDraw.inputEdge(false, false, true));
+    }
+
+    @Test
+    void aSlotCountReadsOnItsSlotInEveryLivery() {
+        // Neutral's LIGHT is dark ink: on its graphite SELECT it was about 1.5:1 (B8 review); a
+        // selected slot writes its count in ON_SELECT, like its warning icon.
+        List<TacticalPalette> palettes = new ArrayList<>();
+        palettes.add(TacticalPalette.A);
+        for (TacticalLivery.Livery livery : TacticalLivery.Livery.values()) {
+            palettes.add(livery.palette(TacticalLivery.Scope.BOARD));
+        }
+        for (TacticalPalette palette : palettes) {
+            try (TacticalPalette.Applied ignored = TacticalPalette.push(palette)) {
+                assertTrue(TacticalPaletteContrastTest.contrast(TacticalDraw.slotCountColor(true),
+                        TacticalBoardTheme.SELECT) >= 4.5, palette.name() + " selected slot");
+                assertTrue(TacticalPaletteContrastTest.contrast(TacticalDraw.slotCountColor(false),
+                        TacticalBoardTheme.CELL) >= 3.0, palette.name() + " slot");
+            }
+        }
     }
 }

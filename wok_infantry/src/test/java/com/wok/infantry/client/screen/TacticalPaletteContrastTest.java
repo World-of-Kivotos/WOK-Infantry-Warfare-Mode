@@ -20,6 +20,7 @@ import static com.wok.infantry.client.screen.PaletteToken.DANGER_B;
 import static com.wok.infantry.client.screen.PaletteToken.DANGER_HOVER;
 import static com.wok.infantry.client.screen.PaletteToken.DISABLED_TEXT;
 import static com.wok.infantry.client.screen.PaletteToken.FAINT;
+import static com.wok.infantry.client.screen.PaletteToken.FOCUS;
 import static com.wok.infantry.client.screen.PaletteToken.FRAME;
 import static com.wok.infantry.client.screen.PaletteToken.FRAME_MID;
 import static com.wok.infantry.client.screen.PaletteToken.LIGHT;
@@ -143,6 +144,43 @@ class TacticalPaletteContrastTest {
             assertTrue(contrast(palette.get(ON_SELECT), selected) >= BODY, livery + " selected");
             assertTrue(contrast(palette.get(MUTED), disabled) >= SECONDARY, livery + " disabled");
             assertTrue(contrast(palette.get(MUTED), normal) >= SECONDARY, livery + " normal");
+        }
+    }
+
+    @Test
+    void theTwoToneFocusRingReadsOnEveryGroundAKeySitsOn() {
+        // TacticalButtonStyle.focusRing: a FOCUS line with a SELECT_EDGE line inside it. The
+        // near-white Academy / Caesar FOCUS alone is 1.39 / 1.45:1 on BOARD_ALT (B8 review), so on
+        // every ground at least one of the two lines must reach 3:1.
+        List<PaletteToken> grounds = List.of(BOARD, BOARD_ALT, CARD, WELL, WELL_ROW, FRAME,
+                FRAME_MID);
+        List<TacticalPalette> palettes = new ArrayList<>();
+        palettes.add(TacticalPalette.A);
+        for (Livery livery : Livery.values()) {
+            for (Scope scope : Scope.values()) {
+                palettes.add(livery.palette(scope));
+            }
+        }
+        List<String> failures = new ArrayList<>();
+        for (TacticalPalette palette : palettes) {
+            for (PaletteToken ground : grounds) {
+                int base = palette.get(ground);
+                double outer = contrast(palette.get(FOCUS), base);
+                double inner = contrast(palette.get(SELECT_EDGE), base);
+                if (Math.max(outer, inner) < SECONDARY) {
+                    failures.add(String.format("%s focus ring on %s: FOCUS %.2f, SELECT_EDGE %.2f",
+                            palette.name(), ground, outer, inner));
+                }
+            }
+        }
+        assertTrue(failures.isEmpty(), String.join("\n", failures));
+        // The pale boards of the faction liveries are carried by the dark inner line.
+        for (Livery livery : List.of(Livery.ACADEMY, Livery.CAESAR)) {
+            TacticalPalette palette = livery.palette(Scope.BOARD);
+            assertTrue(contrast(palette.get(SELECT_EDGE), palette.get(BOARD_ALT)) >= SECONDARY,
+                    livery + " BOARD_ALT");
+            assertTrue(contrast(palette.get(SELECT_EDGE), palette.get(BOARD)) >= SECONDARY,
+                    livery + " BOARD");
         }
     }
 

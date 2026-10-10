@@ -59,6 +59,32 @@ class DeviceSkinTest {
         }
     }
 
+    @Test
+    void derivedKeyColoursAreSolvedPerSkin() {
+        // keyHover: brightest twentieth of KEY → KEY_HI keeping KEY_TEXT ≥ 4.5 and KEY_SUB ≥ 3:1.
+        assertEquals(0xFF3F6BA3, DeviceSkin.ACADEMY.keyHover(), "Academy stops at 75%");
+        assertEquals(DeviceSkin.CAESAR.keyHi(), DeviceSkin.CAESAR.keyHover());
+        assertEquals(DeviceSkin.NEUTRAL.keyHi(), DeviceSkin.NEUTRAL.keyHover());
+        // keyOff: KEY_SUB mixed toward KEY in twentieths while it still reads at 3:1 on KEY.
+        assertEquals(0xFF84A1C5, DeviceSkin.ACADEMY.keyOff(), "30% toward KEY");
+        assertEquals(0xFFCD9194, DeviceSkin.CAESAR.keyOff(), "40% toward KEY");
+        assertEquals(0xFF7A8280, DeviceSkin.NEUTRAL.keyOff(), "25% toward KEY");
+    }
+
+    @Test
+    void aSkinOutsideTheThreeLiveriesIsSolvedTheSameWay() {
+        DeviceSkin a = DeviceSkin.ACADEMY;
+        DeviceSkin copy = new DeviceSkin(a.caseColor(), a.caseHi(), a.caseLo(), a.line(),
+                a.recessHi(), a.rubber(), a.rubberHi(), a.rubberLo(), a.rubberEdge(), a.key(),
+                a.keyHi(), a.keyLo(), a.keyDown(), a.keyText(), a.keySub(), a.stripe(), a.silk(),
+                a.label(), a.status(), a.statusLine(), a.ident(), a.pill(), a.signalOff(), a.led(),
+                a.powerLed());
+        assertEquals(a.keyHover(), copy.keyHover());
+        assertEquals(a.keyOff(), copy.keyOff());
+        assertEquals(0xFF, copy.keyOff() >>> 24, "opaque");
+        assertEquals(0xFF, copy.keyHover() >>> 24, "opaque");
+    }
+
     /** Record component → preview SKINS key: {@code caseHi} → {@code CASE_HI}, ... */
     private static String previewKey(String component) {
         return switch (component) {

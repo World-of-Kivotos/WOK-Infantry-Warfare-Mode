@@ -300,8 +300,11 @@ class BezelKeyTest {
                     skin.keyText(), skin.keySub(), false, 0), raised);
 
             BezelKey.Cap hover = BezelKey.cap(skin, BezelKey.CapState.HOVER);
-            assertEquals(skin.keyHi(), hover.face(), "hover lights the face to KEY_HI");
+            assertEquals(skin.keyHover(), hover.face(), "hover lights the face toward KEY_HI");
+            assertEquals(skin.keyHi(), hover.topLip());
             assertEquals(skin.keyLo(), hover.bottomLip());
+            assertEquals(skin.keyText(), hover.text());
+            assertEquals(skin.keySub(), hover.sub());
 
             BezelKey.Cap down = BezelKey.cap(skin, BezelKey.CapState.DOWN);
             assertEquals(skin.keyDown(), down.face());
@@ -311,10 +314,62 @@ class BezelKeyTest {
             assertEquals(1, down.textDrop());
 
             BezelKey.Cap disabled = BezelKey.cap(skin, BezelKey.CapState.DISABLED);
-            assertEquals(skin.keySub(), disabled.text(), "disabled writes in KEY_SUB");
+            assertEquals(skin.keyOff(), disabled.text(), "disabled writes in the dimmed keyOff");
+            assertEquals(skin.keyOff(), disabled.sub(), "both labels");
             assertTrue(disabled.hatch(), "and is hatched");
+            assertEquals(skin.key(), disabled.face());
+            assertEquals(0, disabled.topLip(), "flat: no lit upper lip");
+            assertEquals(skin.keyLo(), disabled.bottomLip());
             assertEquals(skin.line(), disabled.edge());
         }
+    }
+
+    @Test
+    void aDisabledKeyReadsButIsPlainlyDimmerThanAnEnabledOneInEveryLivery() {
+        // UI rule 6: disabled must read distinct. Before B8 the disabled Caesar key name was
+        // 1.21:1 from the enabled one and its action label the same colour as an enabled one.
+        for (DeviceSkin skin : List.of(DeviceSkin.ACADEMY, DeviceSkin.CAESAR, DeviceSkin.NEUTRAL)) {
+            BezelKey.Cap enabled = BezelKey.cap(skin, BezelKey.CapState.RAISED);
+            BezelKey.Cap disabled = BezelKey.cap(skin, BezelKey.CapState.DISABLED);
+            String name = skinName(skin);
+            assertTrue(contrast(disabled.text(), disabled.face()) >= 3.0,
+                    name + ": disabled labels still read at 3:1 on KEY (the disabled-label floor)");
+            assertTrue(contrast(disabled.text(), enabled.text()) >= 2.0,
+                    name + ": the key name dims by at least 2:1 from KEY_TEXT");
+            assertTrue(contrast(disabled.sub(), enabled.sub()) >= 1.4,
+                    name + ": the action label dims visibly from KEY_SUB");
+            assertTrue(contrast(enabled.text(), enabled.face()) >= 4.5,
+                    name + ": an enabled key name is body text");
+            assertTrue(contrast(enabled.sub(), enabled.face()) >= 3.0,
+                    name + ": an enabled action label is secondary text");
+        }
+    }
+
+    @Test
+    void hoverLightsTheKeyOnlyAsFarAsBothLabelsStillRead() {
+        for (DeviceSkin skin : List.of(DeviceSkin.ACADEMY, DeviceSkin.CAESAR, DeviceSkin.NEUTRAL)) {
+            BezelKey.Cap hover = BezelKey.cap(skin, BezelKey.CapState.HOVER);
+            String name = skinName(skin);
+            assertTrue(contrast(hover.text(), hover.face()) >= 4.5,
+                    name + ": hovered key name at 4.5:1");
+            assertTrue(contrast(hover.sub(), hover.face()) >= 3.0,
+                    name + ": hovered action label at 3:1");
+            assertTrue(contrast(hover.face(), skin.key()) >= 1.15,
+                    name + ": the hover face still differs from the raised one");
+        }
+        assertEquals(DeviceSkin.CAESAR.keyHi(), DeviceSkin.CAESAR.keyHover(), "preview KEY_HI kept");
+        assertEquals(DeviceSkin.NEUTRAL.keyHi(), DeviceSkin.NEUTRAL.keyHover(), "preview KEY_HI kept");
+        assertFalse(DeviceSkin.ACADEMY.keyHi() == DeviceSkin.ACADEMY.keyHover(),
+                "Academy's KEY_SUB is 2.69:1 on KEY_HI, so its hover face stops short of it");
+    }
+
+    private static String skinName(DeviceSkin skin) {
+        return skin == DeviceSkin.ACADEMY ? "ACADEMY" : skin == DeviceSkin.CAESAR ? "CAESAR"
+                : skin == DeviceSkin.NEUTRAL ? "NEUTRAL" : skin.toString();
+    }
+
+    private static double contrast(int ink, int ground) {
+        return TacticalPaletteContrastTest.contrast(ink, ground);
     }
 
     @Test

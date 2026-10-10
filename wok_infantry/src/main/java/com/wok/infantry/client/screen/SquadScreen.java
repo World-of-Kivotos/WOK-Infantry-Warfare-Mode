@@ -617,6 +617,11 @@ public final class SquadScreen extends TacticalScreen
                 TacticalBoardChrome.KeyHint.literal("R",
                         SquadBoardText.t(SquadBoardText.HINT_REFRESH)),
                 BattleClientActions::requestSnapshot);
+        // By role, so a rebuild (a new snapshot after R 刷新) hands the keyboard focus to the new
+        // Esc / R key instead of dropping it (rebuildKeepingFocus, adoptRebuiltFocus).
+        for (BezelKey key : bezelKeys()) {
+            roles.put(key, key.role().uiId());
+        }
         BattleTab current = page.tab;
         TacticalTabStrip strip = BattleTab.strip(current,
                 tab -> tab == current ? null : model.tabDisabledReason(tab), this::onTab);

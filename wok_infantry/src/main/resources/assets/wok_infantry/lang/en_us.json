@@ -330,7 +330,6 @@
   "screen.wok_infantry.tabs.position": "%1$s (tab %2$s of %3$s)",
   "screen.wok_infantry.hint.close": "Close",
   "screen.wok_infantry.hint.back": "Back",
-  "screen.wok_infantry.hint.switch_tab": "Switch tab",
   "screen.wok_infantry.confirm.ok": "Confirm",
   "screen.wok_infantry.confirm.cancel": "Cancel",
   "screen.wok_infantry.confirm.mouse_only": "Click with the mouse to confirm",

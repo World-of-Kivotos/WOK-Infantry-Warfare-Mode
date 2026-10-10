@@ -25,9 +25,11 @@ import java.util.function.Supplier;
  * screen palette (preview {@code keyCap} in {@code 17-device.js}): {@code LINE} outline with
  * clipped corners, {@code KEY} face with a {@code KEY_HI} upper and a {@code KEY_LO} lower lip, the
  * key name in {@code KEY_TEXT} and the action beside it in {@code KEY_SUB}. Hover lights the face
- * to {@code KEY_HI}; a disabled key writes both in {@code KEY_SUB} under the disabled hatch and
- * explains itself on hover; the keyboard focus ring uses {@code KEY_TEXT} (the white
- * {@code FOCUS} ring would vanish on the pale Neutral case). The page keys of a
+ * toward {@code KEY_HI} ({@link DeviceSkin#keyHover}: as far as both labels still read); a
+ * disabled key loses the lit upper lip, writes both labels in the dimmed
+ * {@link DeviceSkin#keyOff} under the disabled hatch and explains itself on hover; the keyboard
+ * focus ring uses {@code KEY_TEXT} (the white {@code FOCUS} ring would vanish on the pale Neutral
+ * case). The page keys of a
  * {@link TacticalTabStrip.Skin#BEZEL} strip use the same cap; the current page's key is pressed
  * ({@code KEY_DOWN} face, {@code KEY_LO} upper lip, label 1px lower in {@code SELECT_B}) under a
  * lit LED.
@@ -70,8 +72,8 @@ public final class BezelKey extends AbstractWidget {
     }
 
     /**
-     * Colours of one key cap. {@code bottomLip} 0 draws no lower lip; {@code textDrop} moves the
-     * label down (a pressed key).
+     * Colours of one key cap. {@code topLip} / {@code bottomLip} 0 draws no upper / lower lip;
+     * {@code textDrop} moves the label down (a pressed key).
      */
     public record Cap(int edge, int face, int topLip, int bottomLip, int text, int sub,
                       boolean hatch, int textDrop) {
@@ -272,26 +274,32 @@ public final class BezelKey extends AbstractWidget {
     /**
      * Colours of a key cap in {@code state}: the device paint, except the pressed key's label,
      * which is the screen palette's {@code SELECT_B} (preview {@code pageKeys}).
+     *
+     * <p>Two deviations from the preview's {@code keyCap}, both for UI rule 6 (every state must
+     * read distinct, disabled clearly grey): the hover face is {@link DeviceSkin#keyHover} (only
+     * Academy differs from {@code KEY_HI}, whose {@code KEY_SUB} sat at 2.69:1 on it), and a
+     * disabled cap is flat (no lit upper lip) with both labels in {@link DeviceSkin#keyOff}
+     * instead of {@code KEY_SUB}, which on Caesar and Academy was barely dimmer than the enabled
+     * key name and the same colour as the enabled action label.
      */
     public static Cap cap(DeviceSkin skin, CapState state) {
         DeviceSkin paint = Objects.requireNonNull(skin, "skin");
         return switch (state == null ? CapState.RAISED : state) {
             case RAISED -> new Cap(paint.line(), paint.key(), paint.keyHi(), paint.keyLo(),
                     paint.keyText(), paint.keySub(), false, 0);
-            case HOVER -> new Cap(paint.line(), paint.keyHi(), paint.keyHi(), paint.keyLo(),
+            case HOVER -> new Cap(paint.line(), paint.keyHover(), paint.keyHi(), paint.keyLo(),
                     paint.keyText(), paint.keySub(), false, 0);
             case DOWN -> new Cap(paint.line(), paint.keyDown(), paint.keyLo(), 0,
                     TacticalBoardTheme.SELECT_B, paint.keySub(), false, 1);
-            case DISABLED -> new Cap(paint.line(), paint.key(), paint.keyHi(), paint.keyLo(),
-                    paint.keySub(), paint.keySub(), true, 0);
+            case DISABLED -> new Cap(paint.line(), paint.key(), 0, paint.keyLo(),
+                    paint.keyOff(), paint.keyOff(), true, 0);
         };
     }
 
     /**
      * Draws a key cap: outline with clipped corners, face, lips and (disabled) the hatch, laid
      * twice: the board's single {@link TacticalBoardTheme#HATCH} pass nearly vanished on the pale
-     * Neutral and the red Caesar caps, so the disabled key read only through its {@code KEY_SUB}
-     * text. At most five fills and two hatch blits.
+     * Neutral and the red Caesar caps. At most five fills and two hatch blits.
      */
     static void drawCap(GuiGraphics graphics, UiRect key, Cap cap) {
         if (key.width() < 3 || key.height() < 3) {
@@ -304,7 +312,9 @@ public final class BezelKey extends AbstractWidget {
         graphics.fill(left + 1, top, right - 1, bottom, cap.edge());
         graphics.fill(left, top + 1, right, bottom - 1, cap.edge());
         graphics.fill(left + 1, top + 1, right - 1, bottom - 1, cap.face());
-        graphics.fill(left + 1, top + 1, right - 1, top + 2, cap.topLip());
+        if (cap.topLip() != 0) {
+            graphics.fill(left + 1, top + 1, right - 1, top + 2, cap.topLip());
+        }
         if (cap.bottomLip() != 0) {
             graphics.fill(left + 1, bottom - 2, right - 1, bottom - 1, cap.bottomLip());
         }
