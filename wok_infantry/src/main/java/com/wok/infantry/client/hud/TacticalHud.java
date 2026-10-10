@@ -1,7 +1,9 @@
 package com.wok.infantry.client.hud;
 
 import com.wok.infantry.client.screen.BattleUiTheme;
+import com.wok.infantry.client.screen.PaletteToken;
 import com.wok.infantry.client.screen.TacticalBoardTheme;
+import com.wok.infantry.client.screen.TacticalPalette;
 import com.wok.infantry.client.screen.TextFit;
 import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import com.wok.infantry.stamina.StaminaRules;
@@ -85,8 +87,9 @@ public final class TacticalHud {
     public static final int PLATE_GAP_TIGHT = 3;
     /** Divider ticks on a meter. */
     public static final int METER_TICK = 0x66000000;
-    /** Wash behind the viewer's own roster row. */
-    public static final int SELF_ROW_TINT = withAlpha(TacticalBoardTheme.SELECT_B, 0x30);
+    /** Wash behind the viewer's own roster row (A scheme: the HUD never takes a faction palette). */
+    public static final int SELF_ROW_TINT = withAlpha(TacticalPalette.A.get(PaletteToken.SELECT_B),
+            0x30);
     /** Edge length of a roster status dot. */
     public static final int STATUS_DOT_SIZE = 3;
     /** Health above this ratio is green, above {@link #HEALTH_LOW} orange, otherwise red. */

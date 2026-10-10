@@ -1,9 +1,12 @@
 package com.wok.infantry.client.screen;
 
+import com.google.gson.JsonObject;
 import com.wok.infantry.client.screen.TacticalLivery.Livery;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.RecordComponent;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -20,27 +23,28 @@ class DeviceSkinTest {
     }
 
     @Test
-    void skinsFollowTheP3Preview() {
-        // ui-preview/surfaces/18-device-livery.js SKINS (CASE, STRIPE, STATUS, IDENT, LED).
-        assertEquals(0xFF204A82, DeviceSkin.ACADEMY.caseColor());
-        assertEquals(0xFF8CC4F5, DeviceSkin.ACADEMY.stripe());
-        assertEquals(0xFF091731, DeviceSkin.ACADEMY.status());
-        assertEquals(0xFF9ACBF6, DeviceSkin.ACADEMY.ident());
-        assertEquals(0xFF8AC4F5, DeviceSkin.ACADEMY.led());
-        assertEquals(0xFF8A1E26, DeviceSkin.CAESAR.caseColor());
-        assertEquals(0xFF6C1820, DeviceSkin.CAESAR.keyDown());
-        assertEquals(0xFFFFE4E8, DeviceSkin.CAESAR.led());
-        assertEquals(0xFFC6CCCA, DeviceSkin.NEUTRAL.caseColor());
-        assertEquals(0xFF222A29, DeviceSkin.NEUTRAL.keyText());
-        assertEquals(0xFFA9B2B4, DeviceSkin.NEUTRAL.signalOff());
-        assertEquals(0xFF12A3B4, DeviceSkin.NEUTRAL.led());
+    void everySkinValueMatchesThePreviewExport() throws ReflectiveOperationException {
+        // ui_palette/p3_palette.json: 17-device.js SKINS under 18-device-livery.js SKINS, with the
+        // LED / LED_POWER fallbacks 17-device.js applies while drawing.
+        for (Livery livery : Livery.values()) {
+            JsonObject skin = PaletteExport.skin(livery);
+            Set<String> keys = new LinkedHashSet<>();
+            for (RecordComponent component : DeviceSkin.class.getRecordComponents()) {
+                String key = previewKey(component.getName());
+                keys.add(key);
+                int value = (int) component.getAccessor().invoke(livery.skin());
+                assertEquals(String.format("0x%08X", PaletteExport.color(skin, key)),
+                        String.format("0x%08X", value), livery + " " + key);
+            }
+            assertEquals(skin.keySet(), keys, livery + ": DeviceSkin and the export list the same keys");
+        }
     }
 
     @Test
     void powerLedIsTheASuccessGreenExceptOnThePaleNeutralCase() {
         // 17-device.js reads K.LED_POWER ?? T.SUCCESS_B; only Neutral sets its own (plan 2.3).
-        assertEquals(TacticalBoardTheme.SUCCESS_B, DeviceSkin.ACADEMY.powerLed());
-        assertEquals(TacticalBoardTheme.SUCCESS_B, DeviceSkin.CAESAR.powerLed());
+        assertEquals(TacticalPalette.A.get(PaletteToken.SUCCESS_B), DeviceSkin.ACADEMY.powerLed());
+        assertEquals(TacticalPalette.A.get(PaletteToken.SUCCESS_B), DeviceSkin.CAESAR.powerLed());
         assertEquals(0xFF2E9E52, DeviceSkin.NEUTRAL.powerLed());
     }
 
@@ -53,5 +57,14 @@ class DeviceSkinTest {
                 assertEquals(0xFF, value >>> 24, component.getName());
             }
         }
+    }
+
+    /** Record component → preview SKINS key: {@code caseHi} → {@code CASE_HI}, ... */
+    private static String previewKey(String component) {
+        return switch (component) {
+            case "caseColor" -> "CASE";
+            case "powerLed" -> "LED_POWER";
+            default -> component.replaceAll("([a-z])([A-Z])", "$1_$2").toUpperCase(java.util.Locale.ROOT);
+        };
     }
 }

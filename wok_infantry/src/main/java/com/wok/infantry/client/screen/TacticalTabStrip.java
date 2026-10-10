@@ -64,12 +64,18 @@ public final class TacticalTabStrip extends AbstractWidget {
             shortLabel = shortLabel == null ? label : shortLabel;
         }
 
+        /**
+         * Enabled tab without a badge. Its badge colour is the sentinel
+         * {@link TacticalButtonStyle#NONE} ({@code MUTED} of the palette the tab is drawn in):
+         * tabs are built in {@code init}, outside the faction palette.
+         */
         public static Tab of(String id, Component label) {
-            return new Tab(id, label, label, null, null, TacticalBoardTheme.MUTED);
+            return new Tab(id, label, label, null, null, TacticalButtonStyle.NONE);
         }
 
+        /** As {@link #of(String, Component)}, with a short label for narrow strips. */
         public static Tab of(String id, Component label, Component shortLabel) {
-            return new Tab(id, label, shortLabel, null, null, TacticalBoardTheme.MUTED);
+            return new Tab(id, label, shortLabel, null, null, TacticalButtonStyle.NONE);
         }
 
         public boolean enabled() {
@@ -527,7 +533,9 @@ public final class TacticalTabStrip extends AbstractWidget {
             graphics.fill(badgeLeft, textY - 1, right, textY + 8,
                     darkFill ? TacticalBoardTheme.BADGE_ON_SELECT : TacticalBoardTheme.BADGE_ON_CARD);
             graphics.drawString(font, tab.badge(), badgeLeft + 3, textY,
-                    darkFill ? TacticalBoardTheme.LIGHT : tab.badgeColor(), false);
+                    darkFill ? TacticalBoardTheme.ON_SELECT
+                            : tab.badgeColor() != TacticalButtonStyle.NONE ? tab.badgeColor()
+                            : TacticalBoardTheme.MUTED, false);
             right = badgeLeft - 2;
         }
         int left = cell.left() + 3;
