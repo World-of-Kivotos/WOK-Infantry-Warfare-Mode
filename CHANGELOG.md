@@ -1,27 +1,94 @@
 # 更新日志
 
-## WOK步战核心 0.5.0-beta.3 — 2026-10-10（进行中）
+## WOK步战核心 0.5.0-beta.3 — 2026-10-10
 
-> 用户需求（2026-10-10）：“我们现在 UI 整体还是有些不太像……还是本着平板的方向”，随后要求“凯撒、学院、中立做三套，会随着玩家加入的阵营不同而改变——学院蓝色、凯撒红色、中立偏淡色”；看过预览后选定 D2「实体按键平板」外壳（`ui-preview/surfaces/17-device.js`）与 P3「整屏涂装」（`ui-preview/surfaces/18-device-livery.js`）。用户 2026-10-10 拍板：范围档 1（战斗终端小队 / 兵种 / 部署三页、编制页、uiTest 陈列页上平板外壳并按阵营换色；HUD、战术地图和其余旧界面不动），涂装按战局蓝方 / 红方对应（蓝 = 学院军海军蓝，红 = 凯撒正红，未加入阵营 = 中立浅钢灰），掏平板动画顺延到 0.5.0-beta.4 并改用这套外壳。方案见 `ui-preview/audit/DEVICE_PORT_PLAN.md`。分支 `claude/平板外壳`，基于 `claude/新版界面` 的 `826785a`（0.5.0-beta.2）。不改任何网络协议号。
+> 用户需求（2026-10-10）：“我们现在 UI 整体还是有些不太像……还是本着平板的方向”，随后要求“凯撒、学院、中立做三套，会随着玩家加入的阵营不同而改变——学院蓝色、凯撒红色、中立偏淡色”；看过预览后选定 D2「实体按键平板」外壳（`ui-preview/surfaces/17-device.js`）与 P3「整屏涂装」（`ui-preview/surfaces/18-device-livery.js`）。用户 2026-10-10 拍板：范围档 1（战斗终端小队 / 兵种 / 部署三页、编制页、uiTest 陈列页上平板外壳并按阵营换色；HUD、战术地图和其余旧界面不动），涂装按战局蓝方 / 红方对应（蓝 = 学院军海军蓝，红 = 凯撒正红，未加入阵营 = 中立浅钢灰），同意改写 AGENTS.md UI 规则第 3、6 条，掏平板动画顺延到 0.5.0-beta.4 并改用这套外壳。方案见 `ui-preview/audit/DEVICE_PORT_PLAN.md`。分支 `claude/平板外壳`，基于 `claude/新版界面` 的 `826785a`（0.5.0-beta.2）：骨架 `d1272c0`，共享层 B1–B4（调色板与涂装判定、设备外壳与状态栏、底框实体键、部件状态线索）合入后接缝修正 `c8cae23`，界面 B5–B7（战斗终端三页、编制页、uiTest / 陈列页 / HUD 隔离）合入后接缝修正 `0ece674`，实机截图对照修正 `8abd040`，整体审查修正 `c52530d`（本版最后一个源码提交）。不改任何网络协议号。
 
 ### 新增
-- 骨架（`claude/平板外壳` 第一个提交）：`TacticalBoardTheme` 新增三个令牌 `ON_FILL`（实心成功底与确认态危险底上的字，A 配色同 `LIGHT`）、`DANGER_DEEP`（`#3A0F0C`，确认态危险键的深色斜纹）、`ACCENT_TEXT`（`#844600`，浅色拼板上的橙色文字）；新类型 `PaletteToken`、`TacticalPalette`（目前只有 A 配色）、`TacticalLivery`（`Livery` 学院军 / 凯撒 / 中立，`Scope` 拼板 / 地图）、`DeviceSkin`（三套外壳色，取自 P3 预览）、`BezelKey`；`TacticalShellLayout` 新增 `device`、`glass`、`display`、`status`、`body`、`bezel` 区域（暂按旧几何填）；`TacticalScreen` 新增钩子 `livery()`、`paletteScope()`、`setBezelKeys(...)`、`renderGlassOverlay(...)`；`TacticalBoardChrome.placeBezel` 与外壳探针 id；`TacticalTabStrip.Skin.BEZEL`（暂按页头画）。界面外观尚无变化。
-- 其余待补（平板外壳、状态栏、底框实体键、阵营调色板、部件状态线索、编制页与陈列页接入、uiTest 用例）。
+- D2 实体平板外壳（`TacticalScreen` 系列：战斗终端小队 / 兵种 / 部署三页、编制投票页、uiTest 组件陈列页与地图标点陈列页）：界面画成一台拿在手里的平板，浮在压暗的世界上（世界压暗加暗角，机身四周能看到世界；原来是铺满全屏的外框）。
+  - 机身：圆角机壳、四角护角、侧键、摄像头、底部螺丝、“WOK-T7”丝印，顶边框上一盏电源灯和一盏链路灯（OK 用外壳灯色，WAIT 用琥珀色）；屏幕是内凹玻璃，带反光，玻璃罩层画在确认层之上、浮动提示之下。
+  - 几何按预览 `geom(w,h,2)` 分紧凑 / 常规 / 宽松三档（`TacticalShellLayout` 的 `device`、`glass`、`display`、`status`、`body`、`bezel` 区域）；页面内容区 320×240 为 296×192、427×240 为 403×192、480×270 为 456×222、480×360（960×720 GUI 1）为 416×284、640×336 为 576×260、960×540 为 846×434。
+  - 机身程序化绘制（`DeviceArt`，按逻辑宽高、档位和涂装缓存矩形行程），另有两张贴图：16×16 磨砂斑点平铺图 `device_specks.png` 与 64×64 暗角 `device_vignette.png`，由界面预览工具 `ui-preview/tools/export-ui-atlas.mjs` 从预览的外壳画法生成，本项目原创，SHA-256 记在 `ui_atlas_manifest.json`。
+- 状态栏（取代原页头）：左起阵营色条、“标题 › 当前页”（最多占 55% 宽，紧凑档用短页名）；中间是回执胶囊（取代原页脚回执，余量不足 40px 时不画，太长加省略号、悬停显示全文）；身份用外壳的身份色画（按“阵营 · 编制 · 小队 · 职务”逐级缩短）；右侧信号格（OK 亮 4 格，WAIT 亮 2 格琥珀色）、电池（装饰，常满）和本机时间 `HH:mm`。标题或身份被省略时悬停同样显示全文。
+- 底框实体键：
+  - 页面键：终端六个页签（小队 / 兵种 / 部署 / 配装 / 战术地图 / 编制）改为底框上等宽的实体键，居中排在 Esc 与 R 之间，先放全名、放不下换短名（最小键宽紧凑档 28、其余 38）；当前页的键是按下状态（字下沉 1px），上方 LED 亮起，其余 LED 熄灭。控件本身保留：焦点、←/→、朗读、禁用原因提示、放不下时退成翻页条、Ctrl+Tab，以及 uiTest 用的 `terminal.tabs/<id>`。
+  - 硬件键 Esc / R：Esc 键等同按键盘 Esc（各界面保留自己的含义）；R 键执行界面的刷新——战斗终端为“R 刷新”（与键盘 R 同一动作，请求战局快照），编制页为“R 重试”（只在等待编制目录时可按，其余时候禁用，悬停写“编制目录已同步，有变化会自动更新，无需重试”）。底框键排在 Tab 焦点顺序最后；页面键快要退成翻页条时（英文 320×240），Esc / R 先缩成只写键名，动作留在提示和朗读里。
+  - 键的状态：悬停换亮一档的键面（学院军另按对比度求解，键名 ≥4.5:1、动作字 ≥3:1）；禁用键是平键加斜纹，键名和动作字都变暗（`DeviceSkin.keyOff`，在键面上仍 ≥3:1、与正常键名差 ≥2:1）；键盘焦点框用键字色。
+- P3 阵营整屏涂装：外壳、屏内拼板、井、选中色一起换。
+  - 学院军（战局蓝方）：海军蓝机身、深海军蓝机壳件，选中 `#2660A8`；凯撒（红方）：正红机身、深正红机壳件，选中深绯红 `#8E1A34`（战术地图作用域另有石墨选中，本轮地图没有换壳，暂未使用）；未加入阵营（中立）：浅钢灰机身与机壳件配深色字，选中石墨 `#384246`。
+  - 判定（`TacticalLivery`，每帧一次）：有战局快照时蓝方 → 学院军、红方 → 凯撒；没有快照时看编制目录里加入的阵营，按本次会话从快照学到的“阵营 id → 蓝 / 红方”表（默认 `academy` = 蓝、`caesar` = 红）查，查不到为中立；退出世界时清表。编制页按自己显示的目录判定：未加入一律中立，加入后跟阵营。
+  - 换色只在 `TacticalScreen.render` 的调色板作用域里改写可换肤令牌（`TacticalPalette` 的 A / ACADEMY / CAESAR / NEUTRAL，71 个 `PaletteToken`），作用域外（HUD、旧界面）始终是 A 配色；作用域按栈恢复，可嵌套。三套配色与外壳色（`DeviceSkin`，含电源灯色）由 `ui-preview/tools/export-palette.mjs` 从预览导出到测试资源 `ui_palette/p3_palette.json`，单测逐值核对。
+  - 新令牌：`ON_FILL`（实心成功底与确认态危险底上的字）、`DANGER_DEEP`（`#3A0F0C`，确认态危险键的深色斜纹）、`ACCENT_TEXT`（`#844600`，浅色拼板上的较深橙色文字，各配色同值）。
+- 部件状态线索（`TacticalButtonStyle`、`TacticalDraw`、`TacticalList`，所有配色都生效，包括 A）：
+  - 选中：阵营色实心底 + `SELECT_EDGE` 外框 + 左侧浅色竖条（键高 ≥16 时 3px，否则 2px），不画凸起斜面；列表行的竖条外侧加 1px 深线（中立浅色井里也看得见）；悬停在已选项上亮一档。
+  - 危险：常态为浅色键面配红描边、红字和左侧警示斜纹（宽 4 / 3px，按行合并填充，每键不超过 32 次，不用贴图）；悬停或确认态为整块红底配深色斜纹和浅色字。
+  - 成功：浅色字；没有图标且放得下时自动带 ✓ 图标。禁用：禁用描边加斜纹。计数角标：选中 / 当前为深色内嵌，禁用为浅色内嵌。
+  - 浅色拼板上的橙色数值（键值行的值、滑杆数字、“倒地”字）改用较深的 `ACCENT_TEXT`；分区色条、指示灯、进度和可调控件的轨道仍用原橙色。
+- 终端打开时隐藏 WOK HUD：`TacticalScreen` 开着时，核心自己的 HUD 叠层（小队名单、战况条与通知、编制投票条、体力条）不画，免得从机身四周露出来；关掉后照常。`InfantryHudApi` 的隐藏判断仍只看 F1，附属 MOD 的 HUD 槽位照常给；体力条在终端开着时仍取消原版经验条。
+- 中立输入框光标：平板界面里输入框的文中光标改用调色板的井上文字色（中立浅色井里为深色），不再是原版固定的浅灰 `#D0D0D0`（`EditBoxShadowMixin.recolorCursor`）。
+- 为 0.5.0-beta.4 掏平板动画留的接口：`TacticalScreen.render` 分步（背景 `renderBackdrop` 与机身 / 页面绘制分开）、`DeviceArt.rasterize` / `plate`、`TacticalShellLayout.compute(w, h, Density)`；动画本身不在本版。
+- 其他新类型与方法：`InkContrast`（WCAG 对比度与混色）、`TacticalBezelPlan`（底框纯布局）、`BezelKey`、`TacticalLiveryTables`、`TacticalBoardChrome.shellTitle` / `planStatus` / `StatusPlan.fullTextAt`、`TacticalScreen.offerFullText`（静态绘制的文字被截断时给悬停全文）、`TextFit.carryFrom`。
+- uiTest：新增 16 个用例——凯撒战斗终端 squads、kick（红色确认态危险键压在红色选中行上）、classes、deployment、active、loading；凯撒编制页 vote、locked、admin；组件陈列页 default、confirm、cards 各配凯撒与中立；HUD 回归 `hud.terminal-caesar`（开关凯撒终端后 HUD 颜色仍是 A）。用例写明涂装，截图名与用例 id 带 `-academy` / `-caesar` / `-neutral`；新增平板外壳语义检查 `UiDeviceChecks`（涂装与链路备注、外壳区域非实心、Esc / R 在底框、当前页键按下且其上 LED 唯一点亮、危险键带斜纹、底框没有页脚回执、文字和控件不出玻璃区）；夹具按阵营方参数化；可选的只出报告档 960×540（唯一用到宽松档机身的档位，`-PuiTiers=960x540` 点名才跑）。
+- 语言：中英各新增 `screen.wok_infantry.formation.hint.retry_unavailable` 1 个键；uiTest 语言各新增 `kit.title_short`、`kit.identity.caesar`、`kit.identity.neutral`、`mapicons.title_short`、`mapicons.page.dark`、`mapicons.page.paper`、`mapicons.refresh_reason`。
 
 ### 修改
-- 待补。
+- AGENTS.md「WOK步战 UI 永久风格规则」（用户 2026-10-10 同意，单独的纯文档提交 `7d1373f`，按方案第 8 节原文）：第 3 条整句改为实体战术平板外壳、按玩家所属阵营整屏涂装（学院军海军蓝、凯撒正红、中立浅钢灰配深色字）、三阵营选中色（`#2660A8` / `#8E1A34` / `#384246`）、凯撒在战术地图页改用石墨 `#3B4247` + 玫瑰粉竖条且地图页的选中不用红色、机壳件上“当前 / 已选”字色（`#8AC4F5` / `#FF9EB4` / `#2F3A3E`）、禁用为灰色加斜纹、地图上友军蓝敌军红不变；第 6 条原文保留，末尾补形状线索（选中竖条、危险警示斜纹、禁用斜线、成功 ✓ 无竖条、可调控件底部橙线）。
+- 布局宽窄翻转（D2 外壳占掉一圈，和预览阈值一致）：640×336 与 640×360 下小队页变窄版（内容宽 576 < 600：呼号条换成小队列表列，右侧“我的状态”栏收起）；960×720 GUI 1（480×360，内容宽 416 < 440）下兵种页、部署页变窄版，编制页详情变单列滚动。
+- 页脚取消：Esc / R 改为底框硬件键，回执改到状态栏胶囊，页面不再画页脚按键提示；“Ctrl+Tab 切页”提示去掉（Ctrl+Tab 照常可用）；编制页的“Enter 投票”“滚轮 浏览 / 滚动”不再印出（功能保留）。
+- 战斗终端：底框 Esc 键写“Esc 返回”（行为不变）；状态栏标题在宽度 ≥400 且“WOK步战 // 战斗终端 › 页名”三页都放得下时用全称，否则用“战斗终端”（427×240 起用全称，原为 440 起）；身份上限改用状态栏实际余量，宽屏能显示更长的身份（例如 640×336 下“学院军 · 千禧年研讨会机动部队 · 阿尔法小队 · 小队长”）。
+- 编制页：底框 Esc 文案随状态（窄屏详情“返回列表”、未加入“关闭（～ 键可重开）”、已加入“暂时关闭”）；R 的文案“重新请求”改“重试”；分步引导按状态栏真实余量挑长短文案，先保证身份完整；短标题“编制投票”仍在宽度不足 440 时使用，“标题 › 页”放不下时也用短标题（英文 480×360）；已加入的阵营键为当前态（阵营色实心 + 浅色竖条 + 深色角标内嵌），其他阵营为禁用斜纹；票数细条的轨道跟随行底色（悬停时亮一档的行也一样）。
+- 与预览有意不同、保持现状的两处（已决定）：未加入阵营时编制页正在浏览的阵营键仍画描边 + 选中色竖条 + 眼睛图标，不画成实心（用户 10-04 反馈 1）；部署页重生倒计时“N 秒”及其指示灯仍用正文色 / 灰色，不用橙色（橙色只表示分区与可调控件）。
+- 两个陈列页：宽度不足 440 或“标题 › 页”放不下时用短标题；地图标点陈列页的两种底图改为底框页面键，R 键禁用并写原因；组件陈列页按 D2 几何重排，HUD 页的样品始终按 A 配色画。
+- 共享部件（旧 A 界面也共用，按 A 配色画）：战术地图、配装、补给、导入导出、武器调校、管理员配装的按键也会出现危险斜纹、3px 选中竖条和成功 ✓；浮动提示改为 `FRAME` 底（α F2）、`INPUT_EDGE` 外框、`ACCENT_B` 顶线，滚动条轨道改 `FRAME`，深色面上的标签底改 `WELL`（A 配色下这几处每通道最多差 3）；分区标题板的色标危险 → `DANGER_B`、选中 → `SELECT_B`、橙 → `SECTION`；拼板上的键盘焦点框改为双色（外 1px 焦点色、内 1px `SELECT_EDGE`，占地仍 2px）；选中格的数量字改 `ON_SELECT`。
+- `TacticalBoardTheme` 拆成可换肤组（71 个 `public static int`，只在 `TacticalScreen` 的绘制作用域里是阵营值）与固定组（世界压暗、模态压暗、斜纹、HUD、地图与网格、全部别名等）；`BattleUiTheme`、`TacticalHud.SELF_ROW_TINT`、`StaminaBarModel.LOCK_*` 改读 `TacticalPalette.A`，任何时候都是 A 值。
+- 删去不再使用的界面内部接口与语言键：`TacticalBoardChrome` 的 `planHeader` / `planFooter` / `HeaderPlan` / `FooterPlan` / `HintSlot` / `drawFeedback` / `applyTabs` / `placeTabs` / 四参数 `shell(...)`、`LinkState.identityColor()`、`KeyHint.switchTab()`；语言键 `screen.wok_infantry.hint.switch_tab`、`screen.wok_infantry.formation.hint.wheel` / `browse` / `scroll`（中英各 4 个），uiTest 语言键 `kit.hint.terminal`。
+- uiTest：`build.gradle` 的 `runUiTestClient` 固定 `wok.ui.clock=21:30`、预留 `wok.ui.tabletAnimation=OFF`；结果文件、`wok_ui_layout.json`、清单与 `index.html` 记涂装与外壳备注；窗口被手动最大化时先还原再改尺寸。
 
 ### 修复
-- 待补。
+- 换行避头尾：行尾已经是收尾标点时连同前一个字一起移到下一行（“散），”不再以“），”起行），拉丁词整词下移，切点前的开括号也一起下移（`TextFit.carryFrom`）。
+- 编制列表的已选行在悬停时不亮（此前悬停判断排除了已选行）。
+- 交付前修正（都在本版交付前，没有另改版本号）：
+  - 实机截图对照（`8abd040`）：状态栏标题和身份被省略时没有悬停全文（zh 严格轮 5 项 `text-truncated-no-tip`）；陈列页在 320×240 把“未加入阵营”挤成“未加入…”；英文 320×240 页面键退成翻页条，实时流程找不到“兵种”键；投票等待区候选名“千禧年研讨会机动部队”在 320×240 被截断且没有全文（表决关闭时先让出编制类别）；编制页动作栏理由、未加入提示、状态行被截断时没有全文；陈列页卡片在英文 480×360、427×240 被截；中立与凯撒的禁用底框键看不出禁用（斜纹叠两遍）。
+  - 整体审查（`c52530d`）：凯撒禁用底框键的键名与正常只差 1.21:1、动作字与正常同色，违反 UI 规则 6（改为 `keyOff` 变暗、去掉亮上沿）；学院军底框键悬停时动作字只有 2.69:1（改为 `keyHover`）；学院军 / 凯撒近白的焦点框在浅色拼板上只有 1.39 / 1.45:1（改为双色焦点框）；中立选中格的数量字在石墨底上约 1.5:1；战斗终端新快照重建后键盘焦点从 Esc / R 丢回第一个控件（Esc / R 登记进焦点角色）。
+  - 合入接缝：机身、玻璃、底框键与屏内配色取同一帧判定的涂装，帧中途换战局快照也不会不一致；投票等待区“你的票 / 截止 / 领先”行此前在构建页面时取色、冻结成 A 配色，改为绘制时取色。
 
 ### 兼容性
-- 网络协议号全部不变（战局 `20`、编制 `5`、兵力 `2`、体力 `2`、配装 `11`），可与 0.5.0-beta.1、0.5.0-beta.2 互连。其余待补。
+- 网络协议号全部不变（战局 `20`、编制 `5`、兵力 `2`、体力 `2`、配装 `11`），客户端与服务端可在 0.5.0-beta.1、0.5.0-beta.2、0.5.0-beta.3 之间混用；本版只改客户端界面，服务端逻辑与数据不变。
+- 附属 MOD 都不用改、不用发版：部位血量、独立护甲、创伤治疗、载具部位血量、指挥官支援、占点、倒地救援都不引用本版删去或改动的界面类（全仓 grep 核实），核心强制依赖仍只有 `forge`、`minecraft`，各自独立安装检查 PASS。
+- 过渡外观（档 1 的范围）：战术地图、作战配装、弹药补给、导入导出、武器调校、管理员配装暂时仍是旧的全屏 A 外框、A 配色，在终端里切到“地图”或“配装”页签时会从阵营色平板跳回这种外观，留待后续轮次迁移；HUD 不套外壳、不换阵营色，所有阵营下都是 A 配色。
+- 终端开着时只隐藏核心自己的 HUD；部位血量、占点、倒地救援等附属 MOD 的 HUD 这一轮不隐藏，可能在机身四周压暗地露出一点；原版快捷栏在 640×336、960×720 下也会在底框下方压暗地露出一条（方案 4.9 接受）。
+- 截图与录像：机身四周透出实时世界，同一状态的截图不再逐字节相同。
+- `TacticalBoardTheme` 的可换肤字段只在 `TacticalScreen` 绘制作用域里是阵营值；别的 MOD 或旧界面在作用域外读取，得到的仍是 A 值（行为同前）。在作用域里取色并缓存成 int 的代码会拿到阵营色，要固定 A 值请用 `TacticalPalette.A.get(token)`。
 
 ### 配置/存档影响
-- 待补。
+- 不新增客户端或服务端配置项，不改任何存档格式。
+- 只多了两个仅 uiTest 使用的系统属性：`wok.ui.clock`（固定状态栏时钟，`runUiTestClient` 设为 `21:30`）与 `wok.ui.tabletAnimation`（为 0.5.0-beta.4 动画预留，`OFF`，目前没有代码读它）；正常游戏不设置它们，时钟显示本机时间。
+- 语言文件中英各新增 1 个键、删去 4 个键，`screen.wok_infantry.formation.hint.retry` 的中文由“重新请求”改为“重试”；新增两张界面贴图（见“新增”）。
 
 ### 测试结果
-- 待补。
+- 代码 `c52530d`（本版最后一个源码提交；之后只有 AGENTS.md 提交 `7d1373f` 与本条文档提交）。各阶段（B1–B7 分支、两次合入、`8abd040`）的中间结果见方案与阶段记录，这里只列最终结果。
+- JUnit：PASS。限流脚本跑 `cleanTest test` 加六个附加测试源集编译（gameplay、rally、stamina、catalog、uiTest、network）：exit=0，1267 项，0 失败、0 跳过；`:test` 确实重新执行（不是从缓存恢复），结果 XML 14:00:45 重写；`compileJava` 与六个附加源集的编译在 `c52530d` 的干净工作区上为 UP-TO-DATE。1267 = `8abd040` 的 1261 + `c52530d` 新增 6 项（三套皮肤禁用字 ≥3:1 且与正常键名 ≥2:1、悬停双标签对比度、派生色固定值与非内置皮肤同解、焦点框在各底色至少一条线 ≥3:1、选中格数量字对比度）；比 0.5.0-beta.2 的 1007 项多 260 项（新增 `TacticalPaletteTest`、`TacticalPaletteContrastTest`、`TacticalLiveryTest`、`TacticalLiveryResolverTest`、`DeviceSkinTest`、`DeviceArtTest`、`DeviceArtGoldenTest`〔3 档 × 3 涂装逐像素〕、`TacticalScreenDeviceTest`、`TacticalScreenHooksTest`、`TacticalShellCompositionTest`、`TacticalBezelPlanTest`、`TacticalTabStripBezelTest`、`BezelKeyTest`、`SquadTerminalDeviceTest`、`FormationPaletteTest`、`HudFrameTerminalTest`、`DeviceProbeNotesTest`、`TacticalTooltipTest` 等，并扩充了外壳布局、按键样式、列表、避头尾与 `UiTierMatrixTest`）。日志 `gradle-locked-20261010-140029-31172.log`。
+- `runGameTestServer`：PASS，`defaultBatch:1` 22 项，“All 22 required tests passed”，exit=0，BUILD SUCCESSFUL in 26s。
+- `runUiTestClient` zh_cn 严格轮（默认档位，含实时流程，`layoutStrict=true`）：`status=PASS`，8678 tick，87 个用例、424 张截图（清单完整），`strictLayoutViolations=0`，`layoutViolations=121`，`uiClock=21:30`，`tabletAnimation=OFF`，`finalActiveMarkers=1`，`temporaryOperatorCleanup=revoked`。
+  - 用例行 415 = 410 PASS + 5 REPORT + 0 FAIL；REPORT 是 `admin.legacy_list@320x240`、`admin.legacy_list_large@960x720` 与 `admin.noclass@320x240/960x720/640x336`。
+  - 平板外壳检查 290 行：学院军 OK 165、WAIT 5，凯撒 OK 55、WAIT 5，中立 OK 50、WAIT 10。
+  - 121 条违规全部只出报告，都在未迁移界面或实时流程截图上，已迁移界面 0 条：管理员配装 64（GUI 1 下 1× 中文 44、禁用键没写原因 20）、玩家配装 30（22、8）、战术地图 26（1× 中文 22、控件截断没有全文 3、占位文字 1）、实时流程小队终端 1（`wok_ui_01_deployment_320x240` 的“先加入一个未满员小队”截断没有全文，与 0.5.0-beta.1、0.5.0-beta.2 相同的已知项）。按规则：`cjk-too-small` 88、`control-disabled-no-reason` 28、`control-truncated-no-tip` 3、`text-truncated-no-tip` 1、`placeholder-text` 1。
+  - 与 `8abd040` 那一轮（`device-r1-zh`）比：415 行用例结果与 290 行外壳记录逐行相同，121 条违规逐条相同（文件、规则、对象），2024 行结果文件只有 `totalTicks` 和 `deploymentPreflight` 里两个对象哈希码不同。04 / 06 两张地图截图的 `mapIcons` 不变（8 种各 1 个，牌 30 物理像素）；`formationHeaderIdentity` 在中文 427×240 下已加入的状态全部显示（要求项）；960×720 档（480×360）的 detail、longcaps、admintie、admin 四个学院军状态因 D2 内容区变窄、身份收起（0.5.0-beta.2 时除 320 档外都显示，不是要求项）。
+  - 归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261010-0.5.0-beta.3\final-zh\`（424 张截图与 5 个结果文件）。
+- `runUiTestClient` en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`，8672 tick，87 个用例、424 张截图，`strictLayoutViolations=0`，`layoutViolations=223`（0.5.0-beta.2 为 229）。
+  - 用例行 415 = 336 PASS + 79 REPORT + 0 FAIL；外壳检查 290 行，分布同 zh_cn。
+  - 按界面：小队终端 71（已迁移的 squad 用例 66、实时流程 01 / 07 共 5；`text-truncated-no-tip` 66、`control-truncated-no-tip` 5，即 `squad.action.transfer_leader`）、管理员配装 64、编制页 52（已迁移 49、旧图 10 / 11 共 3，都是 `text-truncated-no-tip`）、玩家配装 22、战术地图 6、HUD 4、地图标点陈列 2、弹药补给 2；组件陈列页 0。按规则：`text-truncated-no-tip` 128、`cjk-too-small` 59、`control-disabled-no-reason` 28、`control-truncated-no-tip` 8。
+  - 已迁移界面上的 121 条全是英文太长被省略号截断，留给 i18n：最多的是“Administrator lock (no timer)”×23、“Resupply needs you deployed inside the main base”×14、“3 (the faction picks one)”×8、“Alpha Squad · 6 players”“Yuuka_Hayase”“千禧年研讨会机动部队 5 votes”各 ×6、移交队长键 ×4、HUD“→ Formation to change”“to pick a squad and deploy”、标点陈列“Fixed screen size at every zoom”×2。
+  - 与 `device-r1-en` 比：415 行用例、290 行外壳记录、223 条违规全部相同，结果文件只有 `totalTicks` 不同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261010-0.5.0-beta.3\final-en\`。
+  - 同一日期目录下的 `device-zh`、`device-en`、`device-en-recheck`、`device-en-liveflow` 是 `8abd040` 之前的几轮（当时 zh 严格轮 320×240 有 6 项严格违规、英文 `kit.default-caesar@960x720` 被手动最大化的窗口跑坏、英文实时流程找不到“兵种”键），`device-r1-zh` / `device-r1-en` 是 `8abd040` 那一轮；都只作对照。
+- 截图目视与像素比对（对照 `device-2-livery` 预览，3 档 × 3 涂装）：960×720 凯撒底框与预览 0 个像素不同（容差 30），中立左右与顶边框、学院军状态栏与小队列表面板（含玻璃反光）在容差 3 内相同，只有时钟数字、个别丝印像素、禁用斜纹相位和字体字形的差别；640×336 小队页、480×360 兵种 / 部署页、480×360 编制详情的宽窄翻转与方案 4.8 一致；凯撒确认态危险键与红色选中行靠斜纹和色相分得开；关掉凯撒终端后 HUD 颜色不变，WOK HUD 没有出现在机身四周。
+- 整体审查（B8，调色板泄漏与 HUD、输入与焦点、对照预览、性能与渲染四个视角）：10 条发现确认 5 条，修正提交 `c52530d` 共改 8 项（确认项加阶段记录列出的无人用代码）；没做的两项：①“键盘焦点在 R 上、重建后仍在新 R 上”的单测没加——`SquadScreen.initTactical` 要真实字体，JUnit 里跑不了，修法与编制页已有的三行循环相同，留待下一轮 uiTest 或真实客户端核对（Tab 到“R 刷新”、来一个快照、焦点框还在 R 上）；② 性能审查自己列的无人用代码清单没有交到修正方，只删了阶段记录里点名且 grep 核实过的几项。
+- 构建：限流脚本对 8 个模块逐个 `clean build`，全部 BUILD SUCCESSFUL：`wok_infantry`（JUnit 1267 项，0 失败；`:test` 重新执行，含 `reobfJar`）、`wok_body_health`（126 项）、`wok_infantry_armor`、根目录 `wok_trauma`、`wok_commander_support`（163 项）、`wok_capture_points`（34 项）、`wok_downed`（3 项）、`wok_vehicle_health`（18 项）。只有核心改了版本，其余 7 个模块源码与版本都没动。
+- 产物 `wok_infantry/build/libs/wok_infantry-0.5.0-beta.3.jar`，2,437,934 字节，SHA-256 `0EAC020C721E82800F3A116D8FF5D2B2E3BB7BA49DB0919F2381B501B5B5D80D`（`c52530d` 的 `clean build`）；JAR 里没有 uiTest 的类，内部版本 `0.5.0-beta.3`。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 8 个模块新构建的 JAR 全部 PASS，核心强制依赖只有 `forge`、`minecraft`。
+- 版本核对（Windows PowerShell 5.1）：`tools/verify_versions.ps1`（8 个模块）PASS；`tools/verify_versions.ps1 -Modules wok_infantry -Release` PASS（本条目不再“进行中”、六栏不空，JAR 晚于核心源码最后一次提交且源码没有未提交改动）。逐模块加 `-Release` 时部位血量、指挥官支援、占点、倒地救援也 PASS；创伤治疗 0.1.0-beta.1、独立护甲 1.2.0-beta.1、载具部位血量 0.1.0-beta.1 不过，原因是它们各自的旧条目早于六栏格式（缺“新增”栏），这三个模块本轮没有改动，历史条目不动。
+- 已部署：2026-10-10 把 SHA-256 为 `0EAC020C…B5D80D` 的 `wok_infantry-0.5.0-beta.3.jar` 部署到测试端 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，部署后哈希与构建产物一致；0.5.0-beta.2（SHA-256 `4727A2CB…5551A9`）改名为 `wok_infantry-0.5.0-beta.2.jar.backup-20261010-142236-before-0.5.0-beta.3.bak`。测试端 8 个 WOK步战 JAR 的独立安装检查全部 PASS；测试端其余文件没有改动。
+- 真实客户端游戏内验收：待用户（清单见 `wok_infantry/docs/UI_ACCEPTANCE.md` 第 7 节第 13 条：三种涂装、960×720 GUI 1 / 320×240 / 640×336、文字溢出与控件重叠、按键七态加确认态危险键、字体清晰度、底框键点击与 Ctrl+Tab / ←→ / Esc / R、踢人确认、反馈胶囊与信号格、HUD 不变色、切到地图或配装页签的过渡外观、帧率）。
 
 ## WOK步战核心 0.5.0-beta.2 — 2026-10-05
 
