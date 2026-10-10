@@ -79,8 +79,9 @@ import java.util.Map;
  * on the animated frames; they fail when the animation is not where it was frozen, when scheme A
  * did not run, on the pixel samples of the glass (black bands closed at READ, lit by the end of
  * the wake, bands on the C1 close, dark below B's scan line), and on the hand-over: the shown
- * state must equal the animation-off picture pixel for pixel, the frozen p = 1 frame inside the
- * page (it does not draw the held item around the device, the shown state does).
+ * state and the frozen p = 1 frame must equal the animation-off picture inside the page (the
+ * glass opening S, the whole window for the map). Outside it the live world keeps moving between
+ * captures, and the frozen opening frame does not draw the held item the static picture shows.
  */
 public final class TabletCases {
     public static final String SURFACE = "tablet";
@@ -645,6 +646,14 @@ public final class TabletCases {
 
     // ---- hand-over ------------------------------------------------------------------------------
 
+    /**
+     * Share of the window the map's hand-over may differ in: the tactical map draws the live
+     * JourneyMap terrain, which re-renders animals and crops as the world ticks between the two
+     * captures (seen only when the live flow ran first). A wrong transform or colour at the end
+     * of the animation differs in far more than this.
+     */
+    private static final double MAP_LIVE_SHARE = 0.0005D;
+
     /** Remembers the off reference, and the frames the hand-over compares with it. */
     private static void recordHandOver(UiCaseContext context, Shot shot,
                                        TabletAnimationController.DebugSnapshot snap) {
@@ -657,7 +666,9 @@ public final class TabletCases {
         if (shot.mode() == Mode.OFF) {
             REFERENCES.put(key, file);
         } else if (shot.mode() == Mode.SHOWN) {
-            HAND_OVERS.add(new HandOver(key, file, Mode.SHOWN, null));
+            // Compared inside the page: around the device the live world shows through the
+            // dimmed backdrop and keeps moving between the two captures.
+            HAND_OVERS.add(new HandOver(key, file, Mode.SHOWN, GLASS.get(key)));
         } else if (shot.mode() == Mode.OPEN && near(shot.p(), 1.0D)) {
             // The frozen last opening frame: the page (the glass opening, or the whole map) must
             // be the static picture; around it the held item is not drawn while the animation
@@ -668,17 +679,22 @@ public final class TabletCases {
                 TabletPose3D.RectPx g = a.glassPx();
                 rect = new int[]{(int) Math.ceil(g.x()), (int) Math.ceil(g.y()),
                         (int) Math.floor(g.x() + g.w()), (int) Math.floor(g.y() + g.h())};
+                GLASS.put(key, rect);
             }
             HAND_OVERS.add(new HandOver(key, file, Mode.OPEN, rect));
         }
     }
 
+    /** The glass opening S of each terminal target and tier (from its frozen p = 1 frame). */
+    private static final Map<String, int[]> GLASS = new LinkedHashMap<>();
+
     /**
      * The hand-over (IMPL_PLAN 4.5 check 2): once every screenshot of the run is written, each
-     * shown state and each frozen p = 1 frame is compared with the animation-off picture of the
-     * same target and tier. The shown state must be identical everywhere; the frozen p = 1 frame
-     * inside the page (the glass opening S of the terminal, the whole window for the map).
-     * Differences outside it are reported with their bounding box.
+     * frozen p = 1 frame and each shown state is compared with the animation-off picture of the
+     * same target and tier. Inside the page — the glass opening S of the terminal, the whole
+     * window for the map — they must be identical (the map up to {@link #MAP_LIVE_SHARE}).
+     * Differences outside it (the live world around the device, the held item the frozen opening
+     * frame does not draw) are reported with their bounding box.
      */
     private static UiCase handOver() {
         return UiCase.builder(SURFACE, "handover")
@@ -743,13 +759,17 @@ public final class TabletCases {
                     }
                 }
                 compared++;
+                boolean map = handOver.key().startsWith("MAP_");
+                int allowed = map ? (int) Math.floor(MAP_LIVE_SHARE * off.getWidth()
+                        * off.getHeight()) : 0;
                 context.observe(String.format(Locale.ROOT,
-                        "tabletHandOver[%s]=%s vs %s: %d px differ, %d inside %d,%d-%d,%d%s",
+                        "tabletHandOver[%s]=%s vs %s: %d px differ, %d inside %d,%d-%d,%d"
+                                + " (allowed %d)%s",
                         handOver.file(), handOver.mode().name().toLowerCase(Locale.ROOT),
-                        reference, total, inside, rect[0], rect[1], rect[2], rect[3],
-                        total == 0 ? "" : String.format(Locale.ROOT, " (bbox %d,%d-%d,%d)", minX,
+                        reference, total, inside, rect[0], rect[1], rect[2], rect[3], allowed,
+                        total == 0 ? "" : String.format(Locale.ROOT, " bbox %d,%d-%d,%d", minX,
                                 minY, maxX + 1, maxY + 1)));
-                if (inside != 0) {
+                if (inside > allowed) {
                     failures.add(handOver.file() + ": " + inside + " px");
                 }
             }
