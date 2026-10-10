@@ -2,7 +2,7 @@
 
 从 World of Kivotos 主项目独立出来的纯护甲 Forge MOD。
 
-当前版本 `1.2.0-beta.1`。17 件头部防具的穿戴模型按《逃离塔科夫》原物重做（折中 2× 精度，由 `tools/helmet-models` 生成），游戏内外观验收仍待完成。上一版的护甲移速调整（轻甲 0%、中甲 -5%、重甲 -12%）保持不变。
+当前版本 `1.2.0-beta.2`。17 件头部防具（`tools/helmet-models` 生成）和 54 件插板护甲（`tools/plate-armor` 生成，与 WOK-本体护甲的新模型一致）的穿戴模型按《逃离塔科夫》原物重做，统一为折中 2× 精度，游戏内外观验收仍待完成。上一版的护甲移速调整（轻甲 0%、中甲 -5%、重甲 -12%）保持不变。
 
 ## 内容
 
@@ -36,7 +36,7 @@
 开发编译需要 ForgeGradle 映射后的 TaCZ 1.1.8-hotfix JAR。默认从本机 ForgeGradle
 缓存查找，也可通过 `-Ptacz_dev_jar_path=<path>` 指定；TaCZ 不会被打包进成品 JAR。
 
-成品位于 `build/libs/wok_infantry_armor-1.20.1-1.2.0-beta.1.jar`。
+成品位于 `build/libs/wok_infantry_armor-1.20.1-1.2.0-beta.2.jar`。
 
 ## 接入别的项目
 
