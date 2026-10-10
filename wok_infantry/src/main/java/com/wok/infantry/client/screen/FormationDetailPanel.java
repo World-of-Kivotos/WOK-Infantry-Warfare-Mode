@@ -197,7 +197,7 @@ final class FormationDetailPanel {
             maxScroll = 0;
             return;
         }
-        int columns = bounds.width() >= 480 ? 3 : bounds.width() >= 300 ? 2 : 1;
+        int columns = columns(bounds.width());
         int columnGap = metrics.roomy() ? 12 : 8;
         int columnWidth = Math.max(1, (bounds.width() - SCROLLBAR - (columns - 1) * columnGap)
                 / columns);
@@ -305,6 +305,17 @@ final class FormationDetailPanel {
             TacticalDraw.scrollbar(graphics, new UiRect(bounds.right() - 2, bounds.top(),
                     bounds.right(), bounds.bottom()), total, view, scroll);
         }
+    }
+
+    /**
+     * Pure: columns the sections flow into for a content area {@code width} wide (preview
+     * {@code detailContent}): three from 480px, two from 300px, otherwise one. On the D2 tablet the
+     * 960×720 GUI-1 window (laid out as 480×360) keeps the wide page, but its inner width drops
+     * from 460 to 416 and the detail content to about 220px: one column that scrolls, with the
+     * "还有 n 项" line.
+     */
+    static int columns(int width) {
+        return width >= 480 ? 3 : width >= 300 ? 2 : 1;
     }
 
     /** Pure: whether a block of {@code lineCount} lines at {@code y} fits whole in the view. */

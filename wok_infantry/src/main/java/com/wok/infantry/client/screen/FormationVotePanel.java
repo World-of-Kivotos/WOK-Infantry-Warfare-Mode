@@ -193,8 +193,29 @@ final class FormationVotePanel {
         return steps;
     }
 
-    /** "你的票", "截止" and "领先"/"可用编制" key-value rows. */
+    /**
+     * "你的票", "截止" and "领先"/"可用编制" key-value rows. {@code color} is a palette token read
+     * when the row was made: make rows while drawing (a layout keeps {@link InfoRow}s instead).
+     */
     record Info(Component key, Component value, int color) {
+    }
+
+    /**
+     * Which info row a {@link Layout} reserved. The layout is planned when the page is built,
+     * outside the frame's faction palette; the row and its colour are made while drawing.
+     */
+    enum InfoRow {
+        MINE,
+        EXTRA,
+        DUE;
+
+        Info of(Data data) {
+            return switch (this) {
+                case MINE -> mineInfo(data);
+                case EXTRA -> extraInfo(data);
+                case DUE -> dueInfo(data);
+            };
+        }
     }
 
     static Info mineInfo(Data data) {
@@ -242,9 +263,9 @@ final class FormationVotePanel {
                        SquadBoardBlocks.RulesFit rules) {
     }
 
-    /** Planned geometry of the whole panel. */
+    /** Planned geometry of the whole panel; {@code info} rows are made when drawn. */
     record Layout(Options options, UiRect panel, UiRect content, UiRect well, Block block,
-                  UiRect tally, int tallyRowHeight, List<Info> info, int infoTop,
+                  UiRect tally, int tallyRowHeight, List<InfoRow> info, int infoTop,
                   List<PlacedAfter> after, Component meta) {
     }
 
@@ -332,8 +353,8 @@ final class FormationVotePanel {
         int pad = metrics.roomy() ? 8 : 6;
         int count = data.candidates().size();
         int rowHeight = tallyRowHeight(metrics);
-        List<Info> hugInfo = !options.info() || !data.synced() ? List.of()
-                : List.of(mineInfo(data), dueInfo(data));
+        List<InfoRow> hugInfo = !options.info() || !data.synced() ? List.of()
+                : List.of(InfoRow.MINE, InfoRow.DUE);
         int infoHeight = hugInfo.isEmpty() ? 0 : hugInfo.size() * kv + metrics.gap();
         List<After> after = options.after() == null
                 ? List.of(After.flowBlock(), howToVote(data)) : options.after();
@@ -403,13 +424,13 @@ final class FormationVotePanel {
         boolean withList = data.synced() && count > 0
                 && blockHeight(font, metrics, withListWell, hint(options, data)) + gapH
                 + listHeight + 12 <= withListWell.height();
-        List<Info> info = new ArrayList<>();
+        List<InfoRow> info = new ArrayList<>();
         if (options.info() && data.synced()) {
-            info.add(mineInfo(data));
+            info.add(InfoRow.MINE);
             if (!withList) {
-                info.add(extraInfo(data));
+                info.add(InfoRow.EXTRA);
             }
-            info.add(dueInfo(data));
+            info.add(InfoRow.DUE);
         }
         int blockMin = 12 + 10 + 10 + 4 + metrics.buttonHeight() + 8;
         while (!info.isEmpty() && content.height() - info.size() * kv - metrics.gap() < blockMin) {
@@ -457,7 +478,7 @@ final class FormationVotePanel {
         int kv = metrics.roomy() ? 13 : 11;
         UiRect content = layout.content();
         for (int index = 0; index < layout.info().size(); index++) {
-            Info info = layout.info().get(index);
+            Info info = layout.info().get(index).of(data);
             TacticalDraw.kv(graphics, font, content.left(), layout.infoTop() + index * kv,
                     content.width(), info.key(), info.value(), info.color());
         }
