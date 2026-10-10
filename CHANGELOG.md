@@ -2,6 +2,44 @@
 
 本文件按模块记录变化。版本规则见 `docs/VERSIONING.md`；当前版本不代表已发布或全部游戏验收通过。2026-09-06 的 Git 内容清单和验收边界见 `docs/CONTENT_VERSION_AUDIT_2026-09-06.md`。
 
+## WOK步战附属-独立护甲 1.2.0-beta.2 — 2026-10-10
+
+#### 新增
+
+- 新增插板护甲模型生成工具 `wok_infantry_armor/tools/plate-armor`（移植自 WOK-本体护甲 `tools/plate_armor`）：每件护甲一份设计脚本、预览页、结构检查（`check.mjs`）、导出（`export.mjs`，产出烘焙网格 JSON 与逐面图集贴图）和导出一致性核对（`parity.mjs`）。
+- 新增 `PlateArmorBakedModel`、`PlateArmorMesh`、`PlateArmorMeshCache`：客户端直接绘制离线烘焙的四边形网格，跟随原版人形部位位姿（走路摆臂、潜行、细手臂、儿童缩放自动跟随）；网格懒加载并在资源重载时清空，缺失或损坏时退回原版胸甲并只打一次警告。
+
+#### 修改
+
+- 全部 54 件插板护甲的穿戴模型和贴图按《逃离塔科夫》原物重做，统一为折中 2× 精度（半像素网格、每格 2 个贴图像素、逐面图集），与 WOK-本体护甲 2026-10-04 的新模型逐字节一致。网格放在 `assets/wok_infantry_armor/armor_meshes/plate_armor_<id>.json`。
+- 删除 49 个手写 `*ArmorModel`、`PlateArmorModelDefinition` 和 `PlateArmorClientRegistration`；头盔原生模型层的注册移到新的 `HelmetArmorClientRegistration`，头盔行为不变。
+- `PlateArmorItem.getArmorTexture` 统一返回 `plate_armor_<id>_layer_1.png`，不再逐个列举外观。
+- 名称按原物修正（与本体同步）：MMAC、RBAV-AF、Strandhogg、AVS、TacTec 的 Ranger Green 中文由“丛林绿”改为“游骑兵绿”；TV-110 “灰褐色”改“卡其色”；Kirasa-N 中文“绿色”改“藏青色”、英文 Green 改 Navy；Gladiator-S “无惧死亡”改“死亡不可避免”（英文 Death is Inevitable）。
+- 物品图标按原物重画（与本体同步）：Kirasa-N 改藏青色，TV-115 改橄榄绿，6B5-15 改 Flora 迷彩。
+
+#### 修复
+
+- 无。
+
+#### 兼容性
+
+- modId、物品 ID、防护数值、重量类型、耐久与部位血量联动均未改动；物品 ID `plate_armor_kirasa_n_green` 保持不变，只改显示名。
+- 覆盖 `textures/models/armor/plate_armor_*_layer_1.png` 的旧资源包与新网格的逐面图集不兼容，需要同步更新或移除。
+- 不支持盔甲纹饰（Trim）：插板护甲本就不在 `#minecraft:trimmable_armor` 中，仅用命令写入 Trim NBT 时会显示错乱。
+- WOK-本体护甲未改动。本体同一轮把 Gladiator-S 维京的重量类型从中型改为轻型，独立护甲本版**未跟进**，仍为中型。
+
+#### 配置/存档影响
+
+- 无。
+
+#### 测试结果
+
+- `tools/plate-armor/parity.mjs`：54/54 PASS，导出网格与预览逐四边形、逐像素一致（位置最大误差 5e-5 px）。
+- 用编译出的 `PlateArmorMesh.parse` 逐件读取：54 个网格全部通过结构校验（共 11162 个四边形），且与 `PlateArmorVariant` 的 54 个物品 ID 一一对应。
+- `wok_infantry_armor` Gradle 构建通过；成品 JAR 内部版本为 `1.2.0-beta.2`，含 54 个网格，旧手写模型类已不在包内。
+- 已安装到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`（替换 1.2.0-beta.1，旧包改名为 `.bak` 备份）。
+- 游戏内外观验收（54 件穿戴、走路潜行、手臂部件、与头盔同时佩戴）尚未完成，因此保持 beta。
+
 ## WOK步战附属-独立护甲 1.2.0-beta.1 — 2026-09-30
 
 #### 新增
