@@ -80,8 +80,11 @@ public final class BezelKey extends AbstractWidget {
     public record Label(int keyX, int actionX, boolean fits) {
     }
 
-    /** Unlit page LED (preview {@code DT.LED_OFF}; a device part, the same for every livery). */
-    public static final int LED_OFF = 0xFF0E1313;
+    /**
+     * Unlit page LED (preview {@code DT.LED_OFF}; a device part, the same for every livery and
+     * the same as the case's unlit LEDs, {@link DeviceArt#LED_OFF}).
+     */
+    public static final int LED_OFF = DeviceArt.LED_OFF;
     /** Alpha of the glow around the lit LED. */
     static final int LED_GLOW_ALPHA = 0x50;
     /** Gap between the key name and its action label. */

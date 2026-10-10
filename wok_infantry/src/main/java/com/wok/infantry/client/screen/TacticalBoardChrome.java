@@ -508,32 +508,36 @@ public final class TacticalBoardChrome {
     }
 
     /**
-     * Pure bezel planner (preview {@code pageKeys}): the key row starts 3px (compact) or 12px in
-     * from the glass edges and ends 1px (compact) or 3px above the case edge; the page LEDs sit
-     * 2 / 3px below the bezel top, 1 / 2px tall, and the keys start 1 / 2px below them.
+     * Pure bezel planner (preview {@code pageKeys}), the rows of {@link TacticalBezelPlan} so the
+     * device and its keys share one bezel layout: the key row starts 3px (compact) or 12px in from
+     * the glass edges and ends 1px (compact) or 3px above the case edge; the page LEDs sit 2 / 3px
+     * below the bezel top, 1 / 2px tall, and the keys start 1 / 2px below them (a bezel too low
+     * for LEDs gives the keys the LED row, {@code ledHeight} 0).
      */
     public static BezelPlan planBezel(TacticalShellLayout layout) {
-        boolean tight = layout.tight();
         UiRect bezel = layout.bezel();
-        int top = bezel.top();
-        int bottom = Math.max(top, layout.device().bottom() - (tight ? 1 : 3));
-        int ledTop = top + (tight ? 2 : 3);
-        int ledHeight = tight ? 1 : 2;
-        int keyTop = Math.min(bottom, ledTop + ledHeight + (tight ? 1 : 2));
-        int left = layout.glass().left() + (tight ? 3 : 12);
-        int right = Math.max(left, layout.glass().right() - (tight ? 3 : 12));
-        return new BezelPlan(bezel, new UiRect(left, keyTop, right, bottom), ledTop, ledHeight);
+        TacticalBezelPlan keys = TacticalBezelPlan.plan(bezel, layout.density(), 0, 0);
+        int inset = TacticalBezelPlan.inset(layout.density());
+        int left = bezel.left() + inset;
+        int right = Math.max(left, bezel.right() - inset);
+        return new BezelPlan(bezel, new UiRect(left, keys.keyTop(), right, keys.keyBottom()),
+                keys.ledTop(), keys.ledHeight());
     }
 
     /**
      * Places {@code tabs} across the key row of the bottom bezel ({@link #planBezel}); call from
      * {@link TacticalScreen#initTactical()} after adding the strip, so it is clickable before the
-     * first frame. The status bar shows {@code title} and the current page itself. Screens with
-     * hardware Esc / R keys use {@link #placeBezel}, which leaves room for them.
+     * first frame. The status bar shows {@code title} and the current page itself. A
+     * {@link TacticalTabStrip.Skin#BEZEL} strip goes through {@link #placeBezel} without Esc / R
+     * keys (LEDs included); screens with hardware keys call {@link #placeBezel} themselves.
      */
     public static void placeTabs(Font font, TacticalShellLayout layout, Component title,
                                  TacticalTabStrip tabs) {
         if (tabs == null) {
+            return;
+        }
+        if (tabs.skin() == TacticalTabStrip.Skin.BEZEL) {
+            placeBezel(font, layout, tabs, List.of());
             return;
         }
         UiRect row = planBezel(layout).keyRow();

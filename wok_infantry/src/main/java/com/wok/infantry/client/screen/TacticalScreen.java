@@ -120,10 +120,14 @@ public abstract class TacticalScreen extends Screen {
         return TacticalShellLayout.compute(width, height);
     }
 
-    /** Draws the tablet shell for this screen's logical size (call first in renderTactical). */
+    /**
+     * Draws the tablet shell for this screen's logical size (call first in renderTactical), in
+     * the livery resolved for this frame ({@link #frameLivery()}), the same one as the palette.
+     */
     protected final TacticalBoardChrome.Shell drawShell(GuiGraphics graphics,
                                                         TacticalBoardChrome.ShellSpec spec) {
-        return deviceDrawn(TacticalBoardChrome.shell(graphics, font, shellLayout(), livery(), spec));
+        return deviceDrawn(TacticalBoardChrome.shell(graphics, font, shellLayout(), frameLivery(),
+                spec));
     }
 
     /**
@@ -279,7 +283,7 @@ public abstract class TacticalScreen extends Screen {
         PoseStack pose = graphics.pose();
         pose.pushPose();
         pose.translate(0.0F, 0.0F, GLASS_Z);
-        DeviceArt.drawGlass(graphics, shellLayout(), livery());
+        DeviceArt.drawGlass(graphics, shellLayout(), frameLivery());
         pose.popPose();
     }
 
@@ -408,9 +412,12 @@ public abstract class TacticalScreen extends Screen {
         return reason == null ? null : reason.get();
     }
 
-    /** Paint of this screen's device: the {@link DeviceSkin} of {@link #livery()}. */
+    /**
+     * Paint of this screen's device: the {@link DeviceSkin} of the livery resolved for this frame
+     * ({@link #frameLivery()}), so the keys never disagree with the case and the palette.
+     */
     public final DeviceSkin deviceSkin() {
-        return DeviceSkin.forLivery(livery());
+        return frameLivery().skin();
     }
 
     /** The registered Esc and R key widgets, in that order (unit-test and probe seam). */

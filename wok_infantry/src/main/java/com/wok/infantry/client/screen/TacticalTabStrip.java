@@ -119,6 +119,8 @@ public final class TacticalTabStrip extends AbstractWidget {
     private static final int HEADER_PAD_COMPACT = 8;
     private static final int BOARD_PAD = 10;
     private static final int PAGER_KEY_MAX = 16;
+    /** Side margin of a tab label inside its cell (the left one grows past a selection bar). */
+    private static final int LABEL_PAD = 3;
 
     private final Skin skin;
     private final List<Tab> tabs;
@@ -563,7 +565,8 @@ public final class TacticalTabStrip extends AbstractWidget {
                     BezelKey.focusRing(graphics, cell, paint);
                 }
                 return renderLabel(graphics, font, cell, label, tab, cap.text(),
-                        BezelKey.textY(cell, cap), TacticalBoardTheme.BADGE_ON_CARD, cap.text());
+                        BezelKey.textY(cell, cap), LABEL_PAD, TacticalBoardTheme.BADGE_ON_CARD,
+                        cap.text());
             }
             case HEADER -> {
                 int textColor;
@@ -586,7 +589,7 @@ public final class TacticalTabStrip extends AbstractWidget {
                             cell.bottom());
                 }
                 return renderLabel(graphics, font, cell, label, tab, textColor,
-                        labelTextY(skin, cell), TacticalBoardTheme.BADGE_ON_SELECT,
+                        labelTextY(skin, cell), LABEL_PAD, TacticalBoardTheme.BADGE_ON_SELECT,
                         TacticalBoardTheme.ON_SELECT);
             }
             default -> {
@@ -598,13 +601,14 @@ public final class TacticalTabStrip extends AbstractWidget {
                 TacticalButtonStyle.render(graphics, font, cell.left(), cell.top(), cell.right(),
                         cell.bottom(), Component.empty(), look,
                         TacticalButtonStyle.Options.DEFAULT.withFocusRing(focusRing));
+                // Board keys follow the shared key table: the label clears the 3px selection bar,
+                // and the badge sits on the key's own inset (dark on the current key).
                 TacticalButtonStyle.Palette palette = TacticalButtonStyle.palette(look);
-                boolean darkFill = palette.darkFill();
                 return renderLabel(graphics, font, cell, label, tab, palette.text(),
                         labelTextY(skin, cell),
-                        darkFill ? TacticalBoardTheme.BADGE_ON_SELECT
-                                : TacticalBoardTheme.BADGE_ON_CARD,
-                        darkFill ? TacticalBoardTheme.ON_SELECT : tab.resolvedBadgeColor());
+                        TacticalButtonStyle.labelPadLeft(palette, cell.height()),
+                        TacticalButtonStyle.badgeInset(look.state()),
+                        TacticalButtonStyle.badgeText(look.state(), tab.badgeColor()));
             }
         }
     }
@@ -621,8 +625,9 @@ public final class TacticalTabStrip extends AbstractWidget {
     }
 
     private boolean renderLabel(GuiGraphics graphics, Font font, UiRect cell, Component label,
-                                Tab tab, int textColor, int textY, int badgeFill, int badgeText) {
-        int right = cell.right() - 3;
+                                Tab tab, int textColor, int textY, int padLeft, int badgeFill,
+                                int badgeText) {
+        int right = cell.right() - LABEL_PAD;
         int badge = badgeWidth(font, tab);
         if (badge > 0) {
             int badgeLeft = right - (badge - 2);
@@ -630,7 +635,7 @@ public final class TacticalTabStrip extends AbstractWidget {
             graphics.drawString(font, tab.badge(), badgeLeft + 3, textY, badgeText, false);
             right = badgeLeft - 2;
         }
-        int left = cell.left() + 3;
+        int left = cell.left() + Math.max(LABEL_PAD, padLeft);
         TextFit.Fitted fitted = TextFit.draw(graphics, font, label, left, textY,
                 Math.max(0, right - left), textColor, TextFit.Align.CENTER);
         return fitted.truncated();

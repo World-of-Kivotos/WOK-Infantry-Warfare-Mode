@@ -269,11 +269,14 @@ class BezelKeyTest {
     }
 
     @Test
-    void theDeviceIsPaintedInTheScreensLivery() {
+    void theDeviceIsPaintedInTheLiveryResolvedForTheFrame() {
         KeyScreen screen = screen();
-        assertSame(DeviceSkin.NEUTRAL, screen.deviceSkin());
+        assertSame(DeviceSkin.NEUTRAL, screen.deviceSkin(), "before the first frame");
         screen.livery = TacticalLivery.Livery.CAESAR;
-        assertSame(DeviceSkin.CAESAR, screen.deviceSkin());
+        assertSame(DeviceSkin.NEUTRAL, screen.deviceSkin(),
+                "a livery change mid-frame never repaints the keys of that frame");
+        screen.framePalette();
+        assertSame(DeviceSkin.CAESAR, screen.deviceSkin(), "the next frame follows the livery");
     }
 
     // ---- key cap ------------------------------------------------------------------------------

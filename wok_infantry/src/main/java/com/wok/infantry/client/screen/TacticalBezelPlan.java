@@ -73,8 +73,8 @@ public record TacticalBezelPlan(TacticalShellLayout.Density density, UiRect beze
             ledHeight = 0;
             keyTop = Math.min(bottom, top + 1);
         }
-        int left = bezel.left() + (tight ? 3 : 12);
-        int right = bezel.right() - (tight ? 3 : 12);
+        int left = bezel.left() + inset(size);
+        int right = bezel.right() - inset(size);
         int separation = separation(size);
         UiRect esc = escW > 0 ? new UiRect(left, keyTop, left + escW, bottom) : UiRect.EMPTY;
         UiRect refresh = refreshW > 0 ? new UiRect(right - refreshW, keyTop, right, bottom)
@@ -173,6 +173,11 @@ public record TacticalBezelPlan(TacticalShellLayout.Density density, UiRect beze
             case STANDARD -> 12;
             case ROOMY -> 18;
         };
+    }
+
+    /** How far the Esc and R keys sit in from the ends of the bezel. */
+    public static int inset(TacticalShellLayout.Density density) {
+        return density == TacticalShellLayout.Density.COMPACT ? 3 : 12;
     }
 
     /** Gap between two page keys. */
