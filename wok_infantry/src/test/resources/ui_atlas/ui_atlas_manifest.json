@@ -1082,9 +1082,26 @@
       }
     ]
   },
+  "device": {
+    "specks": {
+      "texture": "device_specks.png",
+      "size": 16,
+      "seed": 31,
+      "hi": "0x0DFFFFFF",
+      "lo": "0x16000000",
+      "texels": 40
+    },
+    "vignette": {
+      "texture": "device_vignette.png",
+      "size": 64,
+      "maxAlpha": 84
+    }
+  },
   "sha256": {
     "ui_icons.png": "DA9A2A4687A65F587D2BB5FD1017D602C9BF9D724308465C0240FBCBE94D2521",
     "ui_hatch.png": "AB4AD8947FE7622CE7B39B3299D3E238FE5B07FF5EDA3D9DFF8E64BCE371EF3A",
-    "map_icons.png": "0FEABAB745AC5CC49D537AD7B977FCAFFFDFA3C6702F5A00ED53996AAACA945B"
+    "map_icons.png": "0FEABAB745AC5CC49D537AD7B977FCAFFFDFA3C6702F5A00ED53996AAACA945B",
+    "device_specks.png": "1E698BB5142D06579181B058E56F1734582DB683BA167650F5D3EAE47D4090E3",
+    "device_vignette.png": "E7642A82D4D15C76817356AE40F444B14F40BA512DB51E1DC8523B592BEB829F"
   }
 }

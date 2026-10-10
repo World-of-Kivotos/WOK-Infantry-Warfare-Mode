@@ -33,13 +33,23 @@ class UiTierMatrixTest {
         for (UiTierMatrix.Tier tier : UiTierMatrix.ALL) {
             TacticalShellLayout shell = TacticalShellLayout.compute(tier.layoutWidth(),
                     tier.layoutHeight());
+            UiRect screen = new UiRect(0, 0, tier.layoutWidth(), tier.layoutHeight());
+            // The status bar, the board (with its 1px outline) and the bezel share the device.
             Map<String, UiRect> regions = new LinkedHashMap<>();
-            regions.put("header", shell.header());
-            regions.put("body", shell.body());
-            regions.put("footer", shell.footer());
+            regions.put("status", shell.status());
+            regions.put("body", shell.body().inset(-1));
+            regions.put("bezel", shell.bezel());
             UiTierMatrix.assertNoSolidOverlap(tier.toString(), regions);
-            UiTierMatrix.assertInside(tier.toString(),
-                    new UiRect(0, 0, tier.layoutWidth(), tier.layoutHeight()), regions);
+            UiTierMatrix.assertInside(tier.toString(), shell.device(), regions);
+            // The case with its bumpers and side keys floats on the world, inside the screen.
+            int bump = shell.deviceMetrics().bump();
+            UiTierMatrix.assertInside(tier.toString(), screen,
+                    Map.of("device", shell.device().inset(-bump)));
+            // The glass holds the status bar and the board; the bezel stays below its lip.
+            UiTierMatrix.assertInside(tier.toString(), shell.display(),
+                    Map.of("status", shell.status(), "body", shell.body().inset(-1)));
+            UiTierMatrix.assertNoSolidOverlap(tier.toString(),
+                    Map.of("glass", shell.glass().inset(0, 0, 0, -1), "bezel", shell.bezel()));
         }
     }
 

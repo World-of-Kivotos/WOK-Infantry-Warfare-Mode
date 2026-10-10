@@ -123,7 +123,7 @@ public abstract class TacticalScreen extends Screen {
     /** Draws the tablet shell for this screen's logical size (call first in renderTactical). */
     protected final TacticalBoardChrome.Shell drawShell(GuiGraphics graphics,
                                                         TacticalBoardChrome.ShellSpec spec) {
-        return TacticalBoardChrome.shell(graphics, font, shellLayout(), spec);
+        return deviceDrawn(TacticalBoardChrome.shell(graphics, font, shellLayout(), livery(), spec));
     }
 
     /**
@@ -249,15 +249,70 @@ public abstract class TacticalScreen extends Screen {
 
     // ---- device backdrop and glass --------------------------------------------------------------
 
-    /** Draws what shows around the device, before {@link #renderTactical}; default: nothing. */
+    /**
+     * Depth of the glass overlay: above an open modal (drawn at z 300) and below the tooltip
+     * ({@link TacticalTooltip#Z}), so the glass also covers the dimmed board and its dialog.
+     */
+    static final float GLASS_Z = 350.0F;
+
+    /** Set by {@link #drawShell} in this frame; the glass is only laid over a drawn device. */
+    private boolean deviceDrawn;
+
+    /**
+     * Draws what shows around the device, before {@link #renderTactical}: the world dimmed with
+     * {@link DeviceArt#WORLD_DIM} and the vignette ({@link DeviceArt#drawBackdrop}); never an
+     * opaque background and never the vanilla {@code renderBackground}.
+     */
     protected void renderBackdrop(GuiGraphics graphics, float partialTick) {
+        DeviceArt.drawBackdrop(graphics, width, height);
     }
 
     /**
      * Draws the glass over the page, its widgets and an open modal (rim, lip shadow, sheen);
-     * tooltips stay above it. Logical coordinates; default: nothing.
+     * tooltips stay above it. Logical coordinates; nothing in a frame without {@link #drawShell}.
      */
     protected void renderGlassOverlay(GuiGraphics graphics, float partialTick) {
+        if (!deviceDrawn) {
+            return;
+        }
+        deviceDrawn = false;
+        PoseStack pose = graphics.pose();
+        pose.pushPose();
+        pose.translate(0.0F, 0.0F, GLASS_Z);
+        DeviceArt.drawGlass(graphics, shellLayout(), livery());
+        pose.popPose();
+    }
+
+    /**
+     * {@link #drawShell} finished the device: arms the glass overlay and offers the whole receipt
+     * while the mouse rests on a shortened status-bar pill.
+     */
+    private TacticalBoardChrome.Shell deviceDrawn(TacticalBoardChrome.Shell shell) {
+        deviceDrawn = true;
+        TacticalBoardChrome.StatusText receipt = shell.status().feedback();
+        if (receipt.truncated() && mouseOver(shell.status().pill())) {
+            setTooltipForNextRenderPass(Component.literal(receipt.full()));
+        }
+        return shell;
+    }
+
+    /**
+     * Whether the mouse (read from the mouse handler like vanilla's render loop, in layout
+     * coordinates) is over {@code rect}; never while a modal takes the input.
+     */
+    private boolean mouseOver(UiRect rect) {
+        if (minecraft == null || modal != null || rect == null || rect.isEmpty()) {
+            return false;
+        }
+        Window window = minecraft.getWindow();
+        if (window.getScreenWidth() <= 0 || window.getScreenHeight() <= 0) {
+            return false;
+        }
+        double guiX = minecraft.mouseHandler.xpos() * window.getGuiScaledWidth()
+                / window.getScreenWidth();
+        double guiY = minecraft.mouseHandler.ypos() * window.getGuiScaledHeight()
+                / window.getScreenHeight();
+        return rect.contains(UiScale.toLayout(guiX, uiScale), UiScale.toLayout(guiY, uiScale));
     }
 
     // ---- bezel keys -----------------------------------------------------------------------------
