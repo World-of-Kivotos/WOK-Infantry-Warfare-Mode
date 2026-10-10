@@ -16,7 +16,7 @@
 | `wok_vehicle_health` | WOK步战附属-载具部位血量 | `0.1.0-beta.1` | `wok_vehicle_health/` |
 | `wok_commander_support` | WOK步战附属-指挥官支援 | `0.1.0-beta.3` | `wok_commander_support/` |
 | `wok_capture_points` | WOK步战附属-占点 | `0.1.0-alpha.4` | `wok_capture_points/` |
-| `wok_downed` | WOK步战附属-倒地救援 | `0.1.0-alpha.3` | `wok_downed/` |
+| `wok_downed` | WOK步战附属-倒地救援 | `0.1.0-alpha.4` | `wok_downed/` |
 
 `WOK` 与 `WOK步战` 是两个不同产品线；本仓库不属于 WOK 本体项目。
 

@@ -10,7 +10,7 @@
   "message.wok_downed.rescue_busy": "Another player is already rescuing this casualty.",
   "message.wok_downed.rescue_invalid": "That player cannot be rescued now.",
   "message.wok_downed.rescue_canceled": "Rescue interrupted.",
-  "message.wok_downed.drag_started": "Dragging %s. Sneak-interact again to release them.",
+  "message.wok_downed.drag_started": "Dragging %s. Tap sneak to put them down.",
   "message.wok_downed.being_dragged": "%s is dragging you.",
   "message.wok_downed.drag_stopped": "Casualty released.",
   "message.wok_downed.drag_invalid": "That casualty cannot be dragged now.",
