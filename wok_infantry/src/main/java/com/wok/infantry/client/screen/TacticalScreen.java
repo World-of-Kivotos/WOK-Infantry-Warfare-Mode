@@ -15,6 +15,7 @@ import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipPositione
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
@@ -50,6 +51,12 @@ import java.util.function.BooleanSupplier;
  *
  * <p><b>Tabs.</b> A strip registered with {@link #setTabStrip} receives Ctrl+Tab and
  * Ctrl+Shift+Tab from anywhere on the screen; plain Tab keeps the vanilla focus navigation.
+ *
+ * <p><b>Device.</b> Each frame runs inside the palette of the screen's {@link #livery()} and
+ * {@link #paletteScope()} (the HUD, drawn before the screen, keeps the A scheme). The order is:
+ * backdrop, {@link #renderTactical} (shell, page, widgets), modal, {@link #renderGlassOverlay},
+ * tooltip. The hardware Esc / R keys of the bottom bezel are registered with
+ * {@link #setBezelKeys}.
  */
 public abstract class TacticalScreen extends Screen {
     /** Mouse position handed to the board while a modal is open, so nothing underneath hovers. */
@@ -85,6 +92,7 @@ public abstract class TacticalScreen extends Screen {
             height = UiScale.layoutSize(window.getGuiScaledHeight(), uiScale);
         }
         tabStrip = null;
+        resetBezelKeys();
         initTactical();
         layoutModal();
     }
@@ -149,11 +157,14 @@ public abstract class TacticalScreen extends Screen {
         PoseStack pose = graphics.pose();
         pose.pushPose();
         rendering = true;
-        try {
+        // The palette covers the page, widgets, modal and tooltip; closing it restores the previous
+        // palette before anything else draws, also when rendering throws.
+        try (TacticalPalette.Applied palette = pushPalette()) {
             if (uiScale != 1) {
                 pose.scale(uiScale, uiScale, 1.0F);
             }
             pendingTooltip = null;
+            renderBackdrop(graphics, partialTick);
             boolean modalOpen = modal != null;
             renderTactical(graphics, modalOpen ? NO_MOUSE : layoutX,
                     modalOpen ? NO_MOUSE : layoutY, partialTick);
@@ -171,6 +182,7 @@ public abstract class TacticalScreen extends Screen {
                 modal.render(graphics, font, layoutX, layoutY, partialTick);
                 pose.popPose();
             }
+            renderGlassOverlay(graphics, partialTick);
             renderPendingTooltip(graphics, layoutX, layoutY);
         } finally {
             rendering = false;
@@ -191,6 +203,81 @@ public abstract class TacticalScreen extends Screen {
     protected final void renderWidgets(GuiGraphics graphics, int mouseX, int mouseY,
                                        float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
+    }
+
+    // ---- faction palette ------------------------------------------------------------------------
+
+    /**
+     * Livery this screen is painted in, read once per frame by {@link #render}; default: the
+     * viewer's livery ({@link TacticalLivery#current()}).
+     */
+    protected TacticalLivery.Livery livery() {
+        return TacticalLivery.current();
+    }
+
+    /** Palette scope of the page on screen; default {@link TacticalLivery.Scope#BOARD}. */
+    protected TacticalLivery.Scope paletteScope() {
+        return TacticalLivery.Scope.BOARD;
+    }
+
+    /** Applies this frame's palette; {@link #render} closes the handle. */
+    private TacticalPalette.Applied pushPalette() {
+        return TacticalPalette.push(livery().palette(paletteScope()));
+    }
+
+    // ---- device backdrop and glass --------------------------------------------------------------
+
+    /** Draws what shows around the device, before {@link #renderTactical}; default: nothing. */
+    protected void renderBackdrop(GuiGraphics graphics, float partialTick) {
+    }
+
+    /**
+     * Draws the glass over the page, its widgets and an open modal (rim, lip shadow, sheen);
+     * tooltips stay above it. Logical coordinates; default: nothing.
+     */
+    protected void renderGlassOverlay(GuiGraphics graphics, float partialTick) {
+    }
+
+    // ---- bezel keys -----------------------------------------------------------------------------
+
+    private TacticalBoardChrome.KeyHint bezelEscHint;
+    private TacticalBoardChrome.KeyHint bezelRefreshHint;
+    private Runnable bezelRefresh;
+
+    /**
+     * Registers the hardware keys at the ends of the bottom bezel: {@code escHint} for the Esc key
+     * (it acts like pressing Esc, so the screen keeps its own meaning of Esc) and
+     * {@code refreshHint} with the {@code refresh} action for the R key. A {@code null} hint
+     * leaves that key out. Call from {@link #initTactical()}; cleared on every init.
+     */
+    protected final void setBezelKeys(TacticalBoardChrome.KeyHint escHint,
+                                      TacticalBoardChrome.KeyHint refreshHint, Runnable refresh) {
+        this.bezelEscHint = escHint;
+        this.bezelRefreshHint = refreshHint;
+        this.bezelRefresh = refresh;
+    }
+
+    /** Hints of the registered bezel keys, Esc first; empty without {@link #setBezelKeys}. */
+    public final List<TacticalBoardChrome.KeyHint> bezelHints() {
+        List<TacticalBoardChrome.KeyHint> hints = new ArrayList<>(2);
+        if (bezelEscHint != null) {
+            hints.add(bezelEscHint);
+        }
+        if (bezelRefreshHint != null) {
+            hints.add(bezelRefreshHint);
+        }
+        return List.copyOf(hints);
+    }
+
+    /** The R key's action, or {@code null} without one. */
+    protected final Runnable bezelRefresh() {
+        return bezelRefresh;
+    }
+
+    private void resetBezelKeys() {
+        bezelEscHint = null;
+        bezelRefreshHint = null;
+        bezelRefresh = null;
     }
 
     private void renderPendingTooltip(GuiGraphics graphics, int mouseX, int mouseY) {

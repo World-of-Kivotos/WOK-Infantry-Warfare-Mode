@@ -68,6 +68,12 @@ public final class TacticalBoardTheme {
     public static final int LIGHT = 0xFFEEF3F0;
     public static final int LIGHT_MUTED = 0xFF9DAAA8;
     public static final int DISABLED_TEXT = 0xFF6B7676;
+    /**
+     * Text on solid success fills and on an armed (hovered or confirming) danger fill. The same
+     * colour as {@link #LIGHT} in the A scheme; a faction palette keeps it light where
+     * {@code LIGHT} turns into dark ink (preview {@code 18-device-livery.js} {@code ON_FILL}).
+     */
+    public static final int ON_FILL = LIGHT;
 
     // ---- semantics, board variants ---------------------------------------------------------------
     public static final int SELECT = 0xFF2E679C;
@@ -83,6 +89,11 @@ public final class TacticalBoardTheme {
     /** Attention (cooldown, unsaved). In the A scheme it is the same orange as sections and controls. */
     public static final int ACCENT = 0xFFBE7A1E;
     public static final int ACCENT_SOFT = 0xFFE9C58E;
+    /**
+     * Attention-orange text on light boards, cards and keys, where {@link #ACCENT} itself is only
+     * 1.7–2.8:1 (preview {@code SHARED.ACCENT_TEXT}); fills, LEDs and meters keep {@code ACCENT}.
+     */
+    public static final int ACCENT_TEXT = 0xFF844600;
     /** Section markers. */
     public static final int SECTION = 0xFFBE7A1E;
     /** Adjustable controls (sliders, steppers, control-key underline). */
@@ -91,6 +102,8 @@ public final class TacticalBoardTheme {
     public static final int DANGER = 0xFFB0443C;
     public static final int DANGER_HOVER = 0xFFC2544B;
     public static final int DANGER_SOFT = 0xFFEBC3BE;
+    /** Dark stripes of the hazard tab on an armed (solid {@link #DANGER}) danger key. */
+    public static final int DANGER_DEEP = 0xFF3A0F0C;
     public static final int SUCCESS = 0xFF3B7A57;
     public static final int SUCCESS_HOVER = 0xFF478D66;
     public static final int SUCCESS_SOFT = 0xFFC0DCC9;

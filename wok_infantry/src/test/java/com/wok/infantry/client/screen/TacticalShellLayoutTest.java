@@ -50,6 +50,27 @@ class TacticalShellLayoutTest {
         assertTrue(layout.body().contains(layout.content()));
     }
 
+    /** Device regions nest outside in; header and footer stay the status bar and the bezel. */
+    @ParameterizedTest(name = "{0}x{1}")
+    @CsvSource({
+            "320, 240", "480, 270", "640, 360", "640, 336", "960, 540", "480, 360", "960, 720"
+    })
+    void deviceRegionsNestInsideTheScreen(int width, int height) {
+        TacticalShellLayout layout = TacticalShellLayout.compute(width, height);
+        UiRect screen = UiRect.of(0, 0, width, height);
+
+        assertEquals(layout.status(), layout.header());
+        assertEquals(layout.bezel(), layout.footer());
+        assertEquals(layout.metrics().density(), layout.density());
+        assertTrue(screen.contains(layout.device()), "device inside screen");
+        assertTrue(layout.device().contains(layout.glass()), "glass inside device");
+        assertTrue(layout.glass().contains(layout.display()), "display inside glass");
+        assertTrue(layout.display().contains(layout.status()), "status bar on the display");
+        assertTrue(layout.display().contains(layout.body()), "board on the display");
+        assertTrue(layout.device().contains(layout.bezel()), "bezel on the device");
+        assertFalse(layout.status().intersects(layout.bezel()), "status/bezel overlap");
+    }
+
     @Test
     void metricsFollowThePreviewTable() {
         assertEquals(new Metrics(Density.COMPACT, 3, 2, 3, 14, 14, 16, 12, 12),

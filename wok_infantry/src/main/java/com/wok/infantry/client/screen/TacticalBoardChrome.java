@@ -29,6 +29,19 @@ import java.util.Objects;
  * {@link TacticalMapLayout} geometry until their batch migrates them.
  */
 public final class TacticalBoardChrome {
+    // ---- uiTest probe ids of the device shell ---------------------------------------------------
+
+    /** Device case around the glass; reported as a non-solid region. */
+    public static final String DEVICE_UI_ID = "shell.device";
+    /** Status bar at the top of the display; reported as a non-solid region. */
+    public static final String STATUS_UI_ID = "shell.status";
+    /** Bottom bezel with the page keys; reported as a non-solid region. */
+    public static final String BEZEL_UI_ID = "shell.bezel";
+    /** Hardware Esc key at the left end of the bezel. */
+    public static final String ESC_KEY_UI_ID = "shell.key.esc";
+    /** Hardware R (refresh) key at the right end of the bezel. */
+    public static final String REFRESH_KEY_UI_ID = "shell.key.refresh";
+
     private TacticalBoardChrome() {
     }
 
@@ -391,6 +404,17 @@ public final class TacticalBoardChrome {
         HeaderPlan plan = planHeader(font, layout, title, tabs, null);
         applyTabs(tabs, plan, layout);
         return plan;
+    }
+
+    /**
+     * Places {@code tabs} as the page keys of the bottom bezel, between the hardware keys of
+     * {@code hints} (the screen's {@link TacticalScreen#bezelHints()}); call from
+     * {@link TacticalScreen#initTactical()} after adding the strip. Until the bezel keys exist
+     * the strip still goes into the header slot of {@link #placeTabs}.
+     */
+    public static void placeBezel(Font font, TacticalShellLayout layout, TacticalTabStrip tabs,
+                                  List<KeyHint> hints) {
+        placeTabs(font, layout, Component.empty(), tabs);
     }
 
     private static void applyTabs(TacticalTabStrip tabs, HeaderPlan plan,

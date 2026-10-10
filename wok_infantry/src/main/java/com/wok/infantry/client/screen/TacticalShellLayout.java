@@ -1,8 +1,8 @@
 package com.wok.infantry.client.screen;
 
 /**
- * Pure geometry of the full-screen tactical tablet: three size classes and the header, board
- * body and footer, which never overlap (the body's 1px outline stays inside the gaps).
+ * Pure geometry of the tactical tablet: three size classes and the regions of the device, which
+ * never overlap (the body's 1px outline stays inside the gaps).
  *
  * <p>Ported from the preview's {@code uiMetrics}/{@code UI.shell} ({@code kit/ui.js}):
  * <ul>
@@ -12,9 +12,17 @@ package com.wok.infantry.client.screen;
  * </ul>
  * Sizes are logical layout pixels: a {@link TacticalScreen} at GUI scale 1 lays out 960×720 as
  * 480×360 (see {@link UiScale}).
+ *
+ * <p>Regions, outside in (the device shell of the preview's {@code 17-device.js} {@code geom}):
+ * {@link #device} is the case, {@link #glass} the glass opening in it, {@link #display} the lit
+ * screen behind the glass; on the display the {@link #status} bar sits above the board
+ * {@link #body}, and the {@link #bezel} carries the page keys. With the full-screen frame the
+ * device is the whole screen, the glass and display are the area inside the outer margin, the
+ * status bar is the header strip and the bezel is the footer strip.
  */
 public record TacticalShellLayout(int width, int height, Metrics metrics,
-                                  UiRect header, UiRect body, UiRect footer) {
+                                  UiRect device, UiRect glass, UiRect display,
+                                  UiRect status, UiRect body, UiRect bezel) {
     /** Size class of a logical screen. */
     public enum Density {
         COMPACT,
@@ -82,12 +90,29 @@ public record TacticalShellLayout(int width, int height, Metrics metrics,
         int bodyTop = headerBottom + m.gap();
         int bodyBottom = Math.max(bodyTop, footerTop - m.gap());
         UiRect body = new UiRect(m.margin(), bodyTop, w - m.margin(), bodyBottom);
-        return new TacticalShellLayout(w, h, m, header, body, footer);
+        UiRect device = new UiRect(0, 0, w, h);
+        UiRect glass = new UiRect(m.margin(), m.margin(), w - m.margin(),
+                Math.max(m.margin(), h - m.margin()));
+        return new TacticalShellLayout(w, h, m, device, glass, glass, header, body, footer);
+    }
+
+    /** The status strip at the top of the display (the former header). */
+    public UiRect header() {
+        return status;
+    }
+
+    /** The strip that carries the page keys (the former footer). */
+    public UiRect footer() {
+        return bezel;
     }
 
     /** The body inset by one gap, the usual area for panels ({@code UI.inset(body, M.gap)}). */
     public UiRect content() {
         return body.inset(metrics.gap());
+    }
+
+    public Density density() {
+        return metrics.density();
     }
 
     public boolean tight() {

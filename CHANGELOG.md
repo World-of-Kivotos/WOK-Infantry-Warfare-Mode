@@ -1,5 +1,28 @@
 # 更新日志
 
+## WOK步战核心 0.5.0-beta.3 — 2026-10-10（进行中）
+
+> 用户需求（2026-10-10）：“我们现在 UI 整体还是有些不太像……还是本着平板的方向”，随后要求“凯撒、学院、中立做三套，会随着玩家加入的阵营不同而改变——学院蓝色、凯撒红色、中立偏淡色”；看过预览后选定 D2「实体按键平板」外壳（`ui-preview/surfaces/17-device.js`）与 P3「整屏涂装」（`ui-preview/surfaces/18-device-livery.js`）。用户 2026-10-10 拍板：范围档 1（战斗终端小队 / 兵种 / 部署三页、编制页、uiTest 陈列页上平板外壳并按阵营换色；HUD、战术地图和其余旧界面不动），涂装按战局蓝方 / 红方对应（蓝 = 学院军海军蓝，红 = 凯撒正红，未加入阵营 = 中立浅钢灰），掏平板动画顺延到 0.5.0-beta.4 并改用这套外壳。方案见 `ui-preview/audit/DEVICE_PORT_PLAN.md`。分支 `claude/平板外壳`，基于 `claude/新版界面` 的 `826785a`（0.5.0-beta.2）。不改任何网络协议号。
+
+### 新增
+- 骨架（`claude/平板外壳` 第一个提交）：`TacticalBoardTheme` 新增三个令牌 `ON_FILL`（实心成功底与确认态危险底上的字，A 配色同 `LIGHT`）、`DANGER_DEEP`（`#3A0F0C`，确认态危险键的深色斜纹）、`ACCENT_TEXT`（`#844600`，浅色拼板上的橙色文字）；新类型 `PaletteToken`、`TacticalPalette`（目前只有 A 配色）、`TacticalLivery`（`Livery` 学院军 / 凯撒 / 中立，`Scope` 拼板 / 地图）、`DeviceSkin`（三套外壳色，取自 P3 预览）、`BezelKey`；`TacticalShellLayout` 新增 `device`、`glass`、`display`、`status`、`body`、`bezel` 区域（暂按旧几何填）；`TacticalScreen` 新增钩子 `livery()`、`paletteScope()`、`setBezelKeys(...)`、`renderGlassOverlay(...)`；`TacticalBoardChrome.placeBezel` 与外壳探针 id；`TacticalTabStrip.Skin.BEZEL`（暂按页头画）。界面外观尚无变化。
+- 其余待补（平板外壳、状态栏、底框实体键、阵营调色板、部件状态线索、编制页与陈列页接入、uiTest 用例）。
+
+### 修改
+- 待补。
+
+### 修复
+- 待补。
+
+### 兼容性
+- 网络协议号全部不变（战局 `20`、编制 `5`、兵力 `2`、体力 `2`、配装 `11`），可与 0.5.0-beta.1、0.5.0-beta.2 互连。其余待补。
+
+### 配置/存档影响
+- 待补。
+
+### 测试结果
+- 待补。
+
 ## WOK步战核心 0.5.0-beta.2 — 2026-10-05
 
 > 用户反馈（2026-10-05）：“占领点的 UI 太大了，挡视野”。按用户已选定的 HUD 定稿（预览 `surfaces/10-hud.js` 新版与说明第 115 行起“战况条：一行放下双方兵力、据点进度；宽屏第二行写据点状态和剩余时间”，零件 `kit/hud-parts.js` 的 `HUDP.battle`），把 WOK步战附属-占点的据点进度并进核心顶部兵力战况条，占点自己的 330×52 大面板随占点 0.1.0-alpha.4（见下一条）退场。分支 `claude/占点HUD`，基于 `claude/新版界面` 的 `1d9f8bc`（0.5.0-beta.1）。不改任何网络协议号，可与 0.5.0-beta.1 互连。

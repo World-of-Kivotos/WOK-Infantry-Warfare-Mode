@@ -20,9 +20,10 @@ import java.util.function.IntConsumer;
 /**
  * Page tabs of a WOK步战 terminal, as one keyboard-focusable widget.
  *
- * <p>Two skins: {@link Skin#HEADER} sits in the dark shell header (selected tab = blue plate with a
+ * <p>Skins: {@link Skin#HEADER} sits in the dark shell header (selected tab = blue plate with a
  * light top bar, hover = {@code TAB_HOVER}); {@link Skin#BOARD} is a segmented row of board keys
- * drawn from the shared {@link TacticalButtonStyle} table. When the full names do not fit the
+ * drawn from the shared {@link TacticalButtonStyle} table; {@link Skin#BEZEL} are the hardware
+ * page keys of the device's bottom bezel. When the full names do not fit the
  * strip shows the short names, and when those do not fit either it becomes a
  * {@code ‹ name n/m ›} pager. The current tab is drawn as "current" and is not clickable;
  * disabled tabs show their reason as a tooltip.
@@ -39,7 +40,9 @@ import java.util.function.IntConsumer;
 public final class TacticalTabStrip extends AbstractWidget {
     public enum Skin {
         HEADER,
-        BOARD
+        BOARD,
+        /** Hardware page keys on the device's bottom bezel; drawn like {@link #HEADER} for now. */
+        BEZEL
     }
 
     /** How the tabs are shown in the strip's width. */
@@ -118,6 +121,11 @@ public final class TacticalTabStrip extends AbstractWidget {
 
     public Skin skin() {
         return skin;
+    }
+
+    /** Header and bezel tabs sit on the dark device; board keys use the button table. */
+    private boolean darkSkin() {
+        return skin != Skin.BOARD;
     }
 
     public List<Tab> tabs() {
@@ -264,7 +272,7 @@ public final class TacticalTabStrip extends AbstractWidget {
     }
 
     private int naturalWidth(Font font, Tab tab, Mode mode, boolean compactHeader) {
-        int pad = skin == Skin.HEADER ? (compactHeader ? HEADER_PAD_COMPACT : HEADER_PAD) : BOARD_PAD;
+        int pad = darkSkin() ? (compactHeader ? HEADER_PAD_COMPACT : HEADER_PAD) : BOARD_PAD;
         return font.width(tab.labelFor(mode)) + pad + badgeWidth(font, tab);
     }
 
@@ -464,7 +472,7 @@ public final class TacticalTabStrip extends AbstractWidget {
                               boolean isCurrent, boolean hovered, boolean focusRing) {
         int textColor;
         boolean darkFill;
-        if (skin == Skin.HEADER) {
+        if (darkSkin()) {
             if (isCurrent) {
                 graphics.fill(cell.left(), cell.top(), cell.right(), cell.bottom(), TacticalBoardTheme.SELECT);
                 graphics.fill(cell.left(), cell.top(), cell.right(), cell.top() + 1,
@@ -505,7 +513,7 @@ public final class TacticalTabStrip extends AbstractWidget {
      * {@code UI.shell}); board keys centre the 8px glyphs.
      */
     static int labelTextY(Skin skin, UiRect cell) {
-        int room = cell.height() - (skin == Skin.HEADER ? 10 : 8);
+        int room = cell.height() - (skin != Skin.BOARD ? 10 : 8);
         return cell.top() + Math.max(0, room / 2);
     }
 
@@ -562,7 +570,7 @@ public final class TacticalTabStrip extends AbstractWidget {
             return;
         }
         int textColor;
-        if (skin == Skin.HEADER) {
+        if (darkSkin()) {
             if (enabled && hovered) {
                 graphics.fill(key.left(), key.top(), key.right(), key.bottom(),
                         TacticalBoardTheme.TAB_HOVER);

@@ -1,6 +1,6 @@
 # WOK步战核心
 
-Minecraft 1.20.1 / Forge 47.4.22 的独立步战大战场核心，modId 为 `wok_infantry`，当前版本为 `0.5.0-beta.2`（在 0.4.0-beta.1 新版界面档 1、0.4.0-beta.2 全服测试模式、0.4.0-beta.3 战术地图 Squad 式标点之上，0.5.0-beta.1 新版战斗终端：小队 / 兵种 / 部署三页按新版战术平板界面重做，战局协议升到 `20`，客户端与服务端必须同在 0.5.0 线；同版还把体力条改成快捷栏上方经验条那一行的战术凹槽（A4）；0.5.0-beta.2 把 `wok_capture_points` 的据点进度并入顶部战况条，协议不变；待游戏内验收）。战术地图可软联动 JourneyMap 6 或 Xaero's Minimap 24.2；两者都不是核心加载所需的硬依赖，专用服务端也不需安装地图 MOD。
+Minecraft 1.20.1 / Forge 47.4.22 的独立步战大战场核心，modId 为 `wok_infantry`，当前版本为 `0.5.0-beta.3`（在 0.4.0-beta.1 新版界面档 1、0.4.0-beta.2 全服测试模式、0.4.0-beta.3 战术地图 Squad 式标点之上，0.5.0-beta.1 新版战斗终端：小队 / 兵种 / 部署三页按新版战术平板界面重做，战局协议升到 `20`，客户端与服务端必须同在 0.5.0 线；同版还把体力条改成快捷栏上方经验条那一行的战术凹槽（A4）；0.5.0-beta.2 把 `wok_capture_points` 的据点进度并入顶部战况条，协议不变；0.5.0-beta.3 把战斗终端与编制页换成实体按键平板外壳并按阵营整屏涂装，协议不变，开发中；待游戏内验收）。战术地图可软联动 JourneyMap 6 或 Xaero's Minimap 24.2；两者都不是核心加载所需的硬依赖，专用服务端也不需安装地图 MOD。
 阵营、小队、兵种名额、部署、配装发放和战术标记均由服务端裁决。
 
 本轮基地圈地、兵力值和机枪卧姿规则见[玩法调整说明](docs/GAMEPLAY_0.3.0.md)。
@@ -306,4 +306,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run_network_test.ps1
 .\gradlew.bat runUiTestClient "-PuiJourneyMapJar=run/compat-cache/journeymap-forge-1.20.1-6.0.2.jar" -PuiExpectedTerrainProvider=journeymap -PuiExpectedJourneyMapLoaded=true --no-daemon --console=plain
 ```
 
-产物位于 `build/libs/wok_infantry-0.5.0-beta.2.jar`。
+产物位于 `build/libs/wok_infantry-0.5.0-beta.3.jar`。
