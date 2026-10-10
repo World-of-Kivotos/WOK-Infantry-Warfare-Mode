@@ -316,22 +316,73 @@ public abstract class TacticalScreen extends Screen {
     }
 
     // ---- bezel keys -----------------------------------------------------------------------------
+    //
+    // The Esc and R hardware keys are BezelKey widgets owned by this block: setBezelKeys adds and
+    // places them (TacticalBezelPlan), init removes them. Keyboard Esc and R stay with the screen's
+    // own onKeyPressed; the keys only add the mouse (and Tab focus) route to the same behaviour.
 
     private TacticalBoardChrome.KeyHint bezelEscHint;
     private TacticalBoardChrome.KeyHint bezelRefreshHint;
     private Runnable bezelRefresh;
+    private java.util.function.Supplier<Component> bezelRefreshDisabled;
+    private BezelKey bezelEscKey;
+    private BezelKey bezelRefreshKey;
 
     /**
      * Registers the hardware keys at the ends of the bottom bezel: {@code escHint} for the Esc key
      * (it acts like pressing Esc, so the screen keeps its own meaning of Esc) and
      * {@code refreshHint} with the {@code refresh} action for the R key. A {@code null} hint
-     * leaves that key out. Call from {@link #initTactical()}; cleared on every init.
+     * leaves that key out. Call from {@link #initTactical()}, then place the page keys with
+     * {@link TacticalBoardChrome#placeBezel} and {@link #bezelHints()} (a bezel strip already
+     * registered with {@link #setTabStrip} is moved between the keys here as well); cleared on
+     * every init.
      */
     protected final void setBezelKeys(TacticalBoardChrome.KeyHint escHint,
                                       TacticalBoardChrome.KeyHint refreshHint, Runnable refresh) {
+        setBezelKeys(escHint, refreshHint, refresh, null);
+    }
+
+    /**
+     * {@link #setBezelKeys(TacticalBoardChrome.KeyHint, TacticalBoardChrome.KeyHint, Runnable)}
+     * with an R key that can be disabled: {@code refreshDisabledReason} is asked on every frame and
+     * press; a non-null reason disables the key (drawn hatched) and is shown on hover, for example
+     * a formation page whose R only retries while it waits for the catalog.
+     */
+    protected final void setBezelKeys(TacticalBoardChrome.KeyHint escHint,
+                                      TacticalBoardChrome.KeyHint refreshHint, Runnable refresh,
+                                      java.util.function.Supplier<Component> refreshDisabledReason) {
+        removeBezelKeys();
         this.bezelEscHint = escHint;
         this.bezelRefreshHint = refreshHint;
         this.bezelRefresh = refresh;
+        this.bezelRefreshDisabled = refreshDisabledReason;
+        if (escHint != null) {
+            bezelEscKey = addRenderableWidget(new BezelKey(BezelKey.Role.ESC, escHint,
+                    this::pressBezelEscape, null, this::deviceSkin));
+        }
+        if (refreshHint != null) {
+            bezelRefreshKey = addRenderableWidget(new BezelKey(BezelKey.Role.REFRESH, refreshHint,
+                    this::pressBezelRefresh, this::bezelRefreshDisabledReason, this::deviceSkin));
+        }
+        if (font != null) {
+            placeBezelKeys(TacticalBezelPlan.plan(font, shellLayout(), escHint, refreshHint));
+        }
+    }
+
+    /**
+     * Moves the Esc and R keys to {@code plan}, and a registered {@link TacticalTabStrip.Skin#BEZEL}
+     * strip between them, so the strip may be registered before or after the keys.
+     */
+    final void placeBezelKeys(TacticalBezelPlan plan) {
+        if (bezelEscKey != null) {
+            bezelEscKey.setBounds(plan.esc());
+        }
+        if (bezelRefreshKey != null) {
+            bezelRefreshKey.setBounds(plan.refresh());
+        }
+        if (tabStrip != null && tabStrip.skin() == TacticalTabStrip.Skin.BEZEL) {
+            tabStrip.placeOnBezel(plan);
+        }
     }
 
     /** Hints of the registered bezel keys, Esc first; empty without {@link #setBezelKeys}. */
@@ -351,10 +402,76 @@ public abstract class TacticalScreen extends Screen {
         return bezelRefresh;
     }
 
+    /** Why the R key is disabled right now, or {@code null} when it can refresh. */
+    protected final Component bezelRefreshDisabledReason() {
+        java.util.function.Supplier<Component> reason = bezelRefreshDisabled;
+        return reason == null ? null : reason.get();
+    }
+
+    /** Paint of this screen's device: the {@link DeviceSkin} of {@link #livery()}. */
+    public final DeviceSkin deviceSkin() {
+        return DeviceSkin.forLivery(livery());
+    }
+
+    /** The registered Esc and R key widgets, in that order (unit-test and probe seam). */
+    final List<BezelKey> bezelKeys() {
+        List<BezelKey> keys = new ArrayList<>(2);
+        if (bezelEscKey != null) {
+            keys.add(bezelEscKey);
+        }
+        if (bezelRefreshKey != null) {
+            keys.add(bezelRefreshKey);
+        }
+        return List.copyOf(keys);
+    }
+
+    /**
+     * The bezel's Esc key: the same as pressing Esc ({@link #onKeyPressed} with
+     * {@code GLFW_KEY_ESCAPE}), so every screen keeps its own meaning of Esc. Nothing while a
+     * modal is open (the modal takes every input).
+     */
+    final boolean pressBezelEscape() {
+        if (modal != null) {
+            return false;
+        }
+        // A click already runs inside the input dispatch; a hook that still calls the old
+        // super.keyPressed(...) must get the vanilla handling, and the flag is restored after.
+        boolean outer = dispatchingInput;
+        dispatchingInput = true;
+        try {
+            return onKeyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE, 0, 0);
+        } finally {
+            dispatchingInput = outer;
+        }
+    }
+
+    /** The bezel's R key: runs the registered refresh unless it is disabled or a modal is open. */
+    final boolean pressBezelRefresh() {
+        Runnable refresh = bezelRefresh;
+        if (modal != null || refresh == null || bezelRefreshDisabledReason() != null) {
+            return false;
+        }
+        refresh.run();
+        return true;
+    }
+
+    private void removeBezelKeys() {
+        if (bezelEscKey != null) {
+            removeWidget(bezelEscKey);
+        }
+        if (bezelRefreshKey != null) {
+            removeWidget(bezelRefreshKey);
+        }
+        bezelEscKey = null;
+        bezelRefreshKey = null;
+    }
+
     private void resetBezelKeys() {
+        removeBezelKeys();
         bezelEscHint = null;
         bezelRefreshHint = null;
         bezelRefresh = null;
+        bezelRefreshDisabled = null;
     }
 
     private void renderPendingTooltip(GuiGraphics graphics, int mouseX, int mouseY) {

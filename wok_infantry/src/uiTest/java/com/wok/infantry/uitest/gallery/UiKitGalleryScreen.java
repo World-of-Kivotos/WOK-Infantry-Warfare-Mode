@@ -172,16 +172,6 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
         meterRow = UiRect.EMPTY;
         emptyWell = UiRect.EMPTY;
 
-        List<TacticalTabStrip.Tab> tabs = new ArrayList<>();
-        for (Page each : Page.values()) {
-            tabs.add(TacticalTabStrip.Tab.of(each.tabId(), tr("page." + each.tabId())));
-        }
-        pages = UiLayoutProbe.tag(new TacticalTabStrip(TacticalTabStrip.Skin.HEADER, tabs,
-                page.ordinal(), index -> switchPage(Page.values()[index])), PAGES_UI_ID);
-        addRenderableWidget(pages);
-        setTabStrip(pages);
-        TacticalBoardChrome.placeTabs(font, shell, title, pages);
-
         UiRect content = shell.content();
         switch (page) {
             case CONTROLS -> initControls(content);
@@ -190,6 +180,18 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
             case HUD -> regionA = content;
             case ICONS -> initIcons(content);
         }
+
+        // The pages are the bezel's hardware keys, added last like the terminal's.
+        setBezelKeys(TacticalBoardChrome.KeyHint.close(), null, null);
+        List<TacticalTabStrip.Tab> tabs = new ArrayList<>();
+        for (Page each : Page.values()) {
+            tabs.add(TacticalTabStrip.Tab.of(each.tabId(), tr("page." + each.tabId())));
+        }
+        pages = UiLayoutProbe.tag(new TacticalTabStrip(TacticalTabStrip.Skin.BEZEL, tabs,
+                page.ordinal(), index -> switchPage(Page.values()[index])), PAGES_UI_ID);
+        addRenderableWidget(pages);
+        setTabStrip(pages);
+        TacticalBoardChrome.placeBezel(font, shell, pages, bezelHints());
     }
 
     private void switchPage(Page next) {
@@ -202,7 +204,6 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
                 .withIdentity(tr("identity"))
                 .withTabs(pages)
                 .withHints(TacticalBoardChrome.KeyHint.close(),
-                        TacticalBoardChrome.KeyHint.switchTab(),
                         ClientBootstrap.keyHint(KeyBindingDefaults.Binding.TERMINAL,
                                 tr("hint.terminal")))
                 .withFeedback(TacticalBoardChrome.Feedback.success(tr("feedback")));
