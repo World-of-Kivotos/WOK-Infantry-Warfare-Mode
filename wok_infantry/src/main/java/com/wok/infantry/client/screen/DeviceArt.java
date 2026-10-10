@@ -162,6 +162,63 @@ public final class DeviceArt {
                 graphics.fill(data[at], data[at + 1], data[at + 2], data[at + 3], data[at + 4]);
             }
         }
+
+        /**
+         * {@link #draw(GuiGraphics)} with the drop shadow ({@link #SHADOW} rectangles) faded to
+         * {@code shadowAlpha}; 1 draws exactly the same fills, 0 leaves the shadow out.
+         */
+        public void draw(GuiGraphics graphics, float shadowAlpha) {
+            if (!(shadowAlpha < 1.0F)) {
+                draw(graphics);
+                return;
+            }
+            int shadow = fadedShadow(shadowAlpha);
+            for (int index = 0; index < size; index++) {
+                int at = index * STRIDE;
+                int color = data[at + 4];
+                if (color == SHADOW) {
+                    if (shadow == 0) {
+                        continue;
+                    }
+                    color = shadow;
+                }
+                graphics.fill(data[at], data[at + 1], data[at + 2], data[at + 3], color);
+            }
+        }
+
+        /**
+         * These rectangles with {@code hole} cut out (each split into at most four), in the same
+         * painter order: drawing the result equals drawing these and clearing the hole back to
+         * transparency, as the preview's clear glass does ({@code d2DeviceArt glass: 'clear'}).
+         */
+        public Runs minus(UiRect hole) {
+            Runs out = new Runs();
+            for (int index = 0; index < size; index++) {
+                int l = left(index);
+                int t = top(index);
+                int r = right(index);
+                int b = bottom(index);
+                int c = color(index);
+                if (hole == null || hole.isEmpty() || r <= hole.left() || l >= hole.right()
+                        || b <= hole.top() || t >= hole.bottom()) {
+                    out.add(l, t, r, b, c);
+                    continue;
+                }
+                out.add(l, t, r, Math.max(t, hole.top()), c);
+                int midTop = Math.max(t, hole.top());
+                int midBottom = Math.min(b, hole.bottom());
+                out.add(l, midTop, Math.max(l, hole.left()), midBottom, c);
+                out.add(Math.min(r, hole.right()), midTop, r, midBottom, c);
+                out.add(l, Math.min(b, hole.bottom()), r, b, c);
+            }
+            return out;
+        }
+    }
+
+    /** {@link #SHADOW} with its alpha times {@code alpha} (0 when nothing is left of it). */
+    static int fadedShadow(float alpha) {
+        float a = Float.isFinite(alpha) ? Math.max(0.0F, Math.min(1.0F, alpha)) : 0.0F;
+        return withAlpha(SHADOW, Math.round((SHADOW >>> 24) * a));
     }
 
     /**
@@ -377,10 +434,32 @@ public final class DeviceArt {
      * overlay drawn after the page.
      */
     public record Plate(TacticalShellLayout layout, Runs under, Runs over, List<UiRect> speckBands,
-                        Runs glass) {
+                        Runs glass, Runs underClear, Runs overClear) {
         /** Rectangles replayed per frame for the static device. */
         public int fills() {
             return under.size() + over.size();
+        }
+
+        /** How many runs at the start of {@link #under} are the drop shadow ({@link #SHADOW}). */
+        public int shadowRuns() {
+            int count = 0;
+            while (count < under.size() && under.color(count) == SHADOW) {
+                count++;
+            }
+            return count;
+        }
+    }
+
+    /**
+     * A hardware key of the bottom bezel drawn as a blank cap on a dark device (0.5.0-beta.4
+     * animation): {@code cap} in {@code state}'s fill colours without its label or hatch, and an
+     * unlit LED at {@code led} ({@link UiRect#EMPTY} for none).
+     */
+    public record BlankKey(UiRect cap, BezelKey.CapState state, UiRect led) {
+        public BlankKey {
+            cap = cap == null ? UiRect.EMPTY : cap;
+            state = state == null ? BezelKey.CapState.RAISED : state;
+            led = led == null ? UiRect.EMPTY : led;
         }
     }
 
@@ -400,6 +479,18 @@ public final class DeviceArt {
             }
             return cached;
         }
+    }
+
+    /**
+     * The same plate as {@link #plate} without touching its shared cache: for a device whose size
+     * changes every frame (the tactical map's animated frame), which would push the terminals'
+     * static devices out of the six cached plates.
+     */
+    public static Plate buildUncached(int width, int height, Density tier,
+                                      TacticalLivery.Livery livery) {
+        Density size = Objects.requireNonNull(tier, "tier");
+        TacticalLivery.Livery paint = Objects.requireNonNull(livery, "livery");
+        return build(Math.max(0, width), Math.max(0, height), size, paint.skin());
     }
 
     /**
@@ -458,7 +549,8 @@ public final class DeviceArt {
             screw(over, s.left() + 4, y);
             screw(over, s.right() - 8, y);
         }
-        return new Plate(layout, under, over, speckBands(layout), glassOverlay(layout));
+        return new Plate(layout, under, over, speckBands(layout), glassOverlay(layout),
+                under.minus(s), over.minus(s));
     }
 
     private static void sideKeys(Runs out, UiRect d, DeviceMetrics k, DeviceSkin skin) {
@@ -700,17 +792,50 @@ public final class DeviceArt {
     }
 
     /**
+     * {@link #drawBackdrop(GuiGraphics, int, int)} faded by {@code alpha} (0.5.0-beta.4
+     * animation): the dim's alpha and the vignette's are multiplied by it; 1 (or more) draws
+     * exactly the plain backdrop, 0 (or less) draws nothing.
+     */
+    public static void drawBackdrop(GuiGraphics graphics, int width, int height, float alpha) {
+        if (!(alpha < 1.0F)) {
+            drawBackdrop(graphics, width, height);
+            return;
+        }
+        if (!(alpha > 0.0F)) {
+            return;
+        }
+        graphics.fill(0, 0, width + 1, height + 1, backdropDim(alpha));
+        TacticalTextures.blitTinted(graphics, TacticalTextures.DEVICE_VIGNETTE, 0, 0, width + 1,
+                height + 1, 0.0F, 0.0F, VIGNETTE_SIZE, VIGNETTE_SIZE, VIGNETTE_SIZE, VIGNETTE_SIZE,
+                withAlpha(0xFFFFFFFF, Math.round(255 * alpha)));
+    }
+
+    /** {@link #WORLD_DIM} with its alpha times {@code alpha} (pure). */
+    static int backdropDim(float alpha) {
+        float a = Float.isFinite(alpha) ? Math.max(0.0F, Math.min(1.0F, alpha)) : 0.0F;
+        return withAlpha(WORLD_DIM, Math.round((WORLD_DIM >>> 24) * a));
+    }
+
+    /**
      * Draws the device of {@code layout} in {@code livery}: cached case, specks, the link LED in
      * {@code linkColor}, the lit display in {@code displayColor} and the silkscreen.
      */
     public static void drawDevice(GuiGraphics graphics, Font font, TacticalShellLayout layout,
                                   TacticalLivery.Livery livery, int linkColor, int displayColor) {
+        drawDevice(graphics, font, layout, livery, linkColor, displayColor, 1.0F);
+    }
+
+    /**
+     * {@link #drawDevice(GuiGraphics, Font, TacticalShellLayout, TacticalLivery.Livery, int, int)}
+     * with the case's drop shadow faded to {@code shadowAlpha} (the opening animation fades it in
+     * with the screen's wake); 1 draws exactly the same fills.
+     */
+    public static void drawDevice(GuiGraphics graphics, Font font, TacticalShellLayout layout,
+                                  TacticalLivery.Livery livery, int linkColor, int displayColor,
+                                  float shadowAlpha) {
         Plate plate = plate(layout.width(), layout.height(), layout.density(), livery);
-        graphics.drawManaged(() -> plate.under().draw(graphics));
-        for (UiRect band : plate.speckBands()) {
-            TacticalTextures.tileAnchored(graphics, TacticalTextures.DEVICE_SPECKS, band.left(),
-                    band.top(), band.right(), band.bottom(), SPECK_TILE, SPECK_TILE);
-        }
+        graphics.drawManaged(() -> plate.under().draw(graphics, shadowAlpha));
+        drawSpecks(graphics, plate);
         Runs link = linkLedRuns(layout, linkColor);
         UiRect display = layout.display();
         graphics.drawManaged(() -> {
@@ -719,6 +844,65 @@ public final class DeviceArt {
             graphics.fill(display.left(), display.top(), display.right(), display.bottom(),
                     displayColor);
         });
+        drawSilk(graphics, font, layout, livery);
+    }
+
+    /**
+     * Draws a sleeping device from {@code plate} (0.5.0-beta.4 animation: scheme B's frames and its
+     * put-away device): case with its shadow, specks, the link LED in {@code linkColor} (0 = none),
+     * {@code keys} as blank caps and the silkscreen; no lit display and no glass overlay. With
+     * {@code clearGlass} the glass opening is left transparent (the caller lays the translucent
+     * glass over it), otherwise it is the dark {@link #GLASS}.
+     */
+    public static void drawSleepingDevice(GuiGraphics graphics, Font font, Plate plate,
+                                          TacticalLivery.Livery livery, int linkColor,
+                                          boolean clearGlass, List<BlankKey> keys) {
+        TacticalShellLayout layout = plate.layout();
+        Runs under = clearGlass ? plate.underClear() : plate.under();
+        Runs over = clearGlass ? plate.overClear() : plate.over();
+        graphics.drawManaged(() -> under.draw(graphics));
+        drawSpecks(graphics, plate);
+        Runs link = linkColor == 0 ? null : linkLedRuns(layout, linkColor);
+        graphics.drawManaged(() -> {
+            over.draw(graphics);
+            if (link != null) {
+                link.draw(graphics);
+            }
+        });
+        drawBlankKeys(graphics, keys, livery.skin());
+        drawSilk(graphics, font, layout, livery);
+    }
+
+    /**
+     * Draws {@code keys} as blank caps in {@code skin}: unlit LED, cap outline, face and lips as
+     * {@code BezelKey} draws them, never a label and never the disabled hatch.
+     */
+    public static void drawBlankKeys(GuiGraphics graphics, List<BlankKey> keys, DeviceSkin skin) {
+        if (keys == null || keys.isEmpty() || skin == null) {
+            return;
+        }
+        graphics.drawManaged(() -> {
+            for (BlankKey key : keys) {
+                if (!key.led().isEmpty()) {
+                    graphics.fill(key.led().left(), key.led().top(), key.led().right(),
+                            key.led().bottom(), LED_OFF);
+                }
+                BezelKey.Cap cap = BezelKey.cap(skin, key.state());
+                BezelKey.drawCap(graphics, key.cap(), new BezelKey.Cap(cap.edge(), cap.face(),
+                        cap.topLip(), cap.bottomLip(), cap.text(), cap.sub(), false, 0));
+            }
+        });
+    }
+
+    private static void drawSpecks(GuiGraphics graphics, Plate plate) {
+        for (UiRect band : plate.speckBands()) {
+            TacticalTextures.tileAnchored(graphics, TacticalTextures.DEVICE_SPECKS, band.left(),
+                    band.top(), band.right(), band.bottom(), SPECK_TILE, SPECK_TILE);
+        }
+    }
+
+    private static void drawSilk(GuiGraphics graphics, Font font, TacticalShellLayout layout,
+                                 TacticalLivery.Livery livery) {
         int[] silk = silkOrigin(layout);
         if (silk != null && font != null) {
             graphics.drawString(font, SILK_TEXT, silk[0], silk[1], livery.skin().silk(), false);

@@ -20,8 +20,15 @@ public final class TabletSettings {
     /** System property that freezes the animation at one progress. */
     public static final String FREEZE_PROPERTY = "wok.ui.tabletFreeze";
 
-    /** A freeze request: hold {@code p} on an opening, or on a close when {@code close}. */
-    public record Freeze(double p, boolean close) {
+    /**
+     * A freeze request: hold {@code p} on an opening, or on a close when {@code close}; optionally
+     * with the held item ({@code hand}, {@code null} = the real one) and the path ({@code path}
+     * B2D forces scheme B, {@code null} = the normal choice).
+     */
+    public record Freeze(double p, boolean close, TabletHand hand, TabletPath path) {
+        public Freeze(double p, boolean close) {
+            this(p, close, null, null);
+        }
     }
 
     private TabletSettings() {
@@ -32,11 +39,55 @@ public final class TabletSettings {
         return TabletMode.parse(value);
     }
 
-    /** {@code 0.87} → opening at 0.87; {@code close:0.66} → closing at 0.66; else {@code null}. */
+    /**
+     * {@code 0.87} → opening at 0.87; {@code close:0.66} → closing at 0.66; options may follow
+     * after commas: {@code hand=gun|item|empty} and {@code path=a|b} (for example
+     * {@code close:0.66,hand=empty,path=b}). Anything invalid gives {@code null}.
+     */
     public static Freeze parseFreeze(String value) {
         if (value == null) {
             return null;
         }
+        String[] parts = value.split(",");
+        Freeze base = parseFreezePoint(parts[0]);
+        if (base == null) {
+            return null;
+        }
+        TabletHand hand = null;
+        TabletPath path = null;
+        for (int index = 1; index < parts.length; index++) {
+            String option = parts[index].strip().toLowerCase(Locale.ROOT);
+            int eq = option.indexOf('=');
+            if (eq <= 0) {
+                return null;
+            }
+            String key = option.substring(0, eq).strip();
+            String val = option.substring(eq + 1).strip();
+            switch (key) {
+                case "hand" -> {
+                    if (!val.equals("gun") && !val.equals("item") && !val.equals("empty")) {
+                        return null;
+                    }
+                    hand = TabletHand.byPreviewName(val);
+                }
+                case "path" -> {
+                    if (val.equals("a")) {
+                        path = TabletPath.A3D;
+                    } else if (val.equals("b")) {
+                        path = TabletPath.B2D;
+                    } else {
+                        return null;
+                    }
+                }
+                default -> {
+                    return null;
+                }
+            }
+        }
+        return new Freeze(base.p(), base.close(), hand, path);
+    }
+
+    private static Freeze parseFreezePoint(String value) {
         String text = value.strip().toLowerCase(Locale.ROOT);
         boolean close = false;
         if (text.startsWith("close:")) {

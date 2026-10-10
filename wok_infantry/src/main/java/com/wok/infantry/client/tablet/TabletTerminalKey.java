@@ -14,18 +14,20 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
- * The client's one terminal-key latch (DESIGN 2.2): since 0.5.0-beta.4 the terminal key opens the
- * squad page in the same frame, so a held key would close and reopen it at the key repeat rate.
- * Opening or closing with the key latches; the latch clears on the key's release
+ * The client's terminal-key and map-key latches (DESIGN 2.2): since 0.5.0-beta.4 the terminal key
+ * opens the squad page and the map key the tactical map in the same frame, so a held key would
+ * close and reopen them at the key repeat rate (the server's one-second cooldown used to hide this
+ * for the map). Opening or closing with a key latches it; the latch clears on the key's release
  * ({@code ScreenEvent.KeyReleased.Pre} with a screen open, {@code InputEvent.Key} release without
  * one) and on every client tick in which the key is not physically held (IMPL_PLAN D7).
  *
- * <p>Client thread only. The {@code TabletAnimationController} of a later batch takes these hooks
- * over; until then {@code ClientBootstrap} installs them directly.
+ * <p>Client thread only. {@code ClientBootstrap} installs the release hooks.
  */
 public final class TabletTerminalKey {
     private static final TabletKeyLatch LATCH = new TabletKeyLatch();
+    private static final TabletKeyLatch MAP_LATCH = new TabletKeyLatch();
     private static Supplier<List<KeyMapping>> mappings = List::of;
+    private static Supplier<List<KeyMapping>> mapMappings = List::of;
     private static boolean installed;
 
     private TabletTerminalKey() {
@@ -36,7 +38,14 @@ public final class TabletTerminalKey {
      * terminal (the terminal key and the former squad key).
      */
     public static void install(Supplier<List<KeyMapping>> terminalMappings) {
+        install(terminalMappings, List::of);
+    }
+
+    /** {@link #install(Supplier)} with the map key mappings as well. */
+    public static void install(Supplier<List<KeyMapping>> terminalMappings,
+                               Supplier<List<KeyMapping>> mapKeyMappings) {
         mappings = Objects.requireNonNull(terminalMappings, "terminalMappings");
+        mapMappings = Objects.requireNonNull(mapKeyMappings, "mapKeyMappings");
         if (installed) {
             return;
         }
@@ -62,33 +71,55 @@ public final class TabletTerminalKey {
         LATCH.latch();
     }
 
-    /** Clears the latch (logout). */
-    public static void reset() {
-        LATCH.release();
+    /** Whether the map key is still held from the press that last opened the map. */
+    public static boolean mapLatched() {
+        return MAP_LATCH.latched();
     }
 
-    /** Per client tick, before the key presses are handled: clears the latch once nothing is held. */
+    /** The map key just opened a screen: ignore it until it is released. */
+    public static void latchMap() {
+        MAP_LATCH.latch();
+    }
+
+    /** Clears both latches (logout). */
+    public static void reset() {
+        LATCH.release();
+        MAP_LATCH.release();
+    }
+
+    /** Per client tick, before the key presses are handled: clears a latch once nothing is held. */
     public static void poll() {
-        if (!LATCH.latched()) {
+        poll(LATCH, mappings);
+        poll(MAP_LATCH, mapMappings);
+    }
+
+    private static void poll(TabletKeyLatch latch, Supplier<List<KeyMapping>> source) {
+        if (!latch.latched()) {
             return;
         }
         boolean down = false;
-        for (KeyMapping mapping : mappings.get()) {
+        for (KeyMapping mapping : source.get()) {
             if (mapping != null && physicallyDown(mapping)) {
                 down = true;
                 break;
             }
         }
-        LATCH.poll(down);
+        latch.poll(down);
     }
 
     private static void onRelease(int keyCode, int scanCode) {
-        if (!LATCH.latched()) {
+        release(LATCH, mappings, keyCode, scanCode);
+        release(MAP_LATCH, mapMappings, keyCode, scanCode);
+    }
+
+    private static void release(TabletKeyLatch latch, Supplier<List<KeyMapping>> source,
+                                int keyCode, int scanCode) {
+        if (!latch.latched()) {
             return;
         }
-        for (KeyMapping mapping : mappings.get()) {
+        for (KeyMapping mapping : source.get()) {
             if (mapping != null && !mapping.isUnbound() && mapping.matches(keyCode, scanCode)) {
-                LATCH.release();
+                latch.release();
                 return;
             }
         }

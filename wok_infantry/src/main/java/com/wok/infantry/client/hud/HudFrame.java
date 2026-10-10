@@ -13,6 +13,7 @@ import com.wok.infantry.client.screen.SquadLabels;
 import com.wok.infantry.client.screen.TacticalScreen;
 import com.wok.infantry.client.screen.UiRect;
 import com.wok.infantry.client.screen.UiScale;
+import com.wok.infantry.client.tablet.TabletAnimationController;
 import com.wok.infantry.config.InfantryClientConfig;
 import com.wok.infantry.stamina.StaminaSnapshot;
 import net.minecraft.client.AttackIndicatorStatus;
@@ -156,6 +157,11 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
         if (!isEffectOverlay(event)) {
             return;
         }
+        if (event.isCanceled() && TabletAnimationController.hudHidden()) {
+            // Hidden for the tablet, not by another MOD: keep the last measurement, so the first
+            // frame after the HUD returns lays out around the icons (IMPL_PLAN R6).
+            return;
+        }
         effectIconsDrawn = !event.isCanceled();
         Matrix4f pose = event.getGuiGraphics().pose().last().pose();
         preOffsetX = Math.round(pose.m30());
@@ -227,7 +233,10 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
         boolean tight = WokHudLayout.isTight(width, height);
         boolean narrow = width < WokHudLayout.NARROW_WIDTH;
         boolean hidden = minecraft.options.hideGui;
-        boolean terminalOpen = terminalOpen(minecraft.screen);
+        // 0.5.0-beta.4: the core HUD also stands aside while the tablet comes out or is put away,
+        // and comes back with the vanilla HUD (TabletHudPolicy).
+        boolean terminalOpen = terminalOpen(minecraft.screen)
+                || TabletAnimationController.coreHudHidden();
         boolean chatOpen = minecraft.screen instanceof ChatScreen;
         boolean debugScreen = minecraft.options.renderDebug;
         boolean playerListHeld = playerListShown(minecraft, player);

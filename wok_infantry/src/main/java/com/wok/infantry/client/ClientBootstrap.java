@@ -26,6 +26,7 @@ import com.wok.infantry.client.screen.TacticalBoardChrome;
 import com.wok.infantry.client.screen.TacticalLivery;
 import com.wok.infantry.client.screen.TacticalMapScreen;
 import com.wok.infantry.client.screen.WeaponTuningScreen;
+import com.wok.infantry.client.tablet.TabletAnimationController;
 import com.wok.infantry.client.tablet.TabletTerminalKey;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -84,7 +85,9 @@ public final class ClientBootstrap {
         FormationClientNetworkBridge.install();
         ClientStaminaState.install();
         ClientStaminaController.register();
-        TabletTerminalKey.install(() -> List.of(OPEN_TERMINAL, OPEN_SQUAD));
+        TabletTerminalKey.install(() -> List.of(OPEN_TERMINAL, OPEN_SQUAD),
+                () -> List.of(OPEN_TACTICAL_MAP));
+        TabletAnimationController.install(modBus);
     }
 
     /** The WOK key mapping of {@code binding}. */
@@ -207,7 +210,8 @@ public final class ClientBootstrap {
         while (OPEN_TACTICAL_MAP.consumeClick()) {
             mapPressed = true;
         }
-        if (mapPressed) {
+        // The map key held since it opened the map must not reopen it after Esc (key repeats).
+        if (mapPressed && !TabletTerminalKey.mapLatched()) {
             openTacticalMap(Minecraft.getInstance());
         }
         while (OPEN_WEAPON_TUNING.consumeClick()) {
@@ -261,8 +265,12 @@ public final class ClientBootstrap {
                         BattleTerminalNav.returnScreenFor(minecraft.screen),
                         TacticalMapScreen.class, TacticalMapScreen::new));
                 BattleClientActions.requestSnapshot();
+                TabletTerminalKey.latchMap();
             }
-            case FORMATION -> openFormation(minecraft);
+            case FORMATION -> {
+                openFormation(minecraft);
+                TabletTerminalKey.latchMap();
+            }
             case LEAVE_TO_XAERO -> {
             }
         }

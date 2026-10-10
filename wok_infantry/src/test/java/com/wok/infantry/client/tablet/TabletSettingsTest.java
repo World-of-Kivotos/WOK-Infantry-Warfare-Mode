@@ -44,6 +44,23 @@ class TabletSettingsTest {
     }
 
     @Test
+    void freezeOptionsPickTheHandAndThePath() {
+        assertEquals(new TabletSettings.Freeze(0.66D, true, TabletHand.EMPTY, TabletPath.B2D),
+                TabletSettings.parseFreeze("close:0.66,hand=empty,path=b"));
+        assertEquals(new TabletSettings.Freeze(0.3D, false, TabletHand.ITEM, null),
+                TabletSettings.parseFreeze("0.3, hand = item"));
+        assertEquals(new TabletSettings.Freeze(0.87D, false, null, TabletPath.A3D),
+                TabletSettings.parseFreeze("open:0.87,PATH=A"));
+        assertEquals(new TabletSettings.Freeze(0.5D, false, TabletHand.GUN, null),
+                TabletSettings.parseFreeze("0.5,hand=gun"));
+        assertNull(TabletSettings.parseFreeze("0.5,hand=sword"), "unknown hand");
+        assertNull(TabletSettings.parseFreeze("0.5,path=c"), "unknown path");
+        assertNull(TabletSettings.parseFreeze("0.5,colour=red"), "unknown option");
+        assertNull(TabletSettings.parseFreeze("0.5,empty"), "an option needs a value");
+        assertNull(TabletSettings.parseFreeze("hand=empty"), "the progress comes first");
+    }
+
+    @Test
     void surfaceKindOfNonTabletScreensIsNull() {
         assertNull(TabletSurface.kindOf(null));
         assertNull(TabletSurface.kindOf(new Object()));

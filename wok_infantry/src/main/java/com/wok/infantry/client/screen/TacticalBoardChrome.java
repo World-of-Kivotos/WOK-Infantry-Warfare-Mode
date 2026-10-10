@@ -614,6 +614,16 @@ public final class TacticalBoardChrome {
      */
     public static Shell shell(GuiGraphics graphics, Font font, TacticalShellLayout layout,
                               TacticalLivery.Livery livery, ShellSpec spec) {
+        return shell(graphics, font, layout, livery, spec, 1.0F);
+    }
+
+    /**
+     * {@link #shell(GuiGraphics, Font, TacticalShellLayout, TacticalLivery.Livery, ShellSpec)} with
+     * the case's drop shadow faded to {@code shadowAlpha} (0.5.0-beta.4: the opening animation
+     * fades it in); 1 draws exactly the same device.
+     */
+    public static Shell shell(GuiGraphics graphics, Font font, TacticalShellLayout layout,
+                              TacticalLivery.Livery livery, ShellSpec spec, float shadowAlpha) {
         ShellSpec safe = spec == null ? ShellSpec.of(Component.empty()) : spec;
         TacticalLivery.Livery paint = livery == null ? TacticalLivery.Livery.NEUTRAL : livery;
         DeviceSkin skin = paint.skin();
@@ -625,7 +635,7 @@ public final class TacticalBoardChrome {
         UiLayoutProbe.begin(graphics, DEVICE_UI_ID, device.left() - bump, device.top() - bump,
                 device.right() + bump, device.bottom() + bump, false);
         DeviceArt.drawDevice(graphics, font, layout, paint, safe.link().ledColor(skin),
-                TacticalBoardTheme.FRAME_MID);
+                TacticalBoardTheme.FRAME_MID, shadowAlpha);
         UiLayoutProbe.end(graphics);
 
         drawStatus(graphics, font, status, safe, skin);
