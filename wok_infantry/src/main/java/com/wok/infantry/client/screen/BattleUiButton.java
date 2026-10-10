@@ -76,6 +76,11 @@ final class BattleUiButton extends Button {
         return labelTruncated;
     }
 
+    /** Badge colour as built; {@link TacticalButtonStyle#NONE} = muted, resolved when drawn. */
+    int badgeColor() {
+        return badgeColor;
+    }
+
     @Override
     protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY,
                                 float partialTick) {
@@ -107,7 +112,8 @@ final class BattleUiButton extends Button {
         private boolean armed;
         private Kind kind = Kind.NORMAL;
         private Component badge;
-        private int badgeColor = TacticalBoardTheme.MUTED;
+        /** {@link TacticalButtonStyle#NONE}: MUTED of the palette active while the key is drawn. */
+        private int badgeColor = TacticalButtonStyle.NONE;
         private TextFit.Align align = TextFit.Align.CENTER;
         private TacticalIcon icon;
         private boolean iconOnly;
@@ -134,7 +140,10 @@ final class BattleUiButton extends Button {
             return this;
         }
 
-        /** Shows the current selection (blue). Selected but inactive keys draw as "current". */
+        /**
+         * Shows the current selection (faction colour with the light bar). Selected but inactive
+         * keys draw as "current".
+         */
         Builder selected(boolean selected) {
             this.selected = selected;
             return this;
@@ -151,13 +160,18 @@ final class BattleUiButton extends Button {
             return this;
         }
 
-        /** Danger key in its confirmation step: whole key red with light text. */
+        /** Danger key in its confirmation step: whole key red, dark hazard stripes, light text. */
         Builder armed(boolean armed) {
             this.armed = armed;
             return this;
         }
 
-        /** Small right-aligned tag such as a count; drawn on a faint wash. */
+        /**
+         * Small right-aligned tag such as a count; drawn on a faint wash. A {@code color} of
+         * {@link TacticalButtonStyle#NONE} is the muted text colour of the palette active while
+         * the key is drawn; a selected, success, armed or disabled key overrides the colour so
+         * the count stays readable on its fill.
+         */
         Builder badge(Component badge, int color) {
             this.badge = badge;
             this.badgeColor = color;

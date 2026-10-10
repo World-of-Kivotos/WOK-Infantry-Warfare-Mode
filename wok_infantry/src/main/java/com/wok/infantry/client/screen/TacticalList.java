@@ -35,7 +35,8 @@ import java.util.function.Function;
  * line, right value, icon or item, lead colour, disabled reason, tooltip) that is drawn with
  * {@link TacticalDraw#row}; a {@link RowRenderer} can draw the row itself and still uses the spec
  * for narration and tooltips. A hovered row shows its disabled reason, its tooltip or, when the
- * title was ellipsized, the full title.
+ * title was ellipsized, the full title. The selected row is the faction colour with a 1px dark
+ * edge line and the light bar ({@link TacticalDraw#rowBg}); hovering it lights it one step.
  *
  * <p>All coordinates are logical (inside a {@link TacticalScreen} that is the layout space after the
  * minimum 2x); clipping goes through {@link UiScale#enableScissor}.
@@ -628,8 +629,8 @@ public final class TacticalList<T> extends AbstractWidget {
                                 boolean hovered) {
         T item = items.get(index);
         TacticalDraw.RowSpec spec = presenter.apply(item);
-        TacticalDraw.RowState state = new TacticalDraw.RowState(index == selected, hovered,
-                spec.disabled(), alternate && index % 2 == 1);
+        TacticalDraw.RowState state = rowState(index, selected, hovered, spec.disabled(),
+                alternate);
         if (renderer != null) {
             renderer.render(graphics, font, row, item, spec, state);
             return new DrawnRow(spec, false, false);
@@ -637,6 +638,17 @@ public final class TacticalList<T> extends AbstractWidget {
         TacticalDraw.RowText text = TacticalDraw.row(graphics, font, row, spec, state);
         return new DrawnRow(spec, text.titleTruncated() || text.rightTruncated(),
                 text.subTruncated());
+    }
+
+    /**
+     * Pure: drawing state of item row {@code index}. The pointer state is kept on the selected row
+     * too, so a hovered selection lights up one step ({@link TacticalDraw.RowState#brightensSelection})
+     * like keys and cards; odd rows take the alternate stripe when {@code alternate} is on.
+     */
+    static TacticalDraw.RowState rowState(int index, int selectedIndex, boolean hovered,
+                                          boolean disabled, boolean alternate) {
+        return new TacticalDraw.RowState(index == selectedIndex, hovered, disabled,
+                alternate && index % 2 == 1);
     }
 
     /** Pure: tooltip text of a row, or {@code null} when it needs none. */
