@@ -31,9 +31,10 @@ import java.util.Optional;
 /**
  * Class page of the battle terminal (preview {@code 20-squad.js} {@code newClassesPage}).
  *
- * <p>Wide (content ≥ 440): the class quota list on the left, the current class card on the right
- * with "配置当前兵种装备" and, when the loadout cache already holds this class, "部署时发放" (the
- * class's slots and items). Narrow: the list above a compact card. Each class row shows used /
+ * <p>Wide (content ≥ {@value #WIDE_MIN_WIDTH}): the class quota list on the left, the current
+ * class card on the right with "配置当前兵种装备" and, when the loadout cache already holds this
+ * class, "部署时发放" (the class's slots and items). Narrow (on the D2 device also 960×720 at
+ * GUI 1): the list above a compact card. Each class row shows used /
  * quota, who holds it in the own squad, its status (点击更换 / 名额已满 / 作战中不可换 …) and, when
  * tall enough, why; on wide rows each slot is a box with its holder and health. Clicking an
  * available row changes the class at once (the server confirms). Outside a squad the rows say
@@ -99,7 +100,7 @@ final class ClassPagePainter implements SquadScreen.Painter {
         this.font = host.boardFont();
         this.metrics = host.boardMetrics();
         this.vote = model.votePending();
-        this.wide = body.width() >= 440;
+        this.wide = wide(body);
         if (vote) {
             layoutVote(body, model);
             return;
@@ -121,6 +122,17 @@ final class ClassPagePainter implements SquadScreen.Painter {
             layoutCurrent(model, true, false);
             layoutList(model, true);
         }
+    }
+
+    /**
+     * Narrowest content of the wide layout (preview {@code 20-squad.js}). On the D2 device 960×720
+     * at GUI 1 (480×360 logical) gives 416 and is narrow; 480×270 gives 456 and stays wide.
+     */
+    static final int WIDE_MIN_WIDTH = 440;
+
+    /** Whether {@code body} (the shell's content) gets the list and card side by side. */
+    static boolean wide(UiRect body) {
+        return body.width() >= WIDE_MIN_WIDTH;
     }
 
     // ---- class list -------------------------------------------------------------------------------
@@ -265,29 +277,65 @@ final class ClassPagePainter implements SquadScreen.Painter {
         return select.enabled() ? spec : spec.withDisabledReason(select.reason().full());
     }
 
-    /** Status word and colour of a class row (preview {@code classRows}). */
-    private record RowStatus(Component word, int color, boolean enabled) {
+    /**
+     * Semantic colour of a class row's status word (preview {@code classRows}: its
+     * {@code row.color === T.FAINT} test becomes {@code tone() == OFF}). Kept as a tone and
+     * resolved by {@link #color()} while drawing, so the "steps back" test never compares colours
+     * read in two different palettes.
+     */
+    enum StatusTone {
+        /** Can be picked ("点击更换"): bright green on the dark row. */
+        PICK,
+        /** The viewer's current class ("当前兵种"): the selection's text colour. */
+        CURRENT,
+        /** The squad's quota is used up ("名额已满"): bright red. */
+        FULL,
+        /** Not open, no squad, in combat or any other reason: faint, the row steps back. */
+        OFF;
+
+        /** This tone in the palette active now; call while drawing. */
+        int color() {
+            return switch (this) {
+                case PICK -> TacticalBoardTheme.SUCCESS_B;
+                case CURRENT -> TacticalBoardTheme.ON_SELECT;
+                case FULL -> TacticalBoardTheme.DANGER_B;
+                case OFF -> TacticalBoardTheme.FAINT;
+            };
+        }
+
+        /** Pure: the tone of a row that can be picked, else of one blocked by {@code code}. */
+        static StatusTone of(boolean enabled, SquadBoardModel.ReasonCode code) {
+            if (enabled) {
+                return PICK;
+            }
+            if (code == null) {
+                return OFF;
+            }
+            return switch (code) {
+                case CLASS_CURRENT -> CURRENT;
+                case CLASS_FULL -> FULL;
+                default -> OFF;
+            };
+        }
+    }
+
+    /** Status word and tone of a class row (preview {@code classRows}). */
+    private record RowStatus(Component word, StatusTone tone, boolean enabled) {
     }
 
     private static RowStatus status(SquadBoardModel model, SquadBoardModel.ClassRow row) {
         SquadBoardModel.ActionState select = row.select();
         if (select.enabled()) {
             return new RowStatus(SquadBoardText.t(SquadBoardText.CLASSES_STATUS_PICK),
-                    TacticalBoardTheme.SUCCESS_B, true);
+                    StatusTone.PICK, true);
         }
-        return switch (select.reason().code()) {
-            case CLASS_NOT_OPEN -> new RowStatus(select.reason().shortForm(),
-                    TacticalBoardTheme.FAINT, false);
-            case CLASS_CURRENT -> new RowStatus(select.reason().shortForm(),
-                    TacticalBoardTheme.ON_SELECT, false);
-            case CLASS_NO_SQUAD -> new RowStatus(SquadBoardText.t(
-                    SquadBoardText.CLASSES_STATUS_NO_SQUAD), TacticalBoardTheme.FAINT, false);
-            case CLASS_ACTIVE -> new RowStatus(SquadBoardText.t(
-                    SquadBoardText.CLASSES_STATUS_ACTIVE), TacticalBoardTheme.FAINT, false);
-            case CLASS_FULL -> new RowStatus(select.reason().shortForm(),
-                    TacticalBoardTheme.DANGER_B, false);
-            default -> new RowStatus(select.reason().shortForm(), TacticalBoardTheme.FAINT, false);
+        SquadBoardModel.ReasonCode code = select.reason().code();
+        Component word = switch (code) {
+            case CLASS_NO_SQUAD -> SquadBoardText.t(SquadBoardText.CLASSES_STATUS_NO_SQUAD);
+            case CLASS_ACTIVE -> SquadBoardText.t(SquadBoardText.CLASSES_STATUS_ACTIVE);
+            default -> select.reason().shortForm();
         };
+        return new RowStatus(word, StatusTone.of(false, code), false);
     }
 
     /** Third line: why, or what a click does. */
@@ -322,7 +370,7 @@ final class ClassPagePainter implements SquadScreen.Painter {
         boolean selected = state.selected();
         boolean off = !selected && !status.enabled();
         TacticalDraw.rowBg(graphics, bounds, state.withDisabled(off), 0);
-        boolean dim = off && status.color() == TacticalBoardTheme.FAINT;
+        boolean dim = off && status.tone() == StatusTone.OFF;
         boolean noSquad = !model.authority().inSquad();
         int x = bounds.left() + 6;
         int right = bounds.right() - 5;
@@ -344,7 +392,7 @@ final class ClassPagePainter implements SquadScreen.Painter {
         int countColor = selected ? TacticalBoardTheme.ON_SELECT
                 : !noSquad && quota.limit() > 0 && quota.used() >= quota.limit()
                 ? TacticalBoardTheme.DANGER_B : TacticalBoardTheme.LIGHT_MUTED;
-        int statusColor = selected ? TacticalBoardTheme.ON_SELECT : status.color();
+        int statusColor = selected ? TacticalBoardTheme.ON_SELECT : status.tone().color();
         int subColor = selected ? TacticalBoardTheme.SELECT_SUB : dim ? TacticalBoardTheme.FAINT
                 : TacticalBoardTheme.LIGHT_MUTED;
         int statusWidth = font.width(status.word());

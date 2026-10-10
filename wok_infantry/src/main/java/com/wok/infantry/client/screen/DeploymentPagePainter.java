@@ -23,11 +23,12 @@ import java.util.UUID;
 /**
  * Deployment page of the battle terminal (preview {@code 20-squad.js} {@code newDeploymentPage}).
  *
- * <p>Wide (content ≥ 440): the viewer's deployment points on the left, hugging their rows when the
- * "部署点方位" schematic fits below; on the right the deployment status: phase and respawn
- * countdown (neutral, not orange), the checklist, the deploy key and its reason, the in-combat
- * group (resupply, redeploy with a confirmation), the squad mates and the notes. Narrow (320
- * wide): status strip, points, and an action bar whose single reason line covers its three keys.
+ * <p>Wide (content ≥ {@value #WIDE_MIN_WIDTH}): the viewer's deployment points on the left,
+ * hugging their rows when the "部署点方位" schematic fits below; on the right the deployment
+ * status: phase and respawn countdown (neutral, not orange), the checklist, the deploy key and its
+ * reason, the in-combat group (resupply, redeploy with a confirmation), the squad mates and the
+ * notes. Narrow (320 wide, and on the D2 device also 960×720 at GUI 1): status strip, points, and
+ * an action bar whose single reason line covers its three keys.
  * Title, rows and pager of the point list share one pagination. While voting the list gives way
  * to the vote block and nothing can be deployed.
  */
@@ -39,6 +40,11 @@ final class DeploymentPagePainter implements SquadScreen.Painter {
     static final String ACTIONS_BOX = "squad.deploy_actions";
 
     private static final int POINT_ROW_MID = 24;
+    /**
+     * Narrowest content of the wide layout (preview {@code 20-squad.js}). On the D2 device 960×720
+     * at GUI 1 (480×360 logical) gives 416 and is narrow; 480×270 gives 456 and stays wide.
+     */
+    static final int WIDE_MIN_WIDTH = 440;
 
     private final SquadScreen host;
     private final Font font;
@@ -77,7 +83,7 @@ final class DeploymentPagePainter implements SquadScreen.Painter {
         this.font = host.boardFont();
         this.metrics = host.boardMetrics();
         this.vote = model.votePending();
-        this.wide = body.width() >= 440;
+        this.wide = wide(body);
         this.active = model.snapshot().deployment().phase() == DeploymentPhase.ACTIVE;
         if (vote) {
             voteData = FormationVotePanel.of(ClientFormationState.snapshot(), model.snapshot());
@@ -144,6 +150,11 @@ final class DeploymentPagePainter implements SquadScreen.Painter {
             int step = DeploymentPointMap.plan(content, points, font::width, "").step();
             mapPlan = DeploymentPointMap.plan(content, points, font::width, scaleText(step));
         }
+    }
+
+    /** Whether {@code body} (the shell's content) gets the two-column layout. */
+    static boolean wide(UiRect body) {
+        return body.width() >= WIDE_MIN_WIDTH;
     }
 
     private String scaleText(int blocks) {
@@ -675,7 +686,10 @@ final class DeploymentPagePainter implements SquadScreen.Painter {
     }
 
     private void renderPhaseLine(GuiGraphics graphics, SquadBoardModel model, UiRect c, int y) {
-        // Waiting (respawn countdown, vote) is neutral; only "作战中" is green.
+        // Waiting (respawn countdown, vote) is neutral; only "作战中" is green. The preview draws
+        // the "N 秒" countdown orange (20-squad.js:1581); the Java port made it TEXT on purpose
+        // (JAVA_PORT_PLAN 6.2: orange is for sections and adjustable controls), so there is no
+        // orange text here that would need ACCENT_TEXT.
         TacticalDraw.led(graphics, c.left(), y + 2, active ? TacticalBoardTheme.SUCCESS
                 : TacticalBoardTheme.MUTED);
         Component phase = phaseWord(model);
@@ -752,7 +766,8 @@ final class DeploymentPagePainter implements SquadScreen.Painter {
                     mate.state() == MemberState.OFFLINE ? TacticalBoardTheme.MUTED
                             : TacticalBoardTheme.TEXT, TextFit.Align.LEFT);
             TextFit.draw(graphics, font, right, box.right() - rightWidth, textY, rightWidth,
-                    style.hasTag() ? stateColor : TacticalBoardTheme.MUTED, TextFit.Align.LEFT);
+                    style.hasTag() ? SquadPagePainter.boardTextColor(mate.state())
+                            : TacticalBoardTheme.MUTED, TextFit.Align.LEFT);
             if (two) {
                 Component className = SquadLabels.className(snapshot, mate.classId());
                 int classWidth = TextFit.draw(graphics, font, className, box.left() + 9,

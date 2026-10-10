@@ -34,12 +34,15 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.ToIntFunction;
 
 /**
- * The battle terminal's squad, class and deployment pages (preview {@code 20-squad.js}, "new"):
- * one tactical-tablet screen with the shared shell, the six terminal tabs and three pages that
- * switch in place. The loadout, map and formation tabs go through {@link BattleTerminalNav} with
- * replace semantics, so one Esc always closes the whole terminal.
+ * The battle terminal's squad, class and deployment pages (preview {@code 20-squad.js}, "new",
+ * on the D2 device of {@code 17-device.js} in the viewer's P3 livery): one tactical-tablet screen
+ * with the shared device shell (status bar with "title › page", identity and receipt pill; the six
+ * terminal page keys between the hardware Esc 返回 and R 刷新 keys on the bottom bezel) and three
+ * pages that switch in place. The loadout, map and formation tabs go through
+ * {@link BattleTerminalNav} with replace semantics, so one Esc always closes the whole terminal.
  *
  * <p>What every page shows and allows comes from {@link SquadBoardModel}, read from the latest
  * battle snapshot every frame (re-derived only when the snapshot, the selection, the waiting
@@ -153,9 +156,16 @@ public final class SquadScreen extends TacticalScreen
     private long cachedClockStep = Long.MIN_VALUE;
     /** The model the operation keys were last synchronised with. */
     private SquadBoardModel syncedModel;
-    /** The header identity chosen for {@link #identityModel} next to {@link #identityStrip}. */
+    /** Status-bar title of this build ("WOK步战 // 战斗终端" or "战斗终端", {@link #shellTitle}). */
+    private Component statusTitle = SquadBoardText.t(SquadBoardText.TITLE);
+    /**
+     * The status-bar identity chosen for {@link #identityModel} with {@link #identityStrip}, the
+     * layout and the receipt text it was measured against.
+     */
     private SquadBoardModel identityModel;
     private TacticalTabStrip identityStrip;
+    private TacticalShellLayout identityLayout;
+    private String identityReceipt;
     private Component identityChoice;
     /** The confirmation that is open (also gives the probe state {@code kick}). */
     private OpenConfirm openConfirm;
@@ -601,7 +611,9 @@ public final class SquadScreen extends TacticalScreen
         };
 
         // The bottom bezel comes last, so plain Tab reaches it after every control of the page.
-        setBezelKeys(TacticalBoardChrome.KeyHint.close(),
+        // Esc 返回 (preview newShell: the terminal goes back to the screen it was opened from),
+        // R 刷新 asks the server for a fresh snapshot, like the keyboard R in onKeyPressed.
+        setBezelKeys(TacticalBoardChrome.KeyHint.back(),
                 TacticalBoardChrome.KeyHint.literal("R",
                         SquadBoardText.t(SquadBoardText.HINT_REFRESH)),
                 BattleClientActions::requestSnapshot);
@@ -612,6 +624,8 @@ public final class SquadScreen extends TacticalScreen
         roles.put(strip, TABS_ROLE);
         setTabStrip(strip);
         TacticalBoardChrome.placeBezel(font, shellLayout(), strip, bezelHints());
+        statusTitle = shellTitle();
+        identityModel = null;
     }
 
     /** Follows the own squad when it changes; drops a target that left the viewed squad. */
@@ -640,8 +654,50 @@ public final class SquadScreen extends TacticalScreen
         BattleTerminalNav.navigate(this, tab);
     }
 
-    private Component title() {
-        return SquadBoardText.t(width < 440 ? SquadBoardText.TITLE_SHORT : SquadBoardText.TITLE);
+    /** The three pages of this screen, in strip order (they share one status-bar title). */
+    private static final List<BattleTab> TITLE_PAGES = List.of(BattleTab.SQUADS,
+            BattleTab.CLASSES, BattleTab.DEPLOYMENT);
+
+    /**
+     * The status-bar title of this layout: the full "WOK步战 // 战斗终端" when
+     * {@link #useFullTitle} allows it, else "战斗终端". The status bar puts the page name after
+     * it ("› 部署", the short name on the compact class) and caps the whole at 55% of its free
+     * width ({@link TacticalBoardChrome#planStatus}), so the room is read from that plan.
+     */
+    private Component shellTitle() {
+        Component full = SquadBoardText.t(SquadBoardText.TITLE);
+        TacticalShellLayout layout = shellLayout();
+        int room = TacticalBoardChrome.planStatus(font, layout,
+                TacticalBoardChrome.ShellSpec.of(Component.empty())).title().maxWidth();
+        List<String> pages = new ArrayList<>(TITLE_PAGES.size());
+        for (BattleTab tab : TITLE_PAGES) {
+            pages.add((layout.tight() ? tab.shortLabel() : tab.label()).getString());
+        }
+        return useFullTitle(width, room, full.getString(), pages, font::width) ? full
+                : SquadBoardText.t(SquadBoardText.TITLE_SHORT);
+    }
+
+    /** Below this layout width the terminal always uses the short title (preview shellTitle). */
+    static final int SHORT_TITLE_BELOW = 400;
+
+    /**
+     * Pure title rule: the full title on layouts at least {@link #SHORT_TITLE_BELOW} wide when
+     * "title › page" fits the status bar's title {@code room} without an ellipsis for every page
+     * in {@code pages}. One answer for all three pages, so a page key never makes the title jump;
+     * the room test keeps a long translation ("WOK INFANTRY // BATTLE TERMINAL › Squads" at
+     * 480×360) from being cut, where the preview only knew the Chinese widths.
+     */
+    static boolean useFullTitle(int layoutWidth, int room, String fullTitle, List<String> pages,
+                                ToIntFunction<String> width) {
+        if (layoutWidth < SHORT_TITLE_BELOW) {
+            return false;
+        }
+        for (String page : pages) {
+            if (width.applyAsInt(TacticalBoardChrome.statusTitle(fullTitle, page)) > room) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -740,13 +796,11 @@ public final class SquadScreen extends TacticalScreen
                 syncedModel = model;
             }
             BattleSnapshot snapshot = model.snapshot();
-            TacticalBoardChrome.ShellSpec spec = TacticalBoardChrome.ShellSpec.of(title())
-                    .withIdentity(identity())
+            TacticalBoardChrome.ShellSpec spec = TacticalBoardChrome.ShellSpec.of(statusTitle)
                     .withLink(TacticalBoardChrome.LinkState.forBattleSnapshot(snapshot))
                     .withTabs(tabStrip())
-                    .withHints(hints())
                     .withFeedback(TacticalBoardChrome.Feedback.fromBattle());
-            drawShell(graphics, spec);
+            drawShell(graphics, spec.withIdentity(identity(spec)));
             if (painter != null) {
                 painter.render(graphics, model, mouseX, mouseY);
             }
@@ -760,40 +814,44 @@ public final class SquadScreen extends TacticalScreen
     }
 
     /**
-     * The longest identity candidate ("阵营 · 编制 · 小队 · 职务" shortened step by step) that
-     * the header can show next to the full tab names (preview {@code identityCaps}).
+     * The longest identity candidate ("阵营 · 编制 · 小队 · 职务" shortened step by step, preview
+     * {@code identityText}) that fits the room the status bar leaves between "title › page" and
+     * the receipt pill ({@link TacticalBoardChrome.StatusPlan#identityRoom()} of {@code spec},
+     * which carries this frame's title, page and receipt but no identity yet). When none fits, the
+     * shortest goes in and the shell shortens it further ({@link TacticalBoardChrome#fitIdentity}).
      */
-    private Component identity() {
+    private Component identity(TacticalBoardChrome.ShellSpec spec) {
         TacticalTabStrip strip = tabStrip();
-        if (model == identityModel && strip == identityStrip) {
-            // Same model, same strip (rebuilt with the layout): the same choice as last frame.
+        TacticalShellLayout layout = shellLayout();
+        String receipt = spec.feedback() == null ? "" : spec.feedback().text().getString();
+        if (model == identityModel && strip == identityStrip && layout.equals(identityLayout)
+                && receipt.equals(identityReceipt)) {
+            // Same model, page, size and receipt: the same choice as last frame.
             return identityChoice;
         }
-        List<Component> candidates = model.identityCandidates();
-        TacticalShellLayout layout = shellLayout();
-        int tabs = strip == null ? 0 : strip.preferredWidth(font, false, layout.tight());
-        int available = layout.header().width() - 14;
-        int cap = Math.min(layout.header().width() * 3 / 10,
-                available - font.width(title()) - (tabs > 0 ? tabs + 10 : 0) - 10);
-        Component chosen = candidates.isEmpty() ? null : candidates.get(candidates.size() - 1);
-        for (Component candidate : candidates) {
-            if (font.width(candidate) <= cap) {
-                chosen = candidate;
-                break;
-            }
-        }
+        int room = TacticalBoardChrome.planStatus(font, layout, spec).identityRoom();
         identityModel = model;
         identityStrip = strip;
-        identityChoice = chosen;
-        return chosen;
+        identityLayout = layout;
+        identityReceipt = receipt;
+        identityChoice = pickIdentity(model.identityCandidates(), room, font::width);
+        return identityChoice;
     }
 
-    private List<TacticalBoardChrome.KeyHint> hints() {
-        List<TacticalBoardChrome.KeyHint> hints = new ArrayList<>();
-        hints.add(TacticalBoardChrome.KeyHint.close());
-        hints.add(TacticalBoardChrome.KeyHint.literal("R",
-                SquadBoardText.t(SquadBoardText.HINT_REFRESH)));
-        return hints;
+    /**
+     * Pure: the first of {@code candidates} (longest first) at most {@code room} wide, else the
+     * last one; {@code null} without candidates.
+     */
+    static <T> T pickIdentity(List<T> candidates, int room, ToIntFunction<T> width) {
+        if (candidates == null || candidates.isEmpty()) {
+            return null;
+        }
+        for (T candidate : candidates) {
+            if (width.applyAsInt(candidate) <= room) {
+                return candidate;
+            }
+        }
+        return candidates.get(candidates.size() - 1);
     }
 
     /** Test seam: pagination of the shown point list (deployment page), or {@code null}. */

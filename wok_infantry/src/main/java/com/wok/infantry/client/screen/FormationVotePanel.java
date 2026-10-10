@@ -193,8 +193,20 @@ final class FormationVotePanel {
         return steps;
     }
 
-    /** "你的票", "截止" and "领先"/"可用编制" key-value rows. */
-    record Info(Component key, Component value, int color) {
+    /**
+     * "你的票", "截止" and "领先"/"可用编制" key-value rows (also "我的状态"). The value keeps its
+     * {@link SquadBoardBlocks.Ink}, so rows planned by {@link #layout} in {@code init()} are still
+     * drawn in the frame's livery.
+     */
+    record Info(Component key, Component value, SquadBoardBlocks.Ink ink) {
+        Info {
+            ink = ink == null ? SquadBoardBlocks.Ink.TEXT : ink;
+        }
+
+        /** The value colour in the palette active now; call while drawing. */
+        int color() {
+            return ink.color();
+        }
     }
 
     static Info mineInfo(Data data) {
@@ -202,22 +214,22 @@ final class FormationVotePanel {
                 !data.open() ? SquadBoardText.t(SquadBoardText.VOTE_MINE_CLOSED)
                         : data.mine() != null ? data.mine()
                         : SquadBoardText.t(SquadBoardText.VOTE_MINE_NONE),
-                data.open() ? TacticalBoardTheme.TEXT : TacticalBoardTheme.MUTED);
+                data.open() ? SquadBoardBlocks.Ink.TEXT : SquadBoardBlocks.Ink.MUTED);
     }
 
     static Info dueInfo(Data data) {
         return new Info(SquadBoardText.t(SquadBoardText.VOTE_DUE),
                 SquadBoardText.t(data.open() ? SquadBoardText.VOTE_DUE_OPEN
-                        : SquadBoardText.VOTE_DUE_WAIT), TacticalBoardTheme.MUTED);
+                        : SquadBoardText.VOTE_DUE_WAIT), SquadBoardBlocks.Ink.MUTED);
     }
 
     static Info extraInfo(Data data) {
         return data.open()
                 ? new Info(SquadBoardText.t(SquadBoardText.VOTE_LEADING), data.lead(),
-                TacticalBoardTheme.TEXT)
+                SquadBoardBlocks.Ink.TEXT)
                 : new Info(SquadBoardText.t(SquadBoardText.VOTE_AVAILABLE),
                 SquadBoardText.t(SquadBoardText.VOTE_AVAILABLE_VALUE, data.candidates().size()),
-                TacticalBoardTheme.TEXT);
+                SquadBoardBlocks.Ink.TEXT);
     }
 
     /** The shortcut key's label: open the ballot, or (not open yet) view the candidates. */
