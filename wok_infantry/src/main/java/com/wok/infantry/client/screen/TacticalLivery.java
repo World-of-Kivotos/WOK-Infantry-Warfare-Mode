@@ -174,7 +174,10 @@ public final class TacticalLivery {
         learnedFrom = battle;
     }
 
-    /** Unit-test seam: the faction sides learned so far. */
+    /**
+     * The faction sides learned so far. Read by {@link FormationSelectionScreen#pageLivery} for a
+     * joined page whose battle snapshot has not caught up with the join; also a unit-test seam.
+     */
     static Map<String, Faction> learnedSides() {
         return learnedSides;
     }
