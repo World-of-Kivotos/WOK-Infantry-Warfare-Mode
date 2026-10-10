@@ -2,6 +2,8 @@ package com.wok.infantry.client.screen;
 
 import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.wok.infantry.client.tablet.TabletScreenKind;
+import com.wok.infantry.client.tablet.TabletSurface;
 import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.GameNarrator;
 import net.minecraft.client.Minecraft;
@@ -58,8 +60,12 @@ import java.util.function.BooleanSupplier;
  * backdrop, {@link #renderTactical} (shell, page, widgets), modal, {@link #renderGlassOverlay},
  * tooltip. The hardware Esc / R keys of the bottom bezel are registered with
  * {@link #setBezelKeys}.
+ *
+ * <p><b>Tablet family.</b> Every tactical screen is a {@link TabletSurface}: entering one from the
+ * world plays the "take out the tablet" animation (0.5.0-beta.4). Only Esc closes it unless a
+ * subclass says otherwise ({@link SquadScreen} also closes on the terminal key).
  */
-public abstract class TacticalScreen extends Screen {
+public abstract class TacticalScreen extends Screen implements TabletSurface {
     /** Mouse position handed to the board while a modal is open, so nothing underneath hovers. */
     private static final int NO_MOUSE = -32768;
     private static final float MODAL_Z = 300.0F;
@@ -100,6 +106,12 @@ public abstract class TacticalScreen extends Screen {
 
     /** Creates widgets for the logical {@link #width} × {@link #height}. */
     protected abstract void initTactical();
+
+    /** A D2 terminal screen that only Esc closes; the squad screen overrides it. */
+    @Override
+    public TabletScreenKind tabletKind() {
+        return TabletScreenKind.TERMINAL;
+    }
 
     /** Current factor: 2 while the minimum 2x applies, otherwise 1. */
     public final int uiScale() {

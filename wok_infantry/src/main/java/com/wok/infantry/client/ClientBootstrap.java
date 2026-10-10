@@ -17,6 +17,8 @@ import com.wok.infantry.integration.xaero.XaeroMinimapIntegration;
 import com.wok.infantry.integration.xaero.XaeroWorldMapPolicy;
 import com.wok.infantry.integration.tacz.TaczAdsSpeedAdapter;
 import com.wok.infantry.client.screen.AdminLoadoutScreen;
+import com.wok.infantry.client.screen.BattleTab;
+import com.wok.infantry.client.screen.BattleTerminalNav;
 import com.wok.infantry.client.screen.FormationSelectionScreen;
 import com.wok.infantry.client.screen.PlayerLoadoutScreen;
 import com.wok.infantry.client.screen.SquadScreen;
@@ -24,6 +26,7 @@ import com.wok.infantry.client.screen.TacticalBoardChrome;
 import com.wok.infantry.client.screen.TacticalLivery;
 import com.wok.infantry.client.screen.TacticalMapScreen;
 import com.wok.infantry.client.screen.WeaponTuningScreen;
+import com.wok.infantry.client.tablet.TabletTerminalKey;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -36,6 +39,7 @@ import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModList;
 
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalInt;
@@ -80,6 +84,7 @@ public final class ClientBootstrap {
         FormationClientNetworkBridge.install();
         ClientStaminaState.install();
         ClientStaminaController.register();
+        TabletTerminalKey.install(() -> List.of(OPEN_TERMINAL, OPEN_SQUAD));
     }
 
     /** The WOK key mapping of {@code binding}. */
@@ -167,6 +172,9 @@ public final class ClientBootstrap {
         TaczAdsSpeedAdapter.clientTick(Minecraft.getInstance().player);
         ClientProneStability.tick();
         migrateKeyDefaultsOnce(Minecraft.getInstance());
+        // 0.5.0-beta.4: the terminal opens in the same frame, so a held key must not close and
+        // reopen it at the key repeat rate. Clear the latch first once the key is let go.
+        TabletTerminalKey.poll();
         boolean terminalPressed = false;
         while (OPEN_TERMINAL.consumeClick()) {
             terminalPressed = true;
@@ -176,7 +184,8 @@ public final class ClientBootstrap {
         while (OPEN_SQUAD.consumeClick()) {
             terminalPressed = true;
         }
-        if (terminalPressed) {
+        // Repeats of a key still held since it opened or closed a screen are dropped.
+        if (terminalPressed && !TabletTerminalKey.latched()) {
             openTerminal(Minecraft.getInstance());
         }
         while (OPEN_LOADOUT.consumeClick()) {
@@ -211,7 +220,13 @@ public final class ClientBootstrap {
         }
     }
 
-    /** Squad page, or the formation page while the player has no formation yet. */
+    /**
+     * Squad page, or the formation page while the player has no formation yet. Since
+     * 0.5.0-beta.4 the squad page opens locally in the same frame (with the cached snapshot) and
+     * asks the server for a fresh one; no {@code BattleOpenPacket} is sent any more, so a late
+     * answer can no longer reopen a page the player already closed (the packet and its server
+     * handling stay for older clients). The key stays latched until it is released.
+     */
     private static void openTerminal(Minecraft minecraft) {
         if (minecraft.getConnection() == null || minecraft.player == null) {
             return;
@@ -219,14 +234,20 @@ public final class ClientBootstrap {
         switch (KeyBindingDefaults.terminalRoute(inBattle(), formationRequired())) {
             case SQUAD -> {
                 if (!(minecraft.screen instanceof SquadScreen)) {
-                    BattleClientNetworkBridge.openSquadScreen();
+                    BattleTerminalNav.show(new SquadScreen(minecraft.screen));
+                    BattleClientActions.requestSnapshot();
                 }
             }
             case FORMATION -> openFormation(minecraft);
         }
+        TabletTerminalKey.latch();
     }
 
-    /** Tactical map; formation page outside a battle; nothing when Xaero handles the press. */
+    /**
+     * Tactical map; formation page outside a battle; nothing when Xaero handles the press. The map
+     * opens locally like the squad page (the session's reused instance, as Xaero's redirect does)
+     * and asks for a fresh snapshot.
+     */
     private static void openTacticalMap(Minecraft minecraft) {
         if (minecraft.getConnection() == null || minecraft.player == null
                 || minecraft.screen instanceof TacticalMapScreen) {
@@ -235,7 +256,12 @@ public final class ClientBootstrap {
         switch (KeyBindingDefaults.mapRoute(
                 XaeroWorldMapPolicy.handlesSamePress(OPEN_TACTICAL_MAP), inBattle(),
                 formationRequired())) {
-            case MAP -> BattleClientNetworkBridge.openMapScreen();
+            case MAP -> {
+                BattleTerminalNav.show(BattleTerminalNav.reuse(BattleTab.MAP,
+                        BattleTerminalNav.returnScreenFor(minecraft.screen),
+                        TacticalMapScreen.class, TacticalMapScreen::new));
+                BattleClientActions.requestSnapshot();
+            }
             case FORMATION -> openFormation(minecraft);
             case LEAVE_TO_XAERO -> {
             }
@@ -327,5 +353,6 @@ public final class ClientBootstrap {
         ClientStaminaController.reset();
         ClientStaminaState.clear();
         com.wok.infantry.battle.tickets.TicketNetwork.clearClient();
+        TabletTerminalKey.reset();
     }
 }

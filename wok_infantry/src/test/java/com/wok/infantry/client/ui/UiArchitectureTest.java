@@ -47,7 +47,6 @@ class UiArchitectureTest {
     private static final Map<String, String> ALLOWED = Map.of(
             "screen/UiScale.java#direct-scissor", "the pose-aware wrapper itself",
             "screen/CatalogTransferScreen.java#direct-scissor", "B10 (catalog transfer)",
-            "screen/TacticalMapScreen.java#direct-scissor", "B7 (tactical map, tier 2)",
             "screen/AdminLoadoutScreen.java#vanilla-confirm", "B10 (administrator terminal)");
 
     @Test

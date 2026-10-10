@@ -7,5 +7,8 @@ src/generated/**/*.json text eol=lf
 # Model assets are hash-checked by tests (LargeSupplyStationModelContractTest) and must stay byte-exact
 # on Windows checkouts with core.autocrlf=true.
 *.geo.json -text
+# The tablet animation's comparison vectors are written by ui-preview's export-java-vectors.mjs;
+# its --check compares them byte for byte.
+wok_infantry/src/test/resources/tablet_anim/vectors.json -text
 *.obj -text
 *.mtl -text
