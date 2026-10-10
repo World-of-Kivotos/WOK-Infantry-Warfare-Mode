@@ -65,11 +65,11 @@ public final class TacticalTabStrip extends AbstractWidget {
         }
 
         public static Tab of(String id, Component label) {
-            return new Tab(id, label, label, null, null, TacticalBoardTheme.MUTED);
+            return new Tab(id, label, label, null, null, TacticalBoardTheme.RENDER_MUTED);
         }
 
         public static Tab of(String id, Component label, Component shortLabel) {
-            return new Tab(id, label, shortLabel, null, null, TacticalBoardTheme.MUTED);
+            return new Tab(id, label, shortLabel, null, null, TacticalBoardTheme.RENDER_MUTED);
         }
 
         public boolean enabled() {
@@ -527,7 +527,8 @@ public final class TacticalTabStrip extends AbstractWidget {
             graphics.fill(badgeLeft, textY - 1, right, textY + 8,
                     darkFill ? TacticalBoardTheme.BADGE_ON_SELECT : TacticalBoardTheme.BADGE_ON_CARD);
             graphics.drawString(font, tab.badge(), badgeLeft + 3, textY,
-                    darkFill ? TacticalBoardTheme.LIGHT : tab.badgeColor(), false);
+                    darkFill ? TacticalBoardTheme.ON_SELECT
+                            : TacticalBoardTheme.orMuted(tab.badgeColor()), false);
             right = badgeLeft - 2;
         }
         int left = cell.left() + 3;

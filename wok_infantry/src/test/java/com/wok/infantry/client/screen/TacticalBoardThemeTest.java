@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.util.HashSet;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -128,19 +130,66 @@ class TacticalBoardThemeTest {
     }
 
     @Test
-    void everyTokenIsAPublicConstant() throws IllegalAccessException {
+    void everyTokenIsPublicAndOnlyThePaletteTokensAreSwappable() {
+        // Two-way: a non-final int field is exactly a PaletteToken (TacticalPalette writes it),
+        // every other int token stays a constant that no faction palette touches.
         assertTrue(Modifier.isPublic(TacticalBoardTheme.class.getModifiers()),
                 "HUD and map packages must be able to use the tokens");
+        Set<String> swappable = new HashSet<>();
         int tokens = 0;
         for (Field field : TacticalBoardTheme.class.getDeclaredFields()) {
             if (field.getType() != int.class || field.isSynthetic()) {
                 continue;
             }
             int modifiers = field.getModifiers();
-            assertTrue(Modifier.isPublic(modifiers) && Modifier.isStatic(modifiers)
-                    && Modifier.isFinal(modifiers), field.getName());
+            assertTrue(Modifier.isPublic(modifiers) && Modifier.isStatic(modifiers),
+                    field.getName());
+            if (!Modifier.isFinal(modifiers)) {
+                swappable.add(field.getName());
+            }
             tokens++;
         }
+        Set<String> paletteTokens = new HashSet<>();
+        for (PaletteToken token : PaletteToken.values()) {
+            paletteTokens.add(token.name());
+        }
+        assertEquals(paletteTokens, swappable,
+                "non-final theme fields and PaletteToken must name the same tokens");
         assertTrue(tokens >= 90, "expected the full tablet token set, found " + tokens);
+    }
+
+    @Test
+    void sectionMarkersOnThePlateTakeThePlateSafeVariants() {
+        // Preview UIX.section: the plate is device chrome, so danger / selection markers take the
+        // bright variant and attention orange the section orange; other colours are kept.
+        for (TacticalPalette palette : new TacticalPalette[]{TacticalPalette.A,
+                TacticalPalette.ACADEMY, TacticalPalette.CAESAR, TacticalPalette.NEUTRAL}) {
+            try (TacticalPalette.Applied ignored = TacticalPalette.push(palette)) {
+                assertEquals(TacticalBoardTheme.DANGER_B,
+                        TacticalBoardTheme.sectionMarker(TacticalBoardTheme.DANGER), palette.name());
+                assertEquals(TacticalBoardTheme.SELECT_B,
+                        TacticalBoardTheme.sectionMarker(TacticalBoardTheme.SELECT), palette.name());
+                assertEquals(TacticalBoardTheme.SECTION,
+                        TacticalBoardTheme.sectionMarker(TacticalBoardTheme.ACCENT), palette.name());
+                assertEquals(TacticalBoardTheme.SUCCESS_B,
+                        TacticalBoardTheme.sectionMarker(TacticalBoardTheme.SUCCESS_B),
+                        palette.name());
+            }
+        }
+        try (TacticalPalette.Applied ignored = TacticalPalette.push(TacticalPalette.ACADEMY)) {
+            // Academy's board orange is one step deeper; the plate keeps A's section orange.
+            assertEquals(0xFFBE7A1E, TacticalBoardTheme.sectionMarker(TacticalBoardTheme.ACCENT));
+        }
+    }
+
+    @Test
+    void frozenAliasesKeepTheASchemeInsideAFactionScope() {
+        try (TacticalPalette.Applied ignored = TacticalPalette.push(TacticalPalette.NEUTRAL)) {
+            assertEquals(0xFF1C2427, TacticalBoardTheme.LIGHT);
+            assertEquals(0xFFEEF3F0, TacticalBoardTheme.LIGHT_TEXT, "deprecated alias stays A");
+            assertEquals(0x40243032, TacticalBoardTheme.DIVIDER, "alias stays A");
+            assertEquals(0xFFEEF3F0, BattleUiTheme.TEXT, "HUD alias stays A");
+            assertEquals(0xFFE8695D, BattleUiTheme.DANGER, "HUD alias stays A");
+        }
     }
 }

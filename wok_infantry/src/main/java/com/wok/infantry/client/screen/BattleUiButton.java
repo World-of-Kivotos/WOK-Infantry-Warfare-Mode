@@ -107,7 +107,8 @@ final class BattleUiButton extends Button {
         private boolean armed;
         private Kind kind = Kind.NORMAL;
         private Component badge;
-        private int badgeColor = TacticalBoardTheme.MUTED;
+        /** Resolved while drawing, so the default follows the faction palette. */
+        private int badgeColor = TacticalBoardTheme.RENDER_MUTED;
         private TextFit.Align align = TextFit.Align.CENTER;
         private TacticalIcon icon;
         private boolean iconOnly;

@@ -220,9 +220,14 @@ public abstract class TacticalScreen extends Screen {
         return TacticalLivery.Scope.BOARD;
     }
 
+    /** Palette of this frame: the livery's palette on the page's scope. */
+    final TacticalPalette framePalette() {
+        return livery().palette(paletteScope());
+    }
+
     /** Applies this frame's palette; {@link #render} closes the handle. */
     private TacticalPalette.Applied pushPalette() {
-        return TacticalPalette.push(livery().palette(paletteScope()));
+        return TacticalPalette.push(framePalette());
     }
 
     // ---- device backdrop and glass --------------------------------------------------------------
