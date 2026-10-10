@@ -1,6 +1,7 @@
 package com.wok.infantry.uitest;
 
 import com.wok.infantry.WokInfantryMod;
+import com.wok.infantry.client.screen.TacticalLivery;
 import com.wok.infantry.client.ui.probe.UiLayoutReport;
 import com.wok.infantry.client.ui.probe.UiSurfaceInfo;
 import com.mojang.blaze3d.platform.Window;
@@ -20,6 +21,11 @@ import java.util.function.Consumer;
  * <p>A failing step, check or timeout fails only that tier; the runner continues with the next
  * tier, so one run reports every problem. The harness fails the whole run afterwards when a
  * blocking result failed ({@link #failures()}).
+ *
+ * <p>Liveries: a case with a pinned livery ({@link UiCase#liveryPinned()}) runs every tier under
+ * {@code TacticalLivery.pinForAcceptance}; every other case runs with the pin released, so its
+ * screen resolves the livery live. The pin is released when the case ends. A case with a livery
+ * also gets the device checks ({@link UiDeviceChecks}) on its tablet captures.
  */
 public final class UiCaseRunner {
     /** Ticks a screen gets to settle after its steps, as the legacy captures. */
@@ -161,6 +167,7 @@ public final class UiCaseRunner {
         if (caseIndex >= cases.size()) {
             current = null;
             UiInputDriver.release();
+            TacticalLivery.pinForAcceptance(null);
             to(Stage.DONE);
             return;
         }
@@ -195,6 +202,8 @@ public final class UiCaseRunner {
                 observer.accept("case[" + current.id() + "] cleanupFailure=" + exception);
             }
         }
+        // A pinned livery never outlives its case.
+        TacticalLivery.pinForAcceptance(null);
     }
 
     private void prepare() throws Exception {
@@ -259,6 +268,7 @@ public final class UiCaseRunner {
     private void open(Minecraft minecraft) throws Exception {
         UiTier tier = tiers.get(tierIndex);
         context = new UiCaseContext(minecraft, current, tier, observer, caseState);
+        TacticalLivery.pinForAcceptance(current.liveryPinned() ? current.livery() : null);
         Screen screen = current.opener().open(context);
         minecraft.setScreen(screen);
         UiInputDriver.holdParked(minecraft);
@@ -287,6 +297,9 @@ public final class UiCaseRunner {
         String failure = null;
         try {
             checkMigrated(result);
+            if (current.livery() != null) {
+                UiDeviceChecks.check(context, result, current.livery());
+            }
             for (UiCase.Check check : current.checks()) {
                 check.check(context, result);
             }
@@ -329,7 +342,8 @@ public final class UiCaseRunner {
         UiTier tier = tiers.get(tierIndex);
         boolean strict = layoutStrict && current.migrated() && tier.required();
         UiCaseResult caseResult = new UiCaseResult(current.id(), current.surfaceId(),
-                current.stateId(), current.group(), tier.id(), tier.previewTier(),
+                current.stateId(), current.group(), current.liveryId(), tier.id(),
+                tier.previewTier(),
                 result == null ? "" : current.fileName(tier), current.migrated(), strict,
                 tier.required(),
                 result == null || result.screen() == null ? "hud"

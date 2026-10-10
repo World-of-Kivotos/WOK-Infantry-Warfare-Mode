@@ -17,13 +17,21 @@ import com.wok.infantry.client.hud.SquadHudOverlay;
 import com.wok.infantry.client.hud.StaminaBarLayout;
 import com.wok.infantry.client.hud.StaminaBarModel;
 import com.wok.infantry.client.hud.StaminaHudOverlay;
+import com.wok.infantry.client.hud.UiTestHud;
 import com.wok.infantry.client.hud.WokHudLayout;
+import com.wok.infantry.client.screen.BattleTab;
+import com.wok.infantry.client.screen.PaletteToken;
+import com.wok.infantry.client.screen.SquadScreen;
 import com.wok.infantry.client.screen.TacticalBoardTheme;
+import com.wok.infantry.client.screen.TacticalLivery;
+import com.wok.infantry.client.screen.TacticalPalette;
 import com.wok.infantry.client.screen.UiRect;
+import com.wok.infantry.client.screen.UiTestWidgets;
 import com.wok.infantry.client.ui.probe.UiLayoutFrame;
 import com.wok.infantry.uitest.UiCapture;
 import com.wok.infantry.uitest.UiCase;
 import com.wok.infantry.uitest.UiCaseContext;
+import com.wok.infantry.uitest.UiDeviceChecks;
 import com.wok.infantry.uitest.UiInputDriver;
 import com.wok.infantry.uitest.UiStep;
 import com.wok.infantry.uitest.UiTier;
@@ -36,6 +44,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundBossEventPacket;
 import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.world.BossEvent;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -68,12 +77,15 @@ public final class HudCases {
     /** Preview surface of the stamina bar states (its PNGs are named after it). */
     public static final String STAMINA_SURFACE = "stamina-a4";
     private static final String STAMINA_BOX_PREFIX = "hud.stamina.";
-    private static final String NEUTRAL = hex(TacticalBoardTheme.NEUTRAL_B);
-    private static final String ORANGE = hex(TacticalBoardTheme.ACCENT_B);
-    private static final String RED = hex(TacticalBoardTheme.DANGER_B);
-    private static final String GREEN = hex(TacticalBoardTheme.SUCCESS_B);
-    private static final String LIGHT = hex(TacticalBoardTheme.LIGHT);
-    private static final String GRAY = hex(TacticalBoardTheme.OFFLINE);
+    // The HUD's A colours, taken from the A palette itself: the swappable theme fields hold a
+    // faction palette while a tablet frame draws, so reading them when this class loads could
+    // capture a livery colour.
+    private static final String NEUTRAL = hex(TacticalPalette.A.get(PaletteToken.NEUTRAL_B));
+    private static final String ORANGE = hex(TacticalPalette.A.get(PaletteToken.ACCENT_B));
+    private static final String RED = hex(TacticalPalette.A.get(PaletteToken.DANGER_B));
+    private static final String GREEN = hex(TacticalPalette.A.get(PaletteToken.SUCCESS_B));
+    private static final String LIGHT = hex(TacticalPalette.A.get(PaletteToken.LIGHT));
+    private static final String GRAY = hex(TacticalPalette.A.get(PaletteToken.OFFLINE));
 
     /** One stamina state of the preview: the pinned values and what the probe note must say. */
     private record StaminaState(String id, StaminaBarModel.State state, List<String> expect) {
@@ -95,7 +107,121 @@ public final class HudCases {
                 bossBar()));
         cases.addAll(captureCases());
         cases.addAll(staminaCases());
+        cases.add(terminalRoundTrip());
         return cases;
+    }
+
+    // ---- the tablet terminal over the HUD (0.5.0-beta.3) ----------------------------------------
+
+    /**
+     * HUD regression of the faction palettes (plan 6 / 10): with the livery pinned to Caesar, the
+     * battle terminal is opened over the battle HUD (real {@code setScreen}) and closed with a
+     * real Esc, then the HUD is captured. While the terminal is open the core HUD stands aside
+     * (plan 4.9: no {@code hud.*} part under the device, {@code HudFrame.coreHidden}) and the
+     * terminal is red; after it closed every swappable theme token holds its A value again and
+     * the stamina bar reports exactly the A colours (computed in the A palette, as in the other
+     * HUD states), so no Caesar colour reached the HUD. Screenshot
+     * {@code wok_ui_hud_terminal-caesar_<tier>.png}.
+     */
+    private static UiCase terminalRoundTrip() {
+        return UiCase.builder("hud", "terminal")
+                .tiers(UiTier.ALL)
+                .migrated(true)
+                .hudCapture(true)
+                .pinLivery(TacticalLivery.Livery.CAESAR)
+                .open(context -> {
+                    HudFixtures.start(HudFixtures.Mode.BATTLE);
+                    chatLines(context, HudFixtures.Mode.BATTLE);
+                    return null;
+                })
+                .steps(UiStep.action(context ->
+                                UiInputDriver.releaseToCentre(context.minecraft())),
+                        UiStep.until("the HUD fixture", context -> HudFixtures.applied()),
+                        UiStep.action(context -> {
+                            context.minecraft().setScreen(SquadScreen.forTab(null,
+                                    BattleTab.SQUADS));
+                            UiInputDriver.holdParked(context.minecraft());
+                        }),
+                        HudCases.terminalOverHud(),
+                        UiStep.key(GLFW.GLFW_KEY_ESCAPE, 0),
+                        UiStep.until("the terminal closed by Esc", context ->
+                                context.screen() == null),
+                        UiStep.action(context ->
+                                UiInputDriver.releaseToCentre(context.minecraft())),
+                        UiStep.until("the HUD fixture after the terminal", context ->
+                                HudFixtures.applied()),
+                        UiStep.waitTicks(2))
+                .check(HudCases::checkCommon)
+                .check((context, capture) -> checkState(context, capture,
+                        HudFixtures.Mode.BATTLE))
+                .check(HudCases::checkPaletteRestored)
+                .cleanup(context -> HudFixtures.stop())
+                .budget(320)
+                .build();
+    }
+
+    /**
+     * Records one frame of the open terminal together with the HUD under it (the frame starts at
+     * the HUD) and checks it: the device is Caesar red, the core HUD drew nothing, and the HUD
+     * frame knows the terminal is open.
+     */
+    private static UiStep terminalOverHud() {
+        return context -> {
+            if (!(context.screen() instanceof SquadScreen screen)) {
+                if (context.stepTicks() > UiStep.WAIT_LIMIT) {
+                    context.fail("the terminal did not open over the HUD: " + context.screen());
+                }
+                return false;
+            }
+            UiCapture.Result[] recorded = (UiCapture.Result[]) context.stepState().get("frame");
+            if (recorded == null) {
+                UiCapture.Result[] holder = new UiCapture.Result[1];
+                context.stepState().put("frame", holder);
+                UiCapture.arm(null, screen, true, result -> holder[0] = result);
+                return false;
+            }
+            UiCapture.Result result = recorded[0];
+            if (result == null) {
+                if (context.stepTicks() > UiStep.WAIT_LIMIT) {
+                    context.fail("no frame of the terminal over the HUD was recorded");
+                }
+                return false;
+            }
+            String livery = UiDeviceChecks.shellNote(result.frame()).get("livery");
+            context.require(TacticalLivery.Livery.CAESAR.name().equals(livery),
+                    "the terminal over the HUD is painted " + livery + ", not CAESAR");
+            List<String> hudParts = result.frame().boxes().stream().map(UiLayoutFrame.Box::id)
+                    .filter(id -> id.startsWith("hud.")).distinct().toList();
+            context.require(hudParts.isEmpty(),
+                    "the core HUD still draws under the open terminal: " + hudParts);
+            HudFrame hud = HudFrame.current(result.guiWidth(), result.guiHeight());
+            context.require(hud != null && hud.terminalOpen() && hud.coreHidden() && !hud.hidden(),
+                    "the HUD frame does not know the terminal is open: " + hud);
+            context.observe("hudUnderTerminal[" + context.tier().id() + "]=livery=" + livery
+                    + " coreHidden=" + hud.coreHidden() + " hudParts=0");
+            return true;
+        };
+    }
+
+    /**
+     * After the Caesar terminal closed: no theme token kept a faction colour, and the stamina bar
+     * reports the A colours of its pinned state.
+     */
+    private static void checkPaletteRestored(UiCaseContext context, UiCapture.Result capture) {
+        List<String> leaks = UiTestWidgets.paletteLeaks();
+        context.require(leaks.isEmpty() && TacticalPalette.active() == TacticalPalette.A,
+                "a faction palette outlived the terminal (active " + TacticalPalette.active().name()
+                        + "): " + leaks);
+        String note = capture.frame().notes().stream()
+                .filter(line -> line.startsWith(StaminaHudOverlay.PROBE_NOTE))
+                .findFirst().orElse("");
+        String expected = StaminaHudOverlay.PROBE_NOTE
+                + UiTestHud.staminaSummaryInA(HudFixtures.defaultStamina());
+        context.require(note.startsWith(expected), "the stamina bar after the terminal reports '"
+                + note + "', expected the A colours '" + expected + "'");
+        context.observe("hudAfterTerminal[" + context.tier().id() + "]=palette="
+                + TacticalPalette.active().name() + " leaks=0 "
+                + note.substring(StaminaHudOverlay.PROBE_NOTE.length()));
     }
 
     // ---- capture objective in the battle strip (0.5.0-beta.2) ---------------------------------
@@ -137,8 +263,8 @@ public final class HudCases {
         /** The tile's expected left edge colour. */
         int edge() {
             return switch (this) {
-                case CONTESTED -> TacticalBoardTheme.ACCENT_B;
-                case DISABLED -> TacticalBoardTheme.OFFLINE;
+                case CONTESTED -> TacticalPalette.A.get(PaletteToken.ACCENT_B);
+                case DISABLED -> TacticalPalette.A.get(PaletteToken.OFFLINE);
                 default -> friendlyEdge ? TacticalBoardTheme.HUD_FRIENDLY
                         : TacticalBoardTheme.HUD_HOSTILE;
             };

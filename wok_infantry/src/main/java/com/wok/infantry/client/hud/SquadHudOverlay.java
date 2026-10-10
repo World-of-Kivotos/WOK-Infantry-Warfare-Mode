@@ -38,7 +38,7 @@ public final class SquadHudOverlay {
 
     private static void render(GuiGraphics graphics, int width, int height) {
         HudFrame frame = HudFrame.current(width, height);
-        if (frame == null || frame.hidden() || frame.roster() == null
+        if (frame == null || frame.coreHidden() || frame.roster() == null
                 || frame.layout().roster() == null) {
             return;
         }

@@ -24,9 +24,14 @@ import net.minecraft.network.chat.TextColor;
  *
  * <p>Text, read-only text and placeholder colours are re-read from the theme every frame
  * ({@link #syncColors()}): the field is built in {@code init}, outside the screen's faction
- * palette, and a light A text colour would vanish in the pale Neutral well.
+ * palette, and a light A text colour would vanish in the pale Neutral well. The same goes for the
+ * mid-text cursor bar, which vanilla draws in a fixed light gray ({@link #VANILLA_CURSOR}): the
+ * mixin draws it in {@link #cursorColor()} instead.
  */
 public class TacticalTextField extends EditBox {
+    /** Vanilla's mid-text cursor bar ({@code -3092272}), invisible in the pale Neutral well. */
+    public static final int VANILLA_CURSOR = 0xFFD0D0D0;
+
     private boolean editable = true;
     private Component error;
     private Tooltip ownTooltip;
@@ -63,6 +68,16 @@ public class TacticalTextField extends EditBox {
         placeholderColor = color;
         setHint(placeholder.copy().withStyle(style ->
                 style.withColor(TextColor.fromRgb(color & 0xFFFFFF))));
+    }
+
+    /**
+     * Colour of the mid-text cursor bar: the palette's text-on-well colour
+     * ({@link TacticalBoardTheme#LIGHT}, the field's own text colour), read while drawing, so the
+     * cursor stands out from the well in every livery (dark ink in the pale Neutral well). The
+     * "_" cursor at the end of the text already takes the text colour from vanilla.
+     */
+    public int cursorColor() {
+        return TacticalBoardTheme.LIGHT;
     }
 
     /** Unit-test seam: the FAINT value the placeholder was last styled with. */

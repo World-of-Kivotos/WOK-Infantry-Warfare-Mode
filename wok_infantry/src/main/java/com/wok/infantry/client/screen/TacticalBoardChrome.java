@@ -53,6 +53,11 @@ public final class TacticalBoardChrome {
      * uiTest probes and screenshots do not change with the time of day.
      */
     public static final String CLOCK_PROPERTY = "wok.ui.clock";
+    /**
+     * Prefix of the probe note {@link #shell} leaves in a recorded frame ({@link #shellNote}): the
+     * livery and link state the device was drawn with. uiTest only; nothing without a probe.
+     */
+    public static final String SHELL_NOTE = "shell ";
 
     private TacticalBoardChrome() {
     }
@@ -606,7 +611,16 @@ public final class TacticalBoardChrome {
         UiLayoutProbe.begin(graphics, BEZEL_UI_ID, keys.left(), keys.top(), keys.right(),
                 keys.bottom(), false);
         UiLayoutProbe.end(graphics);
+        if (UiLayoutProbe.recording()) {
+            UiLayoutProbe.note(shellNote(paint, safe.link()));
+        }
         return new Shell(layout, status, bezel);
+    }
+
+    /** {@code shell livery=CAESAR link=OK}: the probe note of one drawn device (uiTest). */
+    public static String shellNote(TacticalLivery.Livery livery, LinkState link) {
+        return SHELL_NOTE + "livery=" + (livery == null ? TacticalLivery.Livery.NEUTRAL : livery)
+                .name() + " link=" + (link == null ? LinkState.OK : link).name();
     }
 
     private static void drawStatus(GuiGraphics graphics, Font font, StatusPlan plan,

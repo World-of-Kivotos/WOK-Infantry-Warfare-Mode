@@ -1,5 +1,6 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.client.ui.probe.UiLayoutFrame;
 import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -85,6 +86,11 @@ public final class BezelKey extends AbstractWidget {
      * the same as the case's unlit LEDs, {@link DeviceArt#LED_OFF}).
      */
     public static final int LED_OFF = DeviceArt.LED_OFF;
+    /**
+     * Prefix of the probe note a drawn page LED leaves in a recorded frame ({@link #ledNote}).
+     * uiTest only; nothing without a probe.
+     */
+    public static final String LED_NOTE = "bezel.led ";
     /** Alpha of the glow around the lit LED. */
     static final int LED_GLOW_ALPHA = 0x50;
     /** Gap between the key name and its action label. */
@@ -334,11 +340,24 @@ public final class BezelKey extends AbstractWidget {
         if (led.isEmpty()) {
             return;
         }
+        if (UiLayoutProbe.recording()) {
+            UiLayoutProbe.note(ledNote(lit, UiLayoutFrame.transform(graphics.pose().last().pose(),
+                    key.left(), key.top(), key.right(), key.bottom())));
+        }
         if (lit) {
             UiRect glow = plan.ledGlow(key);
             graphics.fill(glow.left(), glow.top(), glow.right(), glow.bottom(), ledGlow(skin));
         }
         graphics.fill(led.left(), led.top(), led.right(), led.bottom(), ledColor(skin, lit));
+    }
+
+    /**
+     * {@code bezel.led lit=true key=[l,t,r,b]}: the probe note of the LED above the page key at
+     * {@code key} (GUI coordinates, the same rectangle the key reports as its control), so the
+     * uiTest can tell that the current page's key sits under a lit LED.
+     */
+    public static String ledNote(boolean lit, UiLayoutFrame.Rect key) {
+        return LED_NOTE + "lit=" + lit + " key=" + key;
     }
 
     /**
