@@ -69,6 +69,47 @@ class TacticalTextFieldTest {
     }
 
     @Test
+    void cursorBarTakesTheTextOnWellColourOfThePaletteItIsDrawnIn() {
+        // Vanilla's fixed light-gray bar vanishes in the pale Neutral well; the field's cursor is
+        // its own text colour, read while drawing.
+        TacticalTextField field = field();
+        assertEquals(TacticalPalette.A.get(PaletteToken.LIGHT), field.cursorColor());
+        try (TacticalPalette.Applied ignored = TacticalPalette.push(TacticalPalette.NEUTRAL)) {
+            int cursor = field.cursorColor();
+            assertEquals(TacticalPalette.NEUTRAL.get(PaletteToken.LIGHT), cursor);
+            assertFalse(cursor == TacticalTextField.VANILLA_CURSOR);
+            int well = TacticalPalette.NEUTRAL.get(PaletteToken.WELL);
+            assertTrue(contrast(TacticalTextField.VANILLA_CURSOR, well) < 1.5,
+                    "the vanilla gray all but disappears in the pale Neutral well");
+            assertTrue(contrast(cursor, well) >= 4.5, "dark ink on the pale Neutral well");
+        }
+        try (TacticalPalette.Applied ignored = TacticalPalette.push(TacticalPalette.CAESAR)) {
+            assertEquals(TacticalPalette.CAESAR.get(PaletteToken.LIGHT), field.cursorColor());
+        }
+        assertEquals(TacticalPalette.A.get(PaletteToken.LIGHT), field.cursorColor());
+    }
+
+    /** WCAG contrast ratio of two opaque colours. */
+    private static double contrast(int a, int b) {
+        double la = luminance(a);
+        double lb = luminance(b);
+        return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+    }
+
+    /** Relative luminance (sRGB) of an ARGB colour, 0–1. */
+    private static double luminance(int argb) {
+        double r = channel((argb >> 16) & 0xFF);
+        double g = channel((argb >> 8) & 0xFF);
+        double b = channel(argb & 0xFF);
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    }
+
+    private static double channel(int value) {
+        double c = value / 255.0;
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    }
+
+    @Test
     void textFieldIsStillAVanillaEditBox() {
         TacticalTextField field = field();
         field.setMaxLength(8);

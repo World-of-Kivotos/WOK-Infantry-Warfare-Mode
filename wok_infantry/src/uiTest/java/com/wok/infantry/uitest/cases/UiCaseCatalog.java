@@ -11,6 +11,11 @@ import java.util.List;
  *
  * <p>The legacy cases come first because they finish the 14 baseline screenshots of the live flow
  * ({@code wok_ui_10}–{@code 14}) in their original order; the gallery follows.
+ *
+ * <p>Since 0.5.0-beta.3 a tablet case names its faction livery ({@code UiCase#livery}); the same
+ * state in another livery is another case with its own id and screenshot
+ * ({@code kit.default-academy}, {@code kit.default-caesar}, …), listed next to the others of its
+ * file. The HUD's terminal round trip ({@code hud.terminal-caesar}) is the last HUD case.
  */
 public final class UiCaseCatalog {
     private UiCaseCatalog() {

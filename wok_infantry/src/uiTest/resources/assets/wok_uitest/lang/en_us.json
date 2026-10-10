@@ -1,6 +1,8 @@
 {
   "uitest.wok_infantry.kit.title": "WOK INFANTRY // UI kit",
   "uitest.wok_infantry.kit.identity": "Academy · Alpha · Leader",
+  "uitest.wok_infantry.kit.identity.caesar": "Caesar · Alpha · Leader",
+  "uitest.wok_infantry.kit.identity.neutral": "No faction",
   "uitest.wok_infantry.kit.page.controls": "Keys",
   "uitest.wok_infantry.kit.page.inputs": "Inputs",
   "uitest.wok_infantry.kit.page.cards": "Cards",
@@ -77,6 +79,9 @@
   "uitest.wok_infantry.kit.mapicons.paper": "Paper map",
   "uitest.wok_infantry.mapicons.title": "WOK INFANTRY // Map markers",
   "uitest.wok_infantry.mapicons.identity": "Squad-style silhouettes",
+  "uitest.wok_infantry.mapicons.page.dark": "Dark",
+  "uitest.wok_infantry.mapicons.page.paper": "Paper",
+  "uitest.wok_infantry.mapicons.refresh_reason": "The marker sheet is static; there is nothing to refresh",
   "uitest.wok_infantry.mapicons.sheet.dark": "Markers (dark terrain)",
   "uitest.wok_infantry.mapicons.sheet.paper": "Markers (paper map)",
   "uitest.wok_infantry.mapicons.sheet.meta": "Fixed screen size at every zoom",

@@ -1,6 +1,8 @@
 {
   "uitest.wok_infantry.kit.title": "WOK步战 // 组件规范",
   "uitest.wok_infantry.kit.identity": "学院军 · 阿尔法小队 · 小队长",
+  "uitest.wok_infantry.kit.identity.caesar": "凯撒 · 阿尔法小队 · 小队长",
+  "uitest.wok_infantry.kit.identity.neutral": "未加入阵营",
   "uitest.wok_infantry.kit.page.controls": "控件",
   "uitest.wok_infantry.kit.page.inputs": "输入",
   "uitest.wok_infantry.kit.page.cards": "卡片",
@@ -77,6 +79,9 @@
   "uitest.wok_infantry.kit.mapicons.paper": "浅色纸图",
   "uitest.wok_infantry.mapicons.title": "WOK步战 // 地图标点图标",
   "uitest.wok_infantry.mapicons.identity": "Squad 式剪影",
+  "uitest.wok_infantry.mapicons.page.dark": "深色地形",
+  "uitest.wok_infantry.mapicons.page.paper": "浅色纸图",
+  "uitest.wok_infantry.mapicons.refresh_reason": "标点陈列是静态页面，没有可刷新的内容",
   "uitest.wok_infantry.mapicons.sheet.dark": "标点一览（深色地形）",
   "uitest.wok_infantry.mapicons.sheet.paper": "标点一览（浅色纸图）",
   "uitest.wok_infantry.mapicons.sheet.meta": "图标屏幕尺寸固定，不随地图缩放",

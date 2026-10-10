@@ -1,8 +1,10 @@
 package com.wok.infantry.uitest.cases;
 
 import com.wok.infantry.client.map.TacticalMapIcons;
+import com.wok.infantry.client.screen.TacticalBoardChrome;
 import com.wok.infantry.client.screen.TacticalConfirmDialog;
 import com.wok.infantry.client.screen.TacticalList;
+import com.wok.infantry.client.screen.TacticalLivery;
 import com.wok.infantry.client.ui.probe.UiLayoutFrame;
 import com.wok.infantry.uitest.UiCapture;
 import com.wok.infantry.uitest.UiCase;
@@ -14,6 +16,7 @@ import com.wok.infantry.uitest.gallery.UiKitGalleryScreen;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import org.lwjgl.glfw.GLFW;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -23,6 +26,11 @@ import java.util.Set;
  * The component gallery ({@link UiKitGalleryScreen}, preview surface {@code kit}): the first
  * cases of every run, so a broken shared component shows up here before any screen uses it. All
  * gallery states are migrated surfaces: a layout violation on a required tier fails the run.
+ *
+ * <p>Liveries (0.5.0-beta.3, pinned): every page in the Academy livery ({@code -academy}), and
+ * the key states ({@code default}), the danger confirmation ({@code confirm}) and the cards
+ * ({@code cards}) again in Caesar ({@code -caesar}) and Neutral ({@code -neutral}), so the
+ * selected, danger and disabled looks of every livery are captured side by side.
  */
 public final class KitCases {
     /** The seven key states of the UI rules. */
@@ -33,23 +41,36 @@ public final class KitCases {
     }
 
     public static List<UiCase> cases() {
-        return List.of(defaultState(), confirmState(),
-                page(UiKitGalleryScreen.Page.INPUTS, KitCases::checkInputs),
-                page(UiKitGalleryScreen.Page.CARDS, (context, capture) -> { }),
-                page(UiKitGalleryScreen.Page.HUD, KitCases::checkHud),
-                page(UiKitGalleryScreen.Page.ICONS, KitCases::checkIcons));
+        List<UiCase> cases = new ArrayList<>(List.of(defaultState(TacticalLivery.Livery.ACADEMY),
+                confirmState(TacticalLivery.Livery.ACADEMY),
+                page(UiKitGalleryScreen.Page.INPUTS, TacticalLivery.Livery.ACADEMY,
+                        KitCases::checkInputs),
+                page(UiKitGalleryScreen.Page.CARDS, TacticalLivery.Livery.ACADEMY,
+                        KitCases::checkCards),
+                page(UiKitGalleryScreen.Page.HUD, TacticalLivery.Livery.ACADEMY,
+                        KitCases::checkHud),
+                page(UiKitGalleryScreen.Page.ICONS, TacticalLivery.Livery.ACADEMY,
+                        KitCases::checkIcons)));
+        for (TacticalLivery.Livery livery : List.of(TacticalLivery.Livery.CAESAR,
+                TacticalLivery.Livery.NEUTRAL)) {
+            cases.add(defaultState(livery));
+            cases.add(confirmState(livery));
+            cases.add(page(UiKitGalleryScreen.Page.CARDS, livery, KitCases::checkCards));
+        }
+        return List.copyOf(cases);
     }
 
-    private static UiCase.Builder base(String state) {
+    private static UiCase.Builder base(String state, TacticalLivery.Livery livery) {
         return UiCase.builder(UiKitGalleryScreen.SURFACE_ID, state)
                 .group("kit")
                 .tiers(UiTier.ALL)
                 .migrated(true)
+                .pinLivery(livery)
                 .check(KitCases::checkSurface);
     }
 
-    private static UiCase defaultState() {
-        return base("default")
+    private static UiCase defaultState(TacticalLivery.Livery livery) {
+        return base("default", livery)
                 .open(context -> new UiKitGalleryScreen(UiKitGalleryScreen.Page.CONTROLS))
                 // As the preview, show the full-text tooltip of the shortened key where it fits.
                 .steps(UiStep.when(context -> !context.tight(),
@@ -58,8 +79,8 @@ public final class KitCases {
                 .build();
     }
 
-    private static UiCase confirmState() {
-        return base("confirm")
+    private static UiCase confirmState(TacticalLivery.Livery livery) {
+        return base("confirm", livery)
                 .open(context -> new UiKitGalleryScreen(UiKitGalleryScreen.Page.CONTROLS))
                 .steps(UiStep.click(UiKitGalleryScreen.DANGER_KEY_UI_ID),
                         UiStep.until("the danger confirmation", context ->
@@ -68,8 +89,9 @@ public final class KitCases {
                 .build();
     }
 
-    private static UiCase page(UiKitGalleryScreen.Page page, UiCase.Check check) {
-        return base(page.stateId())
+    private static UiCase page(UiKitGalleryScreen.Page page, TacticalLivery.Livery livery,
+                               UiCase.Check check) {
+        return base(page.stateId(), livery)
                 .open(context -> new UiKitGalleryScreen(page))
                 .check(check)
                 .build();
@@ -104,6 +126,30 @@ public final class KitCases {
                 UiKitGalleryScreen.PAGES_UI_ID + "/" + gallery.page().tabId());
         context.require(current != null && "CURRENT".equals(current.state()),
                 "the page tab of " + gallery.page() + " is not drawn as current");
+        checkReceiptInPill(context, capture);
+    }
+
+    /**
+     * The gallery's receipt ("配装已保存") is shown in the status-bar pill (plan 4.5): drawn inside
+     * {@code shell.status}, whole or shortened with its full text offered on hover.
+     */
+    private static void checkReceiptInPill(UiCaseContext context, UiCapture.Result capture) {
+        UiLayoutFrame frame = capture.frame();
+        UiLayoutFrame.Box status = frame.box(TacticalBoardChrome.STATUS_UI_ID);
+        context.require(status != null, "no status bar was drawn");
+        String receipt = UiKitGalleryScreen.feedback().getString();
+        boolean shown = frame.texts().stream().anyMatch(text ->
+                text.rect().within(status.rect(), 0.01F)
+                        && (receipt.equals(text.text())
+                        || text.truncated() && receipt.equals(text.fullText()) && text.tipped()));
+        context.require(shown, "the receipt '" + receipt + "' is not in the status-bar pill");
+    }
+
+    /** Both panels of the cards page (card states, status and empty well) were drawn. */
+    private static void checkCards(UiCaseContext context, UiCapture.Result capture) {
+        context.require(capture.frame().box("kit.cards") != null
+                        && capture.frame().box("kit.status") != null,
+                "the card and status panels were not drawn");
     }
 
     private static void checkControls(UiCaseContext context, UiCapture.Result capture) {
@@ -135,7 +181,8 @@ public final class KitCases {
             context.require(frame.box("tooltip") != null,
                     "hovering the long key must show its tooltip");
         }
-        context.observe("kitKeyStates[" + context.tier().id() + "]=" + sorted(states));
+        context.observe("kitKeyStates[" + context.uiCase().liveryId() + "@"
+                + context.tier().id() + "]=" + sorted(states));
     }
 
     private static void checkConfirm(UiCaseContext context, UiCapture.Result capture) {
@@ -158,7 +205,8 @@ public final class KitCases {
         UiInputDriver.key(context.minecraft(), GLFW.GLFW_KEY_ESCAPE, 0);
         context.require(!gallery.hasModal() && !gallery.confirmed(),
                 "Esc did not cancel the confirmation");
-        context.observe("kitDangerConfirmEnterIgnored[" + context.tier().id() + "]=true");
+        context.observe("kitDangerConfirmEnterIgnored[" + context.uiCase().liveryId() + "@"
+                + context.tier().id() + "]=true");
     }
 
     private static void checkInputs(UiCaseContext context, UiCapture.Result capture) {

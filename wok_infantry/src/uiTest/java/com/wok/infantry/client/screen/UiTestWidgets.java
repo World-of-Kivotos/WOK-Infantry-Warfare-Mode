@@ -97,6 +97,27 @@ public final class UiTestWidgets {
                 page.end()};
     }
 
+    /**
+     * Swappable theme tokens whose {@link TacticalBoardTheme} field does not hold its A value
+     * right now. Outside every tablet frame the list must be empty: a faction palette that
+     * outlived its scope would recolour the HUD (plan 10, "调色板漏进 HUD").
+     */
+    public static java.util.List<String> paletteLeaks() {
+        java.util.List<String> leaks = new java.util.ArrayList<>();
+        for (PaletteToken token : PaletteToken.values()) {
+            int value = TacticalPalette.themeValue(token);
+            if (value != TacticalPalette.A.get(token)) {
+                leaks.add(token.name() + "=" + String.format(java.util.Locale.ROOT, "%08X", value));
+            }
+        }
+        return leaks;
+    }
+
+    /** The livery {@code screen} resolved for its last drawn frame. */
+    public static TacticalLivery.Livery frameLivery(TacticalScreen screen) {
+        return screen.frameLivery();
+    }
+
     private static int[] rect(TacticalMapLayout.Rect rect) {
         return new int[]{rect.left(), rect.top(), rect.right(), rect.bottom()};
     }

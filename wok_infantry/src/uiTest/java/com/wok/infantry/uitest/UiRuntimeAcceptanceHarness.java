@@ -17,6 +17,7 @@ import com.wok.infantry.client.map.TacticalMapTerrainRegistry;
 import com.wok.infantry.client.map.TacticalSupportMapPresentationRegistry;
 import com.wok.infantry.client.screen.PlayerLoadoutScreen;
 import com.wok.infantry.client.screen.SquadScreen;
+import com.wok.infantry.client.screen.TacticalBoardChrome;
 import com.wok.infantry.client.screen.TacticalMapScreen;
 import com.wok.infantry.client.ui.probe.UiLayoutFrame;
 import com.wok.infantry.client.ui.probe.UiLayoutProbe;
@@ -357,6 +358,11 @@ public final class UiRuntimeAcceptanceHarness {
         observations.add("uiTiers=" + (TIER_FILTER.isEmpty() ? "per-case" : TIER_FILTER)
                 + " layoutStrict=" + LAYOUT_STRICT);
         observations.add("globalTimeoutTicks=" + globalTimeoutTicks);
+        // Fixed by build.gradle: the tablet clock (probe texts) and the reserved animation switch.
+        observations.add("uiClock=" + TacticalBoardChrome.clockText() + " ("
+                + TacticalBoardChrome.CLOCK_PROPERTY + "="
+                + System.getProperty(TacticalBoardChrome.CLOCK_PROPERTY, "") + ")"
+                + " tabletAnimation=" + System.getProperty("wok.ui.tabletAnimation", ""));
         boolean journeyMapLoaded = ModList.get().isLoaded("journeymap");
         observations.add("journeymapLoaded=" + journeyMapLoaded
                 + " expected=" + EXPECTED_JOURNEYMAP_LOADED);
@@ -1658,7 +1664,7 @@ public final class UiRuntimeAcceptanceHarness {
         String stem = fileName.substring(0, fileName.length() - ".png".length());
         String tier = stem.substring(stem.lastIndexOf('_') + 1);
         return new UiCaseResult("legacy." + stem.substring("wok_ui_".length()), "legacy",
-                stem.substring("wok_ui_".length()), "legacy", tier, tier, fileName, false, false,
+                stem.substring("wok_ui_".length()), "legacy", "", tier, tier, fileName, false, false,
                 false, capture.screen().getClass().getSimpleName(), capture.layoutWidth(),
                 capture.layoutHeight(), capture.baseScale(), capture.guiScale(), capture.frame(),
                 UiLayoutReport.check(capture.frame(), UiLayoutReport.Options.of(language)), null);

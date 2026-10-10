@@ -1,5 +1,7 @@
 package com.wok.infantry.uitest.fixtures;
 
+import com.wok.infantry.battle.Faction;
+
 import java.util.List;
 import java.util.Map;
 
@@ -39,6 +41,66 @@ public final class MockData {
     public static final String OWN_VOTE = "millennium_seminar_mobile";
     public static final String LOCKED_FORMATION = "millennium_seminar_mobile";
     public static final int VOTED = 9;
+
+    /**
+     * The viewer's side in a fixture (0.5.0-beta.3, plan 6): the faction the viewer joined, its
+     * battle side (which picks the tablet livery: blue → academy navy, red → Caesar red), the
+     * enemy faction and the formation the viewer voted for and the faction locked. The Academy
+     * side is the preview's demo viewer; the Caesar side mirrors it on the red side with the
+     * default catalog's {@code caesar_234_mechanized}, so the same squads, classes and points are
+     * shown in the red livery (preview {@code 18-device-livery.js}, states {@code caesar} and
+     * {@code squads-caesar}).
+     */
+    public enum Side {
+        ACADEMY(Faction.BLUE, 0, "millennium_seminar_mobile", "千禧年研讨会机动部队"),
+        CAESAR(Faction.RED, 1, "caesar_234_mechanized", "234机械化作战单元");
+
+        private final Faction faction;
+        private final int own;
+        private final String formation;
+        private final String formationName;
+
+        Side(Faction faction, int own, String formation, String formationName) {
+            this.faction = faction;
+            this.own = own;
+            this.formation = formation;
+            this.formationName = formationName;
+        }
+
+        /** Battle side of the viewer. */
+        public Faction faction() {
+            return faction;
+        }
+
+        /** The viewer's faction (id, catalog name, population, capacity). */
+        public FactionData own() {
+            return FACTIONS.get(own);
+        }
+
+        /** The other faction. */
+        public FactionData enemy() {
+            return FACTIONS.get(1 - own);
+        }
+
+        public String factionId() {
+            return own().id();
+        }
+
+        /** The formation the viewer voted for and the faction locked. */
+        public String lockedFormation() {
+            return formation;
+        }
+
+        /** Catalog name of {@link #lockedFormation()} (server data). */
+        public String formationName() {
+            return formationName;
+        }
+
+        /** The viewer's own vote (the formation that is locked later). */
+        public String ownVote() {
+            return formation;
+        }
+    }
 
     /** {@code classes}: id, used and quota (the support class is full). */
     public record ClassData(String id, int used, int quota) {
