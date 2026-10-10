@@ -59,10 +59,11 @@ public final class TacticalTabStrip extends AbstractWidget {
     }
 
     /**
-     * {@link Tab#badgeColor()} sentinel: the badge is drawn in the palette's {@code MUTED} of the
-     * frame it is drawn in (a colour taken at construction would stay in the A scheme).
+     * {@link Tab#badgeColor()} sentinel ({@link TacticalButtonStyle#NONE}, as for keys): the badge
+     * is drawn in the palette's {@code MUTED} of the frame it is drawn in (tabs are built in
+     * {@code init}, outside the faction palette, so a colour taken there would stay in A).
      */
-    public static final int BADGE_MUTED = 0;
+    public static final int BADGE_MUTED = TacticalButtonStyle.NONE;
 
     /**
      * One tab. A non-null {@code disabledReason} disables it; {@code badge} is an optional small
