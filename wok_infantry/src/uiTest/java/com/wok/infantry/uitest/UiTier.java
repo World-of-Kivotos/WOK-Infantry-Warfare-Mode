@@ -19,6 +19,13 @@ import java.util.Locale;
  * D2 device (plan 6). Its window does not fit every monitor, so it is opt-in: a case that runs on
  * every standard tier gets it only when {@code wok.ui.tiers} names it ({@code 960x540}); it is
  * report-only.
+ *
+ * <p>0.5.0-beta.4 adds the two 1920×1080 tiers of the tablet animation preview:
+ * {@link #T480G4} (GUI 4, logical 480×270) and {@link #T640G3} (GUI 3, logical 640×360). Their
+ * logical sizes are those of {@link #T480} and {@link #T640}, but the physical pixel per GUI pixel
+ * differs (4 and 3 instead of 2), and with it how scheme A draws the page at its reading position
+ * (whole pixels instead of the smooth downscale). Both are opt-in and report-only, like
+ * {@link #T540}.
  */
 public enum UiTier {
     T320("320x240", 960, 720, 3, true, "320x240"),
@@ -26,14 +33,16 @@ public enum UiTier {
     T640("640x336", 1280, 672, 2, true, "640x360"),
     T480("480x270", 960, 540, 2, false, "480x270"),
     T427("427x240", 854, 480, 1, false, "480x270"),
-    T540("960x540", 1920, 1080, 2, false, "960x540");
+    T540("960x540", 1920, 1080, 2, false, "960x540"),
+    T480G4("480x270g4", 1920, 1080, 4, false, "480x270"),
+    T640G3("640x360", 1920, 1080, 3, false, "640x360");
 
     /** Required tiers, in capture order. */
     public static final List<UiTier> REQUIRED = List.of(T320, T960, T640);
     /** Every standard tier, in capture order (what a case runs on by default). */
     public static final List<UiTier> ALL = List.of(T320, T960, T640, T480, T427);
     /** Tiers a run only captures when {@code wok.ui.tiers} names them. */
-    public static final List<UiTier> OPT_IN = List.of(T540);
+    public static final List<UiTier> OPT_IN = List.of(T540, T480G4, T640G3);
 
     private final String id;
     private final int windowWidth;

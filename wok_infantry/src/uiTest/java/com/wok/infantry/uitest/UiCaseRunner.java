@@ -244,12 +244,39 @@ public final class UiCaseRunner {
             // 3840×2036 and the tier ran at 1920×1018 x2 instead of its own size.
             GLFW.glfwRestoreWindow(handle);
         }
-        if (maximized || window.getWidth() != tier.windowWidth()
+        // A window as large as the monitor (1920×1080 on a 1080p screen) cannot keep its title
+        // bar: Windows clamps the decorated window and the tier ran at 1920×1061. Such a tier
+        // runs undecorated at the screen's corner; every other tier gets the frame back.
+        boolean undecorated = fillsMonitor(tier);
+        boolean decorated = GLFW.glfwGetWindowAttrib(handle, GLFW.GLFW_DECORATED) == GLFW.GLFW_TRUE;
+        if (decorated == undecorated) {
+            GLFW.glfwSetWindowAttrib(handle, GLFW.GLFW_DECORATED,
+                    undecorated ? GLFW.GLFW_FALSE : GLFW.GLFW_TRUE);
+        }
+        if (maximized || decorated == undecorated || window.getWidth() != tier.windowWidth()
                 || window.getHeight() != tier.windowHeight()) {
             window.setWindowed(tier.windowWidth(), tier.windowHeight());
         }
+        if (undecorated && (window.getX() != 0 || window.getY() != 0)) {
+            GLFW.glfwSetWindowPos(handle, 0, 0);
+        } else if (!undecorated && window.getY() < 0) {
+            GLFW.glfwSetWindowPos(handle, Math.max(0, window.getX()), 40);
+        }
         minecraft.options.guiScale().set(tier.guiScale());
         minecraft.resizeDisplay();
+    }
+
+    /**
+     * Whether the tier's window leaves no room for a title bar on the primary monitor (its
+     * height reaches the monitor's height minus 40 pixels).
+     */
+    private static boolean fillsMonitor(UiTier tier) {
+        long monitor = GLFW.glfwGetPrimaryMonitor();
+        if (monitor == 0L) {
+            return false;
+        }
+        org.lwjgl.glfw.GLFWVidMode mode = GLFW.glfwGetVideoMode(monitor);
+        return mode != null && tier.windowHeight() > mode.height() - 40;
     }
 
     private void waitTier(Minecraft minecraft) {
@@ -306,7 +333,7 @@ public final class UiCaseRunner {
         String failure = null;
         try {
             checkMigrated(result);
-            if (current.livery() != null) {
+            if (current.livery() != null && current.deviceChecks()) {
                 UiDeviceChecks.check(context, result, current.livery());
             }
             for (UiCase.Check check : current.checks()) {

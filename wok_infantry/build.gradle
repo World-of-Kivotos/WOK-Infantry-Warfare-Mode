@@ -65,10 +65,11 @@ if (!(uiLanguage ==~ /[a-z]{2,8}(_[a-z]{2,8})?/)) {
 // surfaces or case ids (empty: all; without "legacy" the live flow is skipped), -PuiTiers=320x240,...
 // limits the tiers and -PuiLayoutStrict=false only reports layout violations of migrated screens.
 // List items may be separated by , ; or + (the last two survive wrappers that split on commas).
+// Tier ids may end in gN (0.5.0-beta.4: 480x270g4 is 1920x1080 at GUI 4).
 String uiCases = (project.findProperty('uiCases') ?: '').toString().trim()
 String uiTiers = (project.findProperty('uiTiers') ?: '').toString().trim()
 String uiLayoutStrict = (project.findProperty('uiLayoutStrict') ?: 'true').toString().trim()
-if (!(uiCases ==~ /[A-Za-z0-9_.,;+-]*/) || !(uiTiers ==~ /[0-9x,;+]*/)) {
+if (!(uiCases ==~ /[A-Za-z0-9_.,;+-]*/) || !(uiTiers ==~ /[0-9xg,;+]*/)) {
     throw new GradleException("uiCases/uiTiers contain unexpected characters: ${uiCases} / ${uiTiers}")
 }
 if (!(uiLayoutStrict in ['true', 'false'])) {
