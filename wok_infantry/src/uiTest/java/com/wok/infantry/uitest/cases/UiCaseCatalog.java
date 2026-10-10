@@ -42,6 +42,9 @@ public final class UiCaseCatalog {
         cases.addAll(AdminCases.cases());
         cases.addAll(AmmoCases.cases());
         cases.addAll(SquadCases.cases());
+        // 0.5.0-beta.4: the tablet animation's frozen frames (animation on for these cases only;
+        // their 1920×1080 tiers are opt-in for every other case).
+        cases.addAll(TabletCases.cases());
         cases.addAll(HudCases.cases());
         return cases.stream().filter(uiCase -> !UiCase.LEGACY_GROUP.equals(uiCase.group()))
                 .toList();

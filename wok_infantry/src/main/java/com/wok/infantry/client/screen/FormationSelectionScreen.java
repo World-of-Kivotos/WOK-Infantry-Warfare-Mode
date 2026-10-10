@@ -300,6 +300,16 @@ public final class FormationSelectionScreen extends TacticalScreen
     }
 
     /**
+     * The link LED of the raised tablet: amber while the page waits for the formation catalog,
+     * the same rule as its status bar.
+     */
+    @Override
+    public TacticalBoardChrome.LinkState tabletLink() {
+        return model().waiting() ? TacticalBoardChrome.LinkState.WAIT
+                : TacticalBoardChrome.LinkState.OK;
+    }
+
+    /**
      * The tablet follows the catalog this page shows ({@link #pageLivery}), so the paint never
      * disagrees with the page's own "joined or not".
      */

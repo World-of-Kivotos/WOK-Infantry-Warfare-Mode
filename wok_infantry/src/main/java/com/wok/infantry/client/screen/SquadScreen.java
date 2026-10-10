@@ -8,6 +8,8 @@ import com.wok.infantry.client.ClientBattleState;
 import com.wok.infantry.client.ClientBootstrap;
 import com.wok.infantry.client.ClientFormationState;
 import com.wok.infantry.client.KeyBindingDefaults;
+import com.wok.infantry.client.tablet.TabletScreenKind;
+import com.wok.infantry.client.tablet.TabletTerminalKey;
 import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import com.wok.infantry.client.ui.probe.UiSurfaceInfo;
 import com.wok.infantry.deployment.DeploymentPhase;
@@ -202,6 +204,18 @@ public final class SquadScreen extends TacticalScreen
     @Override
     public Screen terminalReturnScreen() {
         return previous;
+    }
+
+    /** The squad screen is the one tablet screen the terminal key closes. */
+    @Override
+    public TabletScreenKind tabletKind() {
+        return TabletScreenKind.SQUAD;
+    }
+
+    /** Amber until the first battle snapshot arrives, as the status bar's link LED. */
+    @Override
+    public TacticalBoardChrome.LinkState tabletLink() {
+        return TacticalBoardChrome.LinkState.forBattleSnapshot(ClientBattleState.snapshot());
     }
 
     /** The page shown ({@link BattleTab#SQUADS}, {@link BattleTab#CLASSES} or {@link BattleTab#DEPLOYMENT}). */
@@ -935,7 +949,13 @@ public final class SquadScreen extends TacticalScreen
         }
         if (keyCode != GLFW.GLFW_KEY_ESCAPE
                 && ClientBootstrap.isKey(KeyBindingDefaults.Binding.TERMINAL, keyCode, scanCode)) {
+            // One press, one open or close: the key that opened this page (still held, or its
+            // repeats) does not close it; a new press does, and stays latched until released.
+            if (TabletTerminalKey.latched()) {
+                return true;
+            }
             onClose();
+            TabletTerminalKey.latch();
             return true;
         }
         return super.onKeyPressed(keyCode, scanCode, modifiers);

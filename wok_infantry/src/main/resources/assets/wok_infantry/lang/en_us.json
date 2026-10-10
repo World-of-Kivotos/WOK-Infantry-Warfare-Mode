@@ -1227,5 +1227,17 @@
   "screen.wok_infantry.squad_board.deploy.reason_vote": "No deployment before the lock · resupply and redeploy only in combat",
   "screen.wok_infantry.squad_board.deploy.reason_vote_short": "Locked until the vote · combat-only keys",
   "screen.wok_infantry.squad_board.deploy.reason_wait": "Deploy in %ss · resupply and redeploy only in combat",
-  "screen.wok_infantry.squad_board.deploy.reason_combined": "%s · resupply and redeploy only in combat"
+  "screen.wok_infantry.squad_board.deploy.reason_combined": "%s · resupply and redeploy only in combat",
+  "subtitles.wok_infantry.tablet.holster": "Weapon slung",
+  "subtitles.wok_infantry.tablet.draw": "Tablet drawn",
+  "subtitles.wok_infantry.tablet.grip": "Tablet gripped",
+  "subtitles.wok_infantry.tablet.power": "Tablet button clicks",
+  "subtitles.wok_infantry.tablet.boot": "Tablet powers on",
+  "subtitles.wok_infantry.tablet.ready": "Tablet link ready",
+  "subtitles.wok_infantry.tablet.search": "Tablet searches for link",
+  "subtitles.wok_infantry.tablet.zoom": "Tablet brought close",
+  "subtitles.wok_infantry.tablet.sleep": "Tablet screen off",
+  "subtitles.wok_infantry.tablet.stow": "Tablet stowed",
+  "subtitles.wok_infantry.tablet.raise": "Weapon raised",
+  "subtitles.wok_infantry.tablet.rustle": "Gear rustles"
 }

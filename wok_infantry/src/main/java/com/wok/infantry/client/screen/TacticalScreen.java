@@ -2,6 +2,8 @@ package com.wok.infantry.client.screen;
 
 import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.wok.infantry.client.tablet.TabletScreenKind;
+import com.wok.infantry.client.tablet.TabletSurface;
 import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.GameNarrator;
 import net.minecraft.client.Minecraft;
@@ -58,8 +60,12 @@ import java.util.function.BooleanSupplier;
  * backdrop, {@link #renderTactical} (shell, page, widgets), modal, {@link #renderGlassOverlay},
  * tooltip. The hardware Esc / R keys of the bottom bezel are registered with
  * {@link #setBezelKeys}.
+ *
+ * <p><b>Tablet family.</b> Every tactical screen is a {@link TabletSurface}: entering one from the
+ * world plays the "take out the tablet" animation (0.5.0-beta.4). Only Esc closes it unless a
+ * subclass says otherwise ({@link SquadScreen} also closes on the terminal key).
  */
-public abstract class TacticalScreen extends Screen {
+public abstract class TacticalScreen extends Screen implements TabletSurface {
     /** Mouse position handed to the board while a modal is open, so nothing underneath hovers. */
     private static final int NO_MOUSE = -32768;
     private static final float MODAL_Z = 300.0F;
@@ -101,6 +107,12 @@ public abstract class TacticalScreen extends Screen {
     /** Creates widgets for the logical {@link #width} × {@link #height}. */
     protected abstract void initTactical();
 
+    /** A D2 terminal screen that only Esc closes; the squad screen overrides it. */
+    @Override
+    public TabletScreenKind tabletKind() {
+        return TabletScreenKind.TERMINAL;
+    }
+
     /** Current factor: 2 while the minimum 2x applies, otherwise 1. */
     public final int uiScale() {
         return uiScale;
@@ -128,7 +140,7 @@ public abstract class TacticalScreen extends Screen {
     protected final TacticalBoardChrome.Shell drawShell(GuiGraphics graphics,
                                                         TacticalBoardChrome.ShellSpec spec) {
         return deviceDrawn(TacticalBoardChrome.shell(graphics, font, shellLayout(), frameLivery(),
-                spec));
+                spec, deviceHooks.shadowAlpha(this)));
     }
 
     /**
@@ -165,9 +177,18 @@ public abstract class TacticalScreen extends Screen {
             renderWidgets(graphics, mouseX, mouseY, partialTick);
             return;
         }
+        renderFrame(graphics, graphics.pose(), mouseX, mouseY, partialTick);
+    }
+
+    /**
+     * One frame of {@link #render}, with the pose of {@code graphics} passed apart (unit-test seam:
+     * a {@link GuiGraphics} cannot be built without a client, the order of the frame can be checked
+     * with a {@code null} one when nothing is drawn).
+     */
+    final void renderFrame(GuiGraphics graphics, PoseStack pose, int mouseX, int mouseY,
+                           float partialTick) {
         int layoutX = UiScale.toLayout(mouseX, uiScale);
         int layoutY = UiScale.toLayout(mouseY, uiScale);
-        PoseStack pose = graphics.pose();
         pose.pushPose();
         rendering = true;
         // The palette covers the page, widgets, modal and tooltip; closing it restores the previous
@@ -177,31 +198,155 @@ public abstract class TacticalScreen extends Screen {
                 pose.scale(uiScale, uiScale, 1.0F);
             }
             pendingTooltip = null;
+            // The backdrop stays outside the device scope: an animation only fades it.
             renderBackdrop(graphics, partialTick);
-            boolean modalOpen = modal != null;
-            renderTactical(graphics, modalOpen ? NO_MOUSE : layoutX,
-                    modalOpen ? NO_MOUSE : layoutY, partialTick);
-            if (modal != null) {
-                // Nothing under the modal may show a tooltip, not even the keyboard-focused one.
-                pendingTooltip = null;
-                if (!modalLaidOut) {
-                    layoutModal();
+            // Device, page, modal, glass and tooltip move as one (0.5.0-beta.4 device hooks); the
+            // scope closes before the pose is popped, also when rendering throws.
+            try (DeviceScope device = beginDeviceScope(graphics)) {
+                boolean modalOpen = modal != null;
+                renderTactical(graphics, modalOpen ? NO_MOUSE : layoutX,
+                        modalOpen ? NO_MOUSE : layoutY, partialTick);
+                if (modal != null) {
+                    // Nothing under the modal may show a tooltip, not even the keyboard-focused one.
+                    pendingTooltip = null;
+                    if (!modalLaidOut) {
+                        layoutModal();
+                    }
+                    // A dialog key never adopts a page label drawn under it (uiTest probe only).
+                    UiLayoutProbe.layer();
+                    pose.pushPose();
+                    pose.translate(0.0F, 0.0F, MODAL_Z);
+                    graphics.fill(0, 0, width + 1, height + 1, TacticalBoardTheme.MODAL_DIM);
+                    modal.render(graphics, font, layoutX, layoutY, partialTick);
+                    pose.popPose();
                 }
-                // A dialog key never adopts a page label drawn under it (uiTest probe only).
-                UiLayoutProbe.layer();
-                pose.pushPose();
-                pose.translate(0.0F, 0.0F, MODAL_Z);
-                graphics.fill(0, 0, width + 1, height + 1, TacticalBoardTheme.MODAL_DIM);
-                modal.render(graphics, font, layoutX, layoutY, partialTick);
-                pose.popPose();
+                renderGlassOverlay(graphics, partialTick);
+                renderPendingTooltip(graphics, layoutX, layoutY);
+                // Only a frame drawn without an exception gets the animation's screen effects.
+                device.drawEffects();
             }
-            renderGlassOverlay(graphics, partialTick);
-            renderPendingTooltip(graphics, layoutX, layoutY);
         } finally {
             rendering = false;
             pendingTooltip = null;
             pose.popPose();
         }
+    }
+
+    // ---- device hooks (0.5.0-beta.4: the "take out the tablet" animation) -------------------------
+
+    /**
+     * What a device animation may change in {@link #render} (IMPL_PLAN D6). The defaults draw the
+     * screen exactly as 0.5.0-beta.3 did; the screen package never depends on the animation, which
+     * installs its hooks with {@link #installDeviceHooks}.
+     */
+    public interface DeviceHooks {
+        /** Alpha factor of the backdrop around the device (1 = unchanged). */
+        default float backdropAlpha(TacticalScreen screen) {
+            return 1.0F;
+        }
+
+        /**
+         * Opens the device scope of one frame: the device, page, modal, glass and tooltip are drawn
+         * inside it, the backdrop is not. Called once per frame right after the backdrop.
+         */
+        default DeviceScope beginDevice(GuiGraphics graphics, TacticalScreen screen) {
+            return DeviceScope.NONE;
+        }
+
+        /** Alpha factor of the case's drop shadow (1 = unchanged). */
+        default float shadowAlpha(TacticalScreen screen) {
+            return 1.0F;
+        }
+    }
+
+    /**
+     * The device block of one frame. {@link #drawEffects()} is the block's last statement (only a
+     * frame drawn without an exception reaches it); {@link #close()} always runs, before the
+     * screen's pose is popped, and undoes whatever the scope changed that is still open.
+     */
+    public interface DeviceScope extends AutoCloseable {
+        /** A scope that changes nothing. */
+        DeviceScope NONE = new DeviceScope() {
+        };
+
+        /** Draws the animation's screen effects over the finished frame. */
+        default void drawEffects() {
+        }
+
+        @Override
+        default void close() {
+        }
+    }
+
+    /** The hooks that leave every frame as 0.5.0-beta.3 drew it. */
+    public static final DeviceHooks NO_HOOKS = new DeviceHooks() {
+    };
+
+    private static volatile DeviceHooks deviceHooks = NO_HOOKS;
+
+    /** Installs the animation's hooks ({@code null} restores {@link #NO_HOOKS}). */
+    public static void installDeviceHooks(DeviceHooks hooks) {
+        deviceHooks = hooks == null ? NO_HOOKS : hooks;
+    }
+
+    /** The installed hooks. */
+    public static DeviceHooks deviceHooks() {
+        return deviceHooks;
+    }
+
+    private DeviceScope beginDeviceScope(GuiGraphics graphics) {
+        DeviceScope scope = deviceHooks.beginDevice(graphics, this);
+        return scope == null ? DeviceScope.NONE : scope;
+    }
+
+    /**
+     * Livery of the frame being drawn (the last one drawn between frames), for code outside the
+     * screen that paints the same device, e.g. the animation drawing it while it is put away.
+     */
+    public final TacticalLivery.Livery deviceLivery() {
+        return frameLivery;
+    }
+
+    /**
+     * The livery the next frame will resolve (Neutral for none), without drawing: the
+     * 0.5.0-beta.4 animation paints the same device in 3D before the screen draws its first frame.
+     */
+    public final TacticalLivery.Livery resolveDeviceLivery() {
+        TacticalLivery.Livery resolved = livery();
+        return resolved != null ? resolved : TacticalLivery.Livery.NEUTRAL;
+    }
+
+    /** The palette this screen pushes for a frame painted in {@code livery} (its own scope). */
+    public final TacticalPalette devicePalette(TacticalLivery.Livery livery) {
+        TacticalLivery.Livery paint = livery != null ? livery : TacticalLivery.Livery.NEUTRAL;
+        return paint.palette(paletteScope());
+    }
+
+    /**
+     * The hardware keys of the bottom bezel as blank caps (IMPL_PLAN V3: no labels, every page LED
+     * off): the Esc and R keys, then the page keys of a {@link TacticalTabStrip.Skin#BEZEL} strip
+     * with the current page pressed. A device animation draws them while the screen is dark, so
+     * the row of keys never pops in or out. Empty without bezel keys.
+     */
+    public final List<DeviceArt.BlankKey> faceKeys() {
+        List<DeviceArt.BlankKey> keys = new ArrayList<>();
+        if (bezelEscKey != null && bezelEscKey.getWidth() > 0 && bezelEscKey.getHeight() > 0) {
+            keys.add(new DeviceArt.BlankKey(UiRect.ofSize(bezelEscKey.getX(), bezelEscKey.getY(),
+                    bezelEscKey.getWidth(), bezelEscKey.getHeight()), BezelKey.CapState.RAISED,
+                    UiRect.EMPTY));
+        }
+        if (bezelRefreshKey != null && bezelRefreshKey.getWidth() > 0
+                && bezelRefreshKey.getHeight() > 0) {
+            keys.add(new DeviceArt.BlankKey(UiRect.ofSize(bezelRefreshKey.getX(),
+                    bezelRefreshKey.getY(), bezelRefreshKey.getWidth(), bezelRefreshKey.getHeight()),
+                    bezelRefreshDisabledReason() == null ? BezelKey.CapState.RAISED
+                            : BezelKey.CapState.DISABLED, UiRect.EMPTY));
+        }
+        if (tabStrip != null && tabStrip.skin() == TacticalTabStrip.Skin.BEZEL && tabStrip.visible
+                && font != null) {
+            keys.addAll(tabStrip.blankKeys(font));
+        }
+        return List.copyOf(keys);
     }
 
     /**
@@ -277,7 +422,7 @@ public abstract class TacticalScreen extends Screen {
      * opaque background and never the vanilla {@code renderBackground}.
      */
     protected void renderBackdrop(GuiGraphics graphics, float partialTick) {
-        DeviceArt.drawBackdrop(graphics, width, height);
+        DeviceArt.drawBackdrop(graphics, width, height, deviceHooks.backdropAlpha(this));
     }
 
     /**

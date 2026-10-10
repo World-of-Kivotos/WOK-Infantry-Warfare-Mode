@@ -406,6 +406,44 @@ public final class TacticalTabStrip extends AbstractWidget {
         return cells;
     }
 
+    /**
+     * The page keys of a {@link Skin#BEZEL} strip as blank caps for a dark device (0.5.0-beta.4
+     * animation): every cell as drawn now, the current page pressed, a disabled tab flat, each LED
+     * position that is drawn (unlit); in pager mode the two arrow keys and the pressed label key.
+     * Empty for other skins or an empty strip.
+     */
+    List<DeviceArt.BlankKey> blankKeys(Font font) {
+        if (skin != Skin.BEZEL || tabs.isEmpty() || width <= 0 || height <= 0 || font == null) {
+            return List.of();
+        }
+        TacticalBezelPlan plan = bezelPlan(compact);
+        Mode mode = mode(font);
+        List<DeviceArt.BlankKey> keys = new ArrayList<>();
+        if (mode == Mode.PAGER) {
+            List<UiRect> parts = pagerParts();
+            boolean[] enabled = enabledFlags();
+            keys.add(new DeviceArt.BlankKey(parts.get(0), nextEnabled(enabled, current, -1, false) >= 0
+                    ? BezelKey.CapState.RAISED : BezelKey.CapState.DISABLED, UiRect.EMPTY));
+            keys.add(new DeviceArt.BlankKey(parts.get(1), BezelKey.CapState.DOWN,
+                    plan.led(parts.get(1))));
+            keys.add(new DeviceArt.BlankKey(parts.get(2), nextEnabled(enabled, current, 1, false) >= 0
+                    ? BezelKey.CapState.RAISED : BezelKey.CapState.DISABLED, UiRect.EMPTY));
+            return keys;
+        }
+        List<UiRect> cells = cells(font, mode);
+        for (int index = 0; index < cells.size(); index++) {
+            UiRect cell = cells.get(index);
+            if (cell.isEmpty()) {
+                continue;
+            }
+            boolean isCurrent = index == current;
+            BezelKey.CapState state = BezelKey.state(tabs.get(index).enabled() || isCurrent,
+                    isCurrent, false);
+            keys.add(new DeviceArt.BlankKey(cell, state, plan.led(cell)));
+        }
+        return keys;
+    }
+
     /** Pager parts: previous key, label, next key (bezel keys: in the key row below the LEDs). */
     private List<UiRect> pagerParts() {
         UiRect strip = skin == Skin.BEZEL ? bezelPlan(compact).keyRow()

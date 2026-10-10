@@ -2,6 +2,7 @@ package com.wok.infantry.client.screen;
 
 import com.wok.infantry.battle.BattleSnapshot;
 import com.wok.infantry.client.ClientBattleState;
+import com.wok.infantry.client.tablet.TabletSurface;
 import com.wok.infantry.loadout.LoadoutClassDefinition;
 import com.wok.infantry.loadout.LoadoutEntry;
 import com.wok.infantry.loadout.LoadoutSlotDefinition;
@@ -20,8 +21,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Player-facing tactical tablet for role and equipment selection. */
-public final class PlayerLoadoutScreen extends Screen {
+/**
+ * Player-facing tactical tablet for role and equipment selection. A tablet-family screen with the
+ * old full-screen frame: the tablet animation treats it like the tactical map.
+ */
+public final class PlayerLoadoutScreen extends Screen implements TabletSurface {
     private final LoadoutSnapshot snapshot;
     private final Screen previous;
     private String selectedClassId;

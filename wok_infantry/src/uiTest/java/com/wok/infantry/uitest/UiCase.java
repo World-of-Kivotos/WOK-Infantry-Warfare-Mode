@@ -65,6 +65,7 @@ public final class UiCase {
     private final List<Consumer<UiCaseContext>> cleanups;
     private final TacticalLivery.Livery livery;
     private final boolean liveryPinned;
+    private final boolean deviceChecks;
 
     private UiCase(Builder builder) {
         this.surfaceId = builder.surfaceId;
@@ -82,6 +83,7 @@ public final class UiCase {
         this.cleanups = List.copyOf(builder.cleanups);
         this.livery = builder.livery;
         this.liveryPinned = builder.liveryPinned;
+        this.deviceChecks = builder.deviceChecks;
     }
 
     public static Builder builder(String surfaceId, String stateId) {
@@ -111,6 +113,15 @@ public final class UiCase {
      */
     public boolean liveryPinned() {
         return liveryPinned;
+    }
+
+    /**
+     * Whether the runner checks the captured tablet device ({@link UiDeviceChecks}) of a case with
+     * a livery. Off for the tablet animation's frozen frames (0.5.0-beta.4): before READ the
+     * screen is not drawn at all, and after it the device is drawn into a scaled rectangle.
+     */
+    public boolean deviceChecks() {
+        return deviceChecks;
     }
 
     /** {@code academy}, {@code caesar}, {@code neutral}, or "" without a livery. */
@@ -246,6 +257,7 @@ public final class UiCase {
         private final List<Consumer<UiCaseContext>> cleanups = new ArrayList<>();
         private TacticalLivery.Livery livery;
         private boolean liveryPinned;
+        private boolean deviceChecks = true;
 
         private Builder(String surfaceId, String stateId) {
             this.surfaceId = Objects.requireNonNull(surfaceId, "surfaceId");
@@ -332,6 +344,12 @@ public final class UiCase {
         public Builder pinLivery(TacticalLivery.Livery value) {
             this.livery = value;
             this.liveryPinned = value != null;
+            return this;
+        }
+
+        /** Whether the device checks run on a case with a livery (default true). */
+        public Builder deviceChecks(boolean value) {
+            this.deviceChecks = value;
             return this;
         }
 
