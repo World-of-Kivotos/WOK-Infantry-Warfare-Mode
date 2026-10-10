@@ -279,23 +279,55 @@ public final class DownedService {
 
         carrier.setSprinting(false);
         applyDragSpeed(carrier);
-        Vec3 look = carrier.getLookAngle();
-        double horizontalLength = Math.sqrt(look.x * look.x + look.z * look.z);
-        double directionX = horizontalLength < 1.0E-4D
-                ? 0.0D : look.x / horizontalLength;
-        double directionZ = horizontalLength < 1.0E-4D
-                ? 1.0D : look.z / horizontalLength;
-        double distance = DownedConfig.DRAG_FOLLOW_DISTANCE.get();
-        casualty.teleportTo(
-                carrier.getX() - directionX * distance,
-                carrier.getY() + 0.05D,
-                carrier.getZ() - directionZ * distance);
-        casualty.setYRot(carrier.getYRot());
+        // The casualty may be out of the crosshair, so a sneak tap puts them down without aiming.
+        // Releasing on the tap's key-up keeps sneak + use on the casualty a plain toggle.
+        if (session.sneakTap.update(carrier.isShiftKeyDown())) {
+            stopDraggingByParticipant(carrier, true);
+            return;
+        }
+        double length = DownedConfig.DRAG_FOLLOW_DISTANCE.get();
+        if (DragLeash.snapped(casualty.distanceToSqr(carrier), length,
+                DownedConfig.RESCUE_DISTANCE.get())) {
+            stopDraggingByParticipant(casualty, true);
+            return;
+        }
+        casualty.fallDistance = 0.0F;
+        double[] pulled = DragLeash.follow(carrier.getX(), carrier.getZ(),
+                casualty.getX(), casualty.getZ(), length);
+        if (pulled == null) {
+            return;
+        }
+        Vec3 target = clearDragTarget(carrier, casualty, pulled[0], pulled[1]);
+        casualty.teleportTo(target.x, target.y, target.z);
+        casualty.setYRot(DragLeash.yawToward(
+                target.x, target.z, carrier.getX(), carrier.getZ()));
         // PlayerTickEvent runs inside connection.tick(), which restores firstGoodXYZ after
         // player.doTick(). Commit this server-driven move to that baseline so trackers see it,
         // even when the casualty's teleport acknowledgement arrives several ticks later.
         casualty.connection.resetPosition();
-        casualty.fallDistance = 0.0F;
+    }
+
+    /**
+     * In-wall damage on a downed casualty ends the drag and, after the grace period, finishes
+     * them. Step up over slabs and blocks, then shorten the rope, and as a last resort lie on the
+     * carrier's own (always clear) spot.
+     */
+    private static Vec3 clearDragTarget(ServerPlayer carrier, ServerPlayer casualty,
+                                        double x, double z) {
+        double[] ropeScales = {1.0D, 0.5D};
+        double[] steps = {0.05D, 0.55D, 1.05D};
+        for (double scale : ropeScales) {
+            double candidateX = carrier.getX() + (x - carrier.getX()) * scale;
+            double candidateZ = carrier.getZ() + (z - carrier.getZ()) * scale;
+            for (double step : steps) {
+                Vec3 candidate = new Vec3(candidateX, carrier.getY() + step, candidateZ);
+                if (casualty.level().noCollision(casualty, casualty.getBoundingBox()
+                        .move(candidate.subtract(casualty.position())))) {
+                    return candidate;
+                }
+            }
+        }
+        return new Vec3(carrier.getX(), carrier.getY() + 0.05D, carrier.getZ());
     }
 
     private static void tickRescue(ServerPlayer casualty) {
@@ -368,7 +400,7 @@ public final class DownedService {
                 session.carrierId.equals(id));
     }
 
-    private static boolean isDragged(ServerPlayer player) {
+    public static boolean isDragged(ServerPlayer player) {
         return DRAGS.containsKey(player.getUUID());
     }
 
@@ -432,7 +464,15 @@ public final class DownedService {
         }
     }
 
-    private record DragSession(UUID carrierId, UUID casualtyId) {
+    private static final class DragSession {
+        private final UUID carrierId;
+        private final UUID casualtyId;
+        private final SneakTap sneakTap = new SneakTap();
+
+        private DragSession(UUID carrierId, UUID casualtyId) {
+            this.carrierId = carrierId;
+            this.casualtyId = casualtyId;
+        }
     }
 
     private DownedService() {

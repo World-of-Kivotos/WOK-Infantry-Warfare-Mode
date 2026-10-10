@@ -1,0 +1,19 @@
+status=PASS
+PASS casualty uses real TCP connection
+PASS expected Mafuyu installation
+PASS casualty entity visible at phase 4
+PASS phase 4 visible casualty follows server position: actual=(0.5, 101.05, 8.962738391917224) expected=(0.5, 101.05, 8.962738391917224)
+PASS phase 4 visible pose is correct
+PASS visible casualty traveled over two blocks
+PASS casualty entity visible at phase 6
+PASS phase 6 visible casualty follows server position: actual=(-7.962738688131934, 101.0, 10.111912986706727) expected=(-7.962738688131934, 101.05, 10.111912986706727)
+PASS phase 6 visible pose is correct
+PASS casualty entity visible at phase 8
+PASS phase 8 visible casualty follows server position: actual=(-7.962738688131934, 101.0, 10.111912986706727) expected=(-7.962738688131934, 101.0, 10.111912986706727)
+PASS phase 8 visible pose is correct
+PASS casualty entity visible at phase 11
+PASS phase 11 visible casualty follows server position: actual=(-7.962738688131934, 101.0, 10.111912986706727) expected=(-7.962738688131934, 101.0, 10.111912986706727)
+PASS phase 11 visible pose is correct
+PASS casualty entity visible at phase 12
+PASS phase 12 visible casualty follows server position: actual=(-7.962738688131934, 101.0, 10.111912986706727) expected=(-7.962738688131934, 101.0, 10.111912986706727)
+PASS phase 12 visible pose is correct
