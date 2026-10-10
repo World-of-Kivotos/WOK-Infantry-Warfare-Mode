@@ -72,11 +72,31 @@ public final class TabletInput {
                                   TabletMotion.Input input, TabletScreenKind kind,
                                   TabletPath2D.TermFrame term, TabletPath2D.MapFrame map,
                                   double guiX, double guiY, int factor, boolean heldSinceOpen) {
+        return decide(path, state, p, input, kind, term, map, null, guiX, guiY, factor, 1,
+                heldSinceOpen);
+    }
+
+    /**
+     * {@link #decide(TabletPath, TabletMotion.State, double, TabletMotion.Input, TabletScreenKind,
+     * TabletPath2D.TermFrame, TabletPath2D.MapFrame, double, double, int, boolean)} with scheme A's
+     * frame {@code a} (or {@code null}): the press is visible where {@link
+     * TabletPose3D#contentVisible} says so (physical pixel = GUI × {@code guiScale}) and is moved
+     * back from the frame's screen rectangle ({@link TabletMotion#remapPoint}: u = (mouse − rect
+     * origin) / s); a press that lands outside the screen is swallowed and jumps to the end.
+     */
+    public static Delivery decide(TabletPath path, TabletMotion.State state, double p,
+                                  TabletMotion.Input input, TabletScreenKind kind,
+                                  TabletPath2D.TermFrame term, TabletPath2D.MapFrame map,
+                                  TabletFrame a, double guiX, double guiY, int factor, int guiScale,
+                                  boolean heldSinceOpen) {
         if (state != TabletMotion.State.OPENING) {
             return Delivery.PASS;
         }
         if (heldSinceOpen) {
             return Delivery.SWALLOW;
+        }
+        if (a != null) {
+            return decideA(path, state, p, input, kind, a, guiX, guiY, Math.max(1, guiScale));
         }
         int f = Math.max(1, factor);
         boolean visible = true;
@@ -107,6 +127,30 @@ public final class TabletInput {
             return new Delivery(true, true, at[0], at[1], true);
         }
         return new Delivery(true, true, guiX, guiY, true);
+    }
+
+    private static Delivery decideA(TabletPath path, TabletMotion.State state, double p,
+                                    TabletMotion.Input input, TabletScreenKind kind, TabletFrame a,
+                                    double guiX, double guiY, int guiScale) {
+        double px = guiX * guiScale;
+        double py = guiY * guiScale;
+        boolean visible = TabletPose3D.contentVisible(a, px, py);
+        TabletMotion.InputDecision decision = TabletMotion.inputAction(path, state, p, input, kind,
+                visible);
+        if (!decision.intercept()) {
+            return Delivery.PASS;
+        }
+        TabletPose3D.RectPx rect = a.ui().rectPx();
+        if (decision.deliver() != TabletMotion.Deliver.REMAPPED || rect == null) {
+            return Delivery.BLOCK;
+        }
+        TabletUnits units = a.ctx().units();
+        TabletMotion.Remap at = TabletMotion.remapPoint(px, py, rect.x(), rect.y(), rect.scale(),
+                units.pxW(), units.pxH());
+        if (!at.inside()) {
+            return Delivery.BLOCK;
+        }
+        return new Delivery(true, true, at.x() / guiScale, at.y() / guiScale, true);
     }
 
     /** GUI point minus a content offset given in layout pixels of {@code factor}. */

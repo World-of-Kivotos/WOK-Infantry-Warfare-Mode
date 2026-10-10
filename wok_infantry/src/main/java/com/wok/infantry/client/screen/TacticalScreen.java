@@ -308,6 +308,21 @@ public abstract class TacticalScreen extends Screen implements TabletSurface {
     }
 
     /**
+     * The livery the next frame will resolve (Neutral for none), without drawing: the
+     * 0.5.0-beta.4 animation paints the same device in 3D before the screen draws its first frame.
+     */
+    public final TacticalLivery.Livery resolveDeviceLivery() {
+        TacticalLivery.Livery resolved = livery();
+        return resolved != null ? resolved : TacticalLivery.Livery.NEUTRAL;
+    }
+
+    /** The palette this screen pushes for a frame painted in {@code livery} (its own scope). */
+    public final TacticalPalette devicePalette(TacticalLivery.Livery livery) {
+        TacticalLivery.Livery paint = livery != null ? livery : TacticalLivery.Livery.NEUTRAL;
+        return paint.palette(paletteScope());
+    }
+
+    /**
      * The hardware keys of the bottom bezel as blank caps (IMPL_PLAN V3: no labels, every page LED
      * off): the Esc and R keys, then the page keys of a {@link TacticalTabStrip.Skin#BEZEL} strip
      * with the current page pressed. A device animation draws them while the screen is dark, so

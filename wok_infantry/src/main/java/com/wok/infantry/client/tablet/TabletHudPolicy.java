@@ -71,6 +71,30 @@ public final class TabletHudPolicy {
         };
     }
 
+    /** The vanilla vignette layer (scheme A hides it with the HUD, see {@link #hidesVignette}). */
+    public static final String VIGNETTE = "minecraft:vignette";
+
+    /**
+     * Scheme A (batch B3): the vanilla vignette darkens the screen edges over everything the world
+     * pass drew, the 3D tablet included, but not over the 2D device that takes over at READ, so at
+     * night the case would brighten by up to a third at p 0.61 (measured in the uiTest world). On
+     * scheme A it therefore stands aside while the tablet moves: from the opening's first frame
+     * until p = 1, and on the close until the HUD returns (p 0.17). Once shown it is back, so the
+     * shown terminal is the same picture on every setting (and the p = 1 hand-over stays 0
+     * difference); schemes B, quick and off keep it throughout (their device is 2D).
+     */
+    public static boolean hidesVignette(TabletMotion.State state, TabletPath path, double p,
+                                        boolean tabletScreenOpen) {
+        if (path != TabletPath.A3D || state == null) {
+            return false;
+        }
+        return switch (state) {
+            case OPENING -> p < 1.0D;
+            case CLOSING -> of(state, path, p, tabletScreenOpen).hudHidden();
+            default -> false;
+        };
+    }
+
     /** Whether the overlay {@code id} ({@code namespace:path}) is cancelled under {@code visibility}. */
     public static boolean cancels(String id, Visibility visibility) {
         if (visibility == null || !visibility.any() || id == null) {

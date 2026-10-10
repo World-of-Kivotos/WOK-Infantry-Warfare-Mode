@@ -42,6 +42,8 @@ public final class UiCaseCatalog {
         cases.addAll(AdminCases.cases());
         cases.addAll(AmmoCases.cases());
         cases.addAll(SquadCases.cases());
+        // 0.5.0-beta.4: scheme A smoke captures (animation on for these cases only).
+        cases.addAll(TabletSmokeCases.cases());
         cases.addAll(HudCases.cases());
         return cases.stream().filter(uiCase -> !UiCase.LEGACY_GROUP.equals(uiCase.group()))
                 .toList();

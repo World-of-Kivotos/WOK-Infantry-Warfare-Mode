@@ -19,7 +19,11 @@ public final class TabletPassMarks<F> {
         /** The page was not drawn (Pre cancelled); only the effects follow. */
         CANCELLED,
         /** A clip and a pose were pushed; pop them, then draw the effects. */
-        PUSHED
+        PUSHED,
+        /** Scheme A: a pose scaling the page into its rectangle was pushed; pop it, then the effects. */
+        SCALED,
+        /** Scheme A: the page went into the smooth-downscale target; lay it back, then the effects. */
+        SMOOTH
     }
 
     /** One open pass. */

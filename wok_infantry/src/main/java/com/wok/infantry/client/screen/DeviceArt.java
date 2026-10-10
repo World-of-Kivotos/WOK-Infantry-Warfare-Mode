@@ -140,7 +140,12 @@ public final class DeviceArt {
 
         /** Composites every rectangle, clipped to the image, over {@code argb} (see {@link #over}). */
         public void composite(int[] argb, int width, int height) {
-            for (int index = 0; index < size; index++) {
+            composite(argb, width, height, 0);
+        }
+
+        /** {@link #composite(int[], int, int)} from rectangle {@code from} on (the first ones skipped). */
+        public void composite(int[] argb, int width, int height, int from) {
+            for (int index = Math.max(0, from); index < size; index++) {
                 int l = Math.max(0, left(index));
                 int t = Math.max(0, top(index));
                 int r = Math.min(width, right(index));
@@ -463,6 +468,26 @@ public final class DeviceArt {
         }
     }
 
+    /**
+     * What {@link #rasterize(int, int, Density, TacticalLivery.Livery, RasterOptions)} adds to or
+     * leaves out of the plain image (0.5.0-beta.4: the front face of the animation's 3D device,
+     * DESIGN 3.5 / IMPL_PLAN 4.3).
+     *
+     * @param shadow    keep the case's drop shadow (the only translucent part of the image)
+     * @param specks    composite the matte specks into the speck bands, tiled from layout (0, 0)
+     *                  exactly as the screen tiles {@link TacticalTextures#DEVICE_SPECKS}
+     * @param keys      bottom-bezel keys drawn as blank caps (unlit LED, no label, no hatch)
+     * @param linkColor the link LED with its halo in this colour; 0 = none
+     */
+    public record RasterOptions(boolean shadow, boolean specks, List<BlankKey> keys, int linkColor) {
+        /** The plain image of the four-argument {@code rasterize}. */
+        public static final RasterOptions DEFAULT = new RasterOptions(true, false, List.of(), 0);
+
+        public RasterOptions {
+            keys = keys == null ? List.of() : List.copyOf(keys);
+        }
+    }
+
     private record Key(int width, int height, Density tier, TacticalLivery.Livery livery) {
     }
 
@@ -500,13 +525,88 @@ public final class DeviceArt {
      * the status bar and the keys.
      */
     public static int[] rasterize(int width, int height, Density tier, TacticalLivery.Livery livery) {
+        return rasterize(width, height, tier, livery, RasterOptions.DEFAULT);
+    }
+
+    /**
+     * {@link #rasterize(int, int, Density, TacticalLivery.Livery)} with {@code options}, in the
+     * screen's painter order: the case under the specks (without its drop shadow unless
+     * {@link RasterOptions#shadow}), the specks, the case over them, the link LED, the blank keys.
+     * {@link RasterOptions#DEFAULT} gives exactly the plain image. Without the shadow every pixel
+     * is either fully transparent or fully opaque.
+     */
+    public static int[] rasterize(int width, int height, Density tier, TacticalLivery.Livery livery,
+                                  RasterOptions options) {
+        RasterOptions opts = options == null ? RasterOptions.DEFAULT : options;
         Plate plate = plate(width, height, tier, livery);
         int w = plate.layout().width();
         int h = plate.layout().height();
         int[] argb = new int[w * h];
-        plate.under().composite(argb, w, h);
+        plate.under().composite(argb, w, h, opts.shadow() ? 0 : plate.shadowRuns());
+        if (opts.specks()) {
+            compositeSpecks(argb, w, h, plate.speckBands());
+        }
         plate.over().composite(argb, w, h);
+        if (opts.linkColor() != 0) {
+            linkLedRuns(plate.layout(), opts.linkColor()).composite(argb, w, h);
+        }
+        if (!opts.keys().isEmpty()) {
+            blankKeyRuns(opts.keys(), livery.skin()).composite(argb, w, h);
+        }
         return argb;
+    }
+
+    /** The speck tile over every pixel of {@code bands}, anchored at layout (0, 0). */
+    static void compositeSpecks(int[] argb, int width, int height, List<UiRect> bands) {
+        for (UiRect band : bands) {
+            int l = Math.max(0, band.left());
+            int t = Math.max(0, band.top());
+            int r = Math.min(width, band.right());
+            int b = Math.min(height, band.bottom());
+            for (int y = t; y < b; y++) {
+                int row = y * width;
+                int ty = Math.floorMod(y, SPECK_TILE);
+                for (int x = l; x < r; x++) {
+                    int speck = speck(Math.floorMod(x, SPECK_TILE), ty);
+                    if (speck != 0) {
+                        argb[row + x] = over(argb[row + x], speck);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * {@code keys} as blank caps in {@code skin}, the fills {@code BezelKey.drawCap} makes (outline
+     * with clipped corners, face, lips; never the hatch) after the unlit LED of each key.
+     */
+    public static Runs blankKeyRuns(List<BlankKey> keys, DeviceSkin skin) {
+        Runs runs = new Runs();
+        if (keys == null || skin == null) {
+            return runs;
+        }
+        for (BlankKey key : keys) {
+            UiRect led = key.led();
+            if (!led.isEmpty()) {
+                fill(runs, led.left(), led.top(), led.right(), led.bottom(), LED_OFF);
+            }
+            UiRect c = key.cap();
+            if (c.width() < 3 || c.height() < 3) {
+                continue;
+            }
+            BezelKey.Cap cap = BezelKey.cap(skin, key.state());
+            fill(runs, c.left() + 1, c.top(), c.right() - 1, c.bottom(), cap.edge());
+            fill(runs, c.left(), c.top() + 1, c.right(), c.bottom() - 1, cap.edge());
+            fill(runs, c.left() + 1, c.top() + 1, c.right() - 1, c.bottom() - 1, cap.face());
+            if (cap.topLip() != 0) {
+                fill(runs, c.left() + 1, c.top() + 1, c.right() - 1, c.top() + 2, cap.topLip());
+            }
+            if (cap.bottomLip() != 0) {
+                fill(runs, c.left() + 1, c.bottom() - 2, c.right() - 1, c.bottom() - 1,
+                        cap.bottomLip());
+            }
+        }
+        return runs;
     }
 
     static Plate build(int width, int height, Density tier, DeviceSkin skin) {
@@ -881,17 +981,9 @@ public final class DeviceArt {
         if (keys == null || keys.isEmpty() || skin == null) {
             return;
         }
-        graphics.drawManaged(() -> {
-            for (BlankKey key : keys) {
-                if (!key.led().isEmpty()) {
-                    graphics.fill(key.led().left(), key.led().top(), key.led().right(),
-                            key.led().bottom(), LED_OFF);
-                }
-                BezelKey.Cap cap = BezelKey.cap(skin, key.state());
-                BezelKey.drawCap(graphics, key.cap(), new BezelKey.Cap(cap.edge(), cap.face(),
-                        cap.topLip(), cap.bottomLip(), cap.text(), cap.sub(), false, 0));
-            }
-        });
+        // The same fills the 3D front face bakes in (rasterize with RasterOptions.keys).
+        Runs runs = blankKeyRuns(keys, skin);
+        graphics.drawManaged(() -> runs.draw(graphics));
     }
 
     private static void drawSpecks(GuiGraphics graphics, Plate plate) {
