@@ -55,6 +55,20 @@ class TacticalTextFieldTest {
     }
 
     @Test
+    void placeholderFollowsThePaletteTheFieldIsDrawnIn() {
+        // Built in init (A palette); every frame re-reads the colours, so the hint is not the A
+        // gray inside the pale Neutral well and is A again outside the scope.
+        TacticalTextField field = field().placeholder(Component.literal("搜索装备"));
+        assertEquals(TacticalPalette.A.get(PaletteToken.FAINT), field.placeholderColor());
+        try (TacticalPalette.Applied ignored = TacticalPalette.push(TacticalPalette.NEUTRAL)) {
+            field.syncColors();
+            assertEquals(TacticalPalette.NEUTRAL.get(PaletteToken.FAINT), field.placeholderColor());
+        }
+        field.syncColors();
+        assertEquals(TacticalPalette.A.get(PaletteToken.FAINT), field.placeholderColor());
+    }
+
+    @Test
     void textFieldIsStillAVanillaEditBox() {
         TacticalTextField field = field();
         field.setMaxLength(8);

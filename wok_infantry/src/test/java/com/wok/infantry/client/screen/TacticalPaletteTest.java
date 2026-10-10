@@ -37,6 +37,7 @@ class TacticalPaletteTest {
     @AfterEach
     void backToA() {
         TacticalPalette.A.apply();
+        assertEquals(0, TacticalPalette.openScopes(), "a test left a palette scope open");
     }
 
     // ---- token ↔ field ------------------------------------------------------------------------
@@ -252,6 +253,26 @@ class TacticalPaletteTest {
         assertSame(TacticalPalette.CAESAR, TacticalPalette.active(), "the outer scope stays open");
         outer.close();
         assertSame(TacticalPalette.A, TacticalPalette.active());
+        assertEquals(0, TacticalPalette.openScopes());
+    }
+
+    @Test
+    void closingTheOuterScopeFirstAlsoEndsTheInnerOne() {
+        TacticalPalette.Applied outer = TacticalPalette.push(TacticalPalette.CAESAR);
+        TacticalPalette.Applied inner = TacticalPalette.push(TacticalPalette.NEUTRAL);
+        outer.close();
+        assertSame(TacticalPalette.A, TacticalPalette.active());
+        assertEquals(0, TacticalPalette.openScopes());
+
+        inner.close();
+        assertSame(TacticalPalette.A, TacticalPalette.active(), "the inner scope already ended");
+        try (TacticalPalette.Applied next = TacticalPalette.push(TacticalPalette.ACADEMY)) {
+            inner.close();
+            assertSame(TacticalPalette.ACADEMY, TacticalPalette.active(),
+                    "a stale handle never ends a newer scope");
+        }
+        assertSame(TacticalPalette.A, TacticalPalette.active());
+        assertEquals(0, TacticalPalette.openScopes());
     }
 
     @Test
@@ -291,43 +312,36 @@ class TacticalPaletteTest {
             }
         };
         assertSame(TacticalPalette.CAESAR.withScope(Scope.MAP), screen.framePalette());
+        assertSame(Livery.CAESAR, screen.frameLivery(), "the device paint follows the same livery");
+    }
+
+    @Test
+    void aScreenWithoutALiveryIsNeutral() {
+        TacticalScreen screen = new TacticalScreen(Component.literal("palette")) {
+            @Override
+            protected void initTactical() {
+            }
+
+            @Override
+            protected Livery livery() {
+                return null;
+            }
+        };
+        assertSame(Livery.NEUTRAL, screen.frameLivery(), "before the first frame");
+        assertSame(TacticalPalette.NEUTRAL, screen.framePalette());
+        assertSame(Livery.NEUTRAL, screen.frameLivery());
     }
 
     // ---- defaults fixed outside the palette scope ----------------------------------------------
 
     @Test
-    void constructionTimeBadgeColoursAreResolvedWhileDrawing() {
-        assertEquals(TacticalBoardTheme.RENDER_MUTED,
-                TacticalButtonStyle.Options.DEFAULT.badgeColor());
-        assertEquals(TacticalBoardTheme.RENDER_MUTED,
+    void tabsBuiltOutsideThePaletteDeferTheirBadgeColour() {
+        // Tabs are built in init (A palette): the badge colour is the NONE sentinel, read as the
+        // MUTED of the palette the strip is drawn in. Keys and BattleUiButton: TacticalButtonStyle.
+        assertEquals(TacticalButtonStyle.NONE,
                 TacticalTabStrip.Tab.of("squads", Component.literal("小队")).badgeColor());
-        assertEquals(TacticalBoardTheme.RENDER_MUTED, TacticalTabStrip.Tab.of("map",
+        assertEquals(TacticalButtonStyle.NONE, TacticalTabStrip.Tab.of("map",
                 Component.literal("战术地图"), Component.literal("地图")).badgeColor());
-        try (TacticalPalette.Applied ignored = TacticalPalette.push(TacticalPalette.NEUTRAL)) {
-            assertEquals(TacticalPalette.NEUTRAL.get(PaletteToken.MUTED),
-                    TacticalBoardTheme.orMuted(TacticalBoardTheme.RENDER_MUTED));
-            assertEquals(0xFF123456, TacticalBoardTheme.orMuted(0xFF123456));
-        }
-        assertEquals(TacticalPalette.A.get(PaletteToken.MUTED),
-                TacticalBoardTheme.orMuted(TacticalBoardTheme.RENDER_MUTED));
-    }
-
-    @Test
-    void textOnSolidFillsStaysLightInEveryLivery() {
-        // Neutral's LIGHT is dark ink: success and armed danger keys write ON_FILL, selected
-        // keys and dark badges ON_SELECT (plan 4.1 item 7).
-        try (TacticalPalette.Applied ignored = TacticalPalette.push(TacticalPalette.NEUTRAL)) {
-            TacticalButtonStyle.Palette success = TacticalButtonStyle.palette(
-                    new TacticalButtonStyle.Look(TacticalButtonStyle.State.SUCCESS, false));
-            TacticalButtonStyle.Palette armed = TacticalButtonStyle.palette(
-                    new TacticalButtonStyle.Look(TacticalButtonStyle.State.DANGER_ARMED, true));
-            TacticalButtonStyle.Palette selected = TacticalButtonStyle.palette(
-                    new TacticalButtonStyle.Look(TacticalButtonStyle.State.SELECTED, false));
-            assertEquals(TacticalBoardTheme.ON_FILL, success.text());
-            assertEquals(TacticalBoardTheme.ON_FILL, armed.text());
-            assertEquals(TacticalBoardTheme.ON_SELECT, selected.text());
-            assertNotEquals(TacticalBoardTheme.LIGHT, success.text());
-        }
     }
 
     private static String hex(int color) {

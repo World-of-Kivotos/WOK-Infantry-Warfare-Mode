@@ -220,9 +220,26 @@ public abstract class TacticalScreen extends Screen {
         return TacticalLivery.Scope.BOARD;
     }
 
-    /** Palette of this frame: the livery's palette on the page's scope. */
+    /** Livery of the frame being drawn (the last one drawn between frames). */
+    private TacticalLivery.Livery frameLivery = TacticalLivery.Livery.NEUTRAL;
+
+    /**
+     * Livery the current frame is painted in, resolved once per frame before anything is drawn:
+     * device paint ({@link TacticalLivery.Livery#skin()}) read through it always matches the
+     * screen palette, even when a snapshot arrives mid-frame. Neutral before the first frame.
+     */
+    protected final TacticalLivery.Livery frameLivery() {
+        return frameLivery;
+    }
+
+    /**
+     * Resolves this frame's livery (kept for {@link #frameLivery()}) and returns its palette on
+     * the page's scope; a {@code null} livery counts as Neutral.
+     */
     final TacticalPalette framePalette() {
-        return livery().palette(paletteScope());
+        TacticalLivery.Livery resolved = livery();
+        frameLivery = resolved != null ? resolved : TacticalLivery.Livery.NEUTRAL;
+        return frameLivery.palette(paletteScope());
     }
 
     /** Applies this frame's palette; {@link #render} closes the handle. */

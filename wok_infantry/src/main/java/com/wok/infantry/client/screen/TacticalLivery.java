@@ -73,8 +73,8 @@ public final class TacticalLivery {
     private static volatile Livery pinned;
     /** Faction id → side, learned from this session's battle snapshots; replaced, never mutated. */
     private static volatile Map<String, Faction> learnedSides = Map.of();
-    /** The context {@link #learnedSides} was last learned from (identity check, once per frame). */
-    private static volatile FormationContextView learnedFrom;
+    /** The snapshot {@link #learnedSides} was last learned from (identity check, once per frame). */
+    private static volatile BattleSnapshot learnedFrom;
 
     private TacticalLivery() {
     }
@@ -87,7 +87,7 @@ public final class TacticalLivery {
         }
         BattleSnapshot battle = ClientBattleState.snapshot();
         if (battle != null) {
-            learnFrom(battle.faction(), battle.formationContext());
+            learnFrom(battle);
             return forSide(battle.faction());
         }
         FormationSelectionSnapshot catalog = ClientFormationState.snapshot();
@@ -166,12 +166,12 @@ public final class TacticalLivery {
         return next.equals(table) ? table : Map.copyOf(next);
     }
 
-    private static void learnFrom(Faction side, FormationContextView context) {
-        if (context == learnedFrom) {
+    private static void learnFrom(BattleSnapshot battle) {
+        if (battle == learnedFrom) {
             return;
         }
-        learnedSides = learn(learnedSides, side, context);
-        learnedFrom = context;
+        learnedSides = learn(learnedSides, battle.faction(), battle.formationContext());
+        learnedFrom = battle;
     }
 
     /** Unit-test seam: the faction sides learned so far. */

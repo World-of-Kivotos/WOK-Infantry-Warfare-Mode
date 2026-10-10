@@ -1,5 +1,7 @@
 package com.wok.infantry.client.screen;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Objects;
@@ -45,10 +47,11 @@ public final class TacticalPalette {
     public static final TacticalPalette NEUTRAL = livery("NEUTRAL", TacticalLiveryTables.NEUTRAL,
             null);
 
-    // Render thread only: the palette the theme fields hold, and the open push scopes.
+    // Render thread only: the palette the theme fields hold, and the open push scopes (innermost
+    // first) with the thread that opened them.
     private static TacticalPalette active = A;
+    private static final Deque<Restore> SCOPES = new ArrayDeque<>();
     private static Thread scopeOwner;
-    private static int scopeDepth;
 
     private final String name;
     private final int[] values;
@@ -114,17 +117,22 @@ public final class TacticalPalette {
     public static Applied push(TacticalPalette palette) {
         Objects.requireNonNull(palette, "palette");
         Thread thread = Thread.currentThread();
-        if (scopeDepth > 0 && scopeOwner != thread) {
+        if (!SCOPES.isEmpty() && scopeOwner != thread) {
             throw new IllegalStateException("palette scope is open on " + scopeOwner.getName()
                     + "; palettes are render-thread only");
         }
-        TacticalPalette previous = active;
-        if (palette != previous) {
+        Restore scope = new Restore(active);
+        SCOPES.push(scope);
+        scopeOwner = thread;
+        if (palette != active) {
             palette.apply();
         }
-        scopeOwner = thread;
-        scopeDepth++;
-        return new Restore(previous);
+        return scope;
+    }
+
+    /** Number of open {@link #push} scopes (unit-test seam). */
+    static int openScopes() {
+        return SCOPES.size();
     }
 
     /** Handle of one {@link #push}; closing it restores the previous palette. */
@@ -134,10 +142,13 @@ public final class TacticalPalette {
         void close();
     }
 
-    /** Closes once: a second close (or a close after the scope moved on) changes nothing. */
+    /**
+     * One open scope. Closing it also ends the scopes opened inside it and restores the palette
+     * that was active when it was pushed; closing it again, or after an enclosing scope already
+     * ended it, changes nothing.
+     */
     private static final class Restore implements Applied {
         private final TacticalPalette previous;
-        private boolean closed;
 
         private Restore(TacticalPalette previous) {
             this.previous = previous;
@@ -145,15 +156,16 @@ public final class TacticalPalette {
 
         @Override
         public void close() {
-            if (closed) {
+            if (!SCOPES.contains(this)) {
                 return;
             }
-            closed = true;
+            while (SCOPES.pop() != this) {
+                // An inner scope left open: it ends with this one.
+            }
             if (active != previous) {
                 previous.apply();
             }
-            if (--scopeDepth <= 0) {
-                scopeDepth = 0;
+            if (SCOPES.isEmpty()) {
                 scopeOwner = null;
             }
         }

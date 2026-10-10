@@ -64,9 +64,8 @@ public final class TacticalButtonStyle {
      */
     public record Options(TextFit.Align align, Component badge, int badgeColor,
                           boolean focusRing, TacticalIcon icon, boolean iconOnly) {
-        /** Badge colour {@link TacticalBoardTheme#RENDER_MUTED}: MUTED of the palette drawn in. */
         public static final Options DEFAULT = new Options(TextFit.Align.CENTER, null,
-                TacticalBoardTheme.RENDER_MUTED, false);
+                TacticalBoardTheme.MUTED, false);
 
         /** Options without an icon (the B2a form). */
         public Options(TextFit.Align align, Component badge, int badgeColor, boolean focusRing) {
@@ -165,10 +164,10 @@ public final class TacticalButtonStyle {
                     TacticalBoardTheme.DANGER, TacticalBoardTheme.DANGER, NONE,
                     TacticalBoardTheme.CARD_LIP, false, false);
             case DANGER_ARMED -> new Palette(TacticalBoardTheme.DANGER, TacticalBoardTheme.DANGER,
-                    TacticalBoardTheme.ON_FILL, NONE, NONE, NONE, false, true);
+                    TacticalBoardTheme.LIGHT, NONE, NONE, NONE, false, true);
             case SUCCESS -> new Palette(hover ? TacticalBoardTheme.SUCCESS_HOVER
                     : TacticalBoardTheme.SUCCESS, TacticalBoardTheme.SUCCESS_EDGE,
-                    TacticalBoardTheme.ON_FILL, NONE, NONE, NONE, false, true);
+                    TacticalBoardTheme.LIGHT, NONE, NONE, NONE, false, true);
             case CONTROL -> new Palette(hover ? TacticalBoardTheme.CARD_HOVER
                     : TacticalBoardTheme.CARD, hover ? TacticalBoardTheme.BORDER_DARK
                     : TacticalBoardTheme.BORDER, TacticalBoardTheme.TEXT, NONE,
@@ -241,9 +240,8 @@ public final class TacticalButtonStyle {
             graphics.fill(badgeLeft, textY - 1, badgeLeft + badgeWidth, textY + 8,
                     palette.darkFill() ? TacticalBoardTheme.BADGE_ON_SELECT
                             : TacticalBoardTheme.BADGE_ON_CARD);
-            int badgeColor = palette.darkFill() ? TacticalBoardTheme.ON_SELECT
-                    : palette.hatch() ? TacticalBoardTheme.DISABLED_TEXT
-                    : TacticalBoardTheme.orMuted(options.badgeColor());
+            int badgeColor = palette.darkFill() ? TacticalBoardTheme.LIGHT
+                    : palette.hatch() ? TacticalBoardTheme.DISABLED_TEXT : options.badgeColor();
             graphics.drawString(font, badge, badgeLeft + 3, textY, badgeColor, false);
         }
         boolean hasLabel = label != null && !label.getString().isEmpty();

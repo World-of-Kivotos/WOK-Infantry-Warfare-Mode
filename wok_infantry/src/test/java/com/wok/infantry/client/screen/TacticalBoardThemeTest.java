@@ -1,5 +1,7 @@
 package com.wok.infantry.client.screen;
 
+import com.wok.infantry.client.hud.StaminaBarModel;
+import com.wok.infantry.client.hud.TacticalHud;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
@@ -190,6 +192,10 @@ class TacticalBoardThemeTest {
             assertEquals(0x40243032, TacticalBoardTheme.DIVIDER, "alias stays A");
             assertEquals(0xFFEEF3F0, BattleUiTheme.TEXT, "HUD alias stays A");
             assertEquals(0xFFE8695D, BattleUiTheme.DANGER, "HUD alias stays A");
+            assertEquals(TacticalHud.withAlpha(0xFF7BB8EA, 0x30), TacticalHud.SELF_ROW_TINT,
+                    "HUD roster wash stays A");
+            assertEquals(TacticalHud.mix(0xFFB0443C, 0xFF14191B, 0.5D), StaminaBarModel.LOCK_TRACK,
+                    "HUD stamina lock stays A");
         }
     }
 }

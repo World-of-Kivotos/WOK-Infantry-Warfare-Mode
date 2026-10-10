@@ -30,8 +30,10 @@ import net.minecraft.network.chat.Component;
  * badge insets, panel shadow / highlight, {@code BODY_DEAD}, {@code DEVICE_EDGE}, the HUD plates and
  * friend / foe inks, every map and grid colour and every alias. Read a swappable token while
  * drawing, never in a constructor, {@code init} or {@code tick} (those run outside the palette
- * scope and would keep the A value); a default that must be fixed earlier uses
- * {@link #RENDER_MUTED}. The HUD draws outside the scope and always sees the A values.
+ * scope and would keep the A value); a badge colour that must be fixed earlier passes the sentinel
+ * {@link TacticalButtonStyle#NONE}, which becomes {@link #MUTED} when it is drawn. Static
+ * aliases that other classes keep (HUD, old screens) freeze the A values through
+ * {@link TacticalPalette#A}. The HUD draws outside the scope and always sees the A values.
  */
 public final class TacticalBoardTheme {
     // ---- device shell ----------------------------------------------------------------------
@@ -183,6 +185,8 @@ public final class TacticalBoardTheme {
     public static final int GRID_MAJOR = 0x70404A49;
 
     // ---- deprecated aliases (old names; every screen now draws the finalised colours) -------------
+    // Fixed: they keep the A value the swappable token had when this class loaded; new tablet
+    // pages read the swappable token itself.
     /** @deprecated use {@link #FRAME}. */
     @Deprecated
     public static final int DEVICE_FRAME = FRAME;
@@ -223,20 +227,7 @@ public final class TacticalBoardTheme {
     /** Height of the legacy {@link #sectionHeader} strip. */
     public static final int SECTION_HEADER_HEIGHT = 14;
 
-    /**
-     * Colour argument meaning "{@link #MUTED}, read when drawing". Defaults fixed outside the
-     * palette scope (static key options, widget builders, tab records) use it, so they still follow
-     * the faction palette; resolve it with {@link #orMuted} where the colour is drawn. Fully
-     * transparent black is never a real text colour (vanilla would draw it opaque black).
-     */
-    public static final int RENDER_MUTED = 0;
-
     private TacticalBoardTheme() {
-    }
-
-    /** {@code color}, or the current {@link #MUTED} for {@link #RENDER_MUTED}. */
-    public static int orMuted(int color) {
-        return color == RENDER_MUTED ? MUTED : color;
     }
 
     /**
