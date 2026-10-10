@@ -125,6 +125,10 @@ public final class TabletMapFrame {
      * alpha 0.20) over the glass opening.
      */
     public static void drawEffects(GuiGraphics graphics, TabletPath2D.MapFrame f) {
+        if (!f.visible()) {
+            // Preview drawB: nothing but the backdrop while the frame is off screen.
+            return;
+        }
         PoseStack pose = graphics.pose();
         pose.pushPose();
         pose.translate(0.0F, 0.0F, EFFECT_Z);
@@ -137,7 +141,7 @@ public final class TabletMapFrame {
                 graphics.fill(inner.x(), f.scanY(), inner.right(), f.scanY() + Math.max(1, f.cs()),
                         TabletAnimationModel.LIGHT);
             }
-        } else if (f.visible()) {
+        } else {
             fill(graphics, f.s(), DeviceArt.GLASS, f.sleepAlpha());
         }
         pose.popPose();
