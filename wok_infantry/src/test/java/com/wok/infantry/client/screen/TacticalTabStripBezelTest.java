@@ -63,13 +63,26 @@ class TacticalTabStripBezelTest {
         assertTrue(strip.visible);
         assertSame(plan, strip.bezelPlan(true));
 
-        // Moved somewhere else (the old header slot): the keys fill the new bounds, no LEDs.
+        // Moved somewhere else (the old header slot): the keys fill the new bounds, no LEDs, and
+        // keep the size class of the bezel they came from.
         strip.setBounds(100, 8, 200, 14);
         TacticalBezelPlan moved = strip.bezelPlan(true);
         assertNotSame(plan, moved);
         assertEquals(new UiRect(100, 8, 300, 22), moved.pages());
         assertFalse(moved.hasLeds());
-        assertEquals(TacticalShellLayout.Density.COMPACT, moved.density());
+        assertEquals(TacticalShellLayout.Density.STANDARD, moved.density());
+    }
+
+    @Test
+    void aStripNeverPlacedOnABezelFillsItsBoundsInTheGivenSizeClass() {
+        TacticalTabStrip strip = BattleTab.strip(BattleTab.SQUADS, tab -> null, tab -> { });
+        strip.setBounds(40, 4, 300, 12);
+
+        TacticalBezelPlan compact = strip.bezelPlan(true);
+        assertEquals(new UiRect(40, 4, 340, 16), compact.pages());
+        assertEquals(TacticalShellLayout.Density.COMPACT, compact.density());
+        assertEquals(28, compact.minKeyWidth());
+        assertEquals(TacticalShellLayout.Density.STANDARD, strip.bezelPlan(false).density());
     }
 
     @Test

@@ -198,7 +198,9 @@ public final class TacticalTabStrip extends AbstractWidget {
 
     /**
      * Bezel layout of this strip: the plan of the last {@link #placeOnBezel} while the strip still
-     * has its bounds, otherwise a key row filling the bounds (a bezel strip moved elsewhere).
+     * has its bounds, otherwise a key row filling the bounds (a bezel strip moved elsewhere, for
+     * example into an older header slot) in the size class of the last plan, or compact /
+     * standard by {@code compactFallback} when it was never placed on a bezel.
      */
     TacticalBezelPlan bezelPlan(boolean compactFallback) {
         UiRect bounds = UiRect.ofSize(getX(), getY(), width, height);
@@ -206,8 +208,10 @@ public final class TacticalTabStrip extends AbstractWidget {
         if (placed != null && placed.pages().equals(bounds)) {
             return placed;
         }
-        return TacticalBezelPlan.inBounds(bounds, compactFallback
-                ? TacticalShellLayout.Density.COMPACT : TacticalShellLayout.Density.STANDARD);
+        TacticalShellLayout.Density density = placed != null ? placed.density()
+                : compactFallback ? TacticalShellLayout.Density.COMPACT
+                : TacticalShellLayout.Density.STANDARD;
+        return TacticalBezelPlan.inBounds(bounds, density);
     }
 
     // ---- selection ------------------------------------------------------------------------------

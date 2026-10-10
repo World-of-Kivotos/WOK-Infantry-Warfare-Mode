@@ -336,15 +336,6 @@ public final class FormationSelectionScreen extends TacticalScreen
                 testKeyWidth);
         actionKey = UiRect.EMPTY;
         actionBar = UiRect.EMPTY;
-        if (model.joined()) {
-            TacticalTabStrip strip = BattleTab.strip(BattleTab.FORMATION,
-                    tab -> tab == BattleTab.FORMATION || model.hasFormation() ? null
-                            : FormationText.tabLockedReason(), this::navigate);
-            addRenderableWidget(strip);
-            roles.put(strip, TABS_ROLE);
-            setTabStrip(strip);
-            TacticalBoardChrome.placeTabs(font, shellLayout(), FormationText.title(width), strip);
-        }
         switch (layout.mode()) {
             case WAITING -> addRetryKey();
             case WIDE -> {
@@ -378,6 +369,16 @@ public final class FormationSelectionScreen extends TacticalScreen
                         .build(), BACK_UI_ID));
                 addVoteKey(model, layout.detailAction(), layout.detailAction().left());
             }
+        }
+        if (model.joined()) {
+            // The bottom bezel comes last, so plain Tab reaches it after every control of the page.
+            TacticalTabStrip strip = BattleTab.strip(BattleTab.FORMATION,
+                    tab -> tab == BattleTab.FORMATION || model.hasFormation() ? null
+                            : FormationText.tabLockedReason(), this::navigate);
+            addRenderableWidget(strip);
+            roles.put(strip, TABS_ROLE);
+            setTabStrip(strip);
+            TacticalBoardChrome.placeBezel(font, shellLayout(), strip, bezelHints());
         }
     }
 

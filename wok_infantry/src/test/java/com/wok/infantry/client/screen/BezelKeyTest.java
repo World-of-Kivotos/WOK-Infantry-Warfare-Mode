@@ -37,6 +37,10 @@ class BezelKeyTest {
             init();
         }
 
+        void registerStrip(TacticalTabStrip strip) {
+            setTabStrip(strip);
+        }
+
         @Override
         protected void initTactical() {
             if (!registerKeys) {
@@ -233,6 +237,35 @@ class BezelKeyTest {
         assertFalse(screen.children().contains(first.get(0)));
         assertFalse(screen.children().contains(first.get(1)));
         assertNull(screen.bezelRefreshDisabledReason());
+    }
+
+    @Test
+    void placingTheKeysAlsoMovesARegisteredBezelStripBetweenThem() {
+        KeyScreen screen = screen();
+        TacticalTabStrip strip = BattleTab.strip(BattleTab.SQUADS, tab -> null, tab -> { });
+        screen.registerStrip(strip);
+        TacticalBezelPlan plan = TacticalBezelPlan.plan(new UiRect(22, 332, 618, 355),
+                TacticalShellLayout.Density.STANDARD, 52, 40);
+
+        screen.placeBezelKeys(plan);
+
+        List<BezelKey> keys = screen.bezelKeys();
+        assertEquals(plan.esc(), bounds(keys.get(0)));
+        assertEquals(plan.refresh(), bounds(keys.get(1)));
+        assertEquals(plan.pages(), bounds(strip), "page keys between Esc and R");
+        assertSame(plan, strip.bezelPlan(false));
+
+        // Any other skin stays where its screen put it.
+        TacticalTabStrip header = new TacticalTabStrip(TacticalTabStrip.Skin.HEADER,
+                BattleTab.tabs(null), 0, index -> { });
+        header.setBounds(5, 5, 50, 10);
+        screen.registerStrip(header);
+        screen.placeBezelKeys(plan);
+        assertEquals(new UiRect(5, 5, 55, 15), bounds(header));
+    }
+
+    private static UiRect bounds(net.minecraft.client.gui.components.AbstractWidget widget) {
+        return UiRect.ofSize(widget.getX(), widget.getY(), widget.getWidth(), widget.getHeight());
     }
 
     @Test

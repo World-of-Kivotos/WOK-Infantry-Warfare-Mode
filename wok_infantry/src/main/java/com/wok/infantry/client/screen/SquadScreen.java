@@ -587,13 +587,6 @@ public final class SquadScreen extends TacticalScreen
         }
         normalizeSelection(snapshot);
         model = buildModel();
-        BattleTab current = page.tab;
-        TacticalTabStrip strip = BattleTab.strip(current,
-                tab -> tab == current ? null : model.tabDisabledReason(tab), this::onTab);
-        addRenderableWidget(strip);
-        roles.put(strip, TABS_ROLE);
-        setTabStrip(strip);
-        TacticalBoardChrome.placeTabs(font, shellLayout(), title(), strip);
 
         UiRect content = shellLayout().content();
         painterStage = model.stage();
@@ -606,6 +599,19 @@ public final class SquadScreen extends TacticalScreen
                 case DEPLOYMENT -> new DeploymentPagePainter(this, content, model);
             };
         };
+
+        // The bottom bezel comes last, so plain Tab reaches it after every control of the page.
+        setBezelKeys(TacticalBoardChrome.KeyHint.close(),
+                TacticalBoardChrome.KeyHint.literal("R",
+                        SquadBoardText.t(SquadBoardText.HINT_REFRESH)),
+                BattleClientActions::requestSnapshot);
+        BattleTab current = page.tab;
+        TacticalTabStrip strip = BattleTab.strip(current,
+                tab -> tab == current ? null : model.tabDisabledReason(tab), this::onTab);
+        addRenderableWidget(strip);
+        roles.put(strip, TABS_ROLE);
+        setTabStrip(strip);
+        TacticalBoardChrome.placeBezel(font, shellLayout(), strip, bezelHints());
     }
 
     /** Follows the own squad when it changes; drops a target that left the viewed squad. */

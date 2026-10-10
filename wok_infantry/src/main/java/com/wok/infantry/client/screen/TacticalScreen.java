@@ -255,7 +255,10 @@ public abstract class TacticalScreen extends Screen {
      * Registers the hardware keys at the ends of the bottom bezel: {@code escHint} for the Esc key
      * (it acts like pressing Esc, so the screen keeps its own meaning of Esc) and
      * {@code refreshHint} with the {@code refresh} action for the R key. A {@code null} hint
-     * leaves that key out. Call from {@link #initTactical()}; cleared on every init.
+     * leaves that key out. Call from {@link #initTactical()}, then place the page keys with
+     * {@link TacticalBoardChrome#placeBezel} and {@link #bezelHints()} (a bezel strip already
+     * registered with {@link #setTabStrip} is moved between the keys here as well); cleared on
+     * every init.
      */
     protected final void setBezelKeys(TacticalBoardChrome.KeyHint escHint,
                                       TacticalBoardChrome.KeyHint refreshHint, Runnable refresh) {
@@ -285,14 +288,23 @@ public abstract class TacticalScreen extends Screen {
                     this::pressBezelRefresh, this::bezelRefreshDisabledReason, this::deviceSkin));
         }
         if (font != null) {
-            TacticalBezelPlan plan = TacticalBezelPlan.plan(font, shellLayout(), escHint,
-                    refreshHint);
-            if (bezelEscKey != null) {
-                bezelEscKey.setBounds(plan.esc());
-            }
-            if (bezelRefreshKey != null) {
-                bezelRefreshKey.setBounds(plan.refresh());
-            }
+            placeBezelKeys(TacticalBezelPlan.plan(font, shellLayout(), escHint, refreshHint));
+        }
+    }
+
+    /**
+     * Moves the Esc and R keys to {@code plan}, and a registered {@link TacticalTabStrip.Skin#BEZEL}
+     * strip between them, so the strip may be registered before or after the keys.
+     */
+    final void placeBezelKeys(TacticalBezelPlan plan) {
+        if (bezelEscKey != null) {
+            bezelEscKey.setBounds(plan.esc());
+        }
+        if (bezelRefreshKey != null) {
+            bezelRefreshKey.setBounds(plan.refresh());
+        }
+        if (tabStrip != null && tabStrip.skin() == TacticalTabStrip.Skin.BEZEL) {
+            tabStrip.placeOnBezel(plan);
         }
     }
 
