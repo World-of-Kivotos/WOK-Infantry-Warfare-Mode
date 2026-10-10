@@ -1,8 +1,12 @@
 package com.wok.infantryarmor.armor;
 
-import com.wok.infantryarmor.ArmorerConfig;
-
-/** 单件插板在当前服务端配置下的即时属性快照。调用时读取，不跨配置重载缓存。 */
+/**
+ * 单件护甲在当前服务端配置下的即时属性快照。调用时读取，不跨配置重载缓存。
+ *
+ * <p>唯一入口是 {@link #resolve(ProtectiveArmorItem)}，它经过逐件配置解析器
+ * {@link com.wok.infantryarmor.armor.settings.ArmorItemProfile}；不再提供按变体直接计算的入口，
+ * 任何地方都不能绕过逐件覆盖。</p>
+ */
 public record PlateArmorStats(double ballisticProtection,
                               double armorPiercingBuffer,
                               double generalProtection,
@@ -22,35 +26,7 @@ public record PlateArmorStats(double ballisticProtection,
                 movementModifier);
     }
 
-    public static PlateArmorStats resolve(PlateArmorVariant variant) {
-        return resolve(variant.tier(), variant.weight(), variant.material());
-    }
-
     public static PlateArmorStats resolve(ProtectiveArmorItem armor) {
-        return resolve(armor.protectionTier(), armor.protectionWeight(), armor.constructionMaterial());
-    }
-
-    private static PlateArmorStats resolve(PlateArmorTier tier, PlateArmorWeight weight,
-                                           PlateArmorConstructionMaterial material) {
-        PlateArmorConfig config = ArmorerConfig.PLATE_ARMOR;
-        return new PlateArmorStats(
-                adjustProtection(config.ballisticProtection(tier, weight),
-                        config.ballisticLeakMultiplier(material)),
-                adjustProtection(config.armorPiercingBuffer(tier, weight),
-                        config.armorPiercingLeakMultiplier(material)),
-                adjustProtection(config.generalProtection(tier, weight),
-                        config.generalLeakMultiplier(material)),
-                config.pressureCapacity(tier, weight) * config.pressureCapacityMultiplier(material),
-                config.movementModifier(weight) - config.movementPenalty(material));
-    }
-
-    private static double adjustProtection(double baseProtection, double leakMultiplier) {
-        if (baseProtection == 0.0D) {
-            return 0.0D;
-        }
-        double adjusted = 1.0D - (1.0D - baseProtection) * leakMultiplier;
-        // 差材料最多让该项失去全部防护，不会把命中放大成额外伤害。
-        return adjusted < 0.0D ? 0.0D : adjusted;
+        return armor.settings().stats();
     }
 }
-

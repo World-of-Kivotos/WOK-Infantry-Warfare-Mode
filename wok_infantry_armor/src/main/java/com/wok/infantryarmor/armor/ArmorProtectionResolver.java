@@ -5,7 +5,12 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
-/** Selects exactly one equipped localized armor item for a hit. */
+/**
+ * Selects exactly one equipped localized armor item for a hit.
+ *
+ * <p>只有安装部位血量、其开关开启、且是局部命中时才按部位判定（头部只看头盔，其余部位只看胸甲的覆盖部位，
+ * 覆盖部位可被逐件配置 coverage 覆盖）；否则胸甲（没有胸甲时头盔）保护全身。</p>
+ */
 public final class ArmorProtectionResolver {
 
     public static EquippedProtection resolve(Player player, DamageSource source) {

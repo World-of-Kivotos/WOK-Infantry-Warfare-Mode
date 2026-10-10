@@ -1,6 +1,5 @@
 package com.wok.infantryarmor.armor.item;
 
-import com.wok.infantryarmor.ArmorerConfig;
 import com.wok.infantryarmor.armor.PlateArmorCoverage;
 import com.wok.infantryarmor.armor.PlateArmorEquipmentMaterial;
 import com.wok.infantryarmor.armor.PlateArmorStats;
@@ -8,6 +7,9 @@ import com.wok.infantryarmor.armor.PlateArmorVariant;
 import com.wok.infantryarmor.armor.ProtectiveArmorItem;
 import com.wok.infantryarmor.armor.ProtectedBodyPart;
 import com.wok.infantryarmor.armor.client.PlateArmorClient;
+import com.wok.infantryarmor.armor.settings.ArmorItemProfile;
+import com.wok.infantryarmor.armor.settings.ArmorItemSettings;
+import com.wok.infantryarmor.armor.settings.ArmorWearMath;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -24,10 +26,13 @@ import net.minecraftforge.client.extensions.common.IClientItemExtensions;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.function.Consumer;
 
-/** 54 个外观共用的可穿戴插板胸甲；等级、类型与材料由注册时绑定的 variant 决定，玩家 NBT 不可伪造。 */
+/**
+ * 54 个外观共用的可穿戴插板胸甲；物品身份由注册时绑定的 variant 决定，玩家 NBT 不可伪造。
+ * 等级、类型、材质和全部数值都经过逐件配置解析器 {@link #settings()}；注册时按 variant 绑定的原版
+ * ArmorMaterial（装备音效、图层名）不随配置变化。
+ */
 public final class PlateArmorItem extends ArmorItem implements ProtectiveArmorItem {
 
     private static final String MODEL_TEXTURE_PREFIX =
@@ -46,18 +51,13 @@ public final class PlateArmorItem extends ArmorItem implements ProtectiveArmorIt
     }
 
     @Override
-    public com.wok.infantryarmor.armor.PlateArmorTier protectionTier() {
-        return variant.tier();
+    public ArmorItemProfile settings() {
+        return ArmorItemSettings.plate(variant);
     }
 
     @Override
-    public com.wok.infantryarmor.armor.PlateArmorWeight protectionWeight() {
-        return variant.weight();
-    }
-
-    @Override
-    public com.wok.infantryarmor.armor.PlateArmorConstructionMaterial constructionMaterial() {
-        return variant.material();
+    public ArmorItemSettings.ItemAttributes extraAttributes() {
+        return ArmorItemSettings.attributes(variant);
     }
 
     @Override
@@ -65,9 +65,13 @@ public final class PlateArmorItem extends ArmorItem implements ProtectiveArmorIt
         return EquipmentSlot.CHEST;
     }
 
+    /**
+     * 解析后的覆盖部位（逐件配置 coverage 可覆盖默认表）。只有安装部位血量、其开关开启且是局部命中时才按部位判定；
+     * 否则胸甲（没有胸甲时头盔）保护全身。
+     */
     @Override
     public PlateArmorCoverage.Coverage coverage() {
-        return PlateArmorCoverage.forVariant(variant);
+        return settings().coverage();
     }
 
     @Override
@@ -90,7 +94,7 @@ public final class PlateArmorItem extends ArmorItem implements ProtectiveArmorIt
 
     @Override
     public int getMaxDamage(ItemStack stack) {
-        return ArmorerConfig.PLATE_ARMOR.maxDurability(variant.material());
+        return settings().maxDurability();
     }
 
     /** 禁止原版按两个 TaCZ 伤害段分别磨损；统一磨损由插板处理器和 TaCZ Post/Kill 集成执行。 */
@@ -100,8 +104,23 @@ public final class PlateArmorItem extends ArmorItem implements ProtectiveArmorIt
         return 0;
     }
 
-    /** 先完成本击防护，再按进入插板公式前的来伤统一磨损一次。 */
+    /** 先完成本击防护，再按进入插板公式前的来伤统一磨损一次：max(1, floor(X/4)) × 逐件磨损倍率。 */
+    @Override
     public void applyCombatWear(ItemStack stack, double incomingDamage, Player wearer) {
+        applyPlateWear(stack, incomingDamage, wearer);
+    }
+
+    /** TaCZ 一弹一次：普通段与穿甲段相加后按同一公式磨损，倍率只乘一次（不转调 applyCombatWear）。 */
+    @Override
+    public void applyBallisticWear(ItemStack stack, double normalDamage, double armorPiercingDamage,
+                                   Player wearer) {
+        if (!Double.isFinite(normalDamage) || !Double.isFinite(armorPiercingDamage)) {
+            return;
+        }
+        applyPlateWear(stack, normalDamage + armorPiercingDamage, wearer);
+    }
+
+    private void applyPlateWear(ItemStack stack, double incomingDamage, Player wearer) {
         if (stack.isEmpty() || incomingDamage <= 0.0D || !Double.isFinite(incomingDamage)) {
             return;
         }
@@ -109,12 +128,16 @@ public final class PlateArmorItem extends ArmorItem implements ProtectiveArmorIt
             breakExhausted(stack, wearer);
             return;
         }
-        int wear = Math.max(1, (int) Math.floor(incomingDamage / 4.0D));
-        int next = stack.getDamageValue() + wear;
+        int wear = ArmorWearMath.scale(ArmorWearMath.plateLegacyWear(incomingDamage),
+                settings().wearMultiplier(), () -> wearer.getRandom().nextDouble());
+        if (wear <= 0) {
+            return;
+        }
+        long next = (long) stack.getDamageValue() + wear;
         if (next >= stack.getMaxDamage()) {
             breakExhausted(stack, wearer);
         } else {
-            stack.setDamageValue(next);
+            stack.setDamageValue((int) next);
         }
     }
 
@@ -125,10 +148,12 @@ public final class PlateArmorItem extends ArmorItem implements ProtectiveArmorIt
     }
 
     /** 配置热重载降低最大耐久后，旧物品可能立即越过新上限；耗尽态不得继续提供防护。 */
+    @Override
     public boolean isFunctional(ItemStack stack) {
         return !stack.isEmpty() && stack.getDamageValue() < stack.getMaxDamage();
     }
 
+    @Override
     public void breakExhausted(ItemStack stack, Player wearer) {
         if (!stack.isEmpty()) {
             stack.shrink(1);
@@ -139,46 +164,47 @@ public final class PlateArmorItem extends ArmorItem implements ProtectiveArmorIt
     @Override
     public void appendHoverText(ItemStack stack, Level level, List<Component> tooltip, TooltipFlag flag) {
         super.appendHoverText(stack, level, tooltip, flag);
-        PlateArmorStats stats = PlateArmorStats.resolve(variant);
+        ArmorItemProfile settings = settings();
+        PlateArmorStats stats = settings.stats();
 
-        tooltip.add(Component.translatable("tooltip.wok_infantry_armor.plate_armor.level", variant.tier().name())
+        tooltip.add(Component.translatable("tooltip.wok_infantry_armor.plate_armor.level", settings.tier().name())
                 .withStyle(ChatFormatting.GRAY));
         tooltip.add(Component.translatable("tooltip.wok_infantry_armor.plate_armor.category",
                         Component.translatable("category.wok_infantry_armor.plate_armor"))
                 .withStyle(ChatFormatting.GRAY));
         tooltip.add(Component.translatable("tooltip.wok_infantry_armor.plate_armor.type",
-                        Component.translatable(variant.weight().translationKey()))
+                        Component.translatable(settings.weight().translationKey()))
                 .withStyle(ChatFormatting.GRAY));
         tooltip.add(Component.translatable("tooltip.wok_infantry_armor.plate_armor.material",
-                        Component.translatable(variant.material().translationKey()))
+                        Component.translatable(settings.material().translationKey()))
                 .withStyle(ChatFormatting.GRAY));
-        appendCoverageTooltip(tooltip);
+        appendCoverageTooltip(tooltip, settings.coverage());
 
         tooltip.add(Component.empty());
         tooltip.add(Component.translatable("tooltip.wok_infantry_armor.plate_armor.durability",
                         Math.max(0, stack.getMaxDamage() - stack.getDamageValue()), stack.getMaxDamage())
                 .withStyle(ChatFormatting.DARK_GRAY));
         tooltip.add(Component.translatable("tooltip.wok_infantry_armor.plate_armor.ballistic_r",
-                        percent(stats.ballisticProtection()))
+                        ArmorTooltips.percent(stats.ballisticProtection()))
                 .withStyle(ChatFormatting.DARK_GRAY));
         tooltip.add(Component.translatable("tooltip.wok_infantry_armor.plate_armor.ballistic_q",
-                        percent(stats.armorPiercingBuffer()))
+                        ArmorTooltips.percent(stats.armorPiercingBuffer()))
                 .withStyle(ChatFormatting.DARK_GRAY));
         tooltip.add(Component.translatable("tooltip.wok_infantry_armor.plate_armor.general_g",
-                        percent(stats.generalProtection()))
+                        ArmorTooltips.percent(stats.generalProtection()))
                 .withStyle(ChatFormatting.DARK_GRAY));
         tooltip.add(Component.translatable("tooltip.wok_infantry_armor.plate_armor.capacity_t",
-                        decimal(stats.pressureCapacity()))
+                        ArmorTooltips.decimal(stats.pressureCapacity()))
                 .withStyle(ChatFormatting.DARK_GRAY));
         tooltip.add(Component.translatable("tooltip.wok_infantry_armor.plate_armor.movement",
-                        signedPercent(stats.movementModifier()))
+                        ArmorTooltips.signedPercent(stats.movementModifier()))
                 .withStyle(ChatFormatting.DARK_GRAY));
+        ArmorTooltips.appendExtraAttributes(tooltip, extraAttributes());
         tooltip.add(Component.translatable("tooltip.wok_infantry_armor.plate_armor.replaces_vanilla")
                 .withStyle(ChatFormatting.DARK_GRAY));
     }
 
-    private void appendCoverageTooltip(List<Component> tooltip) {
-        PlateArmorCoverage.Coverage coverage = PlateArmorCoverage.forVariant(variant);
+    private static void appendCoverageTooltip(List<Component> tooltip, PlateArmorCoverage.Coverage coverage) {
         if (!coverage.configured()) {
             tooltip.add(Component.translatable(
                             "tooltip.wok_infantry_armor.plate_armor.protected_parts_unconfigured")
@@ -201,26 +227,4 @@ public final class PlateArmorItem extends ArmorItem implements ProtectiveArmorIt
                         "tooltip.wok_infantry_armor.plate_armor.protected_parts", partNames)
                 .withStyle(ChatFormatting.GOLD));
     }
-
-    private static String percent(double value) {
-        return decimal(value * 100.0D) + "%";
-    }
-
-    private static String signedPercent(double value) {
-        double percentage = value * 100.0D;
-        return (percentage >= 0.0D ? "+" : "") + decimal(percentage) + "%";
-    }
-
-    private static String decimal(double value) {
-        String formatted = String.format(Locale.ROOT, "%.2f", value);
-        int end = formatted.length();
-        while (end > 0 && formatted.charAt(end - 1) == '0') {
-            end--;
-        }
-        if (end > 0 && formatted.charAt(end - 1) == '.') {
-            end--;
-        }
-        return formatted.substring(0, end);
-    }
 }
-

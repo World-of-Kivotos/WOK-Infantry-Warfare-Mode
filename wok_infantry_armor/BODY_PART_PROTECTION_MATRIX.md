@@ -2,6 +2,8 @@
 
 填写规则：`✓` 表示防护，`—` 表示不防护。
 
+下表是代码默认值（`PlateArmorCoverage`）。从独立护甲 1.3.0-beta.1 起，服务器可以在逐件配置 `wok-infantry-armor-items.toml` 的 `plates.<注册名>.coverage` 里覆盖单件插板的覆盖部位（不能写头部）；实际生效的部位以游戏内提示框或 `/wokarmor inspect` 为准，详见 [CONFIG.md](CONFIG.md)。头盔按部位判定时固定只护头，不可配置（不按部位判定、又没有胸甲时，头盔保护全身，见 CONFIG.md 第 4 节）。
+
 配置依据：2026-08-08 的 Tarkov 当前物品数据。映射到 WOK 七部位时，Thorax、Back、Throat、Back neck、Shoulders 归入“胸”；Stomach、Sides、Groin、Buttocks 归入“腹”；Left/Right upper arm 分别归入左右臂。板甲的正面/背面插板区归入“胸”。这些躯干护甲在塔科夫中均不覆盖头部和腿部。
 
 | 注册名 | 中文名称 | 等级 | 重量 | 材料 | 头 | 胸 | 腹 | 左臂 | 右臂 | 左腿 | 右腿 |

@@ -10,7 +10,7 @@
 | `wok_infantry` | `0.1.0` | 核心功能累积更新，含阵营与管理员配装全量导入导出 |
 | `wok_trauma` | `0.1.0-beta.1` | 黄针共享慢回与延迟副作用；待完整游戏验收 |
 | `wok_body_health` | `0.0.3-beta.2` | 伤害换算默认值与 HUD 避让调整 |
-| `wok_infantry_armor` | `1.2.0-beta.2` | 17 件头部防具与 54 件插板护甲按塔科夫原物重做模型；待游戏内外观验收 |
+| `wok_infantry_armor` | `1.3.0-beta.1` | 新增逐件配置 wok-infantry-armor-items.toml 与 /wokarmor 管理命令；模型外观与逐件配置均待游戏内验收 |
 | `wok_vehicle_health` | `0.1.0-beta.1` | 载具 T 级、方向装甲与反坦克归一化 |
 | `wok_commander_support` | `0.1.0-beta.1` | 侦察卫星、F-15EX 与 F-16C；需核心 0.1.0+ |
 | `wok_capture_points` | `0.1.0-alpha.2` | 占点框架；可选核心联动最低 0.1.0 |
