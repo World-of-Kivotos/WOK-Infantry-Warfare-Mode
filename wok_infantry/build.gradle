@@ -603,7 +603,11 @@ def prepareUiTestOptions = tasks.register('prepareUiTestOptions') {
         // each run use the mod's current default keys instead of whatever an older build saved.
         List<String> kept = lines.findAll {
             !it.startsWith('lang:') && !it.startsWith('key_key.wok_infantry.')
+                    && !it.startsWith('pauseOnLostFocus:')
         }
+        // 0.5.0-beta.4: a click elsewhere on the desktop must not open the pause menu mid-run
+        // (it ended a frozen tablet close and timed the case out).
+        kept.add('pauseOnLostFocus:false')
         if (!kept.any { it.startsWith('version:') }) {
             // 1.20.1 data version; without it Minecraft would run every options data fixer.
             kept.add(0, 'version:3465')
