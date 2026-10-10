@@ -21,6 +21,7 @@ import com.wok.infantry.client.screen.FormationSelectionScreen;
 import com.wok.infantry.client.screen.PlayerLoadoutScreen;
 import com.wok.infantry.client.screen.SquadScreen;
 import com.wok.infantry.client.screen.TacticalBoardChrome;
+import com.wok.infantry.client.screen.TacticalLivery;
 import com.wok.infantry.client.screen.TacticalMapScreen;
 import com.wok.infantry.client.screen.WeaponTuningScreen;
 import net.minecraft.client.KeyMapping;
@@ -319,6 +320,7 @@ public final class ClientBootstrap {
     private static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         ClientBattleState.clear();
         ClientFormationState.clear();
+        TacticalLivery.reset();
         ClientLoadoutState.update(null);
         AdminLoadoutScreen.clearSessionMemory();
         TaczAdsSpeedAdapter.resetClientTracking();

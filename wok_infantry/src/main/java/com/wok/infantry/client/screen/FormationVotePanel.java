@@ -193,8 +193,38 @@ final class FormationVotePanel {
         return steps;
     }
 
-    /** "你的票", "截止" and "领先"/"可用编制" key-value rows. */
-    record Info(Component key, Component value, int color) {
+    /**
+     * "你的票", "截止" and "领先"/"可用编制" key-value rows (also "我的状态"). The value keeps its
+     * {@link SquadBoardBlocks.Ink}, so a row made outside the frame (in {@code init()}) is still
+     * drawn in the frame's livery; a {@link Layout} keeps {@link InfoRow}s and makes rows when drawn.
+     */
+    record Info(Component key, Component value, SquadBoardBlocks.Ink ink) {
+        Info {
+            ink = ink == null ? SquadBoardBlocks.Ink.TEXT : ink;
+        }
+
+        /** The value colour in the palette active now; call while drawing. */
+        int color() {
+            return ink.color();
+        }
+    }
+
+    /**
+     * Which info row a {@link Layout} reserved. The layout is planned when the page is built,
+     * outside the frame's faction palette; the row and its colour are made while drawing.
+     */
+    enum InfoRow {
+        MINE,
+        EXTRA,
+        DUE;
+
+        Info of(Data data) {
+            return switch (this) {
+                case MINE -> mineInfo(data);
+                case EXTRA -> extraInfo(data);
+                case DUE -> dueInfo(data);
+            };
+        }
     }
 
     static Info mineInfo(Data data) {
@@ -202,22 +232,22 @@ final class FormationVotePanel {
                 !data.open() ? SquadBoardText.t(SquadBoardText.VOTE_MINE_CLOSED)
                         : data.mine() != null ? data.mine()
                         : SquadBoardText.t(SquadBoardText.VOTE_MINE_NONE),
-                data.open() ? TacticalBoardTheme.TEXT : TacticalBoardTheme.MUTED);
+                data.open() ? SquadBoardBlocks.Ink.TEXT : SquadBoardBlocks.Ink.MUTED);
     }
 
     static Info dueInfo(Data data) {
         return new Info(SquadBoardText.t(SquadBoardText.VOTE_DUE),
                 SquadBoardText.t(data.open() ? SquadBoardText.VOTE_DUE_OPEN
-                        : SquadBoardText.VOTE_DUE_WAIT), TacticalBoardTheme.MUTED);
+                        : SquadBoardText.VOTE_DUE_WAIT), SquadBoardBlocks.Ink.MUTED);
     }
 
     static Info extraInfo(Data data) {
         return data.open()
                 ? new Info(SquadBoardText.t(SquadBoardText.VOTE_LEADING), data.lead(),
-                TacticalBoardTheme.TEXT)
+                SquadBoardBlocks.Ink.TEXT)
                 : new Info(SquadBoardText.t(SquadBoardText.VOTE_AVAILABLE),
                 SquadBoardText.t(SquadBoardText.VOTE_AVAILABLE_VALUE, data.candidates().size()),
-                TacticalBoardTheme.TEXT);
+                SquadBoardBlocks.Ink.TEXT);
     }
 
     /** The shortcut key's label: open the ballot, or (not open yet) view the candidates. */
@@ -242,9 +272,9 @@ final class FormationVotePanel {
                        SquadBoardBlocks.RulesFit rules) {
     }
 
-    /** Planned geometry of the whole panel. */
+    /** Planned geometry of the whole panel; {@code info} rows are made when drawn. */
     record Layout(Options options, UiRect panel, UiRect content, UiRect well, Block block,
-                  UiRect tally, int tallyRowHeight, List<Info> info, int infoTop,
+                  UiRect tally, int tallyRowHeight, List<InfoRow> info, int infoTop,
                   List<PlacedAfter> after, Component meta) {
     }
 
@@ -332,8 +362,8 @@ final class FormationVotePanel {
         int pad = metrics.roomy() ? 8 : 6;
         int count = data.candidates().size();
         int rowHeight = tallyRowHeight(metrics);
-        List<Info> hugInfo = !options.info() || !data.synced() ? List.of()
-                : List.of(mineInfo(data), dueInfo(data));
+        List<InfoRow> hugInfo = !options.info() || !data.synced() ? List.of()
+                : List.of(InfoRow.MINE, InfoRow.DUE);
         int infoHeight = hugInfo.isEmpty() ? 0 : hugInfo.size() * kv + metrics.gap();
         List<After> after = options.after() == null
                 ? List.of(After.flowBlock(), howToVote(data)) : options.after();
@@ -403,13 +433,13 @@ final class FormationVotePanel {
         boolean withList = data.synced() && count > 0
                 && blockHeight(font, metrics, withListWell, hint(options, data)) + gapH
                 + listHeight + 12 <= withListWell.height();
-        List<Info> info = new ArrayList<>();
+        List<InfoRow> info = new ArrayList<>();
         if (options.info() && data.synced()) {
-            info.add(mineInfo(data));
+            info.add(InfoRow.MINE);
             if (!withList) {
-                info.add(extraInfo(data));
+                info.add(InfoRow.EXTRA);
             }
-            info.add(dueInfo(data));
+            info.add(InfoRow.DUE);
         }
         int blockMin = 12 + 10 + 10 + 4 + metrics.buttonHeight() + 8;
         while (!info.isEmpty() && content.height() - info.size() * kv - metrics.gap() < blockMin) {
@@ -457,7 +487,7 @@ final class FormationVotePanel {
         int kv = metrics.roomy() ? 13 : 11;
         UiRect content = layout.content();
         for (int index = 0; index < layout.info().size(); index++) {
-            Info info = layout.info().get(index);
+            Info info = layout.info().get(index).of(data);
             TacticalDraw.kv(graphics, font, content.left(), layout.infoTop() + index * kv,
                     content.width(), info.key(), info.value(), info.color());
         }
@@ -503,13 +533,18 @@ final class FormationVotePanel {
             int y = lines > 1 ? row.top() + 4
                     : row.top() + (rowHeight - (data.open() ? 2 : 0) - 8) / 2;
             // The full name wins: first the "领先" tag gives way (the leader keeps its bright
-            // name), then the share ("4 票 · 50%" → "4 票").
+            // name), then the share ("4 票 · 50%" → "4 票"); while voting is closed the category
+            // gives way altogether (it is only a side note there).
             int nameNeeds = font.width(candidate.name());
             int nameRoom = row.width() - 10 - (rightWidth > 0 ? rightWidth + 8 : 0);
             if (nameNeeds > nameRoom && data.open() && data.voted() > 0) {
                 right = SquadBoardText.t(SquadBoardText.VOTE_VOTES, candidate.votes());
                 rightWidth = font.width(right);
                 nameRoom = row.width() - 10 - rightWidth - 8;
+            } else if (nameNeeds > nameRoom && !data.open() && rightWidth > 0) {
+                right = Component.empty();
+                rightWidth = 0;
+                nameRoom = row.width() - 10;
             }
             Component tag = SquadBoardText.t(SquadBoardText.VOTE_LEADING);
             boolean showTag = candidate.leading()
@@ -518,8 +553,11 @@ final class FormationVotePanel {
             int room = nameRoom - tagWidth;
             int nameColor = candidate.leading() ? TacticalBoardTheme.LIGHT
                     : TacticalBoardTheme.LIGHT_MUTED;
-            int nameWidth = TextFit.draw(graphics, font, candidate.name(), row.left() + 5, y,
-                    Math.max(0, room), nameColor, TextFit.Align.LEFT).width();
+            TextFit.Fitted name = TextFit.draw(graphics, font, candidate.name(), row.left() + 5, y,
+                    Math.max(0, room), nameColor, TextFit.Align.LEFT);
+            // A name longer than the whole row is still offered in full on hover.
+            TacticalScreen.offerFullText(graphics, name, candidate.name(), row.left() + 5, y);
+            int nameWidth = name.width();
             if (showTag) {
                 TextFit.draw(graphics, font, tag, row.left() + 5 + nameWidth + 5, y,
                         tagWidth - 5, TacticalBoardTheme.NEUTRAL_B, TextFit.Align.LEFT);

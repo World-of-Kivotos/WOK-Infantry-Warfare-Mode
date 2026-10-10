@@ -1,11 +1,14 @@
 package com.wok.infantry.uitest.gallery;
 
 import com.wok.infantry.client.map.TacticalMapIcons;
+import com.wok.infantry.client.screen.PaletteToken;
 import com.wok.infantry.client.screen.TacticalBoardChrome;
 import com.wok.infantry.client.screen.TacticalBoardTheme;
 import com.wok.infantry.client.screen.TacticalDraw;
+import com.wok.infantry.client.screen.TacticalPalette;
 import com.wok.infantry.client.screen.TacticalScreen;
 import com.wok.infantry.client.screen.TacticalShellLayout;
+import com.wok.infantry.client.screen.TacticalTabStrip;
 import com.wok.infantry.client.screen.TextFit;
 import com.wok.infantry.client.screen.UiRect;
 import com.wok.infantry.client.ui.probe.UiLayoutProbe;
@@ -24,22 +27,36 @@ import java.util.List;
  * the GUI scale (15×15 art pixels × whole physical pixels per art pixel), which the acceptance
  * checks from the probe's icon records. uiTest only; texts come from {@code wok_uitest} and the
  * core's marker names.
+ *
+ * <p>D2 device (0.5.0-beta.3): the sheet sits on the tablet's glass; the two backgrounds are the
+ * bezel's page keys ({@link #PAGES_UI_ID}) between the hardware Esc key and an R key that is
+ * disabled with its reason (nothing on a static sheet to refresh), so the hatched hardware key is
+ * captured too. Marker names stay light on their fixed dark plates in every livery: the map's
+ * own colours never follow the livery in this round.
  */
 public final class UiMapIconGalleryScreen extends TacticalScreen implements UiSurfaceInfo {
     public static final String SURFACE_ID = "mapicons";
+    /** Bezel page keys: dark terrain and paper map. */
+    public static final String PAGES_UI_ID = "mapicons.pages";
     /** Knob values of the size row (the preview's 0.75×, 1.25×, 1.75×). */
     public static final double[] KNOBS = {0.75D, 1.25D, 1.75D};
     private static final int LABEL_PAD = 3;
+    /** Fixed dark plate under a marker name (the map's label plate). */
+    private static final int LABEL_PLATE = 0xC0101417;
+    private static final String REFRESH_KEY = "screen.wok_infantry.squad_board.hint.refresh";
 
-    private final boolean paper;
+    private boolean paper;
     private TacticalShellLayout.Metrics metrics = TacticalShellLayout.Metrics.of(
             TacticalShellLayout.Density.COMPACT);
     private UiRect sheet = UiRect.EMPTY;
     private UiRect strip = UiRect.EMPTY;
+    private TacticalTabStrip pages;
+    private Component statusTitle;
 
     public UiMapIconGalleryScreen(boolean paper) {
         super(tr("title"));
         this.paper = paper;
+        this.statusTitle = title;
     }
 
     @Override
@@ -65,11 +82,27 @@ public final class UiMapIconGalleryScreen extends TacticalScreen implements UiSu
     protected void initTactical() {
         TacticalShellLayout shell = shellLayout();
         metrics = shell.metrics();
-        UiRect inner = shell.body().inset(metrics.gap());
-        List<UiRect> rows = inner.rows(metrics.gap(), UiRect.Size.STAR,
+        List<UiRect> rows = shell.content().rows(metrics.gap(), UiRect.Size.STAR,
                 UiRect.Size.px(metrics.tight() ? 44 : 70));
         sheet = rows.get(0);
         strip = rows.get(1);
+
+        // Bezel: Esc closes, R is disabled with its reason, the two backgrounds are page keys.
+        setBezelKeys(TacticalBoardChrome.KeyHint.close(), TacticalBoardChrome.KeyHint.literal("R",
+                Component.translatable(REFRESH_KEY)), () -> { }, () -> tr("refresh_reason"));
+        pages = UiLayoutProbe.tag(new TacticalTabStrip(TacticalTabStrip.Skin.BEZEL, List.of(
+                TacticalTabStrip.Tab.of("dark", tr("page.dark")),
+                TacticalTabStrip.Tab.of("paper", tr("page.paper"))), paper ? 1 : 0,
+                index -> {
+                    paper = index == 1;
+                    rebuildWidgets();
+                }), PAGES_UI_ID);
+        addRenderableWidget(pages);
+        setTabStrip(pages);
+        TacticalBoardChrome.placeBezel(font, shell, pages, bezelHints());
+        // Short title on narrow bars, as the component gallery and the terminals.
+        statusTitle = TacticalBoardChrome.shellTitle(font, shell, title, tr("title_short"), pages,
+                UiKitGalleryScreen.SHORT_TITLE_BELOW);
     }
 
     private TacticalDraw.PanelStyle sheetStyle() {
@@ -81,9 +114,9 @@ public final class UiMapIconGalleryScreen extends TacticalScreen implements UiSu
     @Override
     protected void renderTactical(GuiGraphics graphics, int mouseX, int mouseY,
                                   float partialTick) {
-        drawShell(graphics, TacticalBoardChrome.ShellSpec.of(title)
+        drawShell(graphics, TacticalBoardChrome.ShellSpec.of(statusTitle)
                 .withIdentity(tr("identity"))
-                .withHints(TacticalBoardChrome.KeyHint.close()));
+                .withTabs(pages));
         renderSheet(graphics);
         renderStrip(graphics);
         renderWidgets(graphics, mouseX, mouseY, partialTick);
@@ -182,13 +215,17 @@ public final class UiMapIconGalleryScreen extends TacticalScreen implements UiSu
         UiLayoutProbe.end(graphics);
     }
 
-    /** A name centred under a marker on a dark label plate (never wider than {@code room}). */
+    /**
+     * A name centred under a marker on a dark label plate (never wider than {@code room}). Plate
+     * and name are the map's fixed colours: the A light ink, never the livery's (the Neutral
+     * "light" is dark ink and would vanish on the plate).
+     */
     private void label(GuiGraphics graphics, Component text, float centreX, int top, int room) {
         int textWidth = Math.min(font.width(text), Math.max(0, room - 2 * LABEL_PAD));
         int plateWidth = textWidth + 2 * LABEL_PAD;
         int left = Math.round(centreX - plateWidth / 2.0F);
-        graphics.fill(left, top - 1, left + plateWidth, top + 9, 0xC0101417);
+        graphics.fill(left, top - 1, left + plateWidth, top + 9, LABEL_PLATE);
         TextFit.draw(graphics, font, text, left + LABEL_PAD, top, textWidth,
-                TacticalBoardTheme.LIGHT, TextFit.Align.LEFT);
+                TacticalPalette.A.get(PaletteToken.LIGHT), TextFit.Align.LEFT);
     }
 }

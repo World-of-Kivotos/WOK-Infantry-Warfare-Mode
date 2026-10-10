@@ -9,20 +9,29 @@ import net.minecraft.util.FormattedCharSequence;
 import java.util.List;
 
 /**
- * Tablet tooltip of the preview's {@code UI.tooltip}: dark plate, thin outline, orange top
- * edge, first line light and the rest muted, no text shadow, always kept inside the screen.
- * {@link TacticalScreen} draws every widget tooltip with it, so {@code setTooltip(...)} calls need
- * no change.
+ * Tablet tooltip of the preview's {@code UIX.tooltip}: a plate of the faction's chrome colour
+ * ({@link TacticalBoardTheme#FRAME} at α {@code F2}, pale on Neutral), an
+ * {@link TacticalBoardTheme#INPUT_EDGE} outline and an {@link TacticalBoardTheme#ACCENT_B} top
+ * edge, first line {@link TacticalBoardTheme#LIGHT} and the rest muted, no text shadow, always kept
+ * inside the screen. {@link TacticalScreen} draws every widget tooltip with it, so
+ * {@code setTooltip(...)} calls need no change.
  */
 public final class TacticalTooltip {
     /** Maximum text width of wrapped tooltip lines. */
     public static final int MAX_TEXT_WIDTH = 200;
     /** Z offset above items and modal layers, as vanilla tooltips. */
     static final float Z = 400.0F;
+    /** Alpha of the tooltip plate. */
+    static final int PLATE_ALPHA = 0xF2;
     private static final int LINE_HEIGHT = 10;
     private static final int EDGE = 2;
 
     private TacticalTooltip() {
+    }
+
+    /** Pure: the plate colour, {@code frame} at α {@value #PLATE_ALPHA}. */
+    static int plateColor(int frame) {
+        return PLATE_ALPHA << 24 | frame & 0x00FFFFFF;
     }
 
     /** Box of a tooltip on screen. */
@@ -124,8 +133,8 @@ public final class TacticalTooltip {
         graphics.pose().translate(0.0F, 0.0F, Z);
         // Not solid: a tooltip floats above whatever it points at.
         UiLayoutProbe.begin(graphics, "tooltip", left, top, right, bottom, false);
-        graphics.fill(left, top, right, bottom, TacticalBoardTheme.TOOLTIP_BG);
-        BattleUiTheme.outline(graphics, left, top, right, bottom, TacticalBoardTheme.TOOLTIP_EDGE);
+        graphics.fill(left, top, right, bottom, plateColor(TacticalBoardTheme.FRAME));
+        BattleUiTheme.outline(graphics, left, top, right, bottom, TacticalBoardTheme.INPUT_EDGE);
         graphics.fill(left, top, right, top + 1, TacticalBoardTheme.ACCENT_B);
         for (int index = 0; index < lines.size(); index++) {
             graphics.drawString(font, lines.get(index), left + 4, top + 3 + index * LINE_HEIGHT,

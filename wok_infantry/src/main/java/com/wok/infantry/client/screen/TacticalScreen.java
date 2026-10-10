@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.GameNarrator;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.events.ContainerEventHandler;
@@ -15,6 +16,7 @@ import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipPositione
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
@@ -50,6 +52,12 @@ import java.util.function.BooleanSupplier;
  *
  * <p><b>Tabs.</b> A strip registered with {@link #setTabStrip} receives Ctrl+Tab and
  * Ctrl+Shift+Tab from anywhere on the screen; plain Tab keeps the vanilla focus navigation.
+ *
+ * <p><b>Device.</b> Each frame runs inside the palette of the screen's {@link #livery()} and
+ * {@link #paletteScope()} (the HUD, drawn before the screen, keeps the A scheme). The order is:
+ * backdrop, {@link #renderTactical} (shell, page, widgets), modal, {@link #renderGlassOverlay},
+ * tooltip. The hardware Esc / R keys of the bottom bezel are registered with
+ * {@link #setBezelKeys}.
  */
 public abstract class TacticalScreen extends Screen {
     /** Mouse position handed to the board while a modal is open, so nothing underneath hovers. */
@@ -85,6 +93,7 @@ public abstract class TacticalScreen extends Screen {
             height = UiScale.layoutSize(window.getGuiScaledHeight(), uiScale);
         }
         tabStrip = null;
+        resetBezelKeys();
         initTactical();
         layoutModal();
     }
@@ -112,18 +121,30 @@ public abstract class TacticalScreen extends Screen {
         return TacticalShellLayout.compute(width, height);
     }
 
-    /** Draws the tablet shell for this screen's logical size (call first in renderTactical). */
+    /**
+     * Draws the tablet shell for this screen's logical size (call first in renderTactical), in
+     * the livery resolved for this frame ({@link #frameLivery()}), the same one as the palette.
+     */
     protected final TacticalBoardChrome.Shell drawShell(GuiGraphics graphics,
                                                         TacticalBoardChrome.ShellSpec spec) {
-        return TacticalBoardChrome.shell(graphics, font, shellLayout(), spec);
+        return deviceDrawn(TacticalBoardChrome.shell(graphics, font, shellLayout(), frameLivery(),
+                spec));
     }
 
     /**
      * Registers the strip that Ctrl+Tab / Ctrl+Shift+Tab cycles. Call from
-     * {@link #initTactical()} after adding it; cleared automatically on every init.
+     * {@link #initTactical()} after adding it; cleared automatically on every init. A
+     * {@link TacticalTabStrip.Skin#BEZEL} strip joins the registered Esc and R keys on the bezel
+     * right away: the keys are planned again with its page keys, so they can shrink to their key
+     * names before the strip would page ({@link TacticalBezelPlan}).
      */
     protected final void setTabStrip(TacticalTabStrip strip) {
         this.tabStrip = strip;
+        if (font != null && strip != null && strip.skin() == TacticalTabStrip.Skin.BEZEL
+                && (bezelEscKey != null || bezelRefreshKey != null)) {
+            placeBezelKeys(TacticalBezelPlan.plan(font, shellLayout(), bezelEscHint,
+                    bezelRefreshHint, strip));
+        }
     }
 
     public final TacticalTabStrip tabStrip() {
@@ -149,11 +170,14 @@ public abstract class TacticalScreen extends Screen {
         PoseStack pose = graphics.pose();
         pose.pushPose();
         rendering = true;
-        try {
+        // The palette covers the page, widgets, modal and tooltip; closing it restores the previous
+        // palette before anything else draws, also when rendering throws.
+        try (TacticalPalette.Applied palette = pushPalette()) {
             if (uiScale != 1) {
                 pose.scale(uiScale, uiScale, 1.0F);
             }
             pendingTooltip = null;
+            renderBackdrop(graphics, partialTick);
             boolean modalOpen = modal != null;
             renderTactical(graphics, modalOpen ? NO_MOUSE : layoutX,
                     modalOpen ? NO_MOUSE : layoutY, partialTick);
@@ -171,6 +195,7 @@ public abstract class TacticalScreen extends Screen {
                 modal.render(graphics, font, layoutX, layoutY, partialTick);
                 pose.popPose();
             }
+            renderGlassOverlay(graphics, partialTick);
             renderPendingTooltip(graphics, layoutX, layoutY);
         } finally {
             rendering = false;
@@ -191,6 +216,281 @@ public abstract class TacticalScreen extends Screen {
     protected final void renderWidgets(GuiGraphics graphics, int mouseX, int mouseY,
                                        float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
+    }
+
+    // ---- faction palette ------------------------------------------------------------------------
+
+    /**
+     * Livery this screen is painted in, read once per frame by {@link #render}; default: the
+     * viewer's livery ({@link TacticalLivery#current()}).
+     */
+    protected TacticalLivery.Livery livery() {
+        return TacticalLivery.current();
+    }
+
+    /** Palette scope of the page on screen; default {@link TacticalLivery.Scope#BOARD}. */
+    protected TacticalLivery.Scope paletteScope() {
+        return TacticalLivery.Scope.BOARD;
+    }
+
+    /** Livery of the frame being drawn (the last one drawn between frames). */
+    private TacticalLivery.Livery frameLivery = TacticalLivery.Livery.NEUTRAL;
+
+    /**
+     * Livery the current frame is painted in, resolved once per frame before anything is drawn:
+     * device paint ({@link TacticalLivery.Livery#skin()}) read through it always matches the
+     * screen palette, even when a snapshot arrives mid-frame. Neutral before the first frame.
+     */
+    protected final TacticalLivery.Livery frameLivery() {
+        return frameLivery;
+    }
+
+    /**
+     * Resolves this frame's livery (kept for {@link #frameLivery()}) and returns its palette on
+     * the page's scope; a {@code null} livery counts as Neutral.
+     */
+    final TacticalPalette framePalette() {
+        TacticalLivery.Livery resolved = livery();
+        frameLivery = resolved != null ? resolved : TacticalLivery.Livery.NEUTRAL;
+        return frameLivery.palette(paletteScope());
+    }
+
+    /** Applies this frame's palette; {@link #render} closes the handle. */
+    private TacticalPalette.Applied pushPalette() {
+        return TacticalPalette.push(framePalette());
+    }
+
+    // ---- device backdrop and glass --------------------------------------------------------------
+
+    /**
+     * Depth of the glass overlay: above an open modal (drawn at z 300) and below the tooltip
+     * ({@link TacticalTooltip#Z}), so the glass also covers the dimmed board and its dialog.
+     */
+    static final float GLASS_Z = 350.0F;
+
+    /** Set by {@link #drawShell} in this frame; the glass is only laid over a drawn device. */
+    private boolean deviceDrawn;
+
+    /**
+     * Draws what shows around the device, before {@link #renderTactical}: the world dimmed with
+     * {@link DeviceArt#WORLD_DIM} and the vignette ({@link DeviceArt#drawBackdrop}); never an
+     * opaque background and never the vanilla {@code renderBackground}.
+     */
+    protected void renderBackdrop(GuiGraphics graphics, float partialTick) {
+        DeviceArt.drawBackdrop(graphics, width, height);
+    }
+
+    /**
+     * Draws the glass over the page, its widgets and an open modal (rim, lip shadow, sheen);
+     * tooltips stay above it. Logical coordinates; nothing in a frame without {@link #drawShell}.
+     */
+    protected void renderGlassOverlay(GuiGraphics graphics, float partialTick) {
+        if (!deviceDrawn) {
+            return;
+        }
+        deviceDrawn = false;
+        PoseStack pose = graphics.pose();
+        pose.pushPose();
+        pose.translate(0.0F, 0.0F, GLASS_Z);
+        DeviceArt.drawGlass(graphics, shellLayout(), frameLivery());
+        pose.popPose();
+    }
+
+    /**
+     * {@link #drawShell} finished the device: arms the glass overlay and offers the whole text
+     * while the mouse rests on a shortened part of the status bar (the receipt pill, the title or
+     * the identity, {@link TacticalBoardChrome.StatusPlan#fullTextAt}).
+     */
+    private TacticalBoardChrome.Shell deviceDrawn(TacticalBoardChrome.Shell shell) {
+        deviceDrawn = true;
+        double[] mouse = layoutMouse();
+        String full = mouse == null ? null : shell.status().fullTextAt(mouse[0], mouse[1]);
+        if (full != null) {
+            setTooltipForNextRenderPass(Component.literal(full));
+        }
+        return shell;
+    }
+
+    /**
+     * The mouse (read from the mouse handler like vanilla's render loop) in layout coordinates,
+     * or {@code null} while a modal takes the input or there is no window.
+     */
+    private double[] layoutMouse() {
+        if (minecraft == null || modal != null) {
+            return null;
+        }
+        Window window = minecraft.getWindow();
+        if (window.getScreenWidth() <= 0 || window.getScreenHeight() <= 0) {
+            return null;
+        }
+        double guiX = minecraft.mouseHandler.xpos() * window.getGuiScaledWidth()
+                / window.getScreenWidth();
+        double guiY = minecraft.mouseHandler.ypos() * window.getGuiScaledHeight()
+                / window.getScreenHeight();
+        return new double[]{UiScale.toLayout(guiX, uiScale), UiScale.toLayout(guiY, uiScale)};
+    }
+
+    // ---- bezel keys -----------------------------------------------------------------------------
+    //
+    // The Esc and R hardware keys are BezelKey widgets owned by this block: setBezelKeys adds and
+    // places them (TacticalBezelPlan), init removes them. Keyboard Esc and R stay with the screen's
+    // own onKeyPressed; the keys only add the mouse (and Tab focus) route to the same behaviour.
+
+    private TacticalBoardChrome.KeyHint bezelEscHint;
+    private TacticalBoardChrome.KeyHint bezelRefreshHint;
+    private Runnable bezelRefresh;
+    private java.util.function.Supplier<Component> bezelRefreshDisabled;
+    private BezelKey bezelEscKey;
+    private BezelKey bezelRefreshKey;
+
+    /**
+     * Registers the hardware keys at the ends of the bottom bezel: {@code escHint} for the Esc key
+     * (it acts like pressing Esc, so the screen keeps its own meaning of Esc) and
+     * {@code refreshHint} with the {@code refresh} action for the R key. A {@code null} hint
+     * leaves that key out. Call from {@link #initTactical()}, then place the page keys with
+     * {@link TacticalBoardChrome#placeBezel} and {@link #bezelHints()} (a bezel strip already
+     * registered with {@link #setTabStrip} is moved between the keys here as well); cleared on
+     * every init.
+     */
+    protected final void setBezelKeys(TacticalBoardChrome.KeyHint escHint,
+                                      TacticalBoardChrome.KeyHint refreshHint, Runnable refresh) {
+        setBezelKeys(escHint, refreshHint, refresh, null);
+    }
+
+    /**
+     * {@link #setBezelKeys(TacticalBoardChrome.KeyHint, TacticalBoardChrome.KeyHint, Runnable)}
+     * with an R key that can be disabled: {@code refreshDisabledReason} is asked on every frame and
+     * press; a non-null reason disables the key (drawn hatched) and is shown on hover, for example
+     * a formation page whose R only retries while it waits for the catalog.
+     */
+    protected final void setBezelKeys(TacticalBoardChrome.KeyHint escHint,
+                                      TacticalBoardChrome.KeyHint refreshHint, Runnable refresh,
+                                      java.util.function.Supplier<Component> refreshDisabledReason) {
+        removeBezelKeys();
+        this.bezelEscHint = escHint;
+        this.bezelRefreshHint = refreshHint;
+        this.bezelRefresh = refresh;
+        this.bezelRefreshDisabled = refreshDisabledReason;
+        if (escHint != null) {
+            bezelEscKey = addRenderableWidget(new BezelKey(BezelKey.Role.ESC, escHint,
+                    this::pressBezelEscape, null, this::deviceSkin));
+        }
+        if (refreshHint != null) {
+            bezelRefreshKey = addRenderableWidget(new BezelKey(BezelKey.Role.REFRESH, refreshHint,
+                    this::pressBezelRefresh, this::bezelRefreshDisabledReason, this::deviceSkin));
+        }
+        if (font != null) {
+            placeBezelKeys(TacticalBezelPlan.plan(font, shellLayout(), escHint, refreshHint,
+                    tabStrip));
+        }
+    }
+
+    /**
+     * Moves the Esc and R keys to {@code plan}, and a registered {@link TacticalTabStrip.Skin#BEZEL}
+     * strip between them, so the strip may be registered before or after the keys.
+     */
+    final void placeBezelKeys(TacticalBezelPlan plan) {
+        if (bezelEscKey != null) {
+            bezelEscKey.setBounds(plan.esc());
+        }
+        if (bezelRefreshKey != null) {
+            bezelRefreshKey.setBounds(plan.refresh());
+        }
+        if (tabStrip != null && tabStrip.skin() == TacticalTabStrip.Skin.BEZEL) {
+            tabStrip.placeOnBezel(plan);
+        }
+    }
+
+    /** Hints of the registered bezel keys, Esc first; empty without {@link #setBezelKeys}. */
+    public final List<TacticalBoardChrome.KeyHint> bezelHints() {
+        List<TacticalBoardChrome.KeyHint> hints = new ArrayList<>(2);
+        if (bezelEscHint != null) {
+            hints.add(bezelEscHint);
+        }
+        if (bezelRefreshHint != null) {
+            hints.add(bezelRefreshHint);
+        }
+        return List.copyOf(hints);
+    }
+
+    /** The R key's action, or {@code null} without one. */
+    protected final Runnable bezelRefresh() {
+        return bezelRefresh;
+    }
+
+    /** Why the R key is disabled right now, or {@code null} when it can refresh. */
+    protected final Component bezelRefreshDisabledReason() {
+        java.util.function.Supplier<Component> reason = bezelRefreshDisabled;
+        return reason == null ? null : reason.get();
+    }
+
+    /**
+     * Paint of this screen's device: the {@link DeviceSkin} of the livery resolved for this frame
+     * ({@link #frameLivery()}), so the keys never disagree with the case and the palette.
+     */
+    public final DeviceSkin deviceSkin() {
+        return frameLivery().skin();
+    }
+
+    /** The registered Esc and R key widgets, in that order (unit-test and probe seam). */
+    final List<BezelKey> bezelKeys() {
+        List<BezelKey> keys = new ArrayList<>(2);
+        if (bezelEscKey != null) {
+            keys.add(bezelEscKey);
+        }
+        if (bezelRefreshKey != null) {
+            keys.add(bezelRefreshKey);
+        }
+        return List.copyOf(keys);
+    }
+
+    /**
+     * The bezel's Esc key: the same as pressing Esc ({@link #onKeyPressed} with
+     * {@code GLFW_KEY_ESCAPE}), so every screen keeps its own meaning of Esc. Nothing while a
+     * modal is open (the modal takes every input).
+     */
+    final boolean pressBezelEscape() {
+        if (modal != null) {
+            return false;
+        }
+        // A click already runs inside the input dispatch; a hook that still calls the old
+        // super.keyPressed(...) must get the vanilla handling, and the flag is restored after.
+        boolean outer = dispatchingInput;
+        dispatchingInput = true;
+        try {
+            return onKeyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE, 0, 0);
+        } finally {
+            dispatchingInput = outer;
+        }
+    }
+
+    /** The bezel's R key: runs the registered refresh unless it is disabled or a modal is open. */
+    final boolean pressBezelRefresh() {
+        Runnable refresh = bezelRefresh;
+        if (modal != null || refresh == null || bezelRefreshDisabledReason() != null) {
+            return false;
+        }
+        refresh.run();
+        return true;
+    }
+
+    private void removeBezelKeys() {
+        if (bezelEscKey != null) {
+            removeWidget(bezelEscKey);
+        }
+        if (bezelRefreshKey != null) {
+            removeWidget(bezelRefreshKey);
+        }
+        bezelEscKey = null;
+        bezelRefreshKey = null;
+    }
+
+    private void resetBezelKeys() {
+        removeBezelKeys();
+        bezelEscHint = null;
+        bezelRefreshHint = null;
+        bezelRefresh = null;
+        bezelRefreshDisabled = null;
     }
 
     private void renderPendingTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -270,6 +570,33 @@ public abstract class TacticalScreen extends Screen {
         if (pendingTooltip == null || override) {
             pendingTooltip = List.copyOf(lines);
             pendingTooltipKeyboard = atFocus;
+        }
+    }
+
+    /**
+     * A static text was drawn shortened ({@code fitted}, its left edge at {@code x}, baseline row
+     * {@code y}, layout coordinates of the page): marks it for the layout probe as offered in full
+     * and shows {@code full} as the tooltip of the tactical screen on display while the mouse rests
+     * on it (never under a modal). Nothing when the text was not cut. Static painters call it
+     * without a screen reference, like the status bar does for its title and identity.
+     */
+    public static void offerFullText(GuiGraphics graphics, TextFit.Fitted fitted, Component full,
+                                     int x, int y) {
+        if (fitted == null || !fitted.truncated() || full == null) {
+            return;
+        }
+        UiLayoutProbe.tipped(graphics, x, y);
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft != null && minecraft.screen instanceof TacticalScreen screen) {
+            screen.tipOver(new UiRect(x, y - 1, x + Math.max(1, fitted.width()), y + 9), full);
+        }
+    }
+
+    /** Shows {@code full} as this frame's tooltip when the mouse is over {@code area}. */
+    private void tipOver(UiRect area, Component full) {
+        double[] mouse = layoutMouse();
+        if (mouse != null && area.contains(mouse[0], mouse[1])) {
+            setTooltipForNextRenderPass(full);
         }
     }
 

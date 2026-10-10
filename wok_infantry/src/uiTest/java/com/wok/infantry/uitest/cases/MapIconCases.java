@@ -1,6 +1,8 @@
 package com.wok.infantry.uitest.cases;
 
 import com.wok.infantry.client.map.TacticalMapIcons;
+import com.wok.infantry.client.screen.TacticalBoardChrome;
+import com.wok.infantry.client.screen.TacticalLivery;
 import com.wok.infantry.client.ui.probe.UiLayoutFrame;
 import com.wok.infantry.uitest.UiCapture;
 import com.wok.infantry.uitest.UiCase;
@@ -18,6 +20,10 @@ import java.util.Locale;
  * icon records must show every marker at its fixed physical size — 15×15 art pixels (pins 15×18)
  * × the whole physical pixels per art pixel of the size knob — on every GUI scale, the same size
  * the tactical map draws ({@link TacticalMapIcons#mapArtPx}, size scheme B).
+ *
+ * <p>0.5.0-beta.3: the sheet sits on the D2 device in the Academy livery (pinned; the map's own
+ * colours do not follow the livery in this round), its two backgrounds are the bezel's page keys
+ * and the R key is disabled with its reason.
  */
 public final class MapIconCases {
     private MapIconCases() {
@@ -32,9 +38,20 @@ public final class MapIconCases {
                 .group("kit")
                 .tiers(UiTier.ALL)
                 .migrated(true)
+                .pinLivery(TacticalLivery.Livery.ACADEMY)
                 .open(context -> new UiMapIconGalleryScreen(paper))
                 .check(MapIconCases::checkSizes)
+                .check(MapIconCases::checkDisabledRefresh)
                 .build();
+    }
+
+    /** The sheet's R key is the disabled hardware key: hatched, with its reason. */
+    private static void checkDisabledRefresh(UiCaseContext context, UiCapture.Result capture) {
+        UiLayoutFrame.Control refresh = capture.frame().control(
+                TacticalBoardChrome.REFRESH_KEY_UI_ID);
+        context.require(refresh != null && "DISABLED".equals(refresh.state())
+                        && !refresh.active() && !refresh.disabledReason().isBlank(),
+                "the sheet's R key must be disabled with its reason: " + refresh);
     }
 
     private static void checkSizes(UiCaseContext context, UiCapture.Result capture) {

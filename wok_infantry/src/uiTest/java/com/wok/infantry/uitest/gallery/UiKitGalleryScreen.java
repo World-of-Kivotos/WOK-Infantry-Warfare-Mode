@@ -4,6 +4,7 @@ import com.wok.infantry.client.ClientBootstrap;
 import com.wok.infantry.client.KeyBindingDefaults;
 import com.wok.infantry.client.hud.TacticalHud;
 import com.wok.infantry.client.map.TacticalMapIcons;
+import com.wok.infantry.client.screen.PaletteToken;
 import com.wok.infantry.client.screen.TacticalBoardChrome;
 import com.wok.infantry.client.screen.TacticalBoardSlider;
 import com.wok.infantry.client.screen.TacticalBoardTheme;
@@ -12,6 +13,8 @@ import com.wok.infantry.client.screen.TacticalConfirmDialog;
 import com.wok.infantry.client.screen.TacticalDraw;
 import com.wok.infantry.client.screen.TacticalIcon;
 import com.wok.infantry.client.screen.TacticalList;
+import com.wok.infantry.client.screen.TacticalLivery;
+import com.wok.infantry.client.screen.TacticalPalette;
 import com.wok.infantry.client.screen.TacticalScreen;
 import com.wok.infantry.client.screen.TacticalShellLayout;
 import com.wok.infantry.client.screen.TacticalSliderScale;
@@ -58,6 +61,13 @@ import java.util.List;
  * <p>Statically drawn samples (hover, focus, cards) report themselves to the layout probe; every
  * other part is a real widget, so the probe hooks of the shared components are what is tested.
  * Interface texts come from the uiTest-only {@code wok_uitest} language files.
+ *
+ * <p>D2 device (0.5.0-beta.3): the pages are the bezel's page keys between the hardware Esc and R
+ * keys (R rebuilds the page), the receipt sits in the status-bar pill, and the gallery is painted
+ * in whatever livery the case pins ({@code TacticalLivery.pinForAcceptance}): Academy, Caesar or
+ * Neutral, with the identity of that side. Colours are read while drawing, so every page shows
+ * the pinned palette; only the HUD page draws its samples in the A palette, as the real HUD never
+ * changes livery.
  */
 public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfaceInfo {
     /** Gallery pages, in tab order. */
@@ -90,17 +100,25 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
     /** Ellipsized demonstration key; its full label is offered as a tooltip. */
     public static final String LONG_KEY_UI_ID = "kit.button.long";
     public static final String DANGER_KEY_UI_ID = "kit.button.danger";
+    /** The core's "刷新" for the R key (the gallery refreshes by redrawing its page). */
+    private static final String REFRESH_KEY = "screen.wok_infantry.squad_board.hint.refresh";
     private static final int LONG_KEY_WIDTH = 140;
     private static final int PAGER_TABS_WIDTH = 120;
+    /** Below this layout width the status bar shows the short title (the formation page's rule). */
+    static final int SHORT_TITLE_BELOW = 440;
 
     /** A key drawn in a forced state (hover and focus cannot be held by a real widget). */
     private record ForcedKey(String uiId, UiRect rect, Component label,
                              TacticalButtonStyle.Look look, boolean focus) {
     }
 
-    /** Row of the squad list (preview {@code 00-kit} list well). */
-    private record SquadRow(String id, Component right, int rightColor, TacticalIcon icon,
-                            int lead, Component disabledReason) {
+    /**
+     * Row of the squad list (preview {@code 00-kit} list well). Colours are palette tokens
+     * ({@code null}: none), resolved when the row is drawn: an int taken in init would keep the A
+     * value in every livery.
+     */
+    private record SquadRow(String id, Component right, PaletteToken rightColor, TacticalIcon icon,
+                            PaletteToken lead, Component disabledReason) {
     }
 
     /** Row of the formation candidate list. */
@@ -122,10 +140,12 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
     private UiRect emptyWell = UiRect.EMPTY;
     private TacticalConfirmDialog dialog;
     private boolean confirmed;
+    private Component statusTitle;
 
     public UiKitGalleryScreen(Page page) {
         super(tr("title"));
         this.page = page == null ? Page.CONTROLS : page;
+        this.statusTitle = title;
     }
 
     // ---- surface info / test access -------------------------------------------------------------
@@ -172,16 +192,6 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
         meterRow = UiRect.EMPTY;
         emptyWell = UiRect.EMPTY;
 
-        List<TacticalTabStrip.Tab> tabs = new ArrayList<>();
-        for (Page each : Page.values()) {
-            tabs.add(TacticalTabStrip.Tab.of(each.tabId(), tr("page." + each.tabId())));
-        }
-        pages = UiLayoutProbe.tag(new TacticalTabStrip(TacticalTabStrip.Skin.HEADER, tabs,
-                page.ordinal(), index -> switchPage(Page.values()[index])), PAGES_UI_ID);
-        addRenderableWidget(pages);
-        setTabStrip(pages);
-        TacticalBoardChrome.placeTabs(font, shell, title, pages);
-
         UiRect content = shell.content();
         switch (page) {
             case CONTROLS -> initControls(content);
@@ -190,6 +200,24 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
             case HUD -> regionA = content;
             case ICONS -> initIcons(content);
         }
+
+        // The pages are the bezel's hardware keys, added last like the terminal's; R redraws the
+        // page (the gallery has nothing to fetch).
+        setBezelKeys(TacticalBoardChrome.KeyHint.close(), TacticalBoardChrome.KeyHint.literal("R",
+                Component.translatable(REFRESH_KEY)), () -> switchPage(page));
+        List<TacticalTabStrip.Tab> tabs = new ArrayList<>();
+        for (Page each : Page.values()) {
+            tabs.add(TacticalTabStrip.Tab.of(each.tabId(), tr("page." + each.tabId())));
+        }
+        pages = UiLayoutProbe.tag(new TacticalTabStrip(TacticalTabStrip.Skin.BEZEL, tabs,
+                page.ordinal(), index -> switchPage(Page.values()[index])), PAGES_UI_ID);
+        addRenderableWidget(pages);
+        setTabStrip(pages);
+        TacticalBoardChrome.placeBezel(font, shell, pages, bezelHints());
+        // The terminals' title rule: below 440 (or when "title › page" would be cut) the title
+        // drops "WOK步战 // ", so a narrow status bar keeps room for the identity.
+        statusTitle = TacticalBoardChrome.shellTitle(font, shell, title, tr("title_short"), pages,
+                SHORT_TITLE_BELOW);
     }
 
     private void switchPage(Page next) {
@@ -198,14 +226,24 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
     }
 
     private TacticalBoardChrome.ShellSpec spec() {
-        return TacticalBoardChrome.ShellSpec.of(title)
-                .withIdentity(tr("identity"))
+        return TacticalBoardChrome.ShellSpec.of(statusTitle)
+                .withIdentity(identity(frameLivery()))
                 .withTabs(pages)
-                .withHints(TacticalBoardChrome.KeyHint.close(),
-                        TacticalBoardChrome.KeyHint.switchTab(),
-                        ClientBootstrap.keyHint(KeyBindingDefaults.Binding.TERMINAL,
-                                tr("hint.terminal")))
-                .withFeedback(TacticalBoardChrome.Feedback.success(tr("feedback")));
+                .withFeedback(TacticalBoardChrome.Feedback.success(feedback()));
+    }
+
+    /** The receipt the status-bar pill shows on every page. */
+    public static Component feedback() {
+        return tr("feedback");
+    }
+
+    /** The viewer of each livery: an Academy or Caesar squad leader, or nobody's (Neutral). */
+    private static Component identity(TacticalLivery.Livery livery) {
+        return switch (livery) {
+            case ACADEMY -> tr("identity");
+            case CAESAR -> tr("identity.caesar");
+            case NEUTRAL -> tr("identity.neutral");
+        };
     }
 
     private static boolean fits(int y, int height, int bottom) {
@@ -233,7 +271,9 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
         regionB = halves.get(1);
 
         UiRect keys = TacticalDraw.panelContent(regionA, metrics, buttonsStyle());
-        int perRow = keys.width() >= 300 ? 4 : keys.width() >= 180 ? 3 : 2;
+        // Four per row from 280 wide: the D2 glass leaves 290 at 320×240, and the two tab rows
+        // below the keys only fit there when the eight keys take two rows.
+        int perRow = keys.width() >= 280 ? 4 : keys.width() >= 180 ? 3 : 2;
         int keyWidth = (keys.width() - (perRow - 1) * gap) / perRow;
         for (int index = 0; index < 8; index++) {
             UiRect cell = UiRect.ofSize(keys.left() + (index % perRow) * (keyWidth + gap),
@@ -307,12 +347,12 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
                 .keyedBy(SquadRow::id);
         squads.setItems(List.of(
                 new SquadRow("alpha", Component.translatable("hud.wok_infantry.squad_count", 6, 8),
-                        0, TacticalIcon.SQUAD, TacticalBoardTheme.SUCCESS_B, null),
+                        null, TacticalIcon.SQUAD, PaletteToken.SUCCESS_B, null),
                 new SquadRow("bravo", Component.translatable("hud.wok_infantry.squad_count", 3, 8),
-                        0, TacticalIcon.SQUAD, 0, null),
-                new SquadRow("charlie", tr("row.locked"), TacticalBoardTheme.ACCENT_B,
-                        TacticalIcon.LOCK, 0, null),
-                new SquadRow("delta", tr("row.empty"), 0, TacticalIcon.SQUAD, 0,
+                        null, TacticalIcon.SQUAD, null, null),
+                new SquadRow("charlie", tr("row.locked"), PaletteToken.ACCENT_B,
+                        TacticalIcon.LOCK, null, null),
+                new SquadRow("delta", tr("row.empty"), null, TacticalIcon.SQUAD, null,
                         tr("row.empty_reason"))));
         squads.setSelectedIndex(1);
         addRenderableWidget(UiLayoutProbe.tag(squads, "kit.list"));
@@ -362,13 +402,16 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
                 bounds, kind, selected, null, false), uiId));
     }
 
+    /** Called while the list draws, so the tokens resolve in the frame's palette. */
     private static TacticalDraw.RowSpec squadSpec(SquadRow row) {
+        TacticalPalette palette = TacticalPalette.active();
         TacticalDraw.RowSpec spec = TacticalDraw.RowSpec.of(
                         Component.translatable("squad.wok_infantry." + row.id()))
-                .withRight(row.right(), row.rightColor())
+                .withRight(row.right(), row.rightColor() == null ? 0
+                        : palette.get(row.rightColor()))
                 .withIcon(row.icon());
-        if (row.lead() != 0) {
-            spec = spec.withLead(row.lead());
+        if (row.lead() != null) {
+            spec = spec.withLead(palette.get(row.lead()));
         }
         return row.disabledReason() == null ? spec : spec.withDisabledReason(row.disabledReason());
     }
@@ -600,13 +643,42 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
 
     // ---- page: cards ----------------------------------------------------------------------------
 
+    /**
+     * Cards beside the status panel only when the four state cards keep their labels whole in
+     * half the width (the D2 content is narrower than the old board: 416px at 480×360 and 403px at
+     * 427×240 cut "Selected" / "Disabled"); otherwise the two panels stack.
+     */
     private void initCards(UiRect content) {
         int gap = metrics.gap();
-        List<UiRect> halves = content.width() >= 400
-                ? content.cols(gap, UiRect.Size.STAR, UiRect.Size.STAR)
-                : content.rows(gap, UiRect.Size.STAR, UiRect.Size.STAR);
+        List<UiRect> halves = content.cols(gap, UiRect.Size.STAR, UiRect.Size.STAR);
+        boolean beside = content.width() >= 400 && cardLabelsFit(halves.get(0));
+        if (!beside) {
+            halves = content.rows(gap, UiRect.Size.STAR, UiRect.Size.STAR);
+        }
         regionA = halves.get(0);
         regionB = halves.get(1);
+    }
+
+    /** Labels of the four state cards, in {@link TacticalButtonStyle.CardState} order. */
+    private static Component[] cardLabels() {
+        return new Component[]{tr("state.normal"), tr("state.hover"), tr("state.selected_short"),
+                tr("state.disabled")};
+    }
+
+    /** Whether every card label fits its card when the cards panel is {@code region}. */
+    private boolean cardLabelsFit(UiRect region) {
+        UiRect c = TacticalDraw.panelContent(region, metrics, cardsStyle());
+        int room = cardWidth(c) - 8;
+        for (Component label : cardLabels()) {
+            if (font.width(label) > room) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private int cardWidth(UiRect cards) {
+        return (cards.width() - 3 * metrics.gap()) / 4;
     }
 
     private TacticalDraw.PanelStyle cardsStyle() {
@@ -623,10 +695,9 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
                 regionA.right(), regionA.bottom(), true);
         UiRect c = TacticalDraw.panel(graphics, font, regionA, metrics, cardsStyle());
         int cardHeight = Math.min(metrics.buttonHeight() * 2, 28);
-        int cardWidth = (c.width() - 3 * gap) / 4;
+        int cardWidth = cardWidth(c);
         TacticalButtonStyle.CardState[] states = TacticalButtonStyle.CardState.values();
-        Component[] labels = {tr("state.normal"), tr("state.hover"), tr("state.selected_short"),
-                tr("state.disabled")};
+        Component[] labels = cardLabels();
         int y = c.top();
         if (fits(y, cardHeight, c.bottom())) {
             for (int index = 0; index < 4; index++) {
@@ -712,15 +783,32 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
                 world.bottom(), true);
         TacticalDraw.well(graphics, world);
         int inset = 4;
-        UiRect roster = renderRoster(graphics, world.left() + inset, world.top() + inset,
-                world.bottom() - inset);
-        int stripLeft = roster.right() + 6;
-        UiRect strip = renderStrip(graphics, stripLeft, world.top() + inset,
-                world.right() - inset);
-        if (!strip.isEmpty()) {
-            renderVoteBar(graphics, stripLeft, strip.bottom() + 4, world.right() - inset);
+        // The HUD never changes livery (plan 4.9): its samples are drawn in the A palette.
+        try (TacticalPalette.Applied hud = TacticalPalette.push(TacticalPalette.A)) {
+            UiRect roster = renderRoster(graphics, world.left() + inset, world.top() + inset,
+                    world.bottom() - inset);
+            int stripLeft = roster.right() + 6;
+            UiRect strip = renderStrip(graphics, stripLeft, world.top() + inset,
+                    world.right() - inset);
+            boolean under = strip.isEmpty();
+            if (under) {
+                // Too narrow beside the roster (320×240 inside the D2 glass): the strip and the
+                // ballot plate go under it, across the whole well.
+                stripLeft = world.left() + inset;
+                strip = renderStrip(graphics, stripLeft, roster.bottom() + 4,
+                        world.right() - inset);
+            }
+            UiRect column = roster;
+            if (!strip.isEmpty()) {
+                UiRect vote = renderVoteBar(graphics, stripLeft, strip.bottom() + 4,
+                        world.right() - inset);
+                if (under) {
+                    column = vote.isEmpty() ? strip : vote;
+                }
+            }
+            renderVitals(graphics, world.left() + inset, world.bottom() - inset,
+                    column.bottom() + 4);
         }
-        renderVitals(graphics, world.left() + inset, world.bottom() - inset, roster.bottom() + 4);
         UiLayoutProbe.end(graphics);
     }
 
@@ -804,7 +892,8 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
         return plate;
     }
 
-    private void renderVoteBar(GuiGraphics graphics, int left, int top, int right) {
+    /** The ballot plate under the strip; returns it, or {@link UiRect#EMPTY} when it does not fit. */
+    private UiRect renderVoteBar(GuiGraphics graphics, int left, int top, int right) {
         Component key = ClientBootstrap.keyLabel(KeyBindingDefaults.Binding.TERMINAL);
         List<TacticalHud.Segment> full = segments(tr("hud.vote", MockData.VOTED,
                 MockData.FACTIONS.get(0).population()), key);
@@ -812,7 +901,7 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
         List<TacticalHud.Segment> chosen = TacticalHud.segmentsWidth(font, full) + 8 <= right - left
                 ? full : TacticalHud.segmentsWidth(font, brief) + 8 <= right - left ? brief : null;
         if (chosen == null) {
-            return;
+            return UiRect.EMPTY;
         }
         int width = TacticalHud.segmentsWidth(font, chosen) + 8;
         UiRect plate = UiRect.ofSize(left, top, width, 14);
@@ -823,6 +912,7 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
         TacticalHud.drawSegments(graphics, font, chosen, plate.left() + 4, plate.top() + 3,
                 plate.right() - 4);
         UiLayoutProbe.end(graphics);
+        return plate;
     }
 
     private List<TacticalHud.Segment> segments(Component text, Component key) {

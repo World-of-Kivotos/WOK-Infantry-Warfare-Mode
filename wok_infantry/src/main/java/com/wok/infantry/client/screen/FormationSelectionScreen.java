@@ -1,6 +1,7 @@
 package com.wok.infantry.client.screen;
 
 import com.wok.infantry.battle.BattleRules;
+import com.wok.infantry.battle.Faction;
 import com.wok.infantry.client.ClientBattleState;
 import com.wok.infantry.client.ClientBootstrap;
 import com.wok.infantry.client.ClientFormationState;
@@ -36,13 +37,20 @@ import java.util.Map;
  * <p>Flow: join a faction (confirmed) → the administrator opens the vote → vote → the
  * administrator locks one formation (danger confirmation) → deployment. Faction keys and formation
  * rows only change what is looked at; the join, vote, open and lock keys are separate and every
- * disabled key says why next to it. The footer always carries the next step
- * ({@link FormationVoteModel#step()}) unless a 3-second receipt replaces it.
+ * disabled key says why next to it. The status bar's pill always carries the next step
+ * ({@link FormationVoteModel#step()}, fitted beside the identity by
+ * {@link FormationText#guideVariant}) unless a 3-second receipt replaces it.
  *
  * <p>Layouts ({@link FormationScreenLayout}): wide three areas (strip, list, detail) or, below
  * 440 logical pixels, a list page and a detail page. Esc: an open dialog is cancelled first, the
  * narrow detail page goes back to the list, otherwise the page closes; without a faction the
  * action bar then says which key reopens it (user report 4).
+ *
+ * <p>Device (D2 + P3, 0.5.0-beta.3): before joining the tablet is painted Neutral and has no page
+ * keys; once joined it takes the faction's livery ({@link #pageLivery}) and the battle terminal's
+ * page keys sit on the bottom bezel. The bezel's Esc key says what Esc does here
+ * ({@link #escHint}); its R key requests the catalog again and is disabled with a reason outside
+ * the waiting state. Enter (vote) and the mouse wheel still work but are not printed anywhere.
  *
  * <p>For the UI acceptance the page reports its preview surface and state ({@link UiSurfaceInfo})
  * and tags its keys with the {@code *_UI_ID} probe ids; both are inert outside the uiTest probe.
@@ -291,6 +299,47 @@ public final class FormationSelectionScreen extends TacticalScreen
                 isAdministrator());
     }
 
+    /**
+     * The tablet follows the catalog this page shows ({@link #pageLivery}), so the paint never
+     * disagrees with the page's own "joined or not".
+     */
+    @Override
+    protected TacticalLivery.Livery livery() {
+        FormationVoteModel model = model();
+        FactionSelectionView joined = model.joinedFaction();
+        return pageLivery(model.waiting(), joined == null ? "" : joined.id(),
+                TacticalLivery.current(), TacticalLivery.learnedSides());
+    }
+
+    /**
+     * Livery of the formation page (pure). Without a catalog the viewer's livery decides
+     * ({@link TacticalLivery#current()}, Neutral without a faction). With one, an unjoined page is
+     * always Neutral (the join flow does not belong to a side, even while an older battle snapshot
+     * still names one); a joined page keeps the viewer's livery and, when that is still Neutral
+     * (a battle snapshot that has not caught up with the join, or none in the uiTest fixtures),
+     * takes the joined faction's side from {@code learned}, then the default ids.
+     *
+     * @param waiting         no catalog yet
+     * @param joinedFactionId the faction joined in the shown catalog, {@code ""} for none
+     * @param viewer          {@link TacticalLivery#current()}
+     * @param learned         faction id → side learned from battle snapshots
+     */
+    static TacticalLivery.Livery pageLivery(boolean waiting, String joinedFactionId,
+                                            TacticalLivery.Livery viewer,
+                                            Map<String, Faction> learned) {
+        TacticalLivery.Livery own = viewer == null ? TacticalLivery.Livery.NEUTRAL : viewer;
+        if (waiting) {
+            return own;
+        }
+        if (joinedFactionId == null || joinedFactionId.isBlank()) {
+            return TacticalLivery.Livery.NEUTRAL;
+        }
+        if (own != TacticalLivery.Livery.NEUTRAL) {
+            return own;
+        }
+        return TacticalLivery.resolve(null, joinedFactionId, learned);
+    }
+
     private void normalizeSelection() {
         if (snapshot == null) {
             return;
@@ -336,15 +385,6 @@ public final class FormationSelectionScreen extends TacticalScreen
                 testKeyWidth);
         actionKey = UiRect.EMPTY;
         actionBar = UiRect.EMPTY;
-        if (model.joined()) {
-            TacticalTabStrip strip = BattleTab.strip(BattleTab.FORMATION,
-                    tab -> tab == BattleTab.FORMATION || model.hasFormation() ? null
-                            : FormationText.tabLockedReason(), this::navigate);
-            addRenderableWidget(strip);
-            roles.put(strip, TABS_ROLE);
-            setTabStrip(strip);
-            TacticalBoardChrome.placeTabs(font, shellLayout(), FormationText.title(width), strip);
-        }
         switch (layout.mode()) {
             case WAITING -> addRetryKey();
             case WIDE -> {
@@ -378,6 +418,23 @@ public final class FormationSelectionScreen extends TacticalScreen
                         .build(), BACK_UI_ID));
                 addVoteKey(model, layout.detailAction(), layout.detailAction().left());
             }
+        }
+        // Bezel hardware keys: Esc as this page understands it, R retries only while waiting
+        // (their tab order group puts them after every control of the page).
+        setBezelKeys(escHint(model), TacticalBoardChrome.KeyHint.literal("R",
+                FormationText.hintRetry()), this::retry, this::retryDisabledReason);
+        for (BezelKey key : bezelKeys()) {
+            roles.put(key, key.role().uiId());
+        }
+        if (model.joined()) {
+            // The bottom bezel comes last, so plain Tab reaches it after every control of the page.
+            TacticalTabStrip strip = BattleTab.strip(BattleTab.FORMATION,
+                    tab -> tab == BattleTab.FORMATION || model.hasFormation() ? null
+                            : FormationText.tabLockedReason(), this::navigate);
+            addRenderableWidget(strip);
+            roles.put(strip, TABS_ROLE);
+            setTabStrip(strip);
+            TacticalBoardChrome.placeBezel(font, shellLayout(), strip, bezelHints());
         }
     }
 
@@ -645,7 +702,7 @@ public final class FormationSelectionScreen extends TacticalScreen
     /**
      * Administrator test start (0.4.0-beta.2): an ordinary confirmation naming the faction and
      * formation, then {@code battle admin test start <faction> <formation>} as a chat command;
-     * the server checks the permission, reports every step in chat and answers in the footer.
+     * the server checks the permission, reports every step in chat and answers in the status bar.
      * A successful start deploys the administrator, which closes this page.
      */
     private void confirmTestStart() {
@@ -735,6 +792,39 @@ public final class FormationSelectionScreen extends TacticalScreen
                         FormationText.PREFIX + "feedback.retrying"));
     }
 
+    // ---- bezel keys ---------------------------------------------------------------------------------
+
+    /** The Esc key's label for the page as built now. */
+    private TacticalBoardChrome.KeyHint escHint(FormationVoteModel model) {
+        return escHint(layout != null && layout.mode() == FormationScreenLayout.Mode.NARROW_DETAIL,
+                !unjoined(model), ClientBootstrap.keyLabel(KeyBindingDefaults.Binding.TERMINAL));
+    }
+
+    /**
+     * Label of the bezel's Esc key (pure), the same as pressing Esc ({@link #onKeyPressed}): back
+     * to the list on the narrow detail page, otherwise closing for now, which before joining also
+     * says which key opens the page again (user report 4).
+     */
+    static TacticalBoardChrome.KeyHint escHint(boolean detailView, boolean joined,
+                                               Component terminalKey) {
+        return TacticalBoardChrome.KeyHint.literal("Esc", detailView
+                ? FormationText.hintBackToList() : FormationText.escClose(joined, terminalKey));
+    }
+
+    /** Why the bezel's R key is disabled now, or {@code null} while waiting for the catalog. */
+    private Component retryDisabledReason() {
+        return retryDisabledReason(layout != null
+                && layout.mode() == FormationScreenLayout.Mode.WAITING);
+    }
+
+    /**
+     * R requests the catalog again only in the waiting state, like the keyboard R
+     * ({@link #onKeyPressed}); otherwise the catalog is here and updates by itself (pure).
+     */
+    static Component retryDisabledReason(boolean waiting) {
+        return waiting ? null : FormationText.retryUnavailable();
+    }
+
     private void navigate(BattleTab tab) {
         if (tab == null || tab == BattleTab.FORMATION) {
             return;
@@ -789,9 +879,21 @@ public final class FormationSelectionScreen extends TacticalScreen
     @Override
     public void tick() {
         super.tick();
+        if (!rebuildPending && minecraft != null && layout != null && escLabelStale()) {
+            // While the catalog is on its way the battle snapshot decides "joined", and the
+            // terminal key may be rebound: the Esc key's label follows on the next build.
+            requestRebuild();
+        }
         if (rebuildPending && minecraft != null) {
             rebuildKeepingFocus();
         }
+    }
+
+    /** Whether the bezel's Esc key no longer says what Esc does (compared as shown text). */
+    private boolean escLabelStale() {
+        List<TacticalBoardChrome.KeyHint> hints = bezelHints();
+        return !hints.isEmpty() && !hints.get(0).action().getString()
+                .equals(escHint(model()).action().getString());
     }
 
     // ---- rendering ----------------------------------------------------------------------------------
@@ -805,14 +907,12 @@ public final class FormationSelectionScreen extends TacticalScreen
         }
         FormationVoteModel model = model();
         TacticalBoardChrome.ShellSpec spec = TacticalBoardChrome.ShellSpec
-                .of(FormationText.title(width))
+                .of(FormationText.title(font, shellLayout(), tabStrip()))
                 .withIdentity(FormationText.identity(model, ClientBattleState.snapshot()))
                 .withLink(model.waiting() ? TacticalBoardChrome.LinkState.WAIT
                         : TacticalBoardChrome.LinkState.OK)
-                .withTabs(tabStrip())
-                .withHints(hints(model))
-                .withFeedback(footer(model));
-        drawShell(graphics, spec);
+                .withTabs(tabStrip());
+        drawShell(graphics, spec.withFeedback(statusFeedback(model, spec)));
         switch (layout.mode()) {
             case WAITING -> {
                 region(graphics, WAITING_BOX, layout.waitingPanel());
@@ -858,45 +958,27 @@ public final class FormationSelectionScreen extends TacticalScreen
                 true);
     }
 
-    private List<TacticalBoardChrome.KeyHint> hints(FormationVoteModel model) {
-        Component terminalKey = ClientBootstrap.keyLabel(KeyBindingDefaults.Binding.TERMINAL);
-        List<TacticalBoardChrome.KeyHint> hints = new ArrayList<>();
-        Component esc = FormationText.escClose(!unjoined(model), terminalKey);
-        if (layout.mode() == FormationScreenLayout.Mode.WAITING) {
-            hints.add(TacticalBoardChrome.KeyHint.literal("R", FormationText.hintRetry()));
-            hints.add(TacticalBoardChrome.KeyHint.literal("Esc", esc));
-            return hints;
-        }
-        boolean detailView = layout.mode() == FormationScreenLayout.Mode.NARROW_DETAIL;
-        hints.add(TacticalBoardChrome.KeyHint.literal("Esc",
-                detailView ? FormationText.hintBackToList() : esc));
-        if (model.enterVotes()) {
-            hints.add(TacticalBoardChrome.KeyHint.literal("Enter",
-                    FormationText.voteLabel(model.voteAction())));
-        }
-        hints.add(TacticalBoardChrome.KeyHint.of(FormationText.hintWheel(),
-                detailView ? FormationText.hintScroll() : FormationText.hintBrowse()));
-        if (tabStrip() != null && tabStrip().canCycle()) {
-            // Before the lock every other tab is disabled and Ctrl+Tab does nothing.
-            hints.add(TacticalBoardChrome.KeyHint.switchTab());
-        }
-        return hints;
-    }
-
     /**
-     * Footer receipt: the 3-second server/pending receipt, otherwise the next step, in the neutral
+     * Status-bar pill: the 3-second server/pending receipt, otherwise the next step in the neutral
      * guide colour like the HUD's waiting and to-do plates (orange is for sections and controls).
+     * The guide is sized from the room the status bar really has ({@code spec} planned without a
+     * pill), next to the identity ({@link FormationText#guideVariant}).
      */
-    private TacticalBoardChrome.Feedback footer(FormationVoteModel model) {
+    private TacticalBoardChrome.Feedback statusFeedback(FormationVoteModel model,
+                                                        TacticalBoardChrome.ShellSpec spec) {
         TacticalBoardChrome.Feedback receipt = TacticalBoardChrome.Feedback.fromFormation();
         if (receipt != null) {
             return receipt;
         }
-        UiRect footer = layout.shell().footer();
-        int room = (int) Math.floor(footer.width() * (layout.shell().tight() ? 0.62D : 0.5D))
-                - 16;
-        return TacticalBoardChrome.Feedback.guide(FormationDetailPanel.pick(font,
-                FormationText.step(model), room));
+        List<Component> steps = FormationText.step(model);
+        List<String> texts = new ArrayList<>(steps.size());
+        for (Component step : steps) {
+            texts.add(step.getString());
+        }
+        int room = TacticalBoardChrome.planStatus(font, shellLayout(), spec).identityRoom();
+        int index = FormationText.guideVariant(texts, room,
+                spec.identity() == null ? null : spec.identity().getString(), font::width);
+        return index < 0 ? null : TacticalBoardChrome.Feedback.guide(steps.get(index));
     }
 
     private void renderStrip(GuiGraphics graphics, FormationVoteModel model) {
@@ -906,10 +988,12 @@ public final class FormationSelectionScreen extends TacticalScreen
         }
         int textY = area.top() + Math.floorDiv(area.height() - 8, 2);
         if (!model.joined()) {
-            Component note = FormationDetailPanel.pick(font, FormationText.joinNote(model),
-                    area.width());
-            TextFit.draw(graphics, font, note, area.left(), textY, area.width(),
-                    TacticalBoardTheme.TEXT, TextFit.Align.RIGHT);
+            List<Component> notes = FormationText.joinNote(model);
+            Component note = FormationDetailPanel.pick(font, notes, area.width());
+            TextFit.Fitted drawn = TextFit.draw(graphics, font, note, area.left(), textY,
+                    area.width(), TacticalBoardTheme.TEXT, TextFit.Align.RIGHT);
+            offerFullText(graphics, drawn, notes.get(0), TextFit.alignedX(area.left(),
+                    area.width(), drawn.width(), TextFit.Align.RIGHT), textY);
             return;
         }
         statusLine(graphics, area, textY, FormationText.statusLed(model),
@@ -934,10 +1018,12 @@ public final class FormationSelectionScreen extends TacticalScreen
         TacticalDraw.led(graphics, x, textY + 2, led);
         TextFit.Fitted main = TextFit.draw(graphics, font, chosen[0], x + 7, textY,
                 Math.max(0, area.right() - x - 7), TacticalBoardTheme.TEXT, TextFit.Align.LEFT);
+        offerFullText(graphics, main, variants.get(0)[0], x + 7, textY);
         int subX = x + 7 + main.width() + 8;
         if (area.right() - subX > 24) {
-            TextFit.draw(graphics, font, chosen[1], subX, textY, area.right() - subX,
-                    TacticalBoardTheme.MUTED, TextFit.Align.LEFT);
+            TextFit.Fitted sub = TextFit.draw(graphics, font, chosen[1], subX, textY,
+                    area.right() - subX, TacticalBoardTheme.MUTED, TextFit.Align.LEFT);
+            offerFullText(graphics, sub, variants.get(0)[1], subX, textY);
         }
     }
 
@@ -1024,7 +1110,9 @@ public final class FormationSelectionScreen extends TacticalScreen
                     TacticalIcon.CHECK, detailText, TacticalBoardTheme.MUTED,
                     TacticalBoardTheme.SUCCESS);
         } else {
-            // Orange attention strip: locking something other than the sole leader.
+            // Orange attention strip: locking something other than the sole leader. The wash, the
+            // bar and the warning glyph are marks, not text, so they stay ACCENT (P3 deepens it to
+            // 3:1 on light panels); the reason itself is TEXT, so no ACCENT_TEXT here.
             graphics.fill(area.left(), y2 - 2, area.right(), y2 + 9,
                     TacticalHud.withAlpha(TacticalBoardTheme.ACCENT, 0x40));
             graphics.fill(area.left(), y2 - 2, area.left() + 2, y2 + 9,
@@ -1046,14 +1134,15 @@ public final class FormationSelectionScreen extends TacticalScreen
         }
         int textY = actionBar.top() + Math.floorDiv(actionBar.height() - 8, 2);
         int reasonWidth = actionKey.left() - 6 - (reasonLeft + 2);
-        FormationDetailPanel.drawReason(graphics, font, reasonLeft + 2, textY, reasonWidth,
-                action.icon(), FormationText.reason(model, action),
+        List<Component> reasons = FormationText.reason(model, action);
+        TextFit.Fitted reason = FormationDetailPanel.drawReason(graphics, font, reasonLeft + 2,
+                textY, reasonWidth, action.icon(), reasons,
                 action.enabled() || action.mine() ? TacticalBoardTheme.MUTED
                         : TacticalBoardTheme.TEXT, TacticalBoardTheme.MUTED);
-        if (!action.enabled() && !action.mine() && reasonWidth >= 24) {
-            // A shortened reason is offered in full by the disabled vote key's tooltip.
-            UiLayoutProbe.tipped(graphics, reasonLeft + 2 + 12, textY);
-        }
+        // A shortened reason is offered in full while the mouse rests on it (a disabled vote
+        // key's tooltip says it too).
+        offerFullText(graphics, reason, reasons.isEmpty() ? null : reasons.get(0),
+                reasonLeft + 2 + 12, textY);
     }
 
     private void renderCrumb(GuiGraphics graphics, FormationVoteModel model, int mouseX,

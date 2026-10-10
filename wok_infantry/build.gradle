@@ -232,6 +232,12 @@ minecraft {
                     (project.findProperty('uiExpectedTerrainProvider') ?: 'journeymap').toString()
             property 'wok.ui.expectedJourneyMapLoaded',
                     (project.findProperty('uiExpectedJourneyMapLoaded') ?: 'true').toString()
+            // The tablet's status-bar clock (TacticalBoardChrome.CLOCK_PROPERTY) is fixed, so probe
+            // texts and screenshots do not change with the time of day.
+            property 'wok.ui.clock', '21:30'
+            // Every case runs with the tablet animation off. Reserved for the animation of core
+            // 0.5.0-beta.4; nothing reads it yet.
+            property 'wok.ui.tabletAnimation', 'OFF'
             if (uiJourneyMapJar != null) {
                 // Production mods ship SRG refmaps. Userdev runs official names, so Mixin needs
                 // ForgeGradle's generated SRG-to-MCP table for third-party injections.

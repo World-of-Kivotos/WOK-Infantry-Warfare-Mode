@@ -160,6 +160,25 @@ class FormationScreenLayoutTest {
         assertEquals(32, layout.identity().height());
     }
 
+    /**
+     * The 960×720 GUI-1 window on the D2 tablet (plan 4.8): {@link FormationScreenLayout#narrow}
+     * still measures the whole screen, so the page stays wide, but the board inside the device is
+     * 416 wide (460 before) and the detail panel keeps room for its vote key and reason.
+     */
+    @Test
+    void theGuiOneWindowStaysWideOnTheSmallerTabletBoard() {
+        FormationScreenLayout layout = FormationScreenLayout.compute(480, 360, 2, true, true,
+                false, false, LIST_NEED, 0);
+
+        assertFalse(FormationScreenLayout.narrow(480, 360));
+        assertEquals(Mode.WIDE, layout.mode());
+        assertEquals(416, layout.inner().width());
+        assertEquals(layout.shell().content(), layout.inner(), "the board's own content area");
+        assertEquals(FormationScreenLayout.LIST_MIN, layout.listPanel().width());
+        assertTrue(layout.detailAction().width() >= 200,
+                "vote key and reason share " + layout.detailAction());
+    }
+
     @Test
     void roomyWindowsUseTheLargeEmblemAndTwoLineRows() {
         FormationScreenLayout layout = FormationScreenLayout.compute(960, 720, 2, true, true,

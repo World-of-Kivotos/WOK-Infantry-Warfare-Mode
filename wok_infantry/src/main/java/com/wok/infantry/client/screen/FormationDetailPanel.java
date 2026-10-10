@@ -197,7 +197,7 @@ final class FormationDetailPanel {
             maxScroll = 0;
             return;
         }
-        int columns = bounds.width() >= 480 ? 3 : bounds.width() >= 300 ? 2 : 1;
+        int columns = columns(bounds.width());
         int columnGap = metrics.roomy() ? 12 : 8;
         int columnWidth = Math.max(1, (bounds.width() - SCROLLBAR - (columns - 1) * columnGap)
                 / columns);
@@ -307,6 +307,17 @@ final class FormationDetailPanel {
         }
     }
 
+    /**
+     * Pure: columns the sections flow into for a content area {@code width} wide (preview
+     * {@code detailContent}): three from 480px, two from 300px, otherwise one. On the D2 tablet the
+     * 960×720 GUI-1 window (laid out as 480×360) keeps the wide page, but its inner width drops
+     * from 460 to 416 and the detail content to about 220px: one column that scrolls, with the
+     * "还有 n 项" line.
+     */
+    static int columns(int width) {
+        return width >= 480 ? 3 : width >= 300 ? 2 : 1;
+    }
+
     /** Pure: whether a block of {@code lineCount} lines at {@code y} fits whole in the view. */
     static boolean visible(int y, int lineCount, int scroll, int view) {
         int top = y - scroll;
@@ -354,14 +365,18 @@ final class FormationDetailPanel {
 
     // ---- action bar ---------------------------------------------------------------------------------
 
-    /** Reason text with its leading icon, left of the vote key (preview {@code reasonLine}). */
-    static void drawReason(GuiGraphics graphics, Font font, int x, int y, int maxWidth,
-                           TacticalIcon icon, List<Component> text, int color, int iconColor) {
+    /**
+     * Reason text with its leading icon, left of the vote key (preview {@code reasonLine}); the
+     * text starts 12px right of {@code x}. Returns the drawn text, or {@code null} without one.
+     */
+    static TextFit.Fitted drawReason(GuiGraphics graphics, Font font, int x, int y, int maxWidth,
+                                     TacticalIcon icon, List<Component> text, int color,
+                                     int iconColor) {
         if (maxWidth < 24 || text.isEmpty()) {
-            return;
+            return null;
         }
         (icon == null ? TacticalIcon.INFO : icon).draw(graphics, x, y - 1, iconColor);
-        drawVariant(graphics, font, text, x + 12, y, maxWidth - 12, color);
+        return drawVariant(graphics, font, text, x + 12, y, maxWidth - 12, color);
     }
 
     /** "你的票" badge in place of the vote key (green, not a key). */
@@ -379,13 +394,16 @@ final class FormationDetailPanel {
                 TacticalBoardTheme.SUCCESS, TextFit.Align.LEFT);
     }
 
-    /** Draws the first variant that fits (the last one ellipsized otherwise). */
-    static void drawVariant(GuiGraphics graphics, Font font, List<Component> variants, int x,
-                            int y, int maxWidth, int color) {
+    /**
+     * Draws the first variant that fits (the last one ellipsized otherwise); returns what was
+     * drawn, or {@code null} when nothing was.
+     */
+    static TextFit.Fitted drawVariant(GuiGraphics graphics, Font font, List<Component> variants,
+                                      int x, int y, int maxWidth, int color) {
         if (variants.isEmpty() || maxWidth <= 0) {
-            return;
+            return null;
         }
-        TextFit.draw(graphics, font, pick(font, variants, maxWidth), x, y, maxWidth, color,
+        return TextFit.draw(graphics, font, pick(font, variants, maxWidth), x, y, maxWidth, color,
                 TextFit.Align.LEFT);
     }
 

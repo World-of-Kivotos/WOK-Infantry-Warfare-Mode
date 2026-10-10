@@ -1,7 +1,9 @@
 package com.wok.infantry.client.hud;
 
+import com.wok.infantry.client.screen.PaletteToken;
 import com.wok.infantry.client.screen.TacticalBoardTheme;
 import com.wok.infantry.client.screen.TacticalIcon;
+import com.wok.infantry.client.screen.TacticalPalette;
 import com.wok.infantry.stamina.StaminaRules;
 
 /**
@@ -22,12 +24,15 @@ import com.wok.infantry.stamina.StaminaRules;
  * in a 1px light head.
  */
 public final class StaminaBarModel {
-    /** Empty legs groove while sprint is locked: DANGER and FRAME half and half. */
-    public static final int LOCK_TRACK = TacticalHud.mix(TacticalBoardTheme.DANGER,
-            TacticalBoardTheme.FRAME, 0.5D);
+    /**
+     * Empty legs groove while sprint is locked: DANGER and FRAME half and half (A scheme: the HUD
+     * never takes a faction palette).
+     */
+    public static final int LOCK_TRACK = TacticalHud.mix(TacticalPalette.A.get(PaletteToken.DANGER),
+            TacticalPalette.A.get(PaletteToken.FRAME), 0.5D);
     /** Inner shadow of the locked legs groove. */
-    public static final int LOCK_SHADOW = TacticalHud.mix(TacticalBoardTheme.DANGER,
-            TacticalBoardTheme.FRAME, 0.75D);
+    public static final int LOCK_SHADOW = TacticalHud.mix(TacticalPalette.A.get(PaletteToken.DANGER),
+            TacticalPalette.A.get(PaletteToken.FRAME), 0.75D);
     /** Alpha of the just-used remnant (40 %). */
     public static final int GHOST_ALPHA = 0x66;
     /** Ticks per blink phase: 5 on, 5 off = 2 Hz. */

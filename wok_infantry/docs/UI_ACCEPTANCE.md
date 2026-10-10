@@ -1,4 +1,4 @@
-# WOK步战核心 UI 自动验收（0.4.0-beta.1 档 1，0.4.0-beta.2 补测试开局，0.4.0-beta.3 地图标点，0.5.0-beta.1 战斗终端三页与体力条 A4，0.5.0-beta.2 战况条据点小牌）
+# WOK步战核心 UI 自动验收（0.4.0-beta.1 档 1，0.4.0-beta.2 补测试开局，0.4.0-beta.3 地图标点，0.5.0-beta.1 战斗终端三页与体力条 A4，0.5.0-beta.2 战况条据点小牌，0.5.0-beta.3 平板外壳 D2 与阵营涂装 P3）
 
 `runUiTestClient` 启动一个开发用真实客户端，进入隔离存档，先走一遍实时流程（部署页、终端键、地图键、队长/指挥官、部署、标记、JourneyMap 地形），截下旧截图 01–09；再由用例运行器 `UiCaseRunner` 先跑 `legacy` 组补齐旧截图 10–14（编制 2 张、管理员 3 张，保留原名和顺序），然后把 `src/uiTest/.../cases/` 里登记的其余用例逐个档位截图、检查，最后写结果并自动退出。验收代码全部在 `src/uiTest`，不会进入生产 JAR。
 
@@ -21,12 +21,21 @@
 | 正式一轮（zh_cn，必过） | `.\gradlew.bat runUiTestClient --no-daemon --console=plain` |
 | 英文报告轮（只出报告） | `.\gradlew.bat runUiTestClient -PuiLang=en_us -PuiLayoutStrict=false --no-daemon --console=plain` |
 | 归档刚跑完的一轮 | `.\gradlew.bat archiveUiAcceptance --no-daemon --console=plain` |
-| 只跑某组 / 某界面 / 某用例 | `-PuiCases=formation`、`-PuiCases=hud+kit`、`-PuiCases=formation.full`（不含 `legacy` 时跳过实时流程和 14 张旧截图，约 1–2 分钟） |
-| 只跑某些档位 | `-PuiTiers=320x240+640x336`（14 张旧截图不受影响） |
+| 只跑某组 / 某界面 / 某用例 | `-PuiCases=formation`、`-PuiCases=hud+kit`、`-PuiCases=formation.full-academy`（不含 `legacy` 时跳过实时流程和 14 张旧截图，约 1–2 分钟）。`-PuiCases=kit.default` 选中这个状态的全部涂装，`-PuiCases=caesar`（或 `academy`、`neutral`）选中该涂装的全部用例 |
+| 只跑某些档位 | `-PuiTiers=320x240+640x336`（14 张旧截图不受影响）；`-PuiTiers=960x540` 另外打开只出报告的宽松档（见第 3 节） |
 | 已迁移界面也只出报告 | `-PuiLayoutStrict=false` |
 | 预览图目录 | `-PuiPreviewShots=<目录>`，默认向上查找相邻的 `ui-preview/shots`（index.html 并排对照用） |
 
-列表参数可用 `,`、`;` 或 `+` 分隔。整轮（实时流程 + 71 个用例，344 张截图：0.5.0-beta.2 加上站在据点内的 5 个 HUD 状态后；0.5.0-beta.1 并入体力条 A4 后为 66 个用例、319 张；只有战斗终端时为 58 个用例、279 张，只有体力条时为 48 个用例、229 张，0.4.0-beta.2 / 0.4.0-beta.3 时为 40 个用例、189 张，0.4.0-beta.1 时为 38 个用例、179 张）在本机约 6 分钟。
+列表参数可用 `,`、`;` 或 `+` 分隔。整轮（实时流程 + 87 个用例，424 张截图：0.5.0-beta.3 加上凯撒 / 中立涂装的 15 个用例和 1 个 HUD 回归用例后；0.5.0-beta.2 为 71 个用例、344 张，在本机约 6 分钟；0.5.0-beta.1 并入体力条 A4 后为 66 个用例、319 张；只有战斗终端时为 58 个用例、279 张，只有体力条时为 48 个用例、229 张，0.4.0-beta.2 / 0.4.0-beta.3 时为 40 个用例、189 张，0.4.0-beta.1 时为 38 个用例、179 张）在本机约 8 分钟。
+
+**固定的运行属性**（`build.gradle` 的 `uiTestClient` 设定，0.5.0-beta.3 起）：
+
+| 属性 | 值 | 作用 |
+|---|---|---|
+| `wok.ui.clock` | `21:30` | 平板状态栏的时钟（`TacticalBoardChrome.CLOCK_PROPERTY`）固定，探针文字和截图不随时间变 |
+| `wok.ui.tabletAnimation` | `OFF` | 全部用例在“掏平板动画”关闭时跑。动画属于核心 0.5.0-beta.4，现在还没有代码读这个属性，先留好 |
+
+结果文件开头记一行 `uiClock=21:30 (wok.ui.clock=21:30) tabletAnimation=OFF`。
 
 **判定**：结果文件首行 `status=PASS` 才算通过，Gradle 据此决定任务成败；通过时还检查 `wok_ui_manifest.json` 存在且列出的截图都在。
 
@@ -49,8 +58,21 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<版本>\<标�
 | 640×336 | 1280×672，GUI 2 | 640×336 | 必过（你实际用的 1920×1008 GUI 3，逻辑尺寸相同，物理字号是 2 而不是 3） |
 | 480×270 | 960×540，GUI 2 | 480×270 | 只出报告 |
 | 427×240 | 854×480（游戏默认窗口），GUI 1 | 按最低 2× 排成 427×240：编制页走窄屏布局，HUD 的 Boss 条要右移 | 只出报告 |
+| 960×540（选开） | 1920×1080，GUI 2 | 960×540：唯一用到 D2 宽松档机身（ROOMY）的档位 | 只出报告；默认不跑，`-PuiTiers=960x540` 写全名时才加到跑满 5 档的用例上（窗口在 1080p 显示器上放不下时记为 REPORT） |
 
 语言：zh_cn 必过；en_us 只出报告（`-PuiLayoutStrict=false` 跑一轮）。
+
+**D2 外壳下各档的内容区**（`TacticalShellLayout.content()`，页面实际拿到的宽高）：320×240 为 296×192，427×240 为 403×192，480×270 为 456×222，480×360（960×720 档）为 416×284，640×336 为 576×260，960×540 为 846×434。640×336 下小队页变窄版、480×360 下兵种页和部署页变窄版（方案 4.8），截图里能看到。
+
+**涂装**：平板界面的用例都写明涂装，截图名带后缀 `-academy`（学院军，海军蓝）、`-caesar`（凯撒，正红）、`-neutral`（中立，浅钢灰）。
+
+| 用例 | 涂装怎么来 |
+|---|---|
+| squad（战斗终端） | 不固定：终端按夹具自己判定（蓝方 → 学院军，红方 → 凯撒；加载中没有战局快照时看编制目录里加入的阵营），检查判定结果与用例写明的涂装一致 |
+| formation、kit、mapicons、hud.terminal | 用 `TacticalLivery.pinForAcceptance` 固定：验收玩家在实时流程里已经有真实战局快照（本方），不固定的话未加入阵营的编制页也会跟着本方变色 |
+| HUD 其余用例、旧界面、14 张旧截图 | 没有涂装（HUD 永远是 A 配色，旧界面档 1 不换壳） |
+
+固定涂装只在该用例里有效，用例结束（包括清理失败）时由运行器释放。
 
 **960×720 档的覆盖范围**：自动化的“960×720”档是 960×720 窗口、GUI 1。已迁移界面和 HUD 在客户端配置 `ui.minimumScale2x`（默认开）下按 2× 排成 480×360，所以这一档实际截图验收的是 480×360 排版；旧界面不受该配置影响，仍按 1× 的 960×720 排版截图（只出报告）。已迁移界面真正 1× 的 960×720 逻辑布局（例如 1920×1440 窗口 GUI 2，或关掉 `ui.minimumScale2x`）没有真实客户端截图，只由纯布局单测 `FormationScreenLayoutTest`（“960, 720, WIDE”）和 `WokHudLayoutTest`（960×720、绘制倍率 1）覆盖。AGENTS 要求的 960×720 档对已迁移界面目前就是这两部分合起来的结果，需要时可再加一个 1920×1440 GUI 2 的报告档。
 
@@ -65,23 +87,36 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<版本>\<标�
 
 **已迁移界面**（陈列页、地图标点陈列、编制页、HUD，0.5.0-beta.1 起加上战斗终端的小队 / 兵种 / 部署三页）在必过档上有任何违规即失败；**未迁移的旧界面**（地图、配装、管理员、补给）只出报告，等各自的批次迁移后再转为严格。每个用例还有自己的语义检查（下表），语义检查在必过档上失败同样判整轮失败。
 
+**平板外壳检查**（0.5.0-beta.3，`UiDeviceChecks`）：凡是写明涂装、截到 `TacticalScreen` 的用例，每张截图都要通过：
+
+- 外壳在探针备注里写下这一帧判定的涂装和链路状态（`shell livery=CAESAR link=OK`），涂装与用例写明的一致；结果页和 `wok_ui_layout.json` 都显示它；
+- 外壳区域 `shell.device`、`shell.status`、`shell.bezel` 都报给探针，而且都是非实心区域；
+- 底框两端的 Esc（`shell.key.esc`）和 R（`shell.key.refresh`）硬件键都在、都在底框里；
+- 有页面键的界面，当前页的键是按下状态（`CURRENT`）、在底框里，并且它上方的 LED 是唯一亮着的一盏（探针备注 `bezel.led lit=true key=[…]` 与这个键的矩形相同；底框太矮没有 LED 时不亮任何一盏）；
+- 每个危险键（`DANGER` / `DANGER_ARMED`）都带警示斜纹，键上的文字从斜纹右边开始；
+- 回执只在状态栏胶囊里：底框上没有不属于任何键的文字（原来的页脚回执已经没有了）；
+- 文字和页面控件都不出玻璃区（S），只有底框上的实体键和浮动提示例外。
+
+结果文件里每张截图记一行 `device[<用例>@<档位>]=livery=… link=… esc=… refresh=… page=<当前页>+led dangerKeys=<n>`。
+
 ## 5. 用例清单
 
-截图名 `wok_ui_<界面>_<状态>_<档位>.png`；14 张旧截图保留原名和顺序。
+截图名 `wok_ui_<界面>_<状态>[-<涂装>]_<档位>.png`（例如 `wok_ui_squad_kick-caesar_320x240.png`），用例 id 同样带涂装后缀（`squad.kick-caesar`）；14 张旧截图保留原名和顺序，HUD 与旧界面没有涂装后缀。
 
 | 组 / 界面 | 状态 | 档位 | 迁移 | 主要语义检查 |
 |---|---|---|---|---|
 | 实时流程（旧图 01–09） | deployment、squads、classes、map ×2、squads 960、commander、loadout ×2 | 各自原档位 | 否 | 终端键/地图键走真实按键与网络；兵种页真实鼠标点击；JM 小地图隐藏、全屏重定向、4/4 与 16/16 地形块；支援按钮与 R80/R64；两张地图截图记录 `mapIcons[...]`（按种类计数、按方案 B 尺寸），一个新标点都没画出来即失败（0.4.0-beta.3） |
 | formation.legacy（旧图 10、11） | 320 待开启、960 投票中 | 320、960 | 否 | 管理员“开启编制投票 / 锁定投票结果”按 uiId `formation.admin.open` / `formation.admin.lock` 找到 |
 | admin.legacy_*（旧图 12–14） | 列表 320、职业管理 320、列表 960 | 320、960 | 否 | “+槽位”“设置”“职业管理”存在 |
-| kit（组件陈列页） | default、confirm、inputs、cards、hud、icons | 全部 5 档 | 是 | 按钮七态 + 焦点；超长键省略号带完整提示；危险确认默认焦点在“取消”、Enter 不确认、Esc 取消；48 个界面图标（0.5.0-beta.1 追加体力条的手掌、靴子、跳跃箭头）；10 种标点物理尺寸 |
-| mapicons（地图标点陈列） | dark（深色地形）、paper（浅色纸图） | 全部 5 档 | 是 | 10 种标点 + 名称；普通/悬停/选中/即将过期；宽屏另有 0.75×/1.25×/1.75× 旋钮；每个标点物理尺寸 = 15×15（定位针 15×18）美术像素 × 旋钮对应的整物理像素（0.4.0-beta.3 起与地图同用 `TacticalMapIcons.mapArtPx`：GUI 1–3 不变，GUI 4 放大 4/3 后取整），与战术地图上一致 |
-| formation（编制页，预览 45-formation） | join、confirm、facfull、vote、detail、locked、latejoin、lateconfirm、waiting、waitover（目录请求 3 秒没有回应）、longcaps（玩家视角）；pending、full、admintie、admin，以及 0.4.0-beta.2 的 testmode（未加入阵营时的“测试开局”键，页面状态为 join）、testconfirm（测试开局确认层）（管理员视角） | 全部 5 档 | 是 | 页面自报预览状态；管理员在未加入阵营时看得到可用的“测试开局”键且它单独在列表面板的紧凑管理员区，pending 状态下它与“开启编制投票”同一行、不重叠，玩家视角看不到它；测试开局为普通确认、正文写出所加入的阵营、Esc 取消后留在本页；waitover 写出“编制目录没有送达”并保留重试键；夹具未被服务端目录替换；详情区没有内部 ID（player-09）；裁剪区内没有半行；浏览中的阵营是描边而非实心蓝；未加入时 Esc 能关页；加入为普通确认、锁定为危险确认且默认“取消”；阵营满员/容量不足时按键禁用并写原因；锁定后加入仍可加入；5 个白名单支援全部按名称显示；已加入阵营时逐档记录页头身份是否显示（`formationHeaderIdentity[...]`），中文 427×240 档必须显示（页面在不足 440 宽时用短标题“编制投票”；427 档只出报告，不显示记为 REPORT） |
+| kit（组件陈列页） | 学院军：default、confirm、inputs、cards、hud、icons；凯撒与中立：default、confirm、cards（0.5.0-beta.3，涂装固定） | 全部 5 档 | 是 | 按钮七态 + 焦点；超长键省略号带完整提示；危险确认默认焦点在“取消”、Enter 不确认、Esc 取消；48 个界面图标（0.5.0-beta.1 追加体力条的手掌、靴子、跳跃箭头）；10 种标点物理尺寸；0.5.0-beta.3 起页面是底框页面键、R 键重画本页，回执“配装已保存”在状态栏胶囊里，状态栏身份随涂装（学院军 / 凯撒 / 未加入阵营），HUD 页的样品始终按 A 配色画 |
+| mapicons（地图标点陈列） | dark（深色地形）、paper（浅色纸图），学院军涂装固定 | 全部 5 档 | 是 | 10 种标点 + 名称；普通/悬停/选中/即将过期；宽屏另有 0.75×/1.25×/1.75× 旋钮；每个标点物理尺寸 = 15×15（定位针 15×18）美术像素 × 旋钮对应的整物理像素（0.4.0-beta.3 起与地图同用 `TacticalMapIcons.mapArtPx`：GUI 1–3 不变，GUI 4 放大 4/3 后取整），与战术地图上一致；0.5.0-beta.3 起两种底图是底框页面键，R 键禁用并写原因（截到斜线禁用的硬件键），标点名称始终是深色底板上的 A 浅色字 |
+| formation（编制页，预览 45-formation） | join、confirm、facfull、vote、detail、locked、latejoin、lateconfirm、waiting、waitover（目录请求 3 秒没有回应）、longcaps（玩家视角）；pending、full、admintie、admin，以及 0.4.0-beta.2 的 testmode（未加入阵营时的“测试开局”键，页面状态为 join）、testconfirm（测试开局确认层）（管理员视角）。0.5.0-beta.3 起未加入的状态（join、confirm、facfull、latejoin、lateconfirm、waiting、waitover、testmode、testconfirm）为中立，已加入的为学院军；另有凯撒视角的 vote、locked（锁定 `caesar_234_mechanized`）、admin（危险确认）。涂装都固定 | 全部 5 档 | 是 | 页面自报预览状态；凯撒 locked 页确实是凯撒阵营并锁定了 `caesar_234_mechanized`；管理员在未加入阵营时看得到可用的“测试开局”键且它单独在列表面板的紧凑管理员区，pending 状态下它与“开启编制投票”同一行、不重叠，玩家视角看不到它；测试开局为普通确认、正文写出所加入的阵营、Esc 取消后留在本页；waitover 写出“编制目录没有送达”并保留重试键；夹具未被服务端目录替换；详情区没有内部 ID（player-09）；裁剪区内没有半行；浏览中的阵营是描边而非实心蓝；未加入时 Esc 能关页；加入为普通确认、锁定为危险确认且默认“取消”；阵营满员/容量不足时按键禁用并写原因；锁定后加入仍可加入；5 个白名单支援全部按名称显示；已加入阵营时逐档记录页头身份是否显示（`formationHeaderIdentity[...]`），中文 427×240 档必须显示（页面在不足 440 宽时用短标题“编制投票”；427 档只出报告，不显示记为 REPORT） |
 | admin.noclass（admin-01 回归） | 编制没有任何职业规则 | 320、960、640 | 否 | “职业管理”禁用并写原因；真实点击和强行 onPress 都不崩溃、不离开列表页 |
 | ammo.small320（player-01 回归） | 小型弹药箱 | 320（480 报告） | 否 | 剩余点数和点数条不在分区标题下面，位于面板顶和分区标题之间 |
-| squad（战斗终端，预览 20-squad，0.5.0-beta.1） | squads、other、nosquad、kick、classes、classesnosquad、classesactive、deployment、active、loading、votewait、vote、voteclasses、votedeploy，以及 2 / 8 / 15 / 16 个部署点（页面状态为 deployment） | 全部 5 档 | 是 | 页面自报预览状态；客户端夹具 `SquadFixtures` 在截图时没被服务端快照换掉；裁剪区内没有半行；查看别队与踢出经真实点击（呼号条或小队列表、名单行、踢出键）到达；踢出为红色危险确认、焦点在“取消”、Tab 到红键后 Enter 和 Space 都不确认、Esc 取消且终端还在；部署点列表的页数等于实际页数、首页每一行都画出、标题写出同一页码；编制锁定前没有可点的建队 / 兵种 / 部署控件，且有通往编制页的键 |
+| squad（战斗终端，预览 20-squad，0.5.0-beta.1） | squads、other、nosquad、kick、classes、classesnosquad、classesactive、deployment、active、loading、votewait、vote、voteclasses、votedeploy，以及 2 / 8 / 15 / 16 个部署点（页面状态为 deployment），都是学院军；0.5.0-beta.3 起另有凯撒视角的 squads、kick、classes、deployment、active、loading（同一套夹具换到红方：己方 / 敌方阵营对调、编制 `caesar_234_mechanized`、红方部署点）。涂装都不固定，由终端自己判定 | 全部 5 档 | 是 | 页面自报预览状态；凯撒 kick 的确认键是红色的确认态危险键（`DANGER_ARMED`），压在同样是红色的名单选中行（`SELECTED`）上，靠斜纹和竖条区分；loading 的链路状态是 `WAIT`；客户端夹具 `SquadFixtures` 在截图时没被服务端快照换掉；裁剪区内没有半行；查看别队与踢出经真实点击（呼号条或小队列表、名单行、踢出键）到达；踢出为红色危险确认、焦点在“取消”、Tab 到红键后 Enter 和 Space 都不确认、Esc 取消且终端还在；部署点列表的页数等于实际页数、首页每一行都画出、标题写出同一页码；编制锁定前没有可点的建队 / 兵种 / 部署控件，且有通往编制页的键 |
 | hud（战斗 HUD，预览 10-hud） | battle、chat、downed、roster8、votewait、vote、voted、locked、boss（8 人名单 + 客户端放入的原版 Boss 条） | 全部 5 档 | 是 | 核心部件不碰快捷栏和状态行；体力条凹槽正好在原版经验条那一行 `[h−30, h−23)`、与 `StaminaBarLayout` 算出的位置一致，各部件不碰快捷栏、选中框、副手格、状态行、TaCZ 读数禁区和聊天（2× 耳朵在聊天最后一行之上时必须在聊天背景右边），布局宽 ≥ 640 时两只耳朵各有一个百分比、否则没有，原版经验条和跳跃条的覆盖层没有运行；boss 状态下移、右移后的 Boss 条区域不碰名单、不出屏；320 档名单底边 ≤ y95；窄屏开聊天时名单收成一行；投票阶段投票条占战况条槽位、没有名单、写出终端键；锁定通知 3 秒内截到；倒地时本人行写“倒地”，替身附属面板拿到 `center_low` 槽位 |
 | hud.capture*（站在占点据点内，预览 10-hud 新版，0.5.0-beta.2） | capture（己方 ×2 占领中 62%，剩余 0:09）、capture-contested（争夺，进度冻结）、capture-secured（己方已控制 100%）、capture-disabled（据点停用）、capture-locked（敌方占领中、本方暂无资格） | 全部 5 档 | 是 | 核心验收不装占点附属，由 `CaptureHudBridge.pinForAcceptance` 按本人阵营注入据点（与占点 0.1.0-alpha.4 `CaptureHudApi.currentPoint()` 同一套字段）；hud 的全部检查之外：据点小牌 `hud.objective` 在战况条内，探针记录的外观、贴边色（己方蓝 / 敌方红 / 争夺橙 / 停用灰）、数字或“停用”、锁、实心与否都符合该状态；非紧凑屏战况条 30 高且画出第二行“据点名 · 状态 · 剩余”，紧凑屏 17 高且只留小牌；兵力数字不压小牌 |
+| hud.terminal-caesar（HUD 回归，0.5.0-beta.3） | 战斗 HUD 上用凯撒涂装打开战斗终端，再按 Esc 关掉，然后截 HUD | 全部 5 档 | 是 | 终端开着时：终端是凯撒红，核心 HUD（名单、战况条、投票条、体力条）一个探针框都不画，`HudFrame` 记着终端开着（附属 HUD 的槽位照常给）；关掉之后：所有可换肤令牌都回到 A 值、当前调色板是 A，体力条写给探针的颜色与 A 配色下算出的一致；其余同 hud |
 | stamina-a4（体力条，预览 16-stamina 的 A4；组 `hud`） | full、sprint、aim、legsout、recover、unlock、vehicle、horse（与预览状态同名，结果页并排显示预览图） | 全部 5 档 | 是 | 战斗 HUD 上把体力条固定为预览的演示数据（满体力；疾跑腿 64% 残影 69%；开镜手 42% 橙；腿耗尽锁定；双池恢复中；腿 16% 刚解锁；乘坐载具腿灰；骑马蓄力 55%），上一行 hud 的全部体力条检查之外，再核对体力条写给探针的状态说明：剪影/锁/勾/箭头、贴边颜色、填充色、残影、恢复中、锁定空槽暗红、坐骑状态。验收客户端里玩家并没有真的骑乘，所以没有预览里的坐骑血量行 |
 
 用例数据对齐预览 `data/mock.js`：编制目录由核心默认配置 `FormationConfigData.defaultConfig()` 生成，详情、候选可用性及原因、旧版摘要行都调用服务端 `FormationService` 自己的方法（反射），夹具不重写任何服务端措辞；验收客户端没有卓越前线载具 MOD，可用性按“装了载具 MOD 的服务端”判定。HUD 状态只改客户端缓存（战局快照、兵力、体力、编制目录），每 tick 和每帧 HUD 前重装，服务端心跳不会混进截图；用例结束后恢复。管理员视角的用例临时授予 OP，玩家视角的用例收回，结束时由验收器统一撤销。
@@ -91,11 +126,32 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<版本>\<标�
 | 文件 | 内容 |
 |---|---|
 | `run/ui-test/ui-test-results/wok_ui_acceptance.txt` | 首行 `status=PASS/FAIL`；失败时 `failure=`；随后是实时流程观测项和每个用例每个档位一行 `case[...]=PASS/FAIL/REPORT` |
-| `run/ui-test/ui-test-results/wok_ui_layout.json` | 每张截图的档位、布局尺寸、违规（规则、文字/框/uiId、矩形）、控件和框 |
-| `run/ui-test/ui-test-results/wok_ui_manifest.json` | 截图清单与状态 |
-| `run/ui-test/ui-test-results/index.html` | Java 截图与预览图并排，下面列违规 |
+| `run/ui-test/ui-test-results/wok_ui_layout.json` | 每张截图的档位、布局尺寸、违规（规则、文字/框/uiId、矩形）、控件和框；平板界面另有 `livery`（用例写明的涂装）和 `shell`（外壳实际画出的 `livery=… link=…`），探针备注在 `notes` |
+| `run/ui-test/ui-test-results/wok_ui_manifest.json` | 截图清单与状态（平板界面带 `livery`） |
+| `run/ui-test/ui-test-results/index.html` | Java 截图与预览图并排，下面列违规；标题旁的色块是涂装，说明行写外壳备注。预览图先找同名涂装导出 `<界面>__new__<预览档>__<状态>-<涂装>.png`，没有就用同一状态的旧版预览图并注明“无某涂装预览”，再没有写“无预览” |
 | `run/ui-test/ui-test-results/wok_ui_progress.txt` | 进度；客户端没写结果就退出时，Gradle 报出最后到达的阶段 |
 | `run/ui-test/screenshots/` | 截图 |
+
+### 0.5.0-beta.3 验收（2026-10-10，平板外壳 D2 与阵营涂装 P3：final-zh、final-en）
+
+本版的自动验收以本节 `final-zh`、`final-en` 两份归档为准。
+
+- 代码：分支 `claude/平板外壳` 的 `c52530d`（本版最后一个源码提交，整体审查修正；之后只改文档）。限流脚本跑 `cleanTest test` 加六个附加测试源集编译：JUnit 1267 项，0 失败、0 跳过（`:test` 重新执行）；`runGameTestServer`：22 项必需 GameTest 全部通过。8 个模块逐个 `clean build` 全部成功。产物 `wok_infantry-0.5.0-beta.3.jar`，2,437,934 字节，SHA-256 `0EAC020C721E82800F3A116D8FF5D2B2E3BB7BA49DB0919F2381B501B5B5D80D`，已部署到测试端（0.5.0-beta.2 改名为 `.bak`，见 CHANGELOG）。
+- 用例与档位：87 个用例、424 张截图（0.5.0-beta.2 的 71 个用例 + 凯撒战斗终端 6 + 凯撒编制页 3 + 组件陈列页凯撒 / 中立各 3 + HUD 回归 `hud.terminal-caesar` 1）；默认 5 档：320×240、960×720（GUI 1，按 2× 排成 480×360）、640×336 必过，480×270、427×240 只出报告；960×540 宽松档是选开的，本轮没跑。整轮在本机约 8 分钟。
+- 涂装：58 个平板界面用例 × 5 档 = 290 张截图都写明涂装并跑了平板外壳检查——学院军 34 个用例（战斗终端 18、已加入的编制页 8、组件陈列页 6、地图标点陈列页 2），凯撒 12 个（战斗终端 6、编制页 3、组件陈列页 3），中立 12 个（未加入的编制页 9、组件陈列页 3）。外壳记录：学院军 OK 165、WAIT 5，凯撒 OK 55、WAIT 5，中立 OK 50、WAIT 10（WAIT 是战斗终端 `loading` 与编制页 `waiting` / `waitover`）。战斗终端的涂装由终端按夹具自己判定，其余固定。
+- zh_cn 严格轮：`status=PASS`，8678 tick，424 张截图，`strictLayoutViolations=0`，`layoutViolations=121`，`uiClock=21:30`，`tabletAnimation=OFF`，`finalActiveMarkers=1`，`temporaryOperatorCleanup=revoked`。用例行 415 = 410 PASS + 5 REPORT（`admin.legacy_list@320x240`、`admin.legacy_list_large@960x720`、`admin.noclass` 的 320 / 960 / 640 三档）+ 0 FAIL。121 条违规全在只出报告的旧界面或实时流程截图上（管理员配装 64、玩家配装 30、战术地图 26、实时流程 `wok_ui_01_deployment_320x240` 的“先加入一个未满员小队”1 条，与 0.5.0-beta.1、0.5.0-beta.2 相同），已迁移界面 0 条。04 / 06 两张地图截图的 `mapIcons` 不变（8 种标点各 1 个，牌 30 物理像素）；`formationHeaderIdentity` 在中文 427×240 下已加入的状态全部显示（960×720 档的 detail、longcaps、admintie、admin 学院军因 D2 内容区变窄收起，只要求 427 档）。与 `8abd040` 那一轮 `device-r1-zh` 比：用例行、外壳记录、违规逐条相同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261010-0.5.0-beta.3\final-zh\`（424 张截图与 5 个结果文件）。
+- en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`，8672 tick，424 张截图，`strictLayoutViolations=0`，`layoutViolations=223`（0.5.0-beta.2 为 229）；用例行 415 = 336 PASS + 79 REPORT + 0 FAIL。已迁移界面上的 121 条（小队终端 66、编制页 49、HUD 4、地图标点陈列 2）全是英文太长被省略号截断，留给 i18n 收尾（“Administrator lock (no timer)”×23、“Resupply needs you deployed inside the main base”×14、“3 (the faction picks one)”×8 等）；其余 102 条是只出报告的旧界面与实时流程截图。与 `device-r1-en` 比用例行、外壳记录、违规全部相同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261010-0.5.0-beta.3\final-en\`。
+- 同一日期目录下：`device-r1-zh` / `device-r1-en` 是 `8abd040`（实机截图对照修正）那一轮，结果与最终一轮相同；`device-zh`、`device-en`、`device-en-recheck`、`device-en-liveflow` 是更早的几轮（zh 严格轮 320×240 有 6 项严格违规、英文 `kit.default-caesar@960x720` 被手动最大化的窗口跑坏、英文实时流程找不到“兵种”键），都由 `8abd040` 修正，只作对照。
+- 截图目视与像素比对（对照预览 `device-2-livery` 的 3 档 × 3 涂装）：960×720 凯撒底框与预览 0 个像素不同（容差 30）；中立左右与顶边框、学院军状态栏与小队列表面板（含玻璃反光）在容差 3 内相同，差别只有时钟数字、个别丝印像素、禁用斜纹相位和字体字形。宽窄翻转与方案 4.8 一致（640×336 小队页、480×360 兵种 / 部署页和编制详情变窄或单列）。
+- 与预览有意不同、已决定保持的两处：
+  1. 未加入阵营时编制页正在浏览的阵营键画描边 + 选中色竖条 + 眼睛图标，不画成预览里的实心选中（用户 10-04 反馈 1，`FormationVoteModelTest` 固定）。
+  2. 部署页重生倒计时“N 秒”和它的指示灯仍用正文色 / 灰色（TEXT / MUTED），不用预览里的橙色：橙色只表示分区与可调控件。
+- 另外接受的外观差别：机身四周透出实时世界（截图不再逐字节相同），640×336、960×720 下原版快捷栏在底框下方压暗地露出一条（方案 4.9）；未加入时编制页底框有禁用的“R 重试”和“Esc 关闭（～ 键可重开）”，预览这里没有 R 键；身份比预览长（Java 没有编制短名）。
+- 仍未做：真实客户端（测试端 PCL）人工验收，由用户来做，清单如下（方案 5.2 第 4 步，细项见第 7 节第 13 条）：
+  - 三种涂装都要看：没加入阵营时看中立；`/battle admin test start academy` 看学院军；`/battle admin test start caesar` 看凯撒。
+  - 窗口：960×720 GUI 1、320×240、640×336。
+  - 检查项：文字是否溢出、控件是否重叠；按键七态，外加确认态危险键；字体清晰度；底框键：点击、Ctrl+Tab、←/→、Esc、R；踢人确认弹窗；反馈胶囊、信号格；HUD 没有变色；切到地图或配装页签时的过渡外观；帧率。
+  - 顺带核对整体审查留下的一项：在战斗终端里用 Tab 把焦点移到“R 刷新”，等一个新快照（或按 R），焦点框应仍在 R 上。
 
 ### 0.5.0-beta.2 验收（2026-10-05，战况条据点小牌：zh_cn-final2、en_us）
 
@@ -235,9 +291,13 @@ D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<版本>\<标�
 
 12. 战况条据点小牌（0.5.0-beta.2）：多人对局里两边轮流进出据点、争夺、顺序占点未解锁时的锁图标；据点名很长时小牌省略名字的样子；GUI 1 下 2× 小牌与第二行是否清晰；编制投票条显示期间站进据点（据点条在投票条下方）。
 
+13. 平板外壳 D2 与阵营涂装 P3（0.5.0-beta.3）：三种涂装都要看——没加入阵营时看中立，`/battle admin test start academy` 看学院军，`/battle admin test start caesar` 看凯撒；窗口 960×720 GUI 1、320×240、640×336。看机身浮在压暗的世界上（世界每轮不同，截图不再逐字节相同）、玻璃深度与反光、2× 下斑点和暗角、LED 与焦点框在三种涂装下是否看得见；底框键：点击、Ctrl+Tab、←/→、Esc、R；按键七态加确认态危险键（凯撒的“悬停在已选上”与“确认态危险”只靠斜纹和色相区分）；反馈胶囊太长时的省略号与悬停全文、信号格；终端开着时核心 HUD 不在机身边上露出来、关掉后 HUD 颜色不变（附属 MOD 的 HUD 这一轮不隐藏，可能在边缘露一点）；中立浅色井里的输入框光标（0.5.0-beta.3 起用深色字的颜色，不再是原版浅灰）；切到地图或配装页签时回到旧 A 外框的过渡外观；帧率。宽松档（960×540 逻辑）的机身自动验收默认不截，需要时 `-PuiTiers=960x540` 只出报告。
+
 ## 8. 维护
 
 - 新界面批次只新增 `cases/<界面>Cases.java`，在 `UiCaseCatalog` 加一行；迁移完成的界面把用例设为 `migrated(true)`，并让界面实现 `UiSurfaceInfo`、用 `UiLayoutProbe.tag` 给按键打 uiId、用 `UiLayoutProbe.begin/end` 包住各区域。
+- 平板界面（`TacticalScreen`）的用例必须写明涂装：界面自己按夹具判定的用 `livery(...)`，要固定的用 `pinLivery(...)`（运行器在用例开始时固定、结束时释放，不要在用例里自己调 `pinForAcceptance`）。这样截图名带涂装后缀，并自动跑平板外壳检查。同一状态要看另一种涂装就再加一个用例。
+- 夹具按阵营方参数化：`MockData.Side`（ACADEMY / CAESAR），`SquadFixtures.Scenario.withSide(...)`、`FormationFixtures.Scenario.joined(side, phase)`。
 - HUD 部件要用 `TacticalHud.plate/readout` 或 `HudPaint.probeBox` 画，直接 `drawString` 的文字探针看不到。
 - 管理员视角的用例用 `FormationCases` 里的 `asAdministrator()`，玩家视角用 `asPlayer()`；不要直接改服务端的 OP 状态。
 - 纯验收工具和文档的改动不单独提升版本，跟随所属核心版本。

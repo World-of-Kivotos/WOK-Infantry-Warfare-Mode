@@ -201,6 +201,14 @@ public final class TacticalDraw {
         public boolean showsHover() {
             return hovered && !selected && !disabled;
         }
+
+        /**
+         * A hovered selected row (not disabled) lights its selection one step
+         * ({@link TacticalBoardTheme#SELECT_HOVER}), like keys and cards.
+         */
+        public boolean brightensSelection() {
+            return hovered && selected && !disabled;
+        }
     }
 
     /**
@@ -309,13 +317,15 @@ public final class TacticalDraw {
     }
 
     /**
-     * Pure: background colour of a well row: selected blue, hovered (not when disabled), empty
-     * slot, alternate stripe, or the plain row colour.
+     * Pure: background colour of a well row: the selection (one step lighter while hovered, see
+     * {@link RowState#brightensSelection}), hovered (not when disabled), empty slot, alternate
+     * stripe, or the plain row colour.
      */
     public static int rowFill(RowState state, boolean empty) {
         RowState safe = state == null ? RowState.NORMAL : state;
         if (safe.selected()) {
-            return TacticalBoardTheme.SELECT;
+            return safe.brightensSelection() ? TacticalBoardTheme.SELECT_HOVER
+                    : TacticalBoardTheme.SELECT;
         }
         if (safe.showsHover()) {
             return TacticalBoardTheme.ROW_HOVER;
@@ -326,12 +336,34 @@ public final class TacticalDraw {
         return safe.alt() ? TacticalBoardTheme.WELL_ROW_ALT : TacticalBoardTheme.WELL_ROW;
     }
 
+    /**
+     * Pure: the 1px {@link TacticalBoardTheme#SELECT_EDGE} line at a selected row's left edge. A
+     * row has no outline, so this dark line frames the light bar against a pale well (Neutral);
+     * on dark wells it merges with the well (preview {@code UIX} {@code selBar}).
+     */
+    public static UiRect rowSelectionEdge(UiRect row) {
+        return new UiRect(row.left(), row.top(), Math.min(row.right(), row.left() + 1),
+                row.bottom());
+    }
+
+    /** Pure: the light selection bar of a selected row, right of {@link #rowSelectionEdge}. */
+    public static UiRect rowSelectionBar(UiRect row) {
+        int left = Math.min(row.right(), row.left() + 1);
+        return new UiRect(left, row.top(),
+                Math.min(row.right(), left + TacticalButtonStyle.barWidth(row.height())),
+                row.bottom());
+    }
+
     /** Background of a custom-drawn well row (preview {@code UI.rowBg}); {@code lead} 0 = none. */
     public static void rowBg(GuiGraphics graphics, UiRect bounds, RowState state, int lead) {
         rowBg(graphics, bounds, state, lead, false);
     }
 
-    /** {@link #rowBg(GuiGraphics, UiRect, RowState, int)} with the empty-slot fill. */
+    /**
+     * {@link #rowBg(GuiGraphics, UiRect, RowState, int)} with the empty-slot fill. A selected row
+     * gets the dark edge line and the light bar ({@link #rowSelectionEdge},
+     * {@link #rowSelectionBar}); any other row its 2px {@code lead} colour.
+     */
     public static void rowBg(GuiGraphics graphics, UiRect bounds, RowState state, int lead,
                              boolean empty) {
         if (bounds.isEmpty()) {
@@ -340,10 +372,18 @@ public final class TacticalDraw {
         RowState safe = state == null ? RowState.NORMAL : state;
         graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(),
                 rowFill(safe, empty));
-        int stripe = safe.selected() ? TacticalBoardTheme.SELECT_BAR : lead;
-        if (stripe != 0) {
+        if (safe.selected()) {
+            fill(graphics, rowSelectionEdge(bounds), TacticalBoardTheme.SELECT_EDGE);
+            fill(graphics, rowSelectionBar(bounds), TacticalBoardTheme.SELECT_BAR);
+        } else if (lead != 0) {
             graphics.fill(bounds.left(), bounds.top(), Math.min(bounds.right(), bounds.left() + 2),
-                    bounds.bottom(), stripe);
+                    bounds.bottom(), lead);
+        }
+    }
+
+    private static void fill(GuiGraphics graphics, UiRect rect, int color) {
+        if (!rect.isEmpty()) {
+            graphics.fill(rect.left(), rect.top(), rect.right(), rect.bottom(), color);
         }
     }
 
@@ -373,8 +413,22 @@ public final class TacticalDraw {
     }
 
     /**
-     * Default list row inside a well (preview {@code UI.row}): background, lead or selection
-     * stripe, icon or item, title, optional second line and right value. Selected rows use
+     * Pure: colour of a default row's 9×9 icon: faint when disabled, {@link TacticalBoardTheme#ON_SELECT}
+     * on the selection (preview {@code UIX.row}), otherwise the spec's colour (0 = muted).
+     */
+    public static int rowIconColor(boolean disabled, boolean selected, int iconColor) {
+        if (disabled) {
+            return TacticalBoardTheme.FAINT;
+        }
+        if (selected) {
+            return TacticalBoardTheme.ON_SELECT;
+        }
+        return iconColor != 0 ? iconColor : TacticalBoardTheme.LIGHT_MUTED;
+    }
+
+    /**
+     * Default list row inside a well (preview {@code UIX.row}): background, lead or selection
+     * bar, icon or item, title, optional second line and right value. Selected rows use
      * {@link TacticalBoardTheme#ON_SELECT}, disabled rows {@link TacticalBoardTheme#FAINT}.
      */
     public static RowText row(GuiGraphics graphics, Font font, UiRect bounds, RowSpec spec,
@@ -392,9 +446,8 @@ public final class TacticalDraw {
                     Math.min(bounds.bottom(), layout.itemY() + 17), TacticalBoardTheme.CELL);
             graphics.renderItem(spec.item(), x - 1, layout.itemY());
         } else if (spec.icon() != null) {
-            int iconColor = disabled ? TacticalBoardTheme.FAINT
-                    : spec.iconColor() != 0 ? spec.iconColor() : TacticalBoardTheme.LIGHT_MUTED;
-            spec.icon().draw(graphics, bounds.left() + 5, layout.iconY(), iconColor);
+            spec.icon().draw(graphics, bounds.left() + 5, layout.iconY(),
+                    rowIconColor(disabled, drawn.selected(), spec.iconColor()));
         }
         int main = disabled ? TacticalBoardTheme.FAINT
                 : drawn.selected() ? TacticalBoardTheme.ON_SELECT : TacticalBoardTheme.LIGHT;
@@ -421,11 +474,20 @@ public final class TacticalDraw {
 
     // ---- cards and focus ------------------------------------------------------------------------
 
-    /** Selectable light-board card background (preview {@code UI.card}). */
+    /** Selectable light-board card background (preview {@code UIX.card}). */
     public static void card(GuiGraphics graphics, UiRect bounds, TacticalButtonStyle.CardState state) {
+        card(graphics, bounds, state, false);
+    }
+
+    /**
+     * {@link #card(GuiGraphics, UiRect, TacticalButtonStyle.CardState)} with the pointer state, so
+     * a hovered selected card lights up one step ({@link TacticalBoardTheme#SELECT_HOVER}).
+     */
+    public static void card(GuiGraphics graphics, UiRect bounds, TacticalButtonStyle.CardState state,
+                            boolean hovered) {
         if (!bounds.isEmpty()) {
             TacticalButtonStyle.renderCard(graphics, bounds.left(), bounds.top(), bounds.right(),
-                    bounds.bottom(), state);
+                    bounds.bottom(), state, hovered);
         }
     }
 
@@ -493,7 +555,11 @@ public final class TacticalDraw {
         return new UiRect(track.left(), top, track.right(), top + thumb);
     }
 
-    /** Scrollbar (preview {@code UI.scrollbar}); nothing is drawn when everything is visible. */
+    /**
+     * Scrollbar (preview {@code UIX.scrollbar}): {@link TacticalBoardTheme#FRAME} track (the
+     * faction's dark chrome, pale on Neutral) and an {@link TacticalBoardTheme#ACCENT} thumb;
+     * nothing is drawn when everything is visible.
+     */
     public static void scrollbar(GuiGraphics graphics, UiRect track, int total, int visible,
                                  int offset) {
         UiRect thumb = scrollThumb(track, total, visible, offset);
@@ -501,7 +567,7 @@ public final class TacticalDraw {
             return;
         }
         graphics.fill(track.left(), track.top(), track.right(), track.bottom(),
-                TacticalBoardTheme.SCROLL_TRACK);
+                TacticalBoardTheme.FRAME);
         graphics.fill(thumb.left(), thumb.top(), thumb.right(), thumb.bottom(),
                 TacticalBoardTheme.ACCENT);
     }
@@ -569,16 +635,23 @@ public final class TacticalDraw {
     }
 
     /**
-     * Status chip such as {@code 名额 2/4} (preview {@code UI.chip}): coloured outline, a light
-     * wash of the colour on boards or the dark feedback plate on dark surfaces.
+     * Pure: fill of a status chip: a light wash of its colour on boards, the well colour on dark
+     * surfaces (preview {@code UIX.chip}; the well follows the faction, pale on Neutral).
+     */
+    public static int chipFill(int color, boolean onDark) {
+        return onDark ? TacticalBoardTheme.WELL : TacticalHud.withAlpha(color, 0x26);
+    }
+
+    /**
+     * Status chip such as {@code 名额 2/4} (preview {@code UIX.chip}): coloured outline, a light
+     * wash of the colour on boards or the well colour on dark surfaces ({@link #chipFill}).
      *
      * @return the x just after the chip
      */
     public static int chip(GuiGraphics graphics, Font font, int x, int y, Component text, int color,
                            boolean onDark) {
         int width = chipWidth(font, text);
-        graphics.fill(x, y, x + width, y + CHIP_HEIGHT,
-                onDark ? TacticalBoardTheme.FEEDBACK_BG : TacticalHud.withAlpha(color, 0x26));
+        graphics.fill(x, y, x + width, y + CHIP_HEIGHT, chipFill(color, onDark));
         BattleUiTheme.outline(graphics, x, y, x + width, y + CHIP_HEIGHT, color);
         graphics.drawString(font, text, x + 3, y + 2,
                 onDark ? color : TacticalHud.mix(color, 0xFF000000, 0.25D), false);
@@ -605,8 +678,8 @@ public final class TacticalDraw {
     }
 
     /**
-     * Key-value line of a detail card (preview {@code UI.kv}): muted key (at most 45% of the
-     * width), value right-aligned in {@code valueColor} (0 = {@link TacticalBoardTheme#TEXT}).
+     * Key-value line of a detail card (preview {@code UIX.kv}): muted key (at most 45% of the
+     * width), value right-aligned in {@link #kvValueColor}.
      */
     public static void kv(GuiGraphics graphics, Font font, int x, int y, int width, Component key,
                           Component value, int valueColor) {
@@ -614,7 +687,21 @@ public final class TacticalDraw {
         TextFit.draw(graphics, font, key, x, y, keyWidth, TacticalBoardTheme.MUTED,
                 TextFit.Align.LEFT);
         TextFit.draw(graphics, font, value, x + keyWidth + 4, y, Math.max(0, width - keyWidth - 4),
-                valueColor != 0 ? valueColor : TacticalBoardTheme.TEXT, TextFit.Align.RIGHT);
+                kvValueColor(valueColor), TextFit.Align.RIGHT);
+    }
+
+    /**
+     * Pure: colour of a key-value line's value on a light card: 0 is
+     * {@link TacticalBoardTheme#TEXT}, an attention orange ({@link TacticalBoardTheme#ACCENT}) is
+     * written in {@link TacticalBoardTheme#ACCENT_TEXT} (ACCENT itself is only 1.7–2.8:1 on light
+     * cards), any other colour as given. The comparison reads the palette active while drawing,
+     * so callers pass {@code ACCENT} read in the same render pass.
+     */
+    public static int kvValueColor(int valueColor) {
+        if (valueColor == 0) {
+            return TacticalBoardTheme.TEXT;
+        }
+        return valueColor == TacticalBoardTheme.ACCENT ? TacticalBoardTheme.ACCENT_TEXT : valueColor;
     }
 
     /**
@@ -678,7 +765,7 @@ public final class TacticalDraw {
             // Above the item model, as vanilla's own stack count.
             graphics.pose().translate(0.0F, 0.0F, 200.0F);
             graphics.drawString(font, text, x + size - font.width(text), y + size - 8,
-                    TacticalBoardTheme.LIGHT, false);
+                    slotCountColor(selected), false);
             if (UiLayoutProbe.recording()) {
                 UiLayoutProbe.rawText(graphics, font, text, x + size - font.width(text),
                         y + size - 8);
@@ -693,6 +780,14 @@ public final class TacticalDraw {
      */
     static int slotIconInset(int size) {
         return Math.max(0, Math.floorDiv(size - TacticalIcon.SIZE + 1, 2));
+    }
+
+    /**
+     * Pure: colour of a slot's stack count, the selected slot's ink like its warning icon. Neutral's
+     * {@code LIGHT} is dark ink, about 1.5:1 on its graphite {@code SELECT}.
+     */
+    public static int slotCountColor(boolean selected) {
+        return selected ? TacticalBoardTheme.ON_SELECT : TacticalBoardTheme.LIGHT;
     }
 
     /** Pure: slot outline colour; an error wins over the selection. */

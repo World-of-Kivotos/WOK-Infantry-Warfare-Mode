@@ -1,10 +1,12 @@
 package com.wok.infantry.uitest;
 
+import com.wok.infantry.client.screen.TacticalLivery;
 import net.minecraft.client.gui.screens.Screen;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -19,8 +21,16 @@ import java.util.function.Consumer;
  * violation on a required tier; surfaces still waiting for their batch are only reported. The
  * runner also requires a migrated screen to report the case's surface id through
  * {@code UiSurfaceInfo} and to lay out as 480×360 on 960×720 at GUI 1.
- * Screenshots are named {@code wok_ui_<surface>_<state>_<tier>.png} unless a legacy name is pinned
- * with {@link Builder#file}.
+ *
+ * <p><b>Livery (0.5.0-beta.3).</b> A case that captures a tablet screen names the faction livery
+ * it expects ({@link Builder#livery} or, when the case fixes it with
+ * {@code TacticalLivery.pinForAcceptance}, {@link Builder#pinLivery}): its id and screenshot get
+ * the suffix {@code -academy}, {@code -caesar} or {@code -neutral}, and the runner checks the
+ * device the screen drew ({@link UiDeviceChecks}). Cases without a livery (HUD, legacy, the old
+ * full-frame screens) keep their names.
+ *
+ * <p>Screenshots are named {@code wok_ui_<surface>_<state>[-<livery>]_<tier>.png} unless a legacy
+ * name is pinned with {@link Builder#file}.
  */
 public final class UiCase {
     /** Opens the screen of a tier; {@code null} captures the HUD with no screen open. */
@@ -53,6 +63,8 @@ public final class UiCase {
     private final int budgetTicks;
     private final boolean hudCapture;
     private final List<Consumer<UiCaseContext>> cleanups;
+    private final TacticalLivery.Livery livery;
+    private final boolean liveryPinned;
 
     private UiCase(Builder builder) {
         this.surfaceId = builder.surfaceId;
@@ -68,15 +80,52 @@ public final class UiCase {
         this.budgetTicks = builder.budgetTicks;
         this.hudCapture = builder.hudCapture;
         this.cleanups = List.copyOf(builder.cleanups);
+        this.livery = builder.livery;
+        this.liveryPinned = builder.liveryPinned;
     }
 
     public static Builder builder(String surfaceId, String stateId) {
         return new Builder(surfaceId, stateId);
     }
 
-    /** {@code <surface>.<state>}, e.g. {@code kit.confirm}. */
+    /**
+     * {@code <surface>.<state>[-<livery>]}, e.g. {@code kit.confirm-caesar}; cases without a livery
+     * keep {@code <surface>.<state>}.
+     */
     public String id() {
-        return surfaceId + "." + stateId;
+        return surfaceId + "." + stateId + liverySuffix(livery);
+    }
+
+    /**
+     * The faction livery the captured tablet screen must be painted in, or {@code null} when the
+     * case captures no tablet device (HUD, legacy and old full-frame screens).
+     */
+    public TacticalLivery.Livery livery() {
+        return livery;
+    }
+
+    /**
+     * Whether the runner pins {@link #livery()} with {@code TacticalLivery.pinForAcceptance} for
+     * the case (gallery and formation fixtures); otherwise the livery is the viewer's own, as the
+     * live resolver decides it from the battle and catalog caches (squad fixtures).
+     */
+    public boolean liveryPinned() {
+        return liveryPinned;
+    }
+
+    /** {@code academy}, {@code caesar}, {@code neutral}, or "" without a livery. */
+    public String liveryId() {
+        return liveryId(livery);
+    }
+
+    /** Lower-case id of {@code livery} ("" for {@code null}). */
+    public static String liveryId(TacticalLivery.Livery livery) {
+        return livery == null ? "" : livery.name().toLowerCase(Locale.ROOT);
+    }
+
+    /** {@code -academy}, {@code -caesar}, {@code -neutral}, or "" without a livery. */
+    public static String liverySuffix(TacticalLivery.Livery livery) {
+        return livery == null ? "" : "-" + liveryId(livery);
     }
 
     public String surfaceId() {
@@ -85,6 +134,14 @@ public final class UiCase {
 
     public String stateId() {
         return stateId;
+    }
+
+    /**
+     * {@code <state>[-<livery>]}, e.g. {@code squads-caesar}: the key observation lines use, so
+     * the same state in two liveries never shares a line.
+     */
+    public String stateKey() {
+        return stateId + liverySuffix(livery);
     }
 
     /** Selection group for {@code -PuiCases}, e.g. {@code kit} or {@code legacy}. */
@@ -141,22 +198,32 @@ public final class UiCase {
         return cleanups;
     }
 
-    /** Screenshot of {@code tier}: a pinned legacy name or {@code wok_ui_<surface>_<state>_<tier>.png}. */
+    /**
+     * Screenshot of {@code tier}: a pinned legacy name or
+     * {@code wok_ui_<surface>_<state>[-<livery>]_<tier>.png}.
+     */
     public String fileName(UiTier tier) {
         String pinned = fileNames.get(tier);
         return pinned != null ? pinned
-                : "wok_ui_" + surfaceId + "_" + stateId + "_" + tier.id() + ".png";
+                : "wok_ui_" + surfaceId + "_" + stateId + liverySuffix(livery) + "_" + tier.id()
+                + ".png";
     }
 
-    /** Whether {@code -PuiCases} selects this case (empty filter: every case). */
+    /**
+     * Whether {@code -PuiCases} selects this case (empty filter: every case): its group, surface,
+     * id, {@code <surface>.<state>} (every livery of a state) or its livery id ({@code caesar}).
+     */
     public boolean selectedBy(String filter) {
         if (filter == null || filter.isBlank()) {
             return true;
         }
+        String state = surfaceId + "." + stateId;
         for (String token : filter.split(UiTier.LIST_SEPARATORS)) {
             String trimmed = token.trim();
             if (!trimmed.isEmpty() && (trimmed.equals(group) || id().equals(trimmed)
-                    || id().startsWith(trimmed + ".") || surfaceId.equals(trimmed))) {
+                    || state.equals(trimmed) || id().startsWith(trimmed + ".")
+                    || surfaceId.equals(trimmed)
+                    || livery != null && liveryId().equals(trimmed))) {
                 return true;
             }
         }
@@ -177,6 +244,8 @@ public final class UiCase {
         private int budgetTicks = DEFAULT_BUDGET_TICKS;
         private boolean hudCapture;
         private final List<Consumer<UiCaseContext>> cleanups = new ArrayList<>();
+        private TacticalLivery.Livery livery;
+        private boolean liveryPinned;
 
         private Builder(String surfaceId, String stateId) {
             this.surfaceId = Objects.requireNonNull(surfaceId, "surfaceId");
@@ -246,6 +315,23 @@ public final class UiCase {
         /** Restores client state after the case (fixtures a case installed outside a screen). */
         public Builder cleanup(Consumer<UiCaseContext> value) {
             cleanups.add(value);
+            return this;
+        }
+
+        /**
+         * The livery the tablet screen resolves for itself from the fixture (battle side, or the
+         * catalog faction): named and checked, never pinned.
+         */
+        public Builder livery(TacticalLivery.Livery value) {
+            this.livery = value;
+            this.liveryPinned = false;
+            return this;
+        }
+
+        /** The livery the runner pins for the whole case ({@code pinForAcceptance}), and checks. */
+        public Builder pinLivery(TacticalLivery.Livery value) {
+            this.livery = value;
+            this.liveryPinned = value != null;
             return this;
         }
 
