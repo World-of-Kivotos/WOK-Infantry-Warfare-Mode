@@ -407,14 +407,20 @@ public final class TacticalBoardChrome {
     }
 
     /**
-     * Places {@code tabs} as the page keys of the bottom bezel, between the hardware keys of
-     * {@code hints} (the screen's {@link TacticalScreen#bezelHints()}); call from
-     * {@link TacticalScreen#initTactical()} after adding the strip. Until the bezel keys exist
-     * the strip still goes into the header slot of {@link #placeTabs}.
+     * Places {@code tabs} (a {@link TacticalTabStrip.Skin#BEZEL} strip, may be {@code null}) as
+     * the page keys of the bottom bezel, between the hardware Esc and R keys of {@code hints} (the
+     * screen's {@link TacticalScreen#bezelHints()}); call from
+     * {@link TacticalScreen#initTactical()} after adding the strip and registering the keys with
+     * {@link TacticalScreen#setBezelKeys}. The layout is {@link TacticalBezelPlan}'s; the result
+     * is that plan (callers may ignore it).
      */
-    public static void placeBezel(Font font, TacticalShellLayout layout, TacticalTabStrip tabs,
-                                  List<KeyHint> hints) {
-        placeTabs(font, layout, Component.empty(), tabs);
+    public static TacticalBezelPlan placeBezel(Font font, TacticalShellLayout layout,
+                                               TacticalTabStrip tabs, List<KeyHint> hints) {
+        TacticalBezelPlan plan = TacticalBezelPlan.plan(font, layout, hints);
+        if (tabs != null) {
+            tabs.placeOnBezel(plan);
+        }
+        return plan;
     }
 
     private static void applyTabs(TacticalTabStrip tabs, HeaderPlan plan,

@@ -76,15 +76,16 @@ public enum BattleTab {
     }
 
     /**
-     * Header tab strip of the battle terminal with {@code current} selected. {@code onSelect}
-     * receives the requested tab; screens usually switch in place or call
+     * Page keys of the battle terminal's bottom bezel ({@link TacticalTabStrip.Skin#BEZEL}) with
+     * {@code current} pressed; place them with {@link TacticalBoardChrome#placeBezel}.
+     * {@code onSelect} receives the requested tab; screens usually switch in place or call
      * {@link BattleTerminalNav#navigate}.
      */
     public static TacticalTabStrip strip(BattleTab current,
                                          Function<BattleTab, Component> disabledReason,
                                          Consumer<BattleTab> onSelect) {
         // uiTest clicks a terminal page as "terminal.tabs/<tab id>" (no-op outside the probe).
-        return UiLayoutProbe.tag(new TacticalTabStrip(TacticalTabStrip.Skin.HEADER,
+        return UiLayoutProbe.tag(new TacticalTabStrip(TacticalTabStrip.Skin.BEZEL,
                 tabs(disabledReason), current == null ? 0 : current.ordinal(),
                 index -> {
                     if (onSelect != null && index >= 0 && index < values().length) {

@@ -785,10 +785,6 @@ public final class SquadScreen extends TacticalScreen
     private List<TacticalBoardChrome.KeyHint> hints() {
         List<TacticalBoardChrome.KeyHint> hints = new ArrayList<>();
         hints.add(TacticalBoardChrome.KeyHint.close());
-        TacticalTabStrip strip = tabStrip();
-        if (strip != null && strip.canCycle()) {
-            hints.add(TacticalBoardChrome.KeyHint.switchTab());
-        }
         hints.add(TacticalBoardChrome.KeyHint.literal("R",
                 SquadBoardText.t(SquadBoardText.HINT_REFRESH)));
         return hints;

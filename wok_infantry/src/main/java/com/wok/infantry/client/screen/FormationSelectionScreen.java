@@ -876,10 +876,6 @@ public final class FormationSelectionScreen extends TacticalScreen
         }
         hints.add(TacticalBoardChrome.KeyHint.of(FormationText.hintWheel(),
                 detailView ? FormationText.hintScroll() : FormationText.hintBrowse()));
-        if (tabStrip() != null && tabStrip().canCycle()) {
-            // Before the lock every other tab is disabled and Ctrl+Tab does nothing.
-            hints.add(TacticalBoardChrome.KeyHint.switchTab());
-        }
         return hints;
     }
 

@@ -202,7 +202,6 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
                 .withIdentity(tr("identity"))
                 .withTabs(pages)
                 .withHints(TacticalBoardChrome.KeyHint.close(),
-                        TacticalBoardChrome.KeyHint.switchTab(),
                         ClientBootstrap.keyHint(KeyBindingDefaults.Binding.TERMINAL,
                                 tr("hint.terminal")))
                 .withFeedback(TacticalBoardChrome.Feedback.success(tr("feedback")));
