@@ -65,8 +65,14 @@ class TacticalDrawTest {
     void rowFillFollowsSelectionHoverEmptyAndStripes() {
         TacticalDraw.RowState normal = TacticalDraw.RowState.NORMAL;
 
+        assertEquals(TacticalBoardTheme.SELECT, TacticalDraw.rowFill(normal.withSelected(true),
+                false));
+        assertEquals(TacticalBoardTheme.SELECT_HOVER, TacticalDraw.rowFill(normal.withSelected(true)
+                .withHovered(true), false), "hovering the selection lights it one step");
         assertEquals(TacticalBoardTheme.SELECT, TacticalDraw.rowFill(normal.withSelected(true)
-                .withHovered(true), false));
+                .withHovered(true).withDisabled(true), false), "not on a disabled selection");
+        assertEquals(TacticalBoardTheme.SELECT, TacticalDraw.rowFill(normal.withSelected(true)
+                .withAlt(true), true), "the selection wins over stripes and the empty fill");
         assertEquals(TacticalBoardTheme.ROW_HOVER, TacticalDraw.rowFill(normal.withHovered(true),
                 false));
         assertEquals(TacticalBoardTheme.WELL_ROW, TacticalDraw.rowFill(normal.withHovered(true)
@@ -75,6 +81,64 @@ class TacticalDrawTest {
         assertEquals(TacticalBoardTheme.WELL_ROW_ALT, TacticalDraw.rowFill(normal.withAlt(true),
                 false));
         assertEquals(TacticalBoardTheme.WELL_ROW, TacticalDraw.rowFill(null, false));
+    }
+
+    @Test
+    void selectedRowGetsADarkEdgeLineThenTheLightBar() {
+        UiRect row = new UiRect(10, 4, 200, 21);
+
+        assertEquals(new UiRect(10, 4, 11, 21), TacticalDraw.rowSelectionEdge(row),
+                "1px SELECT_EDGE at the row's left edge");
+        assertEquals(new UiRect(11, 4, 14, 21), TacticalDraw.rowSelectionBar(row),
+                "then the 3px light bar on a row at least 16 tall");
+        assertEquals(new UiRect(11, 0, 13, 13), TacticalDraw.rowSelectionBar(
+                new UiRect(10, 0, 200, 13)), "2px on a tight row");
+        assertTrue(TacticalDraw.rowSelectionBar(new UiRect(10, 0, 11, 13)).isEmpty(),
+                "a 1px row has room for the edge line only");
+        assertTrue(TacticalDraw.rowSelectionBar(row).right()
+                        < TacticalDraw.rowLayout(row, false, false, false, 0).contentLeft(),
+                "a 1px gap stays between the bar and the row's icon or title (left + 5)");
+    }
+
+    @Test
+    void hoveredSelectionIsTheOnlyHoverOnASelectedRow() {
+        TacticalDraw.RowState selected = TacticalDraw.RowState.NORMAL.withSelected(true)
+                .withHovered(true);
+
+        assertTrue(selected.brightensSelection());
+        assertFalse(selected.showsHover(), "the plain row hover never shows on the selection");
+        assertFalse(selected.withDisabled(true).brightensSelection());
+        assertFalse(TacticalDraw.RowState.NORMAL.withHovered(true).brightensSelection());
+    }
+
+    @Test
+    void rowIconTurnsOnSelectOnTheSelection() {
+        assertEquals(TacticalBoardTheme.FAINT,
+                TacticalDraw.rowIconColor(true, true, TacticalBoardTheme.SUCCESS_B));
+        assertEquals(TacticalBoardTheme.ON_SELECT,
+                TacticalDraw.rowIconColor(false, true, TacticalBoardTheme.SUCCESS_B));
+        assertEquals(TacticalBoardTheme.SUCCESS_B,
+                TacticalDraw.rowIconColor(false, false, TacticalBoardTheme.SUCCESS_B));
+        assertEquals(TacticalBoardTheme.LIGHT_MUTED, TacticalDraw.rowIconColor(false, false, 0));
+    }
+
+    @Test
+    void keyValueWritesAttentionOrangeInTheReadableTextColour() {
+        assertEquals(TacticalBoardTheme.TEXT, TacticalDraw.kvValueColor(0));
+        assertEquals(TacticalBoardTheme.ACCENT_TEXT,
+                TacticalDraw.kvValueColor(TacticalBoardTheme.ACCENT));
+        assertEquals(TacticalBoardTheme.SUCCESS,
+                TacticalDraw.kvValueColor(TacticalBoardTheme.SUCCESS));
+        assertEquals(TacticalBoardTheme.MUTED, TacticalDraw.kvValueColor(TacticalBoardTheme.MUTED));
+    }
+
+    @Test
+    void chipsOnDarkSurfacesSitOnTheWell() {
+        assertEquals(TacticalBoardTheme.WELL,
+                TacticalDraw.chipFill(TacticalBoardTheme.DANGER_B, true));
+        assertEquals(0x26000000 | (TacticalBoardTheme.SUCCESS & 0x00FFFFFF),
+                TacticalDraw.chipFill(TacticalBoardTheme.SUCCESS, false),
+                "a light wash of the colour on boards");
     }
 
     @Test
