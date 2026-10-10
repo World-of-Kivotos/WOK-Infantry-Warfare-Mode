@@ -1,5 +1,6 @@
 {
   "uitest.wok_infantry.kit.title": "WOK INFANTRY // UI kit",
+  "uitest.wok_infantry.kit.title_short": "UI kit",
   "uitest.wok_infantry.kit.identity": "Academy · Alpha · Leader",
   "uitest.wok_infantry.kit.identity.caesar": "Caesar · Alpha · Leader",
   "uitest.wok_infantry.kit.identity.neutral": "No faction",
@@ -78,6 +79,7 @@
   "uitest.wok_infantry.kit.mapicons.dark": "Dark terrain",
   "uitest.wok_infantry.kit.mapicons.paper": "Paper map",
   "uitest.wok_infantry.mapicons.title": "WOK INFANTRY // Map markers",
+  "uitest.wok_infantry.mapicons.title_short": "Map markers",
   "uitest.wok_infantry.mapicons.identity": "Squad-style silhouettes",
   "uitest.wok_infantry.mapicons.page.dark": "Dark",
   "uitest.wok_infantry.mapicons.page.paper": "Paper",

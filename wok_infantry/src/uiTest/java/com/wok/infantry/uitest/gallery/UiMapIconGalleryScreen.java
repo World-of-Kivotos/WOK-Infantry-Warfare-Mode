@@ -51,10 +51,12 @@ public final class UiMapIconGalleryScreen extends TacticalScreen implements UiSu
     private UiRect sheet = UiRect.EMPTY;
     private UiRect strip = UiRect.EMPTY;
     private TacticalTabStrip pages;
+    private Component statusTitle;
 
     public UiMapIconGalleryScreen(boolean paper) {
         super(tr("title"));
         this.paper = paper;
+        this.statusTitle = title;
     }
 
     @Override
@@ -98,6 +100,9 @@ public final class UiMapIconGalleryScreen extends TacticalScreen implements UiSu
         addRenderableWidget(pages);
         setTabStrip(pages);
         TacticalBoardChrome.placeBezel(font, shell, pages, bezelHints());
+        // Short title on narrow bars, as the component gallery and the terminals.
+        statusTitle = TacticalBoardChrome.shellTitle(font, shell, title, tr("title_short"), pages,
+                UiKitGalleryScreen.SHORT_TITLE_BELOW);
     }
 
     private TacticalDraw.PanelStyle sheetStyle() {
@@ -109,7 +114,7 @@ public final class UiMapIconGalleryScreen extends TacticalScreen implements UiSu
     @Override
     protected void renderTactical(GuiGraphics graphics, int mouseX, int mouseY,
                                   float partialTick) {
-        drawShell(graphics, TacticalBoardChrome.ShellSpec.of(title)
+        drawShell(graphics, TacticalBoardChrome.ShellSpec.of(statusTitle)
                 .withIdentity(tr("identity"))
                 .withTabs(pages));
         renderSheet(graphics);

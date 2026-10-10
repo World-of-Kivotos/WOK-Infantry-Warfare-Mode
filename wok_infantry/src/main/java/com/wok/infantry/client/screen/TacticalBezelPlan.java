@@ -4,6 +4,7 @@ import net.minecraft.client.gui.Font;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * Pure layout of the device's bottom bezel (the preview's {@code pageKeys} in
@@ -23,7 +24,10 @@ import java.util.List;
  *       between page keys {@code 2 / 4 / 4}, gap to Esc and R {@code 5 / 12 / 12}.</li>
  * </ul>
  * A bezel too low for LEDs and a readable key (less than {@link #MIN_KEY_HEIGHT}) drops the LED
- * row and lets the keys use its height.
+ * row and lets the keys use its height. When the page keys would only fit as a pager between
+ * "Esc 返回" and "R 刷新" (long translations on the compact class), Esc and R shrink to their key
+ * names first ({@link #plan(Font, TacticalShellLayout, TacticalBoardChrome.KeyHint,
+ * TacticalBoardChrome.KeyHint, TacticalTabStrip)}).
  *
  * @param density   size class of the screen
  * @param bezel     the whole bezel strip; page keys centre on its middle
@@ -105,6 +109,18 @@ public record TacticalBezelPlan(TacticalShellLayout.Density density, UiRect beze
      */
     public static TacticalBezelPlan plan(Font font, TacticalShellLayout layout,
                                          List<TacticalBoardChrome.KeyHint> hints) {
+        return plan(font, layout, hints, null);
+    }
+
+    /**
+     * {@link #plan(Font, TacticalShellLayout, List)} for the page keys of {@code pages} (a
+     * {@link TacticalTabStrip.Skin#BEZEL} strip, may be {@code null}): see
+     * {@link #plan(Font, TacticalShellLayout, TacticalBoardChrome.KeyHint,
+     * TacticalBoardChrome.KeyHint, TacticalTabStrip)}.
+     */
+    public static TacticalBezelPlan plan(Font font, TacticalShellLayout layout,
+                                         List<TacticalBoardChrome.KeyHint> hints,
+                                         TacticalTabStrip pages) {
         TacticalBoardChrome.KeyHint esc = null;
         TacticalBoardChrome.KeyHint refresh = null;
         for (TacticalBoardChrome.KeyHint hint : hints == null
@@ -118,7 +134,82 @@ public record TacticalBezelPlan(TacticalShellLayout.Density density, UiRect beze
                 refresh = hint;
             }
         }
-        return plan(font, layout, esc, refresh);
+        return plan(font, layout, esc, refresh, pages);
+    }
+
+    /**
+     * Plans the bezel of {@code layout} for the Esc and R keys and the page keys of {@code pages}
+     * (a {@link TacticalTabStrip.Skin#BEZEL} strip; {@code null} or another skin plans the keys
+     * alone). The Esc and R caps carry their action ("Esc 返回") unless the page keys would then
+     * fall back to the {@code ‹ name n/m ›} pager: before that, the caps shrink to the key name
+     * ({@link #keyOnlyWidths}); the action stays in the key's tooltip and narration
+     * ({@link BezelKey} draws the name alone when the action does not fit). When even that does
+     * not let the page keys show, the full caps stay and the strip pages.
+     */
+    public static TacticalBezelPlan plan(Font font, TacticalShellLayout layout,
+                                         TacticalBoardChrome.KeyHint esc,
+                                         TacticalBoardChrome.KeyHint refresh,
+                                         TacticalTabStrip pages) {
+        TacticalBezelPlan full = plan(font, layout, esc, refresh);
+        if (font == null || pages == null || pages.skin() != TacticalTabStrip.Skin.BEZEL
+                || pages.tabs().isEmpty()) {
+            return full;
+        }
+        TacticalShellLayout.Density density = layout.density();
+        return planFitting(layout.bezel(), density, pairWidth(font, density, esc),
+                keyWidth(font, density, esc), pairWidth(font, density, refresh),
+                keyWidth(font, density, refresh),
+                candidate -> pages.modeOn(font, candidate) != TacticalTabStrip.Mode.PAGER);
+    }
+
+    /**
+     * Pure rule of {@link #plan(Font, TacticalShellLayout, TacticalBoardChrome.KeyHint,
+     * TacticalBoardChrome.KeyHint, TacticalTabStrip)}: the plan with the full Esc / R caps
+     * ({@code escWidth}, {@code refreshWidth}, 0 = no key) when {@code pagesFit} accepts it,
+     * else the first accepted plan of {@link #keyOnlyWidths} (key-name caps as wide as a page key,
+     * then as narrow as the name, {@code escKeyWidth} / {@code refreshKeyWidth}), else the full
+     * caps again.
+     */
+    static TacticalBezelPlan planFitting(UiRect bezel, TacticalShellLayout.Density density,
+                                         int escWidth, int escKeyWidth, int refreshWidth,
+                                         int refreshKeyWidth,
+                                         Predicate<TacticalBezelPlan> pagesFit) {
+        TacticalBezelPlan full = plan(bezel, density, escWidth, refreshWidth);
+        if (pagesFit.test(full)) {
+            return full;
+        }
+        int[] esc = keyOnlyWidths(density, escWidth, escKeyWidth);
+        int[] refresh = keyOnlyWidths(density, refreshWidth, refreshKeyWidth);
+        for (int index = 0; index < esc.length; index++) {
+            TacticalBezelPlan shrunk = plan(bezel, density, esc[index], refresh[index]);
+            if (pagesFit.test(shrunk)) {
+                return shrunk;
+            }
+        }
+        return full;
+    }
+
+    /**
+     * The key-name cap widths tried before the pager, widest first: as wide as a page key
+     * ({@link #minKeyWidth}, so the hardware keys still look like keys), then the bare name and
+     * its padding ({@code keyWidth}). Never wider than the full cap ({@code fullWidth}); a missing
+     * key ({@code fullWidth} 0) stays 0.
+     */
+    static int[] keyOnlyWidths(TacticalShellLayout.Density density, int fullWidth, int keyWidth) {
+        if (fullWidth <= 0) {
+            return new int[]{0, 0};
+        }
+        int bare = Math.min(fullWidth, Math.max(0, keyWidth));
+        return new int[]{Math.min(fullWidth, Math.max(bare, minKeyWidth(density))), bare};
+    }
+
+    /** Width of an Esc or R cap that shows only the key name ({@code null}: 0). */
+    static int keyWidth(Font font, TacticalShellLayout.Density density,
+                        TacticalBoardChrome.KeyHint hint) {
+        if (hint == null || font == null) {
+            return 0;
+        }
+        return font.width(hint.key()) + pad(density);
     }
 
     /**
@@ -187,7 +278,11 @@ public record TacticalBezelPlan(TacticalShellLayout.Density density, UiRect beze
 
     /** Narrowest page key. */
     public int minKeyWidth() {
-        return tight() ? 28 : 38;
+        return minKeyWidth(density);
+    }
+
+    static int minKeyWidth(TacticalShellLayout.Density density) {
+        return density == TacticalShellLayout.Density.COMPACT ? 28 : 38;
     }
 
     /** Gap between the page keys and the Esc / R keys. */

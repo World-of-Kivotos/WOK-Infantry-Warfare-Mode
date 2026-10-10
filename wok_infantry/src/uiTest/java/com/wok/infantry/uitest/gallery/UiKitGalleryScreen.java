@@ -104,6 +104,8 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
     private static final String REFRESH_KEY = "screen.wok_infantry.squad_board.hint.refresh";
     private static final int LONG_KEY_WIDTH = 140;
     private static final int PAGER_TABS_WIDTH = 120;
+    /** Below this layout width the status bar shows the short title (the formation page's rule). */
+    static final int SHORT_TITLE_BELOW = 440;
 
     /** A key drawn in a forced state (hover and focus cannot be held by a real widget). */
     private record ForcedKey(String uiId, UiRect rect, Component label,
@@ -138,10 +140,12 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
     private UiRect emptyWell = UiRect.EMPTY;
     private TacticalConfirmDialog dialog;
     private boolean confirmed;
+    private Component statusTitle;
 
     public UiKitGalleryScreen(Page page) {
         super(tr("title"));
         this.page = page == null ? Page.CONTROLS : page;
+        this.statusTitle = title;
     }
 
     // ---- surface info / test access -------------------------------------------------------------
@@ -210,6 +214,10 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
         addRenderableWidget(pages);
         setTabStrip(pages);
         TacticalBoardChrome.placeBezel(font, shell, pages, bezelHints());
+        // The terminals' title rule: below 440 (or when "title › page" would be cut) the title
+        // drops "WOK步战 // ", so a narrow status bar keeps room for the identity.
+        statusTitle = TacticalBoardChrome.shellTitle(font, shell, title, tr("title_short"), pages,
+                SHORT_TITLE_BELOW);
     }
 
     private void switchPage(Page next) {
@@ -218,7 +226,7 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
     }
 
     private TacticalBoardChrome.ShellSpec spec() {
-        return TacticalBoardChrome.ShellSpec.of(title)
+        return TacticalBoardChrome.ShellSpec.of(statusTitle)
                 .withIdentity(identity(frameLivery()))
                 .withTabs(pages)
                 .withFeedback(TacticalBoardChrome.Feedback.success(feedback()));
@@ -635,13 +643,42 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
 
     // ---- page: cards ----------------------------------------------------------------------------
 
+    /**
+     * Cards beside the status panel only when the four state cards keep their labels whole in
+     * half the width (the D2 content is narrower than the old board: 416px at 480×360 and 403px at
+     * 427×240 cut "Selected" / "Disabled"); otherwise the two panels stack.
+     */
     private void initCards(UiRect content) {
         int gap = metrics.gap();
-        List<UiRect> halves = content.width() >= 400
-                ? content.cols(gap, UiRect.Size.STAR, UiRect.Size.STAR)
-                : content.rows(gap, UiRect.Size.STAR, UiRect.Size.STAR);
+        List<UiRect> halves = content.cols(gap, UiRect.Size.STAR, UiRect.Size.STAR);
+        boolean beside = content.width() >= 400 && cardLabelsFit(halves.get(0));
+        if (!beside) {
+            halves = content.rows(gap, UiRect.Size.STAR, UiRect.Size.STAR);
+        }
         regionA = halves.get(0);
         regionB = halves.get(1);
+    }
+
+    /** Labels of the four state cards, in {@link TacticalButtonStyle.CardState} order. */
+    private static Component[] cardLabels() {
+        return new Component[]{tr("state.normal"), tr("state.hover"), tr("state.selected_short"),
+                tr("state.disabled")};
+    }
+
+    /** Whether every card label fits its card when the cards panel is {@code region}. */
+    private boolean cardLabelsFit(UiRect region) {
+        UiRect c = TacticalDraw.panelContent(region, metrics, cardsStyle());
+        int room = cardWidth(c) - 8;
+        for (Component label : cardLabels()) {
+            if (font.width(label) > room) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private int cardWidth(UiRect cards) {
+        return (cards.width() - 3 * metrics.gap()) / 4;
     }
 
     private TacticalDraw.PanelStyle cardsStyle() {
@@ -658,10 +695,9 @@ public final class UiKitGalleryScreen extends TacticalScreen implements UiSurfac
                 regionA.right(), regionA.bottom(), true);
         UiRect c = TacticalDraw.panel(graphics, font, regionA, metrics, cardsStyle());
         int cardHeight = Math.min(metrics.buttonHeight() * 2, 28);
-        int cardWidth = (c.width() - 3 * gap) / 4;
+        int cardWidth = cardWidth(c);
         TacticalButtonStyle.CardState[] states = TacticalButtonStyle.CardState.values();
-        Component[] labels = {tr("state.normal"), tr("state.hover"), tr("state.selected_short"),
-                tr("state.disabled")};
+        Component[] labels = cardLabels();
         int y = c.top();
         if (fits(y, cardHeight, c.bottom())) {
             for (int index = 0; index < 4; index++) {

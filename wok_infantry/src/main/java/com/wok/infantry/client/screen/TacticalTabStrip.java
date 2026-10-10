@@ -333,6 +333,18 @@ public final class TacticalTabStrip extends AbstractWidget {
                 preferredWidth(font, true, compact));
     }
 
+    /**
+     * The mode this strip would show as the page keys of {@code plan} (its page slot), without
+     * placing it there: what {@link TacticalBezelPlan} measures before it lets the Esc and R caps
+     * shrink. Equal to {@link #mode} once {@link #placeOnBezel} put the strip on {@code plan}.
+     */
+    Mode modeOn(Font font, TacticalBezelPlan plan) {
+        int count = tabs.size();
+        return chooseMode(plan.pages().width(),
+                plan.rowWidth(count, plan.keyWidth(widestLabel(font, Mode.FULL))),
+                plan.rowWidth(count, plan.keyWidth(widestLabel(font, Mode.SHORT))));
+    }
+
     private int naturalWidth(Font font, Tab tab, Mode mode, boolean compactHeader) {
         int pad = skin == Skin.BOARD ? BOARD_PAD
                 : compactHeader ? HEADER_PAD_COMPACT : HEADER_PAD;

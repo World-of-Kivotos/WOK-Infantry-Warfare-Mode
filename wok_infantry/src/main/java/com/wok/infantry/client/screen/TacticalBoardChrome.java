@@ -337,6 +337,35 @@ public final class TacticalBoardChrome {
         public UiRect battery() {
             return new UiRect(batteryX, textY + 1, batteryX + 11, textY + 7);
         }
+
+        /**
+         * Hover box of a status-bar text: its drawn span across the whole bar height, or EMPTY
+         * when it is not shown.
+         */
+        public UiRect box(StatusText text) {
+            return text == null || !text.shown() ? UiRect.EMPTY
+                    : new UiRect(text.x(), bar.top(), text.right(), bar.bottom());
+        }
+
+        /**
+         * The whole text behind a shortened part of the bar at ({@code x}, {@code y}), or
+         * {@code null}: the receipt anywhere on its pill, the title on its drawn span, and the
+         * identity on its span when {@link #fitIdentity} dropped parts of it or cut it. The
+         * screen shows it as the hover tooltip ({@link TacticalScreen}).
+         */
+        public String fullTextAt(double x, double y) {
+            if (feedback.truncated() && pill.contains(x, y)) {
+                return feedback.full();
+            }
+            if (title.truncated() && box(title).contains(x, y)) {
+                return title.full();
+            }
+            if (identity.shown() && !identity.text().equals(identity.full())
+                    && box(identity).contains(x, y)) {
+                return identity.full();
+            }
+            return null;
+        }
     }
 
     /**
@@ -458,6 +487,38 @@ public final class TacticalBoardChrome {
         return statusTitle(title == null ? "" : title.getString(), page);
     }
 
+    /**
+     * A terminal's status-bar title (preview {@code shellTitle}): {@code full} on layouts at least
+     * {@code shortBelow} wide where "full › page" fits the bar's title room without an ellipsis
+     * for every page of {@code pages} (short names on the compact class), else {@code shortTitle}
+     * (the title without "WOK步战 // "), so a narrow bar keeps its room for the identity. One answer
+     * for all pages: a page key never makes the title jump.
+     */
+    public static Component shellTitle(Font font, TacticalShellLayout layout, Component full,
+                                       Component shortTitle, TacticalTabStrip pages,
+                                       int shortBelow) {
+        if (layout.width() < shortBelow) {
+            return shortTitle;
+        }
+        int room = planStatus(font, layout, ShellSpec.of(Component.empty())).title().maxWidth();
+        List<String> names = new ArrayList<>();
+        if (pages != null) {
+            for (TacticalTabStrip.Tab tab : pages.tabs()) {
+                names.add((layout.tight() ? tab.shortLabel() : tab.label()).getString());
+            }
+        }
+        if (names.isEmpty()) {
+            names.add(null);
+        }
+        String head = full == null ? "" : full.getString();
+        for (String page : names) {
+            if (font.width(statusTitle(head, page)) > room) {
+                return shortTitle;
+            }
+        }
+        return full;
+    }
+
     /** Pure part of {@link #statusTitle(Component, TacticalTabStrip, boolean)}. */
     static String statusTitle(String title, String page) {
         String head = title == null ? "" : title;
@@ -556,12 +617,14 @@ public final class TacticalBoardChrome {
      * the page keys of the bottom bezel, between the hardware Esc and R keys of {@code hints} (the
      * screen's {@link TacticalScreen#bezelHints()}); call from
      * {@link TacticalScreen#initTactical()} after adding the strip and registering the keys with
-     * {@link TacticalScreen#setBezelKeys}. The layout is {@link TacticalBezelPlan}'s; the result
-     * is that plan (callers may ignore it).
+     * {@link TacticalScreen#setBezelKeys}. The layout is {@link TacticalBezelPlan}'s, Esc and R
+     * shrunk to their key names when the page keys would otherwise page (the screen's own keys
+     * follow the same plan, {@link TacticalScreen#setTabStrip}); the result is that plan
+     * (callers may ignore it).
      */
     public static TacticalBezelPlan placeBezel(Font font, TacticalShellLayout layout,
                                                TacticalTabStrip tabs, List<KeyHint> hints) {
-        TacticalBezelPlan plan = TacticalBezelPlan.plan(font, layout, hints);
+        TacticalBezelPlan plan = TacticalBezelPlan.plan(font, layout, hints, tabs);
         if (tabs != null) {
             tabs.placeOnBezel(plan);
         }
@@ -649,6 +712,10 @@ public final class TacticalBoardChrome {
         if (title.shown()) {
             TextFit.draw(graphics, font, title.full(), title.x(), y, title.maxWidth(),
                     TacticalBoardTheme.LIGHT, TextFit.Align.LEFT);
+            if (title.truncated()) {
+                // Like the pill: the whole title while the mouse rests on it.
+                UiLayoutProbe.tipped(graphics, title.x(), y);
+            }
         }
 
         Feedback feedback = spec.feedback();
@@ -673,6 +740,7 @@ public final class TacticalBoardChrome {
                 int right = identity.right();
                 TextFit.draw(graphics, font, identity.full(), right - identity.maxWidth(), y,
                         identity.maxWidth(), skin.ident(), TextFit.Align.RIGHT);
+                UiLayoutProbe.tipped(graphics, identity.x(), y);
             } else {
                 graphics.drawString(font, identity.text(), identity.x(), y, skin.ident(), false);
                 UiLayoutProbe.rawText(graphics, font, identity.text(), identity.x(), y);

@@ -288,8 +288,10 @@ public final class BezelKey extends AbstractWidget {
     }
 
     /**
-     * Draws a key cap: outline with clipped corners, face, lips and (disabled) the hatch; at most
-     * five fills and one hatch blit.
+     * Draws a key cap: outline with clipped corners, face, lips and (disabled) the hatch, laid
+     * twice: the board's single {@link TacticalBoardTheme#HATCH} pass nearly vanished on the pale
+     * Neutral and the red Caesar caps, so the disabled key read only through its {@code KEY_SUB}
+     * text. At most five fills and two hatch blits.
      */
     static void drawCap(GuiGraphics graphics, UiRect key, Cap cap) {
         if (key.width() < 3 || key.height() < 3) {
@@ -307,6 +309,7 @@ public final class BezelKey extends AbstractWidget {
             graphics.fill(left + 1, bottom - 2, right - 1, bottom - 1, cap.bottomLip());
         }
         if (cap.hatch()) {
+            TacticalButtonStyle.hatch(graphics, left + 1, top + 1, right - 1, bottom - 1);
             TacticalButtonStyle.hatch(graphics, left + 1, top + 1, right - 1, bottom - 1);
         }
     }

@@ -907,7 +907,7 @@ public final class FormationSelectionScreen extends TacticalScreen
         }
         FormationVoteModel model = model();
         TacticalBoardChrome.ShellSpec spec = TacticalBoardChrome.ShellSpec
-                .of(FormationText.title(width))
+                .of(FormationText.title(font, shellLayout(), tabStrip()))
                 .withIdentity(FormationText.identity(model, ClientBattleState.snapshot()))
                 .withLink(model.waiting() ? TacticalBoardChrome.LinkState.WAIT
                         : TacticalBoardChrome.LinkState.OK)
@@ -988,10 +988,12 @@ public final class FormationSelectionScreen extends TacticalScreen
         }
         int textY = area.top() + Math.floorDiv(area.height() - 8, 2);
         if (!model.joined()) {
-            Component note = FormationDetailPanel.pick(font, FormationText.joinNote(model),
-                    area.width());
-            TextFit.draw(graphics, font, note, area.left(), textY, area.width(),
-                    TacticalBoardTheme.TEXT, TextFit.Align.RIGHT);
+            List<Component> notes = FormationText.joinNote(model);
+            Component note = FormationDetailPanel.pick(font, notes, area.width());
+            TextFit.Fitted drawn = TextFit.draw(graphics, font, note, area.left(), textY,
+                    area.width(), TacticalBoardTheme.TEXT, TextFit.Align.RIGHT);
+            offerFullText(graphics, drawn, notes.get(0), TextFit.alignedX(area.left(),
+                    area.width(), drawn.width(), TextFit.Align.RIGHT), textY);
             return;
         }
         statusLine(graphics, area, textY, FormationText.statusLed(model),
@@ -1016,10 +1018,12 @@ public final class FormationSelectionScreen extends TacticalScreen
         TacticalDraw.led(graphics, x, textY + 2, led);
         TextFit.Fitted main = TextFit.draw(graphics, font, chosen[0], x + 7, textY,
                 Math.max(0, area.right() - x - 7), TacticalBoardTheme.TEXT, TextFit.Align.LEFT);
+        offerFullText(graphics, main, variants.get(0)[0], x + 7, textY);
         int subX = x + 7 + main.width() + 8;
         if (area.right() - subX > 24) {
-            TextFit.draw(graphics, font, chosen[1], subX, textY, area.right() - subX,
-                    TacticalBoardTheme.MUTED, TextFit.Align.LEFT);
+            TextFit.Fitted sub = TextFit.draw(graphics, font, chosen[1], subX, textY,
+                    area.right() - subX, TacticalBoardTheme.MUTED, TextFit.Align.LEFT);
+            offerFullText(graphics, sub, variants.get(0)[1], subX, textY);
         }
     }
 
@@ -1130,14 +1134,15 @@ public final class FormationSelectionScreen extends TacticalScreen
         }
         int textY = actionBar.top() + Math.floorDiv(actionBar.height() - 8, 2);
         int reasonWidth = actionKey.left() - 6 - (reasonLeft + 2);
-        FormationDetailPanel.drawReason(graphics, font, reasonLeft + 2, textY, reasonWidth,
-                action.icon(), FormationText.reason(model, action),
+        List<Component> reasons = FormationText.reason(model, action);
+        TextFit.Fitted reason = FormationDetailPanel.drawReason(graphics, font, reasonLeft + 2,
+                textY, reasonWidth, action.icon(), reasons,
                 action.enabled() || action.mine() ? TacticalBoardTheme.MUTED
                         : TacticalBoardTheme.TEXT, TacticalBoardTheme.MUTED);
-        if (!action.enabled() && !action.mine() && reasonWidth >= 24) {
-            // A shortened reason is offered in full by the disabled vote key's tooltip.
-            UiLayoutProbe.tipped(graphics, reasonLeft + 2 + 12, textY);
-        }
+        // A shortened reason is offered in full while the mouse rests on it (a disabled vote
+        // key's tooltip says it too).
+        offerFullText(graphics, reason, reasons.isEmpty() ? null : reasons.get(0),
+                reasonLeft + 2 + 12, textY);
     }
 
     private void renderCrumb(GuiGraphics graphics, FormationVoteModel model, int mouseX,

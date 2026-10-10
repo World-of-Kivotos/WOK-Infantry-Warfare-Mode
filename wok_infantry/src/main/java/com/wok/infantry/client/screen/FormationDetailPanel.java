@@ -365,14 +365,18 @@ final class FormationDetailPanel {
 
     // ---- action bar ---------------------------------------------------------------------------------
 
-    /** Reason text with its leading icon, left of the vote key (preview {@code reasonLine}). */
-    static void drawReason(GuiGraphics graphics, Font font, int x, int y, int maxWidth,
-                           TacticalIcon icon, List<Component> text, int color, int iconColor) {
+    /**
+     * Reason text with its leading icon, left of the vote key (preview {@code reasonLine}); the
+     * text starts 12px right of {@code x}. Returns the drawn text, or {@code null} without one.
+     */
+    static TextFit.Fitted drawReason(GuiGraphics graphics, Font font, int x, int y, int maxWidth,
+                                     TacticalIcon icon, List<Component> text, int color,
+                                     int iconColor) {
         if (maxWidth < 24 || text.isEmpty()) {
-            return;
+            return null;
         }
         (icon == null ? TacticalIcon.INFO : icon).draw(graphics, x, y - 1, iconColor);
-        drawVariant(graphics, font, text, x + 12, y, maxWidth - 12, color);
+        return drawVariant(graphics, font, text, x + 12, y, maxWidth - 12, color);
     }
 
     /** "你的票" badge in place of the vote key (green, not a key). */
@@ -390,13 +394,16 @@ final class FormationDetailPanel {
                 TacticalBoardTheme.SUCCESS, TextFit.Align.LEFT);
     }
 
-    /** Draws the first variant that fits (the last one ellipsized otherwise). */
-    static void drawVariant(GuiGraphics graphics, Font font, List<Component> variants, int x,
-                            int y, int maxWidth, int color) {
+    /**
+     * Draws the first variant that fits (the last one ellipsized otherwise); returns what was
+     * drawn, or {@code null} when nothing was.
+     */
+    static TextFit.Fitted drawVariant(GuiGraphics graphics, Font font, List<Component> variants,
+                                      int x, int y, int maxWidth, int color) {
         if (variants.isEmpty() || maxWidth <= 0) {
-            return;
+            return null;
         }
-        TextFit.draw(graphics, font, pick(font, variants, maxWidth), x, y, maxWidth, color,
+        return TextFit.draw(graphics, font, pick(font, variants, maxWidth), x, y, maxWidth, color,
                 TextFit.Align.LEFT);
     }
 

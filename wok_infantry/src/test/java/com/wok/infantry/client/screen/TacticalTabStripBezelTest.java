@@ -7,6 +7,7 @@ import org.lwjgl.glfw.GLFW;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
@@ -102,6 +103,57 @@ class TacticalTabStripBezelTest {
         TacticalShellLayout layout = TacticalShellLayout.compute(640, 360);
         assertEquals(TacticalBezelPlan.plan(layout.bezel(), layout.density(), 0, 0),
                 TacticalBoardChrome.placeBezel(null, layout, null, null), "no strip: plan only");
+    }
+
+    @Test
+    void escAndRefreshShrinkToTheirKeyNamesBeforeThePageKeysPage() {
+        // en_us at 320×240: "Esc Back" 54px and "R Refresh" 59px leave 177px, six "Role"-wide
+        // keys need 184px (real-client run, OPEN_COMPACT_CLASSES).
+        UiRect bezel = TacticalShellLayout.compute(320, 240).bezel();
+        TacticalShellLayout.Density compact = TacticalShellLayout.Density.COMPACT;
+
+        TacticalBezelPlan full = TacticalBezelPlan.planFitting(bezel, compact, 54, 26, 59, 14,
+                plan -> plan.pages().width() >= 100);
+        assertEquals(54, full.esc().width(), "the full caps stay while the page keys fit");
+        assertEquals(59, full.refresh().width());
+        assertEquals(177, full.pages().width());
+
+        TacticalBezelPlan keyed = TacticalBezelPlan.planFitting(bezel, compact, 54, 26, 59, 14,
+                plan -> plan.pages().width() >= 184);
+        assertEquals(28, keyed.esc().width(), "key name only, as wide as a page key");
+        assertEquals(28, keyed.refresh().width());
+        assertTrue(keyed.pages().width() >= 184);
+        assertEquals(keyed.bezel().right() - TacticalBezelPlan.inset(compact),
+                keyed.refresh().right(), "R stays at the right end");
+
+        TacticalBezelPlan bare = TacticalBezelPlan.planFitting(bezel, compact, 54, 26, 59, 14,
+                plan -> plan.pages().width() >= 250);
+        assertEquals(26, bare.esc().width(), "then just the key name and its padding");
+        assertEquals(14, bare.refresh().width());
+
+        TacticalBezelPlan hopeless = TacticalBezelPlan.planFitting(bezel, compact, 54, 26, 59,
+                14, plan -> false);
+        assertEquals(full, hopeless, "the pager keeps the full caps");
+    }
+
+    @Test
+    void keyOnlyCapsAreNeverWiderThanTheFullCap() {
+        assertArrayEquals(new int[]{28, 26}, TacticalBezelPlan.keyOnlyWidths(
+                TacticalShellLayout.Density.COMPACT, 54, 26));
+        assertArrayEquals(new int[]{30, 18}, TacticalBezelPlan.keyOnlyWidths(
+                TacticalShellLayout.Density.STANDARD, 30, 18));
+        assertArrayEquals(new int[]{0, 0}, TacticalBezelPlan.keyOnlyWidths(
+                TacticalShellLayout.Density.COMPACT, 0, 14), "a missing key stays missing");
+    }
+
+    @Test
+    void withoutAFontOrABezelStripTheKeysKeepTheirFullCaps() {
+        TacticalShellLayout layout = TacticalShellLayout.compute(320, 240);
+        TacticalTabStrip strip = BattleTab.strip(BattleTab.SQUADS, tab -> null, tab -> { });
+
+        assertEquals(TacticalBezelPlan.plan(null, layout, TacticalBoardChrome.KeyHint.back(),
+                null), TacticalBezelPlan.plan(null, layout, TacticalBoardChrome.KeyHint.back(),
+                null, strip));
     }
 
     @Test

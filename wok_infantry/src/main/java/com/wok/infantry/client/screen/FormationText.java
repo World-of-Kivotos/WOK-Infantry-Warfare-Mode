@@ -9,6 +9,7 @@ import com.wok.infantry.formation.selection.FormationSelectionSnapshot;
 import com.wok.infantry.formation.selection.FormationSelectionView;
 import com.wok.infantry.formation.selection.FormationSupportLabel;
 import com.wok.infantry.formation.vote.FormationVotePhase;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -47,6 +48,16 @@ public final class FormationText {
 
     public static Component title(int width) {
         return key(width < SHORT_TITLE_BELOW ? "title_short" : "title");
+    }
+
+    /**
+     * {@link #title(int)} for the real status bar: also the short title where "title › 编制" would
+     * be cut ("WOK INFANTRY // FORMATION VOTE › Formation" at 480×360),
+     * {@link TacticalBoardChrome#shellTitle}.
+     */
+    public static Component title(Font font, TacticalShellLayout layout, TacticalTabStrip tabs) {
+        return TacticalBoardChrome.shellTitle(font, layout, key("title"), key("title_short"), tabs,
+                SHORT_TITLE_BELOW);
     }
 
     /**

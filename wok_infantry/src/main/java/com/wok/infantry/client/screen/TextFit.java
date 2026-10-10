@@ -369,11 +369,11 @@ public final class TextFit {
             if (width.applyAsInt(line + piece) > maxWidth && !line.toString().isBlank()) {
                 String done = stripTrailingWhitespace(line.toString());
                 line.setLength(0);
-                if ((startsWithClosingPunctuation(piece) || endsWithOpeningPunctuation(done))
-                        && done.codePointCount(0, done.length()) > 1) {
+                int cut = startsWithClosingPunctuation(piece) || endsWithOpeningPunctuation(done)
+                        ? carryFrom(done) : done.length();
+                if (cut > 0 && cut < done.length()) {
                     // 避头尾: carry the previous character down together with the closing
                     // punctuation, or an opening bracket down to the text it opens.
-                    int cut = done.offsetByCodePoints(done.length(), -1);
                     lines.add(stripTrailingWhitespace(done.substring(0, cut)));
                     line.append(done.substring(cut));
                 } else {
@@ -399,6 +399,33 @@ public final class TextFit {
             line.append(piece);
         }
         lines.add(stripTrailingWhitespace(line.toString()));
+    }
+
+    /**
+     * Where a full line is cut when the next piece may not start a line (closing punctuation) or
+     * the line may not end where it does (an opening bracket): before its last character, and
+     * before any closing marks that end it together with the character in front of them, so
+     * "解散）" + "，" carries "散）" down instead of starting the next line with "），". A latin
+     * word in front of them goes down whole ("Caesar）", not "r）"), and an opening bracket in
+     * front of the cut goes down too. 0 when that would carry the whole line.
+     */
+    static int carryFrom(String done) {
+        int cut = done.length();
+        while (cut > 0 && NO_LINE_START.indexOf(done.codePointBefore(cut)) >= 0) {
+            cut = done.offsetByCodePoints(cut, -1);
+        }
+        if (cut > 0) {
+            boolean word = !isBreakAnywhere(done.codePointBefore(cut));
+            cut = done.offsetByCodePoints(cut, -1);
+            while (word && cut > 0 && !isBreakAnywhere(done.codePointBefore(cut))
+                    && !Character.isWhitespace(done.codePointBefore(cut))) {
+                cut = done.offsetByCodePoints(cut, -1);
+            }
+        }
+        while (cut > 0 && NO_LINE_END.indexOf(done.codePointBefore(cut)) >= 0) {
+            cut = done.offsetByCodePoints(cut, -1);
+        }
+        return cut;
     }
 
     private static boolean startsWithClosingPunctuation(String token) {

@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.wok.infantry.client.ui.probe.UiLayoutProbe;
 import net.minecraft.client.GameNarrator;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.events.ContainerEventHandler;
@@ -132,10 +133,18 @@ public abstract class TacticalScreen extends Screen {
 
     /**
      * Registers the strip that Ctrl+Tab / Ctrl+Shift+Tab cycles. Call from
-     * {@link #initTactical()} after adding it; cleared automatically on every init.
+     * {@link #initTactical()} after adding it; cleared automatically on every init. A
+     * {@link TacticalTabStrip.Skin#BEZEL} strip joins the registered Esc and R keys on the bezel
+     * right away: the keys are planned again with its page keys, so they can shrink to their key
+     * names before the strip would page ({@link TacticalBezelPlan}).
      */
     protected final void setTabStrip(TacticalTabStrip strip) {
         this.tabStrip = strip;
+        if (font != null && strip != null && strip.skin() == TacticalTabStrip.Skin.BEZEL
+                && (bezelEscKey != null || bezelRefreshKey != null)) {
+            placeBezelKeys(TacticalBezelPlan.plan(font, shellLayout(), bezelEscHint,
+                    bezelRefreshHint, strip));
+        }
     }
 
     public final TacticalTabStrip tabStrip() {
@@ -288,35 +297,37 @@ public abstract class TacticalScreen extends Screen {
     }
 
     /**
-     * {@link #drawShell} finished the device: arms the glass overlay and offers the whole receipt
-     * while the mouse rests on a shortened status-bar pill.
+     * {@link #drawShell} finished the device: arms the glass overlay and offers the whole text
+     * while the mouse rests on a shortened part of the status bar (the receipt pill, the title or
+     * the identity, {@link TacticalBoardChrome.StatusPlan#fullTextAt}).
      */
     private TacticalBoardChrome.Shell deviceDrawn(TacticalBoardChrome.Shell shell) {
         deviceDrawn = true;
-        TacticalBoardChrome.StatusText receipt = shell.status().feedback();
-        if (receipt.truncated() && mouseOver(shell.status().pill())) {
-            setTooltipForNextRenderPass(Component.literal(receipt.full()));
+        double[] mouse = layoutMouse();
+        String full = mouse == null ? null : shell.status().fullTextAt(mouse[0], mouse[1]);
+        if (full != null) {
+            setTooltipForNextRenderPass(Component.literal(full));
         }
         return shell;
     }
 
     /**
-     * Whether the mouse (read from the mouse handler like vanilla's render loop, in layout
-     * coordinates) is over {@code rect}; never while a modal takes the input.
+     * The mouse (read from the mouse handler like vanilla's render loop) in layout coordinates,
+     * or {@code null} while a modal takes the input or there is no window.
      */
-    private boolean mouseOver(UiRect rect) {
-        if (minecraft == null || modal != null || rect == null || rect.isEmpty()) {
-            return false;
+    private double[] layoutMouse() {
+        if (minecraft == null || modal != null) {
+            return null;
         }
         Window window = minecraft.getWindow();
         if (window.getScreenWidth() <= 0 || window.getScreenHeight() <= 0) {
-            return false;
+            return null;
         }
         double guiX = minecraft.mouseHandler.xpos() * window.getGuiScaledWidth()
                 / window.getScreenWidth();
         double guiY = minecraft.mouseHandler.ypos() * window.getGuiScaledHeight()
                 / window.getScreenHeight();
-        return rect.contains(UiScale.toLayout(guiX, uiScale), UiScale.toLayout(guiY, uiScale));
+        return new double[]{UiScale.toLayout(guiX, uiScale), UiScale.toLayout(guiY, uiScale)};
     }
 
     // ---- bezel keys -----------------------------------------------------------------------------
@@ -369,7 +380,8 @@ public abstract class TacticalScreen extends Screen {
                     this::pressBezelRefresh, this::bezelRefreshDisabledReason, this::deviceSkin));
         }
         if (font != null) {
-            placeBezelKeys(TacticalBezelPlan.plan(font, shellLayout(), escHint, refreshHint));
+            placeBezelKeys(TacticalBezelPlan.plan(font, shellLayout(), escHint, refreshHint,
+                    tabStrip));
         }
     }
 
@@ -558,6 +570,33 @@ public abstract class TacticalScreen extends Screen {
         if (pendingTooltip == null || override) {
             pendingTooltip = List.copyOf(lines);
             pendingTooltipKeyboard = atFocus;
+        }
+    }
+
+    /**
+     * A static text was drawn shortened ({@code fitted}, its left edge at {@code x}, baseline row
+     * {@code y}, layout coordinates of the page): marks it for the layout probe as offered in full
+     * and shows {@code full} as the tooltip of the tactical screen on display while the mouse rests
+     * on it (never under a modal). Nothing when the text was not cut. Static painters call it
+     * without a screen reference, like the status bar does for its title and identity.
+     */
+    public static void offerFullText(GuiGraphics graphics, TextFit.Fitted fitted, Component full,
+                                     int x, int y) {
+        if (fitted == null || !fitted.truncated() || full == null) {
+            return;
+        }
+        UiLayoutProbe.tipped(graphics, x, y);
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft != null && minecraft.screen instanceof TacticalScreen screen) {
+            screen.tipOver(new UiRect(x, y - 1, x + Math.max(1, fitted.width()), y + 9), full);
+        }
+    }
+
+    /** Shows {@code full} as this frame's tooltip when the mouse is over {@code area}. */
+    private void tipOver(UiRect area, Component full) {
+        double[] mouse = layoutMouse();
+        if (mouse != null && area.contains(mouse[0], mouse[1])) {
+            setTooltipForNextRenderPass(full);
         }
     }
 

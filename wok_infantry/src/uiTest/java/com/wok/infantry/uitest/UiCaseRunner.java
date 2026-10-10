@@ -7,6 +7,7 @@ import com.wok.infantry.client.ui.probe.UiSurfaceInfo;
 import com.mojang.blaze3d.platform.Window;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -236,7 +237,15 @@ public final class UiCaseRunner {
 
     private static void resize(Minecraft minecraft, UiTier tier) {
         Window window = minecraft.getWindow();
-        if (window.getWidth() != tier.windowWidth() || window.getHeight() != tier.windowHeight()) {
+        long handle = window.getWindow();
+        boolean maximized = GLFW.glfwGetWindowAttrib(handle, GLFW.GLFW_MAXIMIZED) == GLFW.GLFW_TRUE;
+        if (maximized) {
+            // setWindowed does not leave the maximized state: a window maximized by hand kept its
+            // 3840×2036 and the tier ran at 1920×1018 x2 instead of its own size.
+            GLFW.glfwRestoreWindow(handle);
+        }
+        if (maximized || window.getWidth() != tier.windowWidth()
+                || window.getHeight() != tier.windowHeight()) {
             window.setWindowed(tier.windowWidth(), tier.windowHeight());
         }
         minecraft.options.guiScale().set(tier.guiScale());

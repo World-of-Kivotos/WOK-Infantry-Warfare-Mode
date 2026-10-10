@@ -158,6 +158,22 @@ class TextFitTest {
     }
 
     @Test
+    void closingBracketAlreadyOnTheLineGoesDownWithTheNextMark() {
+        // "（已有小队解散），部署页…" at formation.admin-caesar@320x240 started a line with "），".
+        List<String> lines = TextFit.wrapPlain("一（二三），四", 45, 0, WIDTH);
+
+        assertEquals(List.of("一（二", "三），四"), lines);
+        lines.forEach(line -> assertFalse(TextFit.NO_LINE_START.indexOf(line.codePointAt(0)) >= 0,
+                line));
+    }
+
+    @Test
+    void aLatinWordGoesDownWholeWithItsClosingMark() {
+        assertEquals(List.of("一", "Caesar），"), TextFit.wrapPlain("一Caesar），", 60, 0, WIDTH));
+        assertEquals(List.of("ab", "cd，"), TextFit.wrapPlain("ab cd，", 30, 0, WIDTH));
+    }
+
+    @Test
     void ellipsisRunAfterChineseNeverStartsALine() {
         assertEquals(List.of("一二", "三……"), TextFit.wrapPlain("一二三……", 27, 0, WIDTH));
     }

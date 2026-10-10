@@ -17,6 +17,7 @@ import java.util.function.ToIntFunction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Pure status-bar and bezel plans of the D2 device ({@code 17-device.js statusBar, pageKeys}). */
@@ -137,6 +138,32 @@ class TacticalBoardChromeLayoutTest {
         assertEquals(without.signalX() - 7 - (without.title().right() + 8),
                 without.identityRoom());
         assertFalse(without.identity().truncated());
+    }
+
+    @Test
+    void shortenedStatusTextsOfferTheirWholeTextOnHover() {
+        // kit.default-neutral / mapicons.dark at 320×240 cut the identity and the title without
+        // a tooltip; only the pill had one.
+        String title = "WOK INFANTRY // FORMATION VOTE > Formation";
+        String identity = "Academy · 1st Mechanized Battalion · Alpha · Squad leader";
+        StatusPlan plan = plan(320, 240, title, "R".repeat(30), identity);
+        int y = plan.textY() + 3;
+
+        assertTrue(plan.title().truncated());
+        assertEquals(title, plan.fullTextAt(plan.title().x() + 1, y));
+        assertEquals(plan.bar().top(), plan.box(plan.title()).top(), "the whole bar height");
+        assertEquals("R".repeat(30), plan.fullTextAt(plan.pill().left() + 1, plan.pill().top()));
+        assertNull(plan.fullTextAt(plan.signalX() + 1, y), "the signal has no text");
+
+        StatusPlan roomy = plan(960, 540, "Terminal", null, identity);
+        StatusPlan narrow = plan(480, 360, "Terminal", "Loadout saved", identity);
+        assertEquals(identity, roomy.identity().text());
+        assertNull(roomy.fullTextAt(roomy.identity().x() + 1, roomy.textY() + 3),
+                "nothing to offer when the identity is whole");
+        assertFalse(narrow.identity().text().equals(identity), "parts were dropped");
+        assertEquals(identity, narrow.fullTextAt(narrow.identity().x() + 1,
+                narrow.textY() + 3));
+        assertEquals(UiRect.EMPTY, plan.box(StatusText.NONE));
     }
 
     @Test

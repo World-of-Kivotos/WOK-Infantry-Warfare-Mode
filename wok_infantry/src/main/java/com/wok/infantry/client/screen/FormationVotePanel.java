@@ -533,13 +533,18 @@ final class FormationVotePanel {
             int y = lines > 1 ? row.top() + 4
                     : row.top() + (rowHeight - (data.open() ? 2 : 0) - 8) / 2;
             // The full name wins: first the "领先" tag gives way (the leader keeps its bright
-            // name), then the share ("4 票 · 50%" → "4 票").
+            // name), then the share ("4 票 · 50%" → "4 票"); while voting is closed the category
+            // gives way altogether (it is only a side note there).
             int nameNeeds = font.width(candidate.name());
             int nameRoom = row.width() - 10 - (rightWidth > 0 ? rightWidth + 8 : 0);
             if (nameNeeds > nameRoom && data.open() && data.voted() > 0) {
                 right = SquadBoardText.t(SquadBoardText.VOTE_VOTES, candidate.votes());
                 rightWidth = font.width(right);
                 nameRoom = row.width() - 10 - rightWidth - 8;
+            } else if (nameNeeds > nameRoom && !data.open() && rightWidth > 0) {
+                right = Component.empty();
+                rightWidth = 0;
+                nameRoom = row.width() - 10;
             }
             Component tag = SquadBoardText.t(SquadBoardText.VOTE_LEADING);
             boolean showTag = candidate.leading()
@@ -548,8 +553,11 @@ final class FormationVotePanel {
             int room = nameRoom - tagWidth;
             int nameColor = candidate.leading() ? TacticalBoardTheme.LIGHT
                     : TacticalBoardTheme.LIGHT_MUTED;
-            int nameWidth = TextFit.draw(graphics, font, candidate.name(), row.left() + 5, y,
-                    Math.max(0, room), nameColor, TextFit.Align.LEFT).width();
+            TextFit.Fitted name = TextFit.draw(graphics, font, candidate.name(), row.left() + 5, y,
+                    Math.max(0, room), nameColor, TextFit.Align.LEFT);
+            // A name longer than the whole row is still offered in full on hover.
+            TacticalScreen.offerFullText(graphics, name, candidate.name(), row.left() + 5, y);
+            int nameWidth = name.width();
             if (showTag) {
                 TextFit.draw(graphics, font, tag, row.left() + 5 + nameWidth + 5, y,
                         tagWidth - 5, TacticalBoardTheme.NEUTRAL_B, TextFit.Align.LEFT);
