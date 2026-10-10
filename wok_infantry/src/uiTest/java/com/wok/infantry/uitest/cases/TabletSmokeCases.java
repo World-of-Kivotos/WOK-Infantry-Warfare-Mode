@@ -4,9 +4,16 @@ import com.wok.infantry.client.screen.BattleTab;
 import com.wok.infantry.client.screen.SquadScreen;
 import com.wok.infantry.client.screen.TacticalMapScreen;
 import com.wok.infantry.client.tablet.TabletAnimationController;
+import com.wok.infantry.client.tablet.TabletAnimationModel;
+import com.wok.infantry.client.tablet.TabletCue;
+import com.wok.infantry.client.tablet.TabletCues;
+import com.wok.infantry.client.tablet.TabletHand;
 import com.wok.infantry.client.tablet.TabletMode;
 import com.wok.infantry.client.tablet.TabletMotion;
 import com.wok.infantry.client.tablet.TabletPath;
+import com.wok.infantry.client.tablet.TabletSoundBook;
+import com.wok.infantry.client.tablet.TabletSoundInstance;
+import com.wok.infantry.client.tablet.TabletSounds;
 import com.wok.infantry.uitest.UiCapture;
 import com.wok.infantry.uitest.UiCase;
 import com.wok.infantry.uitest.UiCaseContext;
@@ -14,6 +21,11 @@ import com.wok.infantry.uitest.UiStep;
 import com.wok.infantry.uitest.UiTier;
 import com.wok.infantry.uitest.fixtures.SquadFixtures;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.resources.sounds.Sound;
+import net.minecraft.client.sounds.SoundManager;
+import net.minecraft.client.sounds.WeighedSoundEvents;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -60,7 +72,78 @@ public final class TabletSmokeCases {
         cases.add(visible(open("item0200", leader, 0.20D, new ItemStack(Items.COMPASS),
                 UiTier.T320)));
         cases.add(visible(closeBuilder("hands0500", leader, 0.50D, UiTier.T320)));
+        cases.add(sounds("sounds", leader, UiTier.T320));
         return List.copyOf(cases);
+    }
+
+    /** When the {@code sounds} case opened the tablet (the sound log is read from then on). */
+    private static double soundsFrom = Double.NaN;
+
+    /**
+     * Batch B4: the twelve sounds load from sounds.json (event, subtitle, OGG resource), one plays
+     * through the client's sound engine, and a full (unfrozen) opening asks for its cues in the
+     * preview's order. Acceptance mutes the animation's own sounds, so the order is read from the
+     * sound log.
+     */
+    private static UiCase sounds(String state, SquadFixtures.Scenario scenario, UiTier... tiers) {
+        return base(state, tiers)
+                .open(context -> {
+                    SquadFixtures.start(scenario);
+                    return null;
+                })
+                .steps(UiStep.until("the squad fixture", context -> SquadFixtures.applied()),
+                        UiStep.waitTicks(5),
+                        UiStep.action(context -> {
+                            TabletAnimationController.overrideForAcceptance(
+                                    new TabletAnimationController.AcceptanceOverride(TabletMode.FULL,
+                                            false, TabletHand.GUN, Double.NaN, false, null));
+                            soundsFrom = TabletSounds.clock();
+                            context.minecraft().setScreen(SquadScreen.forTab(null, BattleTab.SQUADS));
+                        }),
+                        UiStep.until("the tablet shown", context ->
+                                TabletAnimationController.debugSnapshot().state()
+                                        == TabletMotion.State.SHOWN),
+                        UiStep.waitTicks(2))
+                .check((context, capture) -> checkSounds(context))
+                .cleanup(context -> SquadFixtures.stop())
+                .build();
+    }
+
+    private static void checkSounds(UiCaseContext context) {
+        SoundManager manager = context.minecraft().getSoundManager();
+        List<String> missing = new ArrayList<>();
+        for (String name : TabletCues.SOUND_NAMES) {
+            ResourceLocation id = TabletSounds.location(name);
+            WeighedSoundEvents event = manager.getSoundEvent(id);
+            if (event == null) {
+                missing.add(id + " (no sounds.json entry)");
+                continue;
+            }
+            if (event.getSubtitle() == null) {
+                missing.add(id + " (no subtitle)");
+            }
+            Sound sound = event.getSound(RandomSource.create());
+            if (sound == null || sound == SoundManager.EMPTY_SOUND
+                    || context.minecraft().getResourceManager().getResource(sound.getPath()).isEmpty()) {
+                missing.add(id + " (file " + (sound == null ? "-" : sound.getPath()) + ")");
+            }
+        }
+        context.require(missing.isEmpty(), "tablet sounds not loaded: " + missing);
+        TabletSoundInstance probe = new TabletSoundInstance(TabletSounds.event("search"),
+                TabletCue.Dir.OPEN, (float) TabletAnimationModel.SFX_VOLUME, TabletSounds::clock);
+        manager.play(probe);
+        context.observe("tabletSounds[probe]=search active " + manager.isActive(probe));
+        List<String> asked = new ArrayList<>();
+        for (TabletSoundBook.Entry entry : TabletSounds.recent()) {
+            if (entry.atMs() >= soundsFrom && entry.kind() != TabletSoundBook.Entry.Kind.CUT) {
+                asked.add(entry.name() + (entry.kind() == TabletSoundBook.Entry.Kind.WAIT ? "?" : ""));
+            }
+        }
+        context.observe("tabletSounds[open]=" + asked);
+        context.require(asked.size() >= 7 && asked.subList(0, 5).equals(
+                        List.of("holster", "draw", "grip", "power", "boot")) && asked.contains("zoom")
+                        && (asked.contains("ready") || asked.contains("ready?")),
+                "a full opening asks for holster, draw, grip, power, boot, ready, zoom: " + asked);
     }
 
     /** {@code builder} with the client player made visible for the capture, then restored. */

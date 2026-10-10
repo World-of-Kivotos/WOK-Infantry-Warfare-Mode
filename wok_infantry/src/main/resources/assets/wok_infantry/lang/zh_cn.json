@@ -1227,5 +1227,17 @@
   "screen.wok_infantry.squad_board.deploy.reason_vote": "编制锁定前不能部署 · 补给和重新部署仅作战中可用",
   "screen.wok_infantry.squad_board.deploy.reason_vote_short": "锁定前不能部署 · 补给/重新部署仅作战中",
   "screen.wok_infantry.squad_board.deploy.reason_wait": "%s 秒后可部署 · 补给和重新部署仅作战中可用",
-  "screen.wok_infantry.squad_board.deploy.reason_combined": "%s · 补给和重新部署仅作战中可用"
+  "screen.wok_infantry.squad_board.deploy.reason_combined": "%s · 补给和重新部署仅作战中可用",
+  "subtitles.wok_infantry.tablet.holster": "收起枪械",
+  "subtitles.wok_infantry.tablet.draw": "抽出平板",
+  "subtitles.wok_infantry.tablet.grip": "握稳平板",
+  "subtitles.wok_infantry.tablet.power": "平板按键咔嗒",
+  "subtitles.wok_infantry.tablet.boot": "平板开机",
+  "subtitles.wok_infantry.tablet.ready": "平板联网就绪",
+  "subtitles.wok_infantry.tablet.search": "平板搜索信号",
+  "subtitles.wok_infantry.tablet.zoom": "平板凑近",
+  "subtitles.wok_infantry.tablet.sleep": "平板息屏",
+  "subtitles.wok_infantry.tablet.stow": "收回平板",
+  "subtitles.wok_infantry.tablet.raise": "举起枪械",
+  "subtitles.wok_infantry.tablet.rustle": "衣物摩擦"
 }

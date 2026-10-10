@@ -58,6 +58,8 @@ import java.util.Set;
  *   moved to where the player sees it; nothing is intercepted while closing.</li>
  *   <li><b>HUD</b>: hidden by {@link TabletHudPolicy} while the tablet is out.</li>
  *   <li><b>Tick</b>: no sprinting until the tablet is put away; interrupts (DESIGN 3.4).</li>
+ *   <li><b>Sounds</b> (batch B4): the motion's sound and cut events go to {@link TabletSounds}
+ *   when they are drained; the search chime runs once per render frame.</li>
  * </ul>
  *
  * <p><b>Scheme A</b> (batch B3, the full setting): the tablet and both hands are drawn in the
@@ -286,6 +288,7 @@ public final class TabletAnimationController {
     }
 
     private static void restart() {
+        TabletSounds.stopAll(now());
         motion = new TabletMotion();
         termFrame = null;
         mapFrame = null;
@@ -300,6 +303,7 @@ public final class TabletAnimationController {
     public static void reset() {
         motion.reset(now(), false);
         motion.drainEvents();
+        TabletSounds.stopAll(now());
         if (motion.frozen()) {
             motion.unfreeze(now());
         }
@@ -412,12 +416,43 @@ public final class TabletAnimationController {
         return TabletSettings.freeze();
     }
 
-    /** Applies the queued events: a state entered may be frozen (sounds come with batch B4). */
+    /**
+     * Applies the queued events: a state entered may be frozen; sounds play, cuts fade the sounds
+     * of their direction, and a "ready" without a battle link starts the search chime (B4,
+     * {@link TabletSounds}).
+     */
     private static void drain(double now) {
+        boolean sounds = soundsOn();
         for (TabletMotion.Event event : motion.drainEvents()) {
             if (event.type() == TabletMotion.Event.Type.STATE) {
                 applyFreeze(TabletMotion.State.valueOf(event.name()), now);
             }
+            TabletSounds.onEvent(event, now, sounds, TabletAnimationController::linkOk);
+        }
+    }
+
+    /**
+     * Whether the tablet sounds play: {@code ui.tabletSounds}, and never during UI acceptance
+     * (IMPL_PLAN 4.5; the sound log still records what would have played).
+     */
+    private static boolean soundsOn() {
+        return override == null && TabletSettings.sounds();
+    }
+
+    /**
+     * Whether the animated screen has its data link (its link LED is OK): "ready" plays, otherwise
+     * the search chime ticks until it is (first login before the battle snapshot, the formation
+     * page waiting for its catalogue).
+     */
+    private static boolean linkOk() {
+        Screen screen = animScreen != null ? animScreen : Minecraft.getInstance().screen;
+        if (!(screen instanceof TabletSurface surface)) {
+            return true;
+        }
+        try {
+            return linkState(surface) == TacticalBoardChrome.LinkState.OK;
+        } catch (RuntimeException exception) {
+            return true;
         }
     }
 
@@ -459,6 +494,7 @@ public final class TabletAnimationController {
         }
         motion.update(now);
         drain(now);
+        TabletSounds.tick(now, soundsOn(), TabletAnimationController::linkOk, motion.state());
         if (motion.state() == TabletMotion.State.IDLE) {
             closeFace = null;
             TabletFrameCapture.drop();

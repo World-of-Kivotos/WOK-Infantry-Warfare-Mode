@@ -12,3 +12,5 @@ src/generated/**/*.json text eol=lf
 wok_infantry/src/test/resources/tablet_anim/vectors.json -text
 *.obj -text
 *.mtl -text
+# The tablet animation's sounds (0.5.0-beta.4) are binary Ogg Vorbis.
+*.ogg binary
