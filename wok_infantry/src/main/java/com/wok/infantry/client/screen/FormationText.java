@@ -14,6 +14,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 
 import java.util.List;
+import java.util.function.ToIntFunction;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -35,10 +37,11 @@ public final class FormationText {
     // ---- shell ----------------------------------------------------------------------------------
 
     /**
-     * Below this layout width the page uses the short title. The full "WOK步战 // 编制投票" plus the
-     * tab strip leaves no room for a long identity ("学院军 · 阿尔法小队 · 指挥官") at 427×240
-     * (854×480, GUI 1), and the shell would hide the identity first; 480 wide and up keep the full
-     * title.
+     * Below this layout width the page uses the short title. The status bar carries
+     * "title › 编制", the step guide pill and the identity in one row; at 427×240 (854×480,
+     * GUI 1) the full "WOK步战 // 编制投票" leaves no room for both a guide and the whole identity
+     * ("学院军 · 阿尔法小队 · 指挥官"), so the identity would be shortened first; 480 wide and up
+     * keep the full title.
      */
     static final int SHORT_TITLE_BELOW = 440;
 
@@ -47,9 +50,11 @@ public final class FormationText {
     }
 
     /**
-     * Header identity: "未加入阵营", or the public faction · squad · role. While the catalog is
-     * still on its way the header stays neutral ("正在读取编制信息"): neither the battle snapshot
-     * (cleared for members still voting) nor anything else tells whether the viewer has joined.
+     * Status-bar identity: "未加入阵营", or the public faction · squad · role. While the catalog is
+     * still on its way it stays neutral ("正在读取编制信息"): neither the battle snapshot (cleared
+     * for members still voting) nor anything else tells whether the viewer has joined. The shell
+     * shortens it ({@link TacticalBoardChrome#fitIdentity}) to the room the step guide leaves; the
+     * guide gives way first ({@link #guideVariant}).
      */
     public static Component identity(FormationVoteModel model, BattleSnapshot battle) {
         if (model.waiting()) {
@@ -78,7 +83,72 @@ public final class FormationText {
 
     // ---- step guide -------------------------------------------------------------------------
 
-    /** Step-by-step instruction (footer guide), long to short. */
+    /** A status-bar pill is its text plus this ({@link TacticalBoardChrome#planStatus}). */
+    static final int PILL_PAD = 9;
+    /** Gap the status bar keeps between the pill and the identity right of it. */
+    static final int PILL_IDENTITY_GAP = 6;
+
+    /**
+     * Which {@link #step} variant the status-bar pill shows (pure). The pill and the identity
+     * share the room {@link TacticalBoardChrome#planStatus} leaves between the title and the
+     * signal bars ({@code statusRoom}, planned without a pill), and the shell gives the pill its
+     * width first. So the guide takes the longest variant that still leaves the identity the form
+     * it would have alone; failing that, the longest one that leaves the identity its first part
+     * (the faction, never less than the shell's minimum); failing that, the shortest variant,
+     * which the shell ellipsizes and shows whole on hover.
+     *
+     * @param variants   guide texts, long to short
+     * @param statusRoom {@link TacticalBoardChrome.StatusPlan#identityRoom()} without a pill
+     * @param identity   the identity handed to the shell, {@code null} or blank for none
+     * @return index into {@code variants}, -1 for an empty list
+     */
+    static int guideVariant(List<String> variants, int statusRoom, String identity,
+                            ToIntFunction<String> width) {
+        if (variants == null || variants.isEmpty()) {
+            return -1;
+        }
+        int index = longestFitting(variants,
+                statusRoom - identityNeed(identity, statusRoom, false, width) - PILL_PAD, width);
+        if (index < 0) {
+            index = longestFitting(variants,
+                    statusRoom - identityNeed(identity, statusRoom, true, width) - PILL_PAD,
+                    width);
+        }
+        return index < 0 ? variants.size() - 1 : index;
+    }
+
+    /**
+     * Status-bar room the identity keeps next to a pill, gap included: its form in the whole room
+     * ({@link TacticalBoardChrome#fitIdentity}), or only its first part.
+     */
+    private static int identityNeed(String identity, int statusRoom, boolean firstPartOnly,
+                                     ToIntFunction<String> width) {
+        if (identity == null || identity.isBlank()) {
+            return 0;
+        }
+        int need;
+        if (firstPartOnly) {
+            String first = identity.split(Pattern.quote(TacticalBoardChrome.IDENTITY_SEPARATOR),
+                    -1)[0];
+            need = Math.max(TacticalBoardChrome.IDENTITY_MIN_ROOM, width.applyAsInt(first));
+        } else {
+            need = TacticalBoardChrome.fitIdentity(identity, statusRoom, width).width();
+        }
+        return need <= 0 ? 0 : need + PILL_IDENTITY_GAP;
+    }
+
+    /** First (= longest) of {@code variants} at most {@code room} wide, or -1. */
+    private static int longestFitting(List<String> variants, int room,
+                                      ToIntFunction<String> width) {
+        for (int index = 0; room > 0 && index < variants.size(); index++) {
+            if (width.applyAsInt(variants.get(index)) <= room) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    /** Step-by-step instruction (the status-bar guide pill), long to short. */
     public static List<Component> step(FormationVoteModel model) {
         FactionSelectionView browsing = model.browsing();
         String faction = browsing == null ? "" : browsing.displayName();
@@ -893,7 +963,7 @@ public final class FormationText {
         return I18n.get(PREFIX + "feedback.lock_closed");
     }
 
-    /** Footer Esc action: "关闭（` 键可重开）" while not joined, else "暂时关闭". */
+    /** Bezel Esc key action: "关闭（` 键可重开）" while not joined, else "暂时关闭". */
     public static Component escClose(boolean joined, Component terminalKey) {
         if (joined) {
             return key("hint.close");
@@ -902,24 +972,19 @@ public final class FormationText {
                 : key("hint.close_reopen", terminalKey);
     }
 
+    /** Bezel Esc key action on the narrow detail page: "返回列表". */
     public static Component hintBackToList() {
         return key("hint.back_list");
     }
 
-    public static Component hintWheel() {
-        return key("hint.wheel");
-    }
-
-    public static Component hintBrowse() {
-        return key("hint.browse");
-    }
-
-    public static Component hintScroll() {
-        return key("hint.scroll");
-    }
-
+    /** Bezel R key action: "重试" (request the catalog again). */
     public static Component hintRetry() {
         return key("hint.retry");
+    }
+
+    /** Why the bezel R key is disabled once the catalog is here (hover text). */
+    public static Component retryUnavailable() {
+        return key("hint.retry_unavailable");
     }
 
     /** Action-bar message after closing the page without a faction (user report 4). */

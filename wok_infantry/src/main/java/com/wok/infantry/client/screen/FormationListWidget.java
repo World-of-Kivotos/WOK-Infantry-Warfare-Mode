@@ -105,8 +105,8 @@ final class FormationListWidget {
         boolean off = status.mark() == FormationVoteModel.RowMark.DISABLED
                 || status.mark() == FormationVoteModel.RowMark.SHORTFALL;
         int lead = status.mine() || locked ? TacticalBoardTheme.SUCCESS_B : 0;
-        TacticalDraw.rowBg(graphics, row, state.withDisabled(false)
-                .withHovered(state.hovered() && !selected), lead);
+        TacticalDraw.RowState background = background(state);
+        TacticalDraw.rowBg(graphics, row, background, lead);
         int nameColor = selected ? TacticalBoardTheme.ON_SELECT
                 : status.dimmed() ? TacticalBoardTheme.OFFLINE : TacticalBoardTheme.LIGHT;
         int mute = selected ? TacticalBoardTheme.SELECT_SUB : TacticalBoardTheme.LIGHT_MUTED;
@@ -150,13 +150,32 @@ final class FormationListWidget {
         if (status.showVotes()) {
             int total = Math.max(1, model.totalVotes());
             int share = Math.round((row.width() - 8) * status.votes() / (float) total);
-            graphics.fill(nameLeft, row.bottom() - 1, row.right() - 2, row.bottom(), selected
-                    ? TacticalHud.mix(TacticalBoardTheme.SELECT, TacticalBoardTheme.SELECT_BAR, 0.3D)
-                    : TacticalBoardTheme.WELL);
+            graphics.fill(nameLeft, row.bottom() - 1, row.right() - 2, row.bottom(),
+                    shareTrack(background));
             graphics.fill(nameLeft, row.bottom() - 1, Math.min(row.right() - 2, nameLeft + share),
                     row.bottom(), selected ? TacticalBoardTheme.SELECT_BAR
                             : status.mine() || locked ? TacticalBoardTheme.SUCCESS_B
                             : TacticalBoardTheme.NEUTRAL_B);
         }
+    }
+
+    /**
+     * Background state of a row: every row stays selectable (an unavailable one only explains
+     * itself), and a hovered selected row lights up one step like keys and cards (P3,
+     * {@link TacticalDraw.RowState#brightensSelection}).
+     */
+    static TacticalDraw.RowState background(TacticalDraw.RowState state) {
+        return (state == null ? TacticalDraw.RowState.NORMAL : state).withDisabled(false);
+    }
+
+    /**
+     * Track of the vote-share hairline: on the selection a wash of its light bar over the row's own
+     * fill (the brighter one while hovered, {@link TacticalDraw#rowFill}), otherwise the well.
+     */
+    static int shareTrack(TacticalDraw.RowState background) {
+        return background.selected()
+                ? TacticalHud.mix(TacticalDraw.rowFill(background, false),
+                TacticalBoardTheme.SELECT_BAR, 0.3D)
+                : TacticalBoardTheme.WELL;
     }
 }

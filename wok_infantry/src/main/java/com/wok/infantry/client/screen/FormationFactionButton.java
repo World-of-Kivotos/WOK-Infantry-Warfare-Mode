@@ -10,18 +10,25 @@ import net.minecraft.network.chat.Component;
 
 /**
  * Faction key of the formation vote strip. It only changes which faction is browsed; joining is a
- * separate confirmed key. The four looks keep "looked at" and "joined" apart (user report 1):
+ * separate confirmed key. The four looks keep "looked at" and "joined" apart (user report 1), in
+ * the selection colour of the tablet's livery (P3: the Academy's blue, Caesar's crimson, Neutral
+ * graphite before joining):
  *
  * <ul>
- *   <li>{@link FormationVoteModel.FactionLook#BROWSING} (not joined yet): blue outline, 2px blue
- *   left bar and a light blue-grey fill with an eye icon. Never solid blue, so it cannot be
- *   mistaken for a joined faction.</li>
- *   <li>{@link FormationVoteModel.FactionLook#JOINED}: solid blue "current" key with a check.</li>
- *   <li>{@link FormationVoteModel.FactionLook#OTHER}: disabled (hatched) key with a lock; the
- *   tooltip says why the faction cannot be changed.</li>
+ *   <li>{@link FormationVoteModel.FactionLook#BROWSING} (not joined yet): selection-colour
+ *   outline and left bar ({@link TacticalButtonStyle#barWidth}, 3px from 16px tall) on a light
+ *   wash with an eye icon. Never solid, so it cannot be mistaken for a joined faction; this is
+ *   where the page deliberately differs from the P3 preview, which draws the browsed faction
+ *   solid.</li>
+ *   <li>{@link FormationVoteModel.FactionLook#JOINED}: the solid "current" key of
+ *   {@link TacticalButtonStyle} (selection fill, light bar, no bevel) with a check; its count
+ *   sits on the dark inset in {@code ON_SELECT}.</li>
+ *   <li>{@link FormationVoteModel.FactionLook#OTHER}: disabled key (gray, hatched) with a lock
+ *   and the light count inset; the tooltip says why the faction cannot be changed.</li>
  *   <li>{@link FormationVoteModel.FactionLook#NORMAL}: a plain raised key.</li>
  * </ul>
- * Every look carries the population badge.
+ * Every look carries the population count ("18/40"). Colours are read while the key is drawn, so
+ * they follow the palette of the frame.
  */
 final class FormationFactionButton extends Button {
     private final FormationVoteModel.FactionLook look;
@@ -46,6 +53,14 @@ final class FormationFactionButton extends Button {
     static int browsingFill(boolean hovered) {
         return TacticalHud.mix(TacticalBoardTheme.CARD, TacticalBoardTheme.SELECT_BAR,
                 hovered ? 0.42D : 0.3D);
+    }
+
+    /**
+     * Label padding of the browsing look on a key {@code height} tall: clear of its selection
+     * bar like a selected key's label ({@link TacticalButtonStyle#labelPadLeft}).
+     */
+    static int browsingPadLeft(int height) {
+        return TacticalButtonStyle.barWidth(height) + 3;
     }
 
     @Override
@@ -88,11 +103,13 @@ final class FormationFactionButton extends Button {
                                           boolean focus) {
         graphics.fill(left, top, right, bottom, browsingFill(hovered));
         BattleUiTheme.outline(graphics, left, top, right, bottom, TacticalBoardTheme.SELECT);
-        graphics.fill(left + 1, top + 1, left + 3, bottom - 1, TacticalBoardTheme.SELECT);
+        graphics.fill(left + 1, top + 1, Math.min(right - 1,
+                left + 1 + TacticalButtonStyle.barWidth(bottom - top)), bottom - 1,
+                TacticalBoardTheme.SELECT);
         if (focus) {
             TacticalButtonStyle.focusRing(graphics, left, top, right, bottom);
         }
-        int padLeft = 5;
+        int padLeft = browsingPadLeft(bottom - top);
         int textY = top + Math.max(0, (bottom - top - 8) / 2);
         int badgeWidth = 0;
         if (badge != null && !badge.getString().isEmpty()) {
