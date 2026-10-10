@@ -18,12 +18,14 @@ import java.util.Objects;
 /**
  * Shared physical-tablet shell of every WOK步战 terminal (squad, map, loadout, formation, admin).
  *
- * <p>{@link #shell} draws the v2 shell of the preview's {@code UI.shell}: dark device frame with
- * rivets, a dark header strip (status LED, title, page tabs, identity), the gray-green board and
- * a dark footer with key hints on the left and the action receipt on the right. Header layout
- * priority is title &gt; tabs &gt; identity: when space runs out the identity is hidden first,
- * then the tabs switch to their short names (and finally to a pager inside the tab strip), and
- * only then the title is shortened. The geometry comes from {@link TacticalShellLayout}.
+ * <p>{@link #shell} draws the D2 device of the preview ({@code surfaces/17-device.js},
+ * {@code deviceShell} at level 2, painted in the P3 livery of {@code 18-device-livery.js}): the
+ * case floating on the dimmed world ({@link DeviceArt}), the system status bar at the top of the
+ * display, the board, and the bottom bezel where the page keys sit. The status bar carries, left
+ * to right, the faction stripe, "title › page" (at most 55% of the free width; the short page name
+ * on the compact class), the latest receipt as a pill, the viewer's identity (shortened by
+ * {@link #fitIdentity}), then signal, battery and clock at the right end. The geometry comes from
+ * {@link TacticalShellLayout}, the plans from the pure {@link #planStatus} and {@link #planBezel}.
  *
  * <p>The old {@code renderShell}/{@code renderHeader} pair stays for screens that still use the
  * {@link TacticalMapLayout} geometry until their batch migrates them.
@@ -47,25 +49,34 @@ public final class TacticalBoardChrome {
 
     // ---- shell spec types ---------------------------------------------------------------------
 
-    /** Status LED of the header: link to the server data the screen shows. */
+    /**
+     * Link to the server data the screen shows: the link LED on the top bezel and the signal bars
+     * of the status bar. Screens produce only OK and WAIT; LOST is drawn as the preview does.
+     */
     public enum LinkState {
-        /** Data is current (green LED, blue identity). */
+        /** Data is current: the device's own LED colour, four lit bars. */
         OK,
-        /** Waiting for the first sync or a pending request (orange). */
+        /** Waiting for the first sync or a pending request: amber LED, two amber bars. */
         WAIT,
-        /** Link lost or stale (red LED). */
+        /** Link lost: red LED, no bars and a red cross. */
         LOST;
 
-        public int ledColor() {
+        /** Colour of the link LED on a device painted with {@code skin}. */
+        public int ledColor(DeviceSkin skin) {
             return switch (this) {
-                case OK -> TacticalBoardTheme.SUCCESS_B;
+                case OK -> skin.led();
                 case WAIT -> TacticalBoardTheme.ACCENT_B;
                 case LOST -> TacticalBoardTheme.DANGER_B;
             };
         }
 
-        public int identityColor() {
-            return this == OK ? TacticalBoardTheme.SELECT_B : TacticalBoardTheme.ACCENT_B;
+        /** Lit signal bars out of four. */
+        public int signalBars() {
+            return switch (this) {
+                case OK -> 4;
+                case WAIT -> 2;
+                case LOST -> 0;
+            };
         }
 
         /** OK when a battle snapshot is present, otherwise WAIT. */
