@@ -37,8 +37,9 @@ public final class ArmorCoverageApi {
     }
 
     private static PlateArmorCoverage.Coverage coverage(ItemStack stack) {
+        // 走逐件配置解析器：与实际战斗判定、提示框使用同一份覆盖部位。
         if (stack.getItem() instanceof PlateArmorItem plate) {
-            return PlateArmorCoverage.forVariant(plate.variant());
+            return plate.coverage();
         }
         if (stack.getItem() instanceof HelmetItem helmet) {
             return helmet.coverage();

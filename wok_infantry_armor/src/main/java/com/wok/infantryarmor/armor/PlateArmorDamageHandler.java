@@ -8,6 +8,8 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 /**
  * 插板受击结算点。LOW 保证先接收冠军 HIGH 重写与易伤 NORMAL 放大，再把结果交给 LOWEST 职业减伤。
+ * 防护数值与穿甲判定用的等级都来自逐件配置解析器（{@link PlateArmorStats#resolve(ProtectiveArmorItem)}、
+ * {@link ProtectiveArmorItem#protectionTier()}）。
  */
 public final class PlateArmorDamageHandler {
 
@@ -21,7 +23,9 @@ public final class PlateArmorDamageHandler {
 
     @SubscribeEvent(priority = EventPriority.LOW)
     public void onLivingHurt(LivingHurtEvent event) {
-        if (event.getAmount() <= 0.0F || !(event.getEntity() instanceof Player player)) {
+        // NaN/Inf 伤害直接跳过，不进入防护公式和磨损（否则会在受击事件里抛异常）。
+        if (!Float.isFinite(event.getAmount()) || event.getAmount() <= 0.0F
+                || !(event.getEntity() instanceof Player player)) {
             return;
         }
         ArmorProtectionResolver.EquippedProtection protection =
@@ -61,4 +65,3 @@ public final class PlateArmorDamageHandler {
         }
     }
 }
-

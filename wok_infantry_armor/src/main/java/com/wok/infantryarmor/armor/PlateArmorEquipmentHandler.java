@@ -1,9 +1,9 @@
 package com.wok.infantryarmor.armor;
 
+import com.wok.infantryarmor.ArmorerConfig;
 import com.wok.infantryarmor.armor.item.HelmetItem;
 import com.wok.infantryarmor.armor.item.PlateArmorItem;
-import net.minecraft.world.entity.ai.attributes.Attribute;
-import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import com.wok.infantryarmor.shield.item.PlasmaShieldItem;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -12,12 +12,16 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDamageEvent;
 import net.minecraftforge.event.entity.living.LivingEquipmentChangeEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.util.UUID;
 
-/** 穿戴状态同步：插板接管原版护甲/韧性，并按构型施加一次机动修正。 */
+/**
+ * 穿戴状态同步：插板接管原版护甲/韧性并施加一次机动修正；胸槽插板与头槽头盔的逐件额外修正
+ * （attributeModifiers、头盔移速）由 {@link ArmorExtraModifiers} 按槽位处理。头盔不触发原版护甲清零。
+ */
 public final class PlateArmorEquipmentHandler {
 
     public static final UUID ARMOR_REPLACEMENT_ID = UUID.fromString("5f2234c1-4479-4fb8-a4ba-ef3199bf42a1");
@@ -48,6 +52,11 @@ public final class PlateArmorEquipmentHandler {
         }
     }
 
+    @SubscribeEvent
+    public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        ArmorExtraModifiers.forget(event.getEntity());
+    }
+
     public static void synchronize(Player player) {
         ItemStack chest = player.getItemBySlot(EquipmentSlot.CHEST);
         if (chest.getItem() instanceof PlateArmorItem plate && !plate.isFunctional(chest)) {
@@ -58,50 +67,43 @@ public final class PlateArmorEquipmentHandler {
             helmet.breakExhausted(head, player);
         }
         PlateArmorItem armor = PlateArmorItem.equippedBy(player);
+        double movement = armor == null ? 0.0D : armor.settings().movementModifier();
+
+        // 额外修正必须在“没穿插板就 return”之前处理，只戴头盔的玩家也要拿到/移除头盔的修正。
+        HelmetItem helmet = HelmetItem.equippedBy(player);
+        double chestMovement = helmet == null ? movement : chestMovement(player, armor, movement);
+        ArmorExtraModifiers.synchronize(player, armor, chestMovement, helmet);
+
         if (armor == null) {
-            remove(player, Attributes.ARMOR, ARMOR_REPLACEMENT_ID);
-            remove(player, Attributes.ARMOR_TOUGHNESS, TOUGHNESS_REPLACEMENT_ID);
-            remove(player, Attributes.MOVEMENT_SPEED, MOVEMENT_ID);
+            ArmorExtraModifiers.remove(player, Attributes.ARMOR, ARMOR_REPLACEMENT_ID);
+            ArmorExtraModifiers.remove(player, Attributes.ARMOR_TOUGHNESS, TOUGHNESS_REPLACEMENT_ID);
+            ArmorExtraModifiers.remove(player, Attributes.MOVEMENT_SPEED, MOVEMENT_ID);
             return;
         }
 
-        ensure(player, Attributes.ARMOR, ARMOR_REPLACEMENT_ID,
+        ArmorExtraModifiers.ensure(player, Attributes.ARMOR, ARMOR_REPLACEMENT_ID,
                 "plate armor replaces vanilla armor", FULL_REPLACEMENT,
                 AttributeModifier.Operation.MULTIPLY_TOTAL);
-        ensure(player, Attributes.ARMOR_TOUGHNESS, TOUGHNESS_REPLACEMENT_ID,
+        ArmorExtraModifiers.ensure(player, Attributes.ARMOR_TOUGHNESS, TOUGHNESS_REPLACEMENT_ID,
                 "plate armor replaces vanilla toughness", FULL_REPLACEMENT,
                 AttributeModifier.Operation.MULTIPLY_TOTAL);
 
-        double movement = PlateArmorStats.resolve(armor.variant()).movementModifier();
         if (movement == 0.0D) {
-            remove(player, Attributes.MOVEMENT_SPEED, MOVEMENT_ID);
+            ArmorExtraModifiers.remove(player, Attributes.MOVEMENT_SPEED, MOVEMENT_ID);
         } else {
-            ensure(player, Attributes.MOVEMENT_SPEED, MOVEMENT_ID,
+            ArmorExtraModifiers.ensure(player, Attributes.MOVEMENT_SPEED, MOVEMENT_ID,
                     "plate armor mobility", movement, AttributeModifier.Operation.MULTIPLY_TOTAL);
         }
     }
 
-    private static void ensure(Player player, Attribute attribute, UUID id, String name,
-                               double amount, AttributeModifier.Operation operation) {
-        AttributeInstance instance = player.getAttribute(attribute);
-        if (instance == null) {
-            return;
+    /** 胸甲槽的移速修正：插板取解析后的值；胸甲槽是电浆护盾时取护盾配置的移速（护盾由自己的处理器施加）。 */
+    private static double chestMovement(Player player, PlateArmorItem plate, double plateMovement) {
+        if (plate != null) {
+            return plateMovement;
         }
-        AttributeModifier current = instance.getModifier(id);
-        if (current != null && current.getAmount() == amount && current.getOperation() == operation) {
-            return;
-        }
-        if (current != null) {
-            instance.removeModifier(id);
-        }
-        instance.addTransientModifier(new AttributeModifier(id, name, amount, operation));
-    }
-
-    private static void remove(Player player, Attribute attribute, UUID id) {
-        AttributeInstance instance = player.getAttribute(attribute);
-        if (instance != null && instance.getModifier(id) != null) {
-            instance.removeModifier(id);
-        }
+        PlasmaShieldItem shield = PlasmaShieldItem.equippedBy(player);
+        return shield == null
+                ? 0.0D
+                : ArmorerConfig.PLASMA_SHIELD.stats(shield.shieldVariant()).movementModifier();
     }
 }
-

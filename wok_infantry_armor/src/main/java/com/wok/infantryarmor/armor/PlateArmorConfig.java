@@ -1,46 +1,18 @@
 package com.wok.infantryarmor.armor;
 
 import net.minecraftforge.common.ForgeConfigSpec;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** 插板护甲的服务端平衡配置。四张矩阵均按 I轻、I中、I重、II轻……VI重排列。 */
 public final class PlateArmorConfig {
 
-    private static final List<Double> DEFAULT_R = List.of(
-            0.45D, 0.50D, 0.55D,
-            0.60D, 0.65D, 0.70D,
-            0.75D, 0.80D, 0.85D,
-            0.85D, 0.88D, 0.90D,
-            0.90D, 0.92D, 0.94D,
-            0.94D, 0.96D, 0.98D);
-
-    /* I 级只靠 R 区分构型；II-VI 逐步获得穿甲段缓冲，且始终显著低于同格 R。 */
-    private static final List<Double> DEFAULT_Q = List.of(
-            0.00D, 0.00D, 0.00D,
-            0.02D, 0.05D, 0.08D,
-            0.08D, 0.10D, 0.15D,
-            0.15D, 0.20D, 0.25D,
-            0.25D, 0.35D, 0.45D,
-            0.45D, 0.50D, 0.55D);
-
-    private static final List<Double> DEFAULT_G = List.of(
-            0.35D, 0.40D, 0.45D,
-            0.45D, 0.50D, 0.55D,
-            0.60D, 0.68D, 0.70D,
-            0.70D, 0.76D, 0.78D,
-            0.78D, 0.84D, 0.86D,
-            0.86D, 0.88D, 0.90D);
-
-    private static final List<Double> DEFAULT_T = List.of(
-            16.0D, 20.0D, 24.0D,
-            24.0D, 32.0D, 38.0D,
-            38.0D, 48.0D, 58.0D,
-            58.0D, 72.0D, 84.0D,
-            84.0D, 96.0D, 112.0D,
-            112.0D, 128.0D, 154.0D);
+    private static final Logger LOGGER = LoggerFactory.getLogger("wok_infantry_armor");
 
     private final ForgeConfigSpec.ConfigValue<List<? extends Double>> ballisticProtection;
     private final ForgeConfigSpec.ConfigValue<List<? extends Double>> armorPiercingBuffer;
@@ -56,42 +28,45 @@ public final class PlateArmorConfig {
     private final ForgeConfigSpec.DoubleValue helmetArmorPiercingWearMultiplier;
     private final Map<PlateArmorConstructionMaterial, MaterialProfile> materialProfiles =
             new EnumMap<>(PlateArmorConstructionMaterial.class);
+    /** 每张矩阵上次报告错误时的配置代数；配置加载/重载会推进代数，从而重新允许报告一次。 */
+    private final Map<String, Integer> reportedMatrixProblems = new ConcurrentHashMap<>();
 
     private PlateArmorConfig(ForgeConfigSpec.Builder builder) {
         builder.push("plateArmor");
         builder.comment("All 18-value matrices use order I-light, I-medium, I-heavy, then II-light ... VI-heavy.");
         ballisticProtection = builder.comment("R: protection applied to tacz:bullet and tacz:bullet_void normal ballistic segments.")
-                .defineList("ballisticProtectionR", DEFAULT_R, PlateArmorConfig::isRate);
+                .defineList("ballisticProtectionR", PlateArmorDefaults.BALLISTIC_PROTECTION_R, PlateArmorConfig::isRate);
         armorPiercingBuffer = builder.comment("Q: buffer applied only to tacz:bullet_ignore_armor and tacz:bullet_void_ignore_armor.")
-                .defineList("armorPiercingBufferQ", DEFAULT_Q, PlateArmorConfig::isRate);
+                .defineList("armorPiercingBufferQ", PlateArmorDefaults.ARMOR_PIERCING_BUFFER_Q, PlateArmorConfig::isRate);
         generalProtection = builder.comment("G: protection of the covered portion of eligible non-TaCZ combat damage.")
-                .defineList("generalProtectionG", DEFAULT_G, PlateArmorConfig::isRate);
+                .defineList("generalProtectionG", PlateArmorDefaults.GENERAL_PROTECTION_G, PlateArmorConfig::isRate);
         pressureCapacity = builder.comment("T: per-hit covered damage capacity for eligible non-TaCZ combat damage.")
-                .defineList("pressureCapacityT", DEFAULT_T, PlateArmorConfig::isNonNegative);
+                .defineList("pressureCapacityT", PlateArmorDefaults.PRESSURE_CAPACITY_T, PlateArmorConfig::isNonNegative);
 
         builder.push("movement");
         lightMovement = builder.comment("Light plate movement modifier; 0.00 keeps the wearer's base speed.")
-                .defineInRange("light", 0.00D, -0.95D, 10.0D);
+                .defineInRange("light", PlateArmorDefaults.LIGHT_MOVEMENT, -0.95D, 10.0D);
         mediumMovement = builder.comment("Medium plate movement modifier.")
-                .defineInRange("medium", -0.05D, -0.95D, 10.0D);
+                .defineInRange("medium", PlateArmorDefaults.MEDIUM_MOVEMENT, -0.95D, 10.0D);
         heavyMovement = builder.comment("Heavy plate movement modifier; -0.12 = -12%, MULTIPLY_TOTAL.")
-                .defineInRange("heavy", -0.12D, -0.95D, 10.0D);
+                .defineInRange("heavy", PlateArmorDefaults.HEAVY_MOVEMENT, -0.95D, 10.0D);
         builder.pop();
 
         builder.push("helmetIntegrity");
         builder.comment("Helmet integrity is consumed from the bullet's actual normal/AP damage segments.",
                 "TaCZ duplicate hurt segments are consolidated, so one bullet settles wear once.");
         lightHelmetIntegrity = builder.comment("Structural integrity of light helmets.")
-                .defineInRange("light", 60, 1, 10000);
+                .defineInRange("light", PlateArmorDefaults.LIGHT_HELMET_INTEGRITY, 1, 10000);
         mediumHelmetIntegrity = builder.comment("Structural integrity of medium helmets.")
-                .defineInRange("medium", 80, 1, 10000);
+                .defineInRange("medium", PlateArmorDefaults.MEDIUM_HELMET_INTEGRITY, 1, 10000);
         heavyHelmetIntegrity = builder.comment("Structural integrity of heavy helmets.")
-                .defineInRange("heavy", 180, 1, 10000);
+                .defineInRange("heavy", PlateArmorDefaults.HEAVY_HELMET_INTEGRITY, 1, 10000);
         helmetBallisticWearScale = builder.comment("Global multiplier applied to bullet structural wear.")
-                .defineInRange("ballisticWearScale", 1.0D, 0.0D, 100.0D);
+                .defineInRange("ballisticWearScale", PlateArmorDefaults.HELMET_BALLISTIC_WEAR_SCALE, 0.0D, 100.0D);
         helmetArmorPiercingWearMultiplier = builder.comment(
                         "Additional structural wear multiplier for the armor-piercing damage segment.")
-                .defineInRange("armorPiercingWearMultiplier", 2.0D, 0.0D, 100.0D);
+                .defineInRange("armorPiercingWearMultiplier",
+                                PlateArmorDefaults.HELMET_ARMOR_PIERCING_WEAR_MULTIPLIER, 0.0D, 100.0D);
         builder.pop();
 
         builder.push("materialProfiles");
@@ -125,19 +100,23 @@ public final class PlateArmorConfig {
     }
 
     public double ballisticProtection(PlateArmorTier tier, PlateArmorWeight weight) {
-        return matrixValue("ballisticProtectionR", ballisticProtection, tier, weight);
+        return matrixValue("ballisticProtectionR", ballisticProtection,
+                PlateArmorDefaults.BALLISTIC_PROTECTION_R, tier, weight);
     }
 
     public double armorPiercingBuffer(PlateArmorTier tier, PlateArmorWeight weight) {
-        return matrixValue("armorPiercingBufferQ", armorPiercingBuffer, tier, weight);
+        return matrixValue("armorPiercingBufferQ", armorPiercingBuffer,
+                PlateArmorDefaults.ARMOR_PIERCING_BUFFER_Q, tier, weight);
     }
 
     public double generalProtection(PlateArmorTier tier, PlateArmorWeight weight) {
-        return matrixValue("generalProtectionG", generalProtection, tier, weight);
+        return matrixValue("generalProtectionG", generalProtection,
+                PlateArmorDefaults.GENERAL_PROTECTION_G, tier, weight);
     }
 
     public double pressureCapacity(PlateArmorTier tier, PlateArmorWeight weight) {
-        return matrixValue("pressureCapacityT", pressureCapacity, tier, weight);
+        return matrixValue("pressureCapacityT", pressureCapacity,
+                PlateArmorDefaults.PRESSURE_CAPACITY_T, tier, weight);
     }
 
     public double movementModifier(PlateArmorWeight weight) {
@@ -196,21 +175,45 @@ public final class PlateArmorConfig {
         return values;
     }
 
-    private static double matrixValue(String name,
-                                      ForgeConfigSpec.ConfigValue<List<? extends Double>> configured,
-                                      PlateArmorTier tier,
-                                      PlateArmorWeight weight) {
+    /**
+     * 读取矩阵的一格。Forge 只校验元素、不校验长度，而且会把不合格的元素直接删掉（列表因此变短）；
+     * 不是列表或长度不是 18 时整张矩阵都按代码默认值读，只有该格不是有限数时才只回退这一格，
+     * 并在每次配置加载/重载后只打一次 ERROR。这里在伤害、tick 和提示框路径上被调用，绝不能抛异常。
+     */
+    private double matrixValue(String name,
+                               ForgeConfigSpec.ConfigValue<List<? extends Double>> configured,
+                               List<Double> defaults,
+                               PlateArmorTier tier,
+                               PlateArmorWeight weight) {
         int index = tier.configIndex(weight);
-        List<?> values = configured.get();
-        if (values.size() != PlateArmorTier.values().length * PlateArmorWeight.values().length) {
-            throw new IllegalStateException("plateArmor." + name + " must contain exactly 18 values, got "
+        // 读成 Object 再判断，避免 javac 对 get() 插入隐式 checkcast List：FileWatcher 热重载在 load() 与 correct()
+        // 之间，get() 可能原样返回文件里写错类型的值（例如 ballisticProtectionR = 0.9），隐式转换会抛 ClassCastException。
+        Object raw = configured.get();
+        if (!(raw instanceof List<?> values)) {
+            reportMatrixProblem(name, "must be a list of " + PlateArmorDefaults.MATRIX_SIZE + " numbers, got "
+                    + (raw == null ? "nothing" : raw.getClass().getSimpleName()));
+            return defaults.get(index);
+        }
+        if (values.size() != PlateArmorDefaults.MATRIX_SIZE) {
+            reportMatrixProblem(name, "must contain exactly " + PlateArmorDefaults.MATRIX_SIZE + " values, got "
                     + values.size());
+            return defaults.get(index);
         }
         Object value = values.get(index);
         if (!(value instanceof Number number) || !Double.isFinite(number.doubleValue())) {
-            throw new IllegalStateException("plateArmor." + name + " contains a non-finite number at index " + index);
+            reportMatrixProblem(name, "contains a non-finite number at index " + index);
+            return defaults.get(index);
         }
         return number.doubleValue();
+    }
+
+    private void reportMatrixProblem(String name, String problem) {
+        int generation = ArmorConfigGeneration.current();
+        Integer previous = reportedMatrixProblems.put(name, generation);
+        if (previous == null || previous != generation) {
+            LOGGER.error("plateArmor.{} {}; using the built-in default matrix for the affected entries "
+                    + "until wok-infantry-armor.toml is fixed and reloaded.", name, problem);
+        }
     }
 
     private static boolean isRate(Object value) {
