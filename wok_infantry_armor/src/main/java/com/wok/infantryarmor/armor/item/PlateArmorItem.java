@@ -5,6 +5,7 @@ import com.wok.infantryarmor.armor.PlateArmorCoverage;
 import com.wok.infantryarmor.armor.PlateArmorEquipmentMaterial;
 import com.wok.infantryarmor.armor.PlateArmorStats;
 import com.wok.infantryarmor.armor.PlateArmorVariant;
+import com.wok.infantryarmor.armor.ProtectiveArmorItem;
 import com.wok.infantryarmor.armor.ProtectedBodyPart;
 import com.wok.infantryarmor.armor.client.PlateArmorClient;
 import net.minecraft.ChatFormatting;
@@ -27,7 +28,7 @@ import java.util.Locale;
 import java.util.function.Consumer;
 
 /** 54 个外观共用的可穿戴插板胸甲；等级、类型与材料由注册时绑定的 variant 决定，玩家 NBT 不可伪造。 */
-public final class PlateArmorItem extends ArmorItem {
+public final class PlateArmorItem extends ArmorItem implements ProtectiveArmorItem {
 
     private static final String MODEL_TEXTURE_PREFIX =
             "wok_infantry_armor:textures/models/armor/plate_armor_";
@@ -42,6 +43,31 @@ public final class PlateArmorItem extends ArmorItem {
 
     public PlateArmorVariant variant() {
         return variant;
+    }
+
+    @Override
+    public com.wok.infantryarmor.armor.PlateArmorTier protectionTier() {
+        return variant.tier();
+    }
+
+    @Override
+    public com.wok.infantryarmor.armor.PlateArmorWeight protectionWeight() {
+        return variant.weight();
+    }
+
+    @Override
+    public com.wok.infantryarmor.armor.PlateArmorConstructionMaterial constructionMaterial() {
+        return variant.material();
+    }
+
+    @Override
+    public EquipmentSlot protectionSlot() {
+        return EquipmentSlot.CHEST;
+    }
+
+    @Override
+    public PlateArmorCoverage.Coverage coverage() {
+        return PlateArmorCoverage.forVariant(variant);
     }
 
     @Override

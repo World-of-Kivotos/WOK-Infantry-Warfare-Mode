@@ -61,6 +61,30 @@
 | plate_armor_6b43_zabralo_sh | 6B43 屏障-Sh 防弹衣（数码丛林迷彩） | VI | HEAVY | CERAMIC | — | ✓ | ✓ | ✓ | ✓ | — | — |
 | plate_armor_thor_integrated | NFM THOR 一体式防弹护甲 | VI | HEAVY | COMBINED | — | ✓ | ✓ | ✓ | ✓ | — | — |
 
+## 头部防具
+
+头部防具占用原版 `HEAD` 槽。安装 `WOK步战附属-部位血量` 时只对 `HEAD` 命中生效；未安装时沿用独立安装兼容结算，且同一次命中只选择一件防具，避免与胸甲重复减伤。
+
+| 注册名 | 中文名称 | 等级 | 重量 | 材料 | 头 | 胸 | 腹 | 左臂 | 右臂 | 左腿 | 右腿 |
+|---|---|---:|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| helmet_riot | 防暴头盔 | II | MEDIUM | ARAMID | ✓ | — | — | — | — | — | — |
+| helmet_lightweight_ballistic_mask | 轻量化防弹面具 | II | LIGHT | ARAMID | ✓ | — | — | — | — | — | — |
+| helmet_cqcm_ballistic_mask | CQCM 防弹面罩 | III | MEDIUM | ARMOR_STEEL | ✓ | — | — | — | — | — | — |
+| helmet_lzsh_light | LZSh 轻型头盔 | III | LIGHT | UHMWPE | ✓ | — | — | — | — | — | — |
+| helmet_6b47 | 6B47 头盔 | III | MEDIUM | ARAMID | ✓ | — | — | — | — | — | — |
+| helmet_6b47_digital_cover | 6B47 头盔（数码迷彩盔罩） | III | MEDIUM | ARAMID | ✓ | — | — | — | — | — | — |
+| helmet_caiman_composite | 凯门鳄 复合防弹头盔 | III | LIGHT | COMBINED | ✓ | — | — | — | — | — | — |
+| helmet_kiver_m_heavy | Kiver-M 重型防弹头盔 | III | HEAVY | TITANIUM | ✓ | — | — | — | — | — | — |
+| helmet_achhc_light | ACHHC 轻型头盔 | IV | LIGHT | ARAMID | ✓ | — | — | — | — | — | — |
+| helmet_strike | STRIKE 防弹头盔 | IV | MEDIUM | COMBINED | ✓ | — | — | — | — | — | — |
+| helmet_fast_mt_super_high_cut | FAST MT 超级高切头盔 | IV | LIGHT | UHMWPE | ✓ | — | — | — | — | — | — |
+| helmet_airframe | AirFrame 头盔 | IV | LIGHT | COMBINED | ✓ | — | — | — | — | — | — |
+| helmet_flux | FLUX 防弹头盔 | IV | LIGHT | UHMWPE | ✓ | — | — | — | — | — | — |
+| helmet_vulkan_5_heavy | Vulkan-5 火神重型头盔 | IV | HEAVY | TITANIUM | ✓ | — | — | — | — | — | — |
+| helmet_altyn_heavy | 阿尔金 重型头盔 | V | HEAVY | TITANIUM | ✓ | — | — | — | — | — | — |
+| helmet_fast_heavy_protection_kit | FAST 重型防护套件 | V | HEAVY | COMBINED | ✓ | — | — | — | — | — | — |
+| helmet_maska_1sch_heavy | Maska-1SCh 重型头盔 | VI | HEAVY | TITANIUM | ✓ | — | — | — | — | — | — |
+
 ## 等离子护盾（全身能量屏障）
 
 - 纳米护盾：I、II、III、IV、V、VI

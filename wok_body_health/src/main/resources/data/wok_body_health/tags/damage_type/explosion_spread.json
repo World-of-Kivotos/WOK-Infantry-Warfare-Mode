@@ -1,0 +1,8 @@
+{
+  "replace": false,
+  "values": [
+    "#minecraft:is_explosion",
+    { "id": "superbwarfare:mine", "required": false },
+    { "id": "superbwarfare:vehicle_explosion", "required": false }
+  ]
+}

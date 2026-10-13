@@ -11,9 +11,17 @@ $knownProducts = @(
     'wok_body_health',
     'wok_infantry',
     'wok_infantry_armor',
+    'wok_vehicle_health',
+    'wok_commander_support',
+    'wok_capture_points',
+    'wok_downed',
     'wok_armor'
 )
-$allowedMandatory = @('forge', 'minecraft')
+$allowedMandatoryByProduct = @{
+    'wok_infantry_armor' = @('forge', 'minecraft', 'geckolib')
+    'wok_vehicle_health' = @('forge', 'minecraft', 'superbwarfare')
+    'wok_commander_support' = @('forge', 'minecraft', 'wok_infantry')
+}
 $failures = [System.Collections.Generic.List[string]]::new()
 $orderingEdges = [System.Collections.Generic.List[object]]::new()
 
@@ -47,6 +55,12 @@ foreach ($requestedPath in $JarPath) {
             continue
         }
         $modId = $modMatch.Groups[1].Value
+        $allowedMandatory = if ($allowedMandatoryByProduct.ContainsKey($modId)) {
+            $allowedMandatoryByProduct[$modId]
+        }
+        else {
+            @('forge', 'minecraft')
+        }
 
         $dependencyBlocks = [regex]::Matches(
             $modsToml,
@@ -95,6 +109,10 @@ foreach ($requestedPath in $JarPath) {
                 'wok_body_health' { 'com/wok/bodyhealth/' }
                 'wok_infantry' { 'com/wok/infantry/' }
                 'wok_infantry_armor' { 'com/wok/infantryarmor/' }
+                'wok_vehicle_health' { 'com/wok/vehiclehealth/' }
+                'wok_commander_support' { 'com/wok/commandersupport/' }
+                'wok_capture_points' { 'com/wok/capturepoints/' }
+                'wok_downed' { 'com/wok/downed/' }
                 'wok_armor' { 'com/wok/armor/' }
             }
             if ($entryNames.Where({ $_.StartsWith($foreignPrefix) }).Count -gt 0) {
@@ -109,7 +127,7 @@ foreach ($requestedPath in $JarPath) {
         [pscustomobject]@{
             Mod = $modId
             Jar = [System.IO.Path]::GetFileName($resolvedPath)
-            Required = 'minecraft, forge only'
+            Required = $allowedMandatory -join ', '
             Result = 'PASS'
         }
     }

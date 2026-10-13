@@ -1,0 +1,21 @@
+{
+  "effect.wok_downed.downed": "Downed",
+  "gui.wok_downed.title": "INCAPACITATED",
+  "gui.wok_downed.bleedout": "Bleed-out: %s s",
+  "gui.wok_downed.waiting": "Wait for a teammate to interact and rescue you",
+  "message.wok_downed.entered": "You are down. Wait for a teammate to rescue you.",
+  "message.wok_downed.rescue_started": "Rescuing %s. Hold position.",
+  "message.wok_downed.being_rescued": "%s is rescuing you.",
+  "message.wok_downed.rescue_progress": "Rescue progress: %s%%",
+  "message.wok_downed.rescue_busy": "Another player is already rescuing this casualty.",
+  "message.wok_downed.rescue_invalid": "That player cannot be rescued now.",
+  "message.wok_downed.rescue_canceled": "Rescue interrupted.",
+  "message.wok_downed.drag_started": "Dragging %s. Sneak-interact again to release them.",
+  "message.wok_downed.being_dragged": "%s is dragging you.",
+  "message.wok_downed.drag_stopped": "Casualty released.",
+  "message.wok_downed.drag_invalid": "That casualty cannot be dragged now.",
+  "message.wok_downed.revived": "Rescue complete.",
+  "message.wok_downed.gave_up": "You gave up waiting for rescue.",
+  "command.wok_downed.not_downed": "You are not downed.",
+  "command.wok_downed.revived_count": "Revived %s player(s)."
+}

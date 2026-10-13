@@ -1,0 +1,4 @@
+status=FAIL
+PASS drag started; carrier=(0.5, 101.0, 0.5) downed=false alive=true; casualty=(0.5, 101.0, -0.65) alive=true
+PASS casualty entity visible at phase 2
+FAIL java.lang.IllegalStateException: phase 2 visible casualty follows server target: actual=(0.5, 101.0, -0.65) expected=(0.502098016743397, 101.05, 8.962719125733582)

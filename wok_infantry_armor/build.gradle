@@ -36,10 +36,19 @@ repositories {
     mavenCentral()
     maven { url = 'https://maven.minecraftforge.net/' }
     maven { url = 'https://maven.parchmentmc.org/' }
+    maven {
+        name = 'GeckoLib'
+        url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'
+        content {
+            includeGroupByRegex('software\\.bernie.*')
+            includeGroup('com.eliotlash.mclib')
+        }
+    }
 }
 
 dependencies {
     minecraft "net.minecraftforge:forge:${forge_full_version}"
+    implementation fg.deobf("software.bernie.geckolib:geckolib-forge-${mc_version}:${geckolib_version}")
 
     // TaCZ remains an optional runtime integration and is never bundled.
     // Development uses an explicitly supplied or ForgeGradle-mapped local jar.

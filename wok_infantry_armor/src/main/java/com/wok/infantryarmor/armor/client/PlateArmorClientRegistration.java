@@ -16,6 +16,7 @@ public final class PlateArmorClientRegistration {
     @SubscribeEvent
     public static void registerLayers(EntityRenderersEvent.RegisterLayerDefinitions event) {
         PlateArmorModelDefinition.registerLayers(event);
+        HelmetArmorModel.registerLayers(event);
     }
 }
 

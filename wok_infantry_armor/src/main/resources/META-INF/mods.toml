@@ -9,7 +9,7 @@ displayName = "WOK步战附属-独立护甲"
 authors = "World of Kivotos"
 description = '''
 Standalone armor module for the WOK Infantry add-on line.
-Includes 54 plate armors and 18 tiered plasma shields; contains no production tables or profession framework.
+Includes 54 plate armors, 13 localized-protection helmets with GeckoLib skeletal rendering, and 18 tiered plasma shields; contains no production tables or profession framework.
 '''
 
 [[dependencies.wok_infantry_armor]]
@@ -24,6 +24,13 @@ modId = "minecraft"
 mandatory = true
 versionRange = "[1.20.1,1.20.2)"
 ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.wok_infantry_armor]]
+modId = "geckolib"
+mandatory = true
+versionRange = "[4.8.4,)"
+ordering = "AFTER"
 side = "BOTH"
 
 [[dependencies.wok_infantry_armor]]

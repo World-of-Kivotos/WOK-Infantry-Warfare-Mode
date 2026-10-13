@@ -3,3 +3,9 @@
 # are changed when only line endings change.
 src/generated/**/.cache/cache text eol=lf
 src/generated/**/*.json text eol=lf
+
+# Model assets are hash-checked by tests (LargeSupplyStationModelContractTest) and must stay byte-exact
+# on Windows checkouts with core.autocrlf=true.
+*.geo.json -text
+*.obj -text
+*.mtl -text
