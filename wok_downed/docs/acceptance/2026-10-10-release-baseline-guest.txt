@@ -1,0 +1,14 @@
+status=FAIL
+PASS casualty uses real TCP connection
+PASS expected Mafuyu installation
+PASS casualty entity visible at phase 4
+PASS phase 4 visible casualty follows server position: actual=(0.5, 101.05, 8.925437420326361) expected=(0.5, 101.05, 8.925437420326361)
+PASS phase 4 visible pose is correct
+PASS visible casualty traveled over two blocks
+PASS casualty entity visible at phase 6
+PASS phase 6 visible casualty follows server position: actual=(-7.962738391917217, 101.05, 10.075437420326361) expected=(-7.962738391917217, 101.05, 10.075437420326361)
+PASS phase 6 visible pose is correct
+PASS casualty entity visible at phase 8
+PASS phase 8 visible casualty follows server position: actual=(-10.270141934149965, 101.0, 10.075327165456926) expected=(-10.270141934149965, 101.05, 10.075327165456926)
+PASS phase 8 visible pose is correct
+FAIL java.lang.IllegalStateException: host: java.lang.IllegalStateException: carrier crosshair still reaches the casualty after turning around; hit=net.minecraft.world.phys.BlockHitResult@7180b25f

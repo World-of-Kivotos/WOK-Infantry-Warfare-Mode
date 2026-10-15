@@ -36,7 +36,7 @@ public final class DownedConfig {
                         "Movement-speed multiplier applied while dragging a casualty.")
                 .defineInRange("dragSpeedMultiplier", 0.55D, 0.1D, 1.0D);
         DRAG_FOLLOW_DISTANCE = builder.comment(
-                        "Distance in blocks that a dragged casualty follows behind the rescuer.")
+                        "Rope length in blocks: a dragged casualty is pulled along once the rescuer is farther away than this.")
                 .defineInRange("dragFollowDistance", 1.15D, 0.4D, 2.5D);
         FINISHING_DAMAGE_GRACE_SECONDS = builder.comment(
                         "Seconds after going down during which follow-up damage cannot finish a casualty.")
