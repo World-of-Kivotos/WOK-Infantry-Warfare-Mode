@@ -307,6 +307,24 @@ class TacticalListTest {
     }
 
     @Test
+    void hoveredSelectedRowKeepsItsPointerStateSoItLightsUp() {
+        TacticalDraw.RowState selected = TacticalList.rowState(3, 3, true, false, true);
+        TacticalDraw.RowState other = TacticalList.rowState(2, 3, true, false, true);
+
+        assertTrue(selected.selected());
+        assertTrue(selected.brightensSelection());
+        assertEquals(TacticalBoardTheme.SELECT_HOVER, TacticalDraw.rowFill(selected, false));
+        assertTrue(selected.alt(), "odd rows take the alternate stripe");
+        assertFalse(other.selected());
+        assertTrue(other.showsHover());
+        assertFalse(other.alt());
+        assertFalse(TacticalList.rowState(3, 3, true, false, false).alt(),
+                "no stripes when alternation is off");
+        assertFalse(TacticalList.rowState(3, 3, true, true, true).brightensSelection(),
+                "a disabled selection does not react to hover");
+    }
+
+    @Test
     void disabledRowTooltipSaysWhyAndFullTitleWhenCut() {
         TacticalDraw.RowSpec spec = TacticalDraw.RowSpec.of("突击兵")
                 .withDisabledReason(Component.literal("名额已满"));

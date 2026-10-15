@@ -6,6 +6,7 @@ import com.wok.infantry.client.screen.FormationSelectionScreen;
 import com.wok.infantry.client.screen.FormationVoteModel;
 import com.wok.infantry.client.screen.TacticalConfirmDialog;
 import com.wok.infantry.client.screen.TacticalList;
+import com.wok.infantry.client.screen.TacticalLivery;
 import com.wok.infantry.client.screen.UiRect;
 import com.wok.infantry.client.screen.UiTestWidgets;
 import com.wok.infantry.client.ui.probe.UiLayoutFrame;
@@ -51,6 +52,12 @@ import java.util.regex.Pattern;
  *   <li>the state's own semantics (browsing faction not solid blue, disabled keys with a reason,
  *   dangerous lock confirmation starting on "cancel", Esc closing the page before joining …).</li>
  * </ul>
+ *
+ * <p>Liveries (0.5.0-beta.3, pinned per case): every state before joining (and the waiting page)
+ * is Neutral ({@code -neutral}); the joined states are the Academy viewer's ({@code -academy}).
+ * Three joined states are repeated as the Caesar viewer ({@code -caesar}: vote, locked with
+ * {@code caesar_234_mechanized}, and the administrator's dangerous lock confirmation). The legacy
+ * captures keep their names and have no livery.
  */
 public final class FormationCases {
     /** uiId of the administrator "open vote" key (the page's {@code ADMIN_OPEN_UI_ID}). */
@@ -62,6 +69,9 @@ public final class FormationCases {
     /** Lower-case ids, e.g. a class id or a support id, must never reach the detail. */
     private static final Pattern INTERNAL_ID = Pattern.compile(
             "^[a-z0-9_]+$|[a-z0-9_]+:[a-z0-9_/]+");
+    private static final TacticalLivery.Livery ACADEMY = TacticalLivery.Livery.ACADEMY;
+    private static final TacticalLivery.Livery CAESAR = TacticalLivery.Livery.CAESAR;
+    private static final TacticalLivery.Livery NEUTRAL = TacticalLivery.Livery.NEUTRAL;
 
     private FormationCases() {
     }
@@ -69,16 +79,17 @@ public final class FormationCases {
     public static List<UiCase> cases() {
         List<UiCase> cases = new ArrayList<>();
         cases.add(legacyVote());
-        // Player view (operator level taken back), in preview order.
-        cases.add(player("join", () -> FormationFixtures.Scenario
+        // Player view (operator level taken back), in preview order. Before joining the page is
+        // Neutral, after joining the Academy viewer's page is Academy navy (pinned, see base()).
+        cases.add(player("join", NEUTRAL, () -> FormationFixtures.Scenario
                 .unjoined(FormationVotePhase.NOT_STARTED).build())
                 .check(FormationCases::checkJoin).build());
-        cases.add(player("confirm", () -> FormationFixtures.Scenario
+        cases.add(player("confirm", NEUTRAL, () -> FormationFixtures.Scenario
                 .unjoined(FormationVotePhase.NOT_STARTED).build())
                 .steps(UiStep.click(FormationSelectionScreen.JOIN_UI_ID),
                         UiStep.until("the join confirmation", FormationCases::modalOpen))
                 .check(FormationCases::checkJoinConfirm).build());
-        cases.add(player("facfull", () -> FormationFixtures.Scenario
+        cases.add(player("facfull", NEUTRAL, () -> FormationFixtures.Scenario
                 .unjoined(FormationVotePhase.NOT_STARTED)
                 .population(MockData.VIEWER_FACTION, 40).build())
                 .steps(UiStep.click(FormationSelectionScreen.FACTION_UI_ID_PREFIX
@@ -86,31 +97,31 @@ public final class FormationCases {
                         UiStep.until("the full faction browsed", context ->
                                 "facfull".equals(state(context))))
                 .check(FormationCases::checkFactionFull).build());
-        cases.add(player("vote", () -> FormationFixtures.Scenario
+        cases.add(player("vote", ACADEMY, () -> FormationFixtures.Scenario
                 .joined(FormationVotePhase.OPEN).tally(tie()).build())
                 .check(FormationCases::checkVoteOpen).build());
-        cases.add(player("detail", () -> FormationFixtures.Scenario
+        cases.add(player("detail", ACADEMY, () -> FormationFixtures.Scenario
                 .joined(FormationVotePhase.OPEN).own(MockData.OWN_VOTE).build())
                 .steps(openDetailsWhenNarrow())
                 .check(FormationCases::checkDetail).build());
-        cases.add(player("locked", () -> FormationFixtures.Scenario
+        cases.add(player("locked", ACADEMY, () -> FormationFixtures.Scenario
                 .joined(FormationVotePhase.LOCKED).own(MockData.OWN_VOTE)
                 .locked(MockData.LOCKED_FORMATION).build())
                 .check(FormationCases::checkLocked).build());
-        cases.add(player("latejoin", () -> FormationFixtures.Scenario
+        cases.add(player("latejoin", NEUTRAL, () -> FormationFixtures.Scenario
                 .unjoined(FormationVotePhase.LOCKED).locked(MockData.LOCKED_FORMATION).build())
                 .check(FormationCases::checkLateJoin).build());
-        cases.add(player("lateconfirm", () -> FormationFixtures.Scenario
+        cases.add(player("lateconfirm", NEUTRAL, () -> FormationFixtures.Scenario
                 .unjoined(FormationVotePhase.LOCKED).locked(MockData.LOCKED_FORMATION).build())
                 .steps(UiStep.click(FormationSelectionScreen.JOIN_UI_ID),
                         UiStep.until("the join confirmation", FormationCases::modalOpen))
                 .check(FormationCases::checkJoinConfirm).build());
-        cases.add(player("waiting", () -> null)
+        cases.add(player("waiting", NEUTRAL, () -> null)
                 .check(FormationCases::checkWaiting).build());
         // B11a: the catalog request went unanswered for 3 seconds (the server drops requests over
         // its rate limit silently): the waiting page says so and offers the retry. Only the
         // client's request clock is set; no request is sent, so no catalog can answer it.
-        cases.add(player("waitover", () -> null, "waiting")
+        cases.add(player("waitover", NEUTRAL, () -> null, "waiting")
                 .steps(UiStep.action(context -> ClientFormationState.catalogRequested()),
                         UiStep.until("the catalog request overdue",
                                 context -> ClientFormationState.catalogOverdue()))
@@ -118,7 +129,7 @@ public final class FormationCases {
                 .cleanup(context -> ClientFormationState.update(ClientFormationState.snapshot()))
                 .build());
         // The viewer's vote moved from the mobile formation to the long-capability one.
-        cases.add(player("longcaps", () -> FormationFixtures.Scenario
+        cases.add(player("longcaps", ACADEMY, () -> FormationFixtures.Scenario
                 .joined(FormationVotePhase.OPEN).own(FormationFixtures.LONG_CAPS_ID)
                 .tally(Map.of(FormationFixtures.DEFAULT_ID, 3, FormationFixtures.MOBILE_ID, 4,
                         FormationFixtures.CAVALRY_ID, 1, FormationFixtures.LONG_CAPS_ID, 1))
@@ -126,36 +137,52 @@ public final class FormationCases {
                 .steps(openDetailsWhenNarrow(), scrollDetailToEnd())
                 .check(FormationCases::checkLongCapabilities).build());
         // Administrator view.
-        cases.add(admin("pending", () -> FormationFixtures.Scenario
+        cases.add(admin("pending", ACADEMY, () -> FormationFixtures.Scenario
                 .joined(FormationVotePhase.NOT_STARTED).build())
                 .steps(UiStep.when(context -> !context.tight(), UiStep.hover(
                         FormationSelectionScreen.FACTION_UI_ID_PREFIX + "caesar")))
                 .check(FormationCases::checkPending).build());
-        cases.add(admin("full", () -> FormationFixtures.Scenario
+        cases.add(admin("full", ACADEMY, () -> FormationFixtures.Scenario
                 .joined(FormationVotePhase.OPEN).own(MockData.OWN_VOTE)
                 .capacity(FormationFixtures.CAVALRY_ID, 12).withReserve().build())
                 .steps(selectRow(FormationFixtures.CAVALRY_ID),
                         UiStep.until("the 12-seat formation highlighted", context ->
                                 "full".equals(state(context))))
                 .check(FormationCases::checkCapacityShortfall).build());
-        cases.add(admin("admintie", () -> FormationFixtures.Scenario
+        cases.add(admin("admintie", ACADEMY, () -> FormationFixtures.Scenario
                 .joined(FormationVotePhase.OPEN).tally(tie()).build())
                 .check(FormationCases::checkAdminTie).build());
-        cases.add(admin("admin", () -> FormationFixtures.Scenario
+        cases.add(admin("admin", ACADEMY, () -> FormationFixtures.Scenario
                 .joined(FormationVotePhase.OPEN).build())
                 .steps(UiStep.click(ADMIN_LOCK_UI_ID),
                         UiStep.until("the lock confirmation", FormationCases::modalOpen))
                 .check(FormationCases::checkLockConfirm).build());
         // Administrator test start (0.4.0-beta.2): the key in the black waiting space before
         // joining, alone in the compact administrator area, and its ordinary confirmation.
-        cases.add(admin("testmode", () -> FormationFixtures.Scenario
+        cases.add(admin("testmode", NEUTRAL, () -> FormationFixtures.Scenario
                 .unjoined(FormationVotePhase.NOT_STARTED).build(), "join")
                 .check(FormationCases::checkTestStartKey).build());
-        cases.add(admin("testconfirm", () -> FormationFixtures.Scenario
+        cases.add(admin("testconfirm", NEUTRAL, () -> FormationFixtures.Scenario
                 .unjoined(FormationVotePhase.NOT_STARTED).build())
                 .steps(UiStep.click(TEST_START_UI_ID),
                         UiStep.until("the test-start confirmation", FormationCases::modalOpen))
                 .check(FormationCases::checkTestStartConfirm).build());
+        // 0.5.0-beta.3: the Caesar viewer (joined the red faction) — open vote, locked
+        // caesar_234_mechanized, and the administrator's dangerous lock confirmation, red on red.
+        MockData.Side caesar = MockData.Side.CAESAR;
+        cases.add(player("vote", CAESAR, () -> FormationFixtures.Scenario
+                .joined(caesar, FormationVotePhase.OPEN).build())
+                .check(FormationCases::checkVoteOpen).build());
+        cases.add(player("locked", CAESAR, () -> FormationFixtures.Scenario
+                .joined(caesar, FormationVotePhase.LOCKED).own(caesar.ownVote())
+                .locked(caesar.lockedFormation()).build())
+                .check(FormationCases::checkLocked)
+                .check((context, capture) -> checkLockedFormation(context, caesar)).build());
+        cases.add(admin("admin", CAESAR, () -> FormationFixtures.Scenario
+                .joined(caesar, FormationVotePhase.OPEN).build())
+                .steps(UiStep.click(ADMIN_LOCK_UI_ID),
+                        UiStep.until("the lock confirmation", FormationCases::modalOpen))
+                .check(FormationCases::checkLockConfirm).build());
         return List.copyOf(cases);
     }
 
@@ -190,31 +217,43 @@ public final class FormationCases {
 
     // ---- case builders ----------------------------------------------------------------------------
 
-    private static UiCase.Builder player(String state, Supplier<FormationSelectionSnapshot> catalog) {
-        return player(state, catalog, state);
+    private static UiCase.Builder player(String state, TacticalLivery.Livery livery,
+                                         Supplier<FormationSelectionSnapshot> catalog) {
+        return player(state, livery, catalog, state);
     }
 
     /** A player-view state; {@code expectedState} is what the page must report. */
-    private static UiCase.Builder player(String state, Supplier<FormationSelectionSnapshot> catalog,
+    private static UiCase.Builder player(String state, TacticalLivery.Livery livery,
+                                         Supplier<FormationSelectionSnapshot> catalog,
                                          String expectedState) {
-        return base(state, catalog, expectedState).prepare(asPlayer());
+        return base(state, livery, catalog, expectedState).prepare(asPlayer());
     }
 
-    private static UiCase.Builder admin(String state, Supplier<FormationSelectionSnapshot> catalog) {
-        return admin(state, catalog, state);
+    private static UiCase.Builder admin(String state, TacticalLivery.Livery livery,
+                                        Supplier<FormationSelectionSnapshot> catalog) {
+        return admin(state, livery, catalog, state);
     }
 
     /** An administrator-view state; {@code expectedState} is what the page must report. */
-    private static UiCase.Builder admin(String state, Supplier<FormationSelectionSnapshot> catalog,
+    private static UiCase.Builder admin(String state, TacticalLivery.Livery livery,
+                                        Supplier<FormationSelectionSnapshot> catalog,
                                         String expectedState) {
-        return base(state, catalog, expectedState).prepare(asAdministrator());
+        return base(state, livery, catalog, expectedState).prepare(asAdministrator());
     }
 
-    private static UiCase.Builder base(String state, Supplier<FormationSelectionSnapshot> catalog,
+    /**
+     * One page state on a fixture catalog, in {@code livery}. The livery is pinned: the
+     * acceptance player has a real battle snapshot (its own side) from the live flow, which the
+     * resolver would prefer to the fixture catalog, so an unjoined page would otherwise not show
+     * the Neutral livery a viewer without a faction sees.
+     */
+    private static UiCase.Builder base(String state, TacticalLivery.Livery livery,
+                                       Supplier<FormationSelectionSnapshot> catalog,
                                        String expectedState) {
         return UiCase.builder(FormationSelectionScreen.SURFACE_ID, state)
                 .tiers(UiTier.ALL)
                 .migrated(true)
+                .pinLivery(livery)
                 .open(context -> {
                     FormationSelectionSnapshot snapshot = catalog.get();
                     context.caseState().put("catalog", snapshot);
@@ -393,7 +432,7 @@ public final class FormationCases {
                         + " under clip " + text.clip());
             }
         }
-        context.observe("formationState[" + context.uiCase().stateId() + "@"
+        context.observe("formationState[" + context.uiCase().stateKey() + "@"
                 + context.tier().id() + "]=" + screen.uiStateId());
         checkHeaderIdentity(context, capture, screen);
     }
@@ -413,7 +452,7 @@ public final class FormationCases {
         String identity = UiTestWidgets.formationIdentity(screen);
         boolean shown = capture.frame().texts().stream().anyMatch(text ->
                 text.text().equals(identity) || text.truncated() && text.fullText().equals(identity));
-        context.observe("formationHeaderIdentity[" + context.uiCase().stateId() + "@"
+        context.observe("formationHeaderIdentity[" + context.uiCase().stateKey() + "@"
                 + context.tier().id() + "]=" + (shown ? "shown" : "hidden"));
         if (context.tier() == UiTier.T427
                 && "zh_cn".equals(context.minecraft().options.languageCode)) {
@@ -500,6 +539,16 @@ public final class FormationCases {
         UiLayoutFrame.Control deploy = control(context, capture,
                 FormationSelectionScreen.VOTE_UI_ID);
         context.require(deploy.active(), "the locked page must offer the deployment key");
+    }
+
+    /** The page shows {@code side}'s faction with its formation locked for everyone. */
+    private static void checkLockedFormation(UiCaseContext context, MockData.Side side) {
+        FormationSelectionScreen screen = page(context);
+        context.require(side.factionId().equals(screen.snapshot().selectedFactionId())
+                        && side.lockedFormation().equals(screen.snapshot().selectedFormationId()),
+                "the page is not " + side.factionId() + " with " + side.lockedFormation()
+                        + " locked: " + screen.snapshot().selectedFactionId() + " / "
+                        + screen.snapshot().selectedFormationId());
     }
 
     private static void checkLateJoin(UiCaseContext context, UiCapture.Result capture) {

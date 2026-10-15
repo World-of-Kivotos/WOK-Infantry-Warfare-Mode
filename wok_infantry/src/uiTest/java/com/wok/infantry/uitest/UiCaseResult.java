@@ -1,5 +1,6 @@
 package com.wok.infantry.uitest;
 
+import com.wok.infantry.client.screen.TacticalBoardChrome;
 import com.wok.infantry.client.ui.probe.UiLayoutFrame;
 import com.wok.infantry.client.ui.probe.UiLayoutReport;
 
@@ -8,7 +9,10 @@ import java.util.List;
 /**
  * Outcome of one capture: a case on one tier, or one of the 14 legacy live-flow screenshots.
  *
- * @param caseId     {@code <surface>.<state>}, or {@code legacy.<file stem>} for a live capture
+ * @param caseId     {@code <surface>.<state>[-<livery>]}, or {@code legacy.<file stem>} for a live
+ *                   capture
+ * @param livery     the faction livery the case expects ({@code academy}, {@code caesar},
+ *                   {@code neutral}), or "" for a capture without a tablet device
  * @param tier       tier id ({@code 320x240} …)
  * @param fileName   screenshot written for this capture ("" when none was taken)
  * @param strict     whether layout violations fail the run (migrated surface, required tier,
@@ -19,12 +23,27 @@ import java.util.List;
  * @param failure    why a step or check failed, or {@code null}
  */
 public record UiCaseResult(String caseId, String surfaceId, String stateId, String group,
-                           String tier, String previewTier, String fileName, boolean migrated,
+                           String livery, String tier, String previewTier, String fileName,
+                           boolean migrated,
                            boolean strict, boolean blocking, String screenClass, int layoutWidth,
                            int layoutHeight, int baseScale, double guiScale, UiLayoutFrame frame,
                            List<UiLayoutReport.Violation> violations, String failure) {
     public UiCaseResult {
+        livery = livery == null ? "" : livery;
         violations = violations == null ? List.of() : List.copyOf(violations);
+    }
+
+    /**
+     * The probe note the tablet shell left in the frame ({@code shell livery=… link=…}), or ""
+     * when no device was drawn.
+     */
+    public String shellNote() {
+        if (frame == null) {
+            return "";
+        }
+        return frame.notes().stream()
+                .filter(note -> note.startsWith(TacticalBoardChrome.SHELL_NOTE))
+                .findFirst().orElse("");
     }
 
     /** PASS, FAIL (fails the run) or REPORT (problems only reported). */

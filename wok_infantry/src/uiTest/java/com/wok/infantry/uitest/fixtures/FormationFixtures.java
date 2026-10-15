@@ -64,12 +64,15 @@ public final class FormationFixtures {
     }
 
     /**
-     * One state of the vote page. Phase, votes and the locked formation describe the academy
-     * faction's ballot (the viewer's faction, or the one the viewer looks at before joining);
-     * the other faction has not started its ballot.
+     * One state of the vote page. Phase, votes and the locked formation describe the ballot of
+     * the viewer's faction (the academy, or Caesar for {@link #joined(MockData.Side,
+     * FormationVotePhase)}; before joining, the academy the viewer looks at); the other faction
+     * has not started its ballot.
      */
     public static final class Scenario {
         private String joined = MockData.VIEWER_FACTION;
+        /** The faction whose ballot the scenario describes. */
+        private String ballot = MockData.VIEWER_FACTION;
         private FormationVotePhase phase = FormationVotePhase.OPEN;
         private boolean changeAllowed = true;
         private String own = "";
@@ -93,7 +96,18 @@ public final class FormationFixtures {
 
         /** Joined the academy faction at {@code phase}. */
         public static Scenario joined(FormationVotePhase phase) {
+            return joined(MockData.Side.ACADEMY, phase);
+        }
+
+        /**
+         * Joined {@code side}'s faction at {@code phase}; phase, votes and the locked formation
+         * describe that faction's ballot (Caesar: {@code default} and
+         * {@code caesar_234_mechanized}).
+         */
+        public static Scenario joined(MockData.Side side, FormationVotePhase phase) {
             Scenario scenario = new Scenario();
+            scenario.joined = side.factionId();
+            scenario.ballot = side.factionId();
             scenario.phase = phase;
             return scenario;
         }
@@ -113,7 +127,7 @@ public final class FormationFixtures {
             return this;
         }
 
-        /** Votes per formation id of the academy ballot (default {@link MockData#VOTES}). */
+        /** Votes per formation id of the ballot (default {@link MockData#VOTES}). */
         public Scenario tally(Map<String, Integer> votes) {
             this.tally = new LinkedHashMap<>(votes);
             return this;
@@ -155,7 +169,7 @@ public final class FormationFixtures {
         Map<String, Integer> ownTally = new LinkedHashMap<>();
         for (FactionDefinition source : config.factions()) {
             FactionDefinition faction = adjusted(source, s);
-            boolean ballotHere = faction.id().equals(MockData.VIEWER_FACTION);
+            boolean ballotHere = faction.id().equals(s.ballot);
             MockData.FactionData mock = MockData.FACTIONS.stream()
                     .filter(data -> data.id().equals(faction.id())).findFirst()
                     .orElse(new MockData.FactionData(faction.id(), faction.displayName(), 0,

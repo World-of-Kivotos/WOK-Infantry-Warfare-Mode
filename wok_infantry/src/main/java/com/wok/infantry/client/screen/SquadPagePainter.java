@@ -24,9 +24,10 @@ import java.util.UUID;
 /**
  * Squad page of the battle terminal (preview {@code 20-squad.js} {@code newSquadsPage}).
  *
- * <p>Wide (content ≥ 600): the five call signs as a strip on top, the viewed squad's roster below
- * and a right column with "我的状态", "指挥官" and "阵营兵力". Narrow: the call-sign list and the
- * commander on the left (plus the faction strength when it fits), the roster on the right. Under
+ * <p>Wide (content ≥ {@value #WIDE_MIN_WIDTH}): the five call signs as a strip on top, the viewed
+ * squad's roster below and a right column with "我的状态", "指挥官" and "阵营兵力". Narrow (on the
+ * D2 device also 640×336 and 640×360): the call-sign list and the commander on the left (plus the
+ * faction strength when it fits), the roster on the right. Under
  * the roster the operations of the viewed squad: on the own squad the target line and the 2+2
  * group (hand over / kick | leave / disband); on another squad only join (or create) and back to
  * the own squad. One line under the keys says why a key is disabled or what it does. Before the
@@ -43,6 +44,12 @@ final class SquadPagePainter implements SquadScreen.Painter {
     static final String COMMANDER_BOX = "squad.commander_panel";
     static final String FACTION_BOX = "squad.faction_panel";
     static final String VOTE_BOX = "squad.vote_panel";
+    /**
+     * Narrowest content of the wide layout (preview {@code 20-squad.js}). On the D2 device
+     * 640×336 and 640×360 give 576 and are narrow (the strip becomes the list column); 960×540
+     * gives 846 and stays wide.
+     */
+    static final int WIDE_MIN_WIDTH = 600;
 
     private final SquadScreen host;
     private final Font font;
@@ -77,7 +84,7 @@ final class SquadPagePainter implements SquadScreen.Painter {
         this.font = host.boardFont();
         this.metrics = host.boardMetrics();
         this.vote = model.votePending();
-        this.wide = body.width() >= 600;
+        this.wide = wide(body);
         int gap = metrics.gap();
         int kv = metrics.roomy() ? 13 : 11;
         if (wide) {
@@ -133,6 +140,11 @@ final class SquadPagePainter implements SquadScreen.Painter {
             addRoster(model);
         }
         addCommander(model);
+    }
+
+    /** Whether {@code body} (the shell's content) gets the call-sign strip and right column. */
+    static boolean wide(UiRect body) {
+        return body.width() >= WIDE_MIN_WIDTH;
     }
 
     // ---- call signs -------------------------------------------------------------------------------
@@ -739,7 +751,7 @@ final class SquadPagePainter implements SquadScreen.Painter {
                         TextFit.Align.LEFT).width();
                 if (tagWidth > 0) {
                     TextFit.draw(graphics, font, tag, x + nameWidth, layout.targetY(), tagWidth,
-                            boardColor(target.state()), TextFit.Align.LEFT);
+                            boardTextColor(target.state()), TextFit.Align.LEFT);
                 }
             }
         }
@@ -750,7 +762,10 @@ final class SquadPagePainter implements SquadScreen.Painter {
         SquadBoardBlocks.endRegion(graphics);
     }
 
-    /** Status colour on the light board. */
+    /**
+     * Status mark colour (dots, fills) on the light board, read from the palette active now. A
+     * word in this colour goes through {@link #boardTextColor} instead.
+     */
     static int boardColor(MemberState state) {
         return switch (state == null ? MemberState.OFFLINE : state) {
             case DEPLOYED -> TacticalBoardTheme.SUCCESS;
@@ -758,6 +773,15 @@ final class SquadPagePainter implements SquadScreen.Painter {
             case DEAD -> TacticalBoardTheme.DANGER;
             case WAITING, OFFLINE -> TacticalBoardTheme.MUTED;
         };
+    }
+
+    /**
+     * Status word colour on the light board ("倒地", "阵亡"): {@link #boardColor}, except that
+     * the downed orange is written in {@link TacticalBoardTheme#ACCENT_TEXT} (plan 4.7: ACCENT as
+     * text is only 1.7–2.8:1 on the light panels; ACCENT stays for marks and fills).
+     */
+    static int boardTextColor(MemberState state) {
+        return state == MemberState.DOWNED ? TacticalBoardTheme.ACCENT_TEXT : boardColor(state);
     }
 
     /** Draws the longest form of {@code reason} that fits in one line. */
@@ -883,50 +907,54 @@ final class SquadPagePainter implements SquadScreen.Painter {
         SquadBoardBlocks.endRegion(graphics);
     }
 
-    /** "我的状态": faction, formation, squad, role, class, deployment. */
+    /**
+     * "我的状态": faction, formation, squad, role, class, deployment. The respawn wait stays
+     * neutral text (JAVA_PORT_PLAN 6.2: orange is for sections and adjustable controls).
+     */
     static List<FormationVotePanel.Info> statusRows(SquadBoardModel model) {
         BattleSnapshot snapshot = model.snapshot();
         List<FormationVotePanel.Info> rows = new ArrayList<>();
         rows.add(new FormationVotePanel.Info(SquadBoardText.t(SquadBoardText.MINE_FACTION),
-                SquadLabels.factionName(snapshot), TacticalBoardTheme.TEXT));
+                SquadLabels.factionName(snapshot), SquadBoardBlocks.Ink.TEXT));
         if (model.votePending()) {
             boolean open = model.input().votePhase() == FormationVotePhase.OPEN;
             rows.add(new FormationVotePanel.Info(SquadBoardText.t(SquadBoardText.MINE_FORMATION),
                     SquadBoardText.t(open ? SquadBoardText.MINE_VOTE_OPEN
-                            : SquadBoardText.MINE_VOTE_WAIT), TacticalBoardTheme.TEXT));
+                            : SquadBoardText.MINE_VOTE_WAIT), SquadBoardBlocks.Ink.TEXT));
             rows.add(new FormationVotePanel.Info(SquadBoardText.t(SquadBoardText.MINE_SQUAD),
                     Component.translatable(SquadBoardText.PREFIX + "sub.pending"),
-                    TacticalBoardTheme.MUTED));
+                    SquadBoardBlocks.Ink.MUTED));
             rows.add(new FormationVotePanel.Info(SquadBoardText.t(SquadBoardText.MINE_ROLE),
-                    Component.translatable(SquadLabels.UNASSIGNED_KEY), TacticalBoardTheme.MUTED));
+                    Component.translatable(SquadLabels.UNASSIGNED_KEY),
+                    SquadBoardBlocks.Ink.MUTED));
             rows.add(new FormationVotePanel.Info(SquadBoardText.t(SquadBoardText.MINE_CLASS),
                     SquadBoardText.t(SquadBoardText.MINE_CLASS_AFTER_LOCK),
-                    TacticalBoardTheme.MUTED));
+                    SquadBoardBlocks.Ink.MUTED));
             rows.add(new FormationVotePanel.Info(SquadBoardText.t(SquadBoardText.MINE_DEPLOY),
                     Component.translatable(SquadBoardText.PREFIX + "check.after_lock"),
-                    TacticalBoardTheme.MUTED));
+                    SquadBoardBlocks.Ink.MUTED));
             return rows;
         }
         MutableComponent formation = SquadLabels.formationName(snapshot);
         rows.add(new FormationVotePanel.Info(SquadBoardText.t(SquadBoardText.MINE_FORMATION),
                 formation == null ? Component.translatable(SquadBoardText.PREFIX + "count.none")
                         : SquadBoardText.t(SquadBoardText.MINE_FORMATION_VALUE, formation),
-                TacticalBoardTheme.TEXT));
+                SquadBoardBlocks.Ink.TEXT));
         SquadBoardModel.Authority authority = model.authority();
         rows.add(new FormationVotePanel.Info(SquadBoardText.t(SquadBoardText.MINE_SQUAD),
                 authority.inSquad() ? SquadLabels.callsign(snapshot.ownSquad())
                         : Component.translatable(SquadLabels.UNASSIGNED_KEY),
-                authority.inSquad() ? TacticalBoardTheme.TEXT : TacticalBoardTheme.MUTED));
+                authority.inSquad() ? SquadBoardBlocks.Ink.TEXT : SquadBoardBlocks.Ink.MUTED));
         rows.add(new FormationVotePanel.Info(SquadBoardText.t(SquadBoardText.MINE_ROLE),
                 authority.roleName(), authority.inSquad() || authority.commander()
-                ? TacticalBoardTheme.TEXT : TacticalBoardTheme.MUTED));
+                ? SquadBoardBlocks.Ink.TEXT : SquadBoardBlocks.Ink.MUTED));
         String classId = model.currentClassId();
         MutableComponent className = SquadLabels.className(snapshot,
                 classId.isEmpty() ? null : classId);
         rows.add(new FormationVotePanel.Info(SquadBoardText.t(SquadBoardText.MINE_CLASS),
                 authority.inSquad() ? className : Component.translatable(
                         SquadBoardText.PREFIX + "check.class_default", className),
-                TacticalBoardTheme.TEXT));
+                SquadBoardBlocks.Ink.TEXT));
         DeploymentPhase phase = snapshot.deployment().phase();
         rows.add(new FormationVotePanel.Info(SquadBoardText.t(SquadBoardText.MINE_DEPLOY),
                 switch (phase) {
@@ -934,8 +962,8 @@ final class SquadPagePainter implements SquadScreen.Painter {
                     case WAITING -> SquadBoardText.t(SquadBoardText.MINE_WAITING,
                             model.respawnSeconds());
                     case READY -> SquadBoardText.t(SquadBoardText.MINE_READY);
-                }, phase == DeploymentPhase.ACTIVE ? TacticalBoardTheme.SUCCESS
-                : TacticalBoardTheme.TEXT));
+                }, phase == DeploymentPhase.ACTIVE ? SquadBoardBlocks.Ink.SUCCESS
+                : SquadBoardBlocks.Ink.TEXT));
         return rows;
     }
 
@@ -1007,7 +1035,8 @@ final class SquadPagePainter implements SquadScreen.Painter {
                         .withMeta(meta));
         int[] counts = {snapshot.factionMemberCount(), snapshot.enemyFactionMemberCount()};
         int[] capacities = {model.factionCapacity(), model.enemyFactionCapacity()};
-        int[] colors = {TacticalBoardTheme.HUD_FRIENDLY, TacticalBoardTheme.HOSTILE};
+        // Own side blue, enemy red: fixed for every livery, like the map and the HUD.
+        int[] colors = {TacticalBoardTheme.HUD_FRIENDLY, TacticalBoardTheme.HUD_HOSTILE};
         for (int index = 0; index < 2; index++) {
             int y = content.top() + index * 16;
             Component value = Component.translatable(SquadLabels.MEMBER_COUNT_KEY, counts[index],

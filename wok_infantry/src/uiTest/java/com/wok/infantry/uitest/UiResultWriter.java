@@ -3,6 +3,7 @@ package com.wok.infantry.uitest;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.wok.infantry.client.screen.TacticalBoardChrome;
 import com.wok.infantry.client.ui.probe.UiLayoutFrame;
 import com.wok.infantry.client.ui.probe.UiLayoutReport;
 
@@ -21,8 +22,10 @@ import java.util.List;
  *       layout violations (rule, subject, rectangles in GUI coordinates);</li>
  *   <li>{@code wok_ui_manifest.json} — the list of screenshots and their status;</li>
  *   <li>{@code index.html} — a page with each Java screenshot next to the preview's PNG of the
- *       same surface, state and tier, and its violations.</li>
+ *       same surface, state, livery and tier, and its violations.</li>
  * </ul>
+ * A capture of a tablet screen also carries its livery ({@code academy}, {@code caesar},
+ * {@code neutral}) and what the shell drew ({@code shell livery=… link=…}).
  */
 public final class UiResultWriter {
     public static final String LAYOUT_FILE = "wok_ui_layout.json";
@@ -53,6 +56,9 @@ public final class UiResultWriter {
             JsonObject entry = new JsonObject();
             entry.addProperty("file", result.fileName());
             entry.addProperty("case", result.caseId());
+            if (!result.livery().isEmpty()) {
+                entry.addProperty("livery", result.livery());
+            }
             entry.addProperty("tier", result.tier());
             entry.addProperty("status", result.status());
             entry.addProperty("strict", result.strict());
@@ -86,6 +92,13 @@ public final class UiResultWriter {
         capture.addProperty("surface", result.surfaceId());
         capture.addProperty("state", result.stateId());
         capture.addProperty("group", result.group());
+        if (!result.livery().isEmpty()) {
+            capture.addProperty("livery", result.livery());
+        }
+        String shell = result.shellNote();
+        if (!shell.isEmpty()) {
+            capture.addProperty("shell", shell.substring(TacticalBoardChrome.SHELL_NOTE.length()));
+        }
         capture.addProperty("tier", result.tier());
         capture.addProperty("previewTier", result.previewTier());
         capture.addProperty("file", result.fileName());
@@ -199,6 +212,12 @@ public final class UiResultWriter {
                 .append(".badge{font-size:12px;padding:1px 8px;border-radius:10px;color:#fff}")
                 .append(".PASS{background:var(--pass)}.FAIL{background:var(--fail)}")
                 .append(".REPORT{background:var(--report)}")
+                // Livery chips: academy navy, caesar red, neutral pale steel with dark ink.
+                .append(".livery{font-size:12px;padding:1px 8px;border-radius:10px;")
+                .append("border:1px solid var(--edge)}")
+                .append(".academy{background:#1f3c6b;color:#eef4fa}")
+                .append(".caesar{background:#9c1c25;color:#faf1ef}")
+                .append(".neutral{background:#d5dbdd;color:#1c2427}")
                 .append(".shots{display:grid;grid-template-columns:1fr 1fr;gap:8px}")
                 .append(".shots figure{margin:0;min-width:0}.shots img{width:100%;height:auto;")
                 .append("image-rendering:pixelated;border:1px solid var(--edge)}")
@@ -214,11 +233,19 @@ public final class UiResultWriter {
             page.append("<section class=\"card\"><h2>").append(escape(result.caseId()))
                     .append(" @ ").append(escape(result.tier()))
                     .append(" <span class=\"badge ").append(result.status()).append("\">")
-                    .append(result.status()).append("</span></h2>");
+                    .append(result.status()).append("</span>");
+            if (!result.livery().isEmpty()) {
+                page.append(" <span class=\"livery ").append(escape(result.livery()))
+                        .append("\">").append(escape(liveryName(result.livery())))
+                        .append("</span>");
+            }
+            page.append("</h2>");
+            String shell = result.shellNote();
             page.append("<div class=\"meta\">").append(escape(result.screenClass()))
                     .append(" · layout ").append(result.layoutWidth()).append('x')
                     .append(result.layoutHeight()).append(" ×").append(result.baseScale())
-                    .append(result.strict() ? " · strict" : " · report-only").append("</div>");
+                    .append(result.strict() ? " · strict" : " · report-only")
+                    .append(shell.isEmpty() ? "" : " · " + escape(shell)).append("</div>");
             page.append("<div class=\"shots\"><figure>");
             if (!result.fileName().isEmpty()) {
                 page.append("<img loading=\"lazy\" alt=\"Java\" src=\"../screenshots/")
@@ -226,15 +253,23 @@ public final class UiResultWriter {
             }
             page.append("<figcaption>Java · ").append(escape(result.fileName()))
                     .append("</figcaption></figure><figure>");
-            Path preview = previewShot(previewShots, result);
+            Path preview = previewShot(previewShots, result, true);
+            boolean exact = preview != null;
+            if (preview == null && !result.livery().isEmpty()) {
+                // No livery export yet: the plain state's PNG still shows the page content.
+                preview = previewShot(previewShots, result, false);
+            }
             if (preview != null) {
                 page.append("<img loading=\"lazy\" alt=\"preview\" src=\"")
                         .append(escape(preview.toUri().toString())).append("\">");
             }
             page.append("<figcaption>预览 ").append(escape(result.surfaceId())).append(" · ")
-                    .append(escape(result.stateId())).append(" · ")
+                    .append(escape(previewState(result, true))).append(" · ")
                     .append(escape(result.previewTier()))
-                    .append(preview == null ? "（无对应预览图）" : "").append("</figcaption></figure></div>");
+                    .append(preview == null ? "（无预览）"
+                            : exact ? "" : "（无" + escape(liveryName(result.livery()))
+                            + "涂装预览，此为 " + escape(result.stateId()) + " 的旧版对照）")
+                    .append("</figcaption></figure></div>");
             if (result.failure() != null) {
                 page.append("<p><b>failure:</b> ").append(escape(result.failure())).append("</p>");
             }
@@ -256,15 +291,35 @@ public final class UiResultWriter {
         return page.toString();
     }
 
-    /** {@code <surface>__new__<tier>__<state>.png} of the preview, if it exists. */
-    private static Path previewShot(Path previewShots, UiCaseResult result) {
+    /**
+     * {@code <surface>__new__<tier>__<state>[-<livery>].png} of the preview, if it exists: with
+     * {@code withLivery} the export of the same livery (plan 6: the preview exports the device
+     * states under the Java names), otherwise the plain state's PNG.
+     */
+    private static Path previewShot(Path previewShots, UiCaseResult result, boolean withLivery) {
         if (previewShots == null || result.surfaceId().isEmpty()
                 || "legacy".equals(result.surfaceId())) {
             return null;
         }
         Path shot = previewShots.resolve(result.surfaceId() + "__new__" + result.previewTier()
-                + "__" + result.stateId() + ".png");
+                + "__" + previewState(result, withLivery) + ".png");
         return Files.isRegularFile(shot) ? shot : null;
+    }
+
+    /** {@code <state>-<livery>} (or the plain state without a livery). */
+    private static String previewState(UiCaseResult result, boolean withLivery) {
+        return withLivery && !result.livery().isEmpty()
+                ? result.stateId() + "-" + result.livery() : result.stateId();
+    }
+
+    /** Chinese name of a livery id for the result page. */
+    static String liveryName(String livery) {
+        return switch (livery) {
+            case "academy" -> "学院军";
+            case "caesar" -> "凯撒";
+            case "neutral" -> "中立";
+            default -> livery;
+        };
     }
 
     private static String escape(String text) {

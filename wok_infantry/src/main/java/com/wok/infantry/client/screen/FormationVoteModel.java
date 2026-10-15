@@ -20,9 +20,10 @@ import java.util.Objects;
  *
  * <p>The flow is: join a faction (confirmed) → the administrator opens the vote → vote → the
  * administrator locks one formation (confirmed) → deploy. Faction keys and formation rows only
- * change what is being looked at; they never send anything. Blue means "being looked at"; before
- * joining the browsed faction is drawn as an outline (never solid blue, user report 1), and only
- * the joined faction is solid blue with a check.
+ * change what is being looked at; they never send anything. The selection colour (the livery's:
+ * blue, crimson, or graphite before joining) means "being looked at"; before joining the browsed
+ * faction is drawn as an outline (never solid, user report 1), and only the joined faction is
+ * solid with a check.
  */
 public final class FormationVoteModel {
     /** Where the viewer is in the flow. */
@@ -41,7 +42,7 @@ public final class FormationVoteModel {
         LOCKED
     }
 
-    /** Step-by-step instruction shown in the footer and the faction strip (user report 3). */
+    /** Step-by-step instruction shown in the status bar and the faction strip (user report 3). */
     public enum Step {
         SYNC,
         EMPTY,
@@ -422,7 +423,7 @@ public final class FormationVoteModel {
 
     // ---- flow ---------------------------------------------------------------------------------
 
-    /** Step-by-step instruction for the footer and the strip. */
+    /** Step-by-step instruction for the status bar and the strip. */
     public Step step() {
         return switch (stage()) {
             case WAITING -> Step.SYNC;

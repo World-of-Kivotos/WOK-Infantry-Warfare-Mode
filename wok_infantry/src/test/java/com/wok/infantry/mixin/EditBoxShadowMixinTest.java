@@ -51,12 +51,14 @@ class EditBoxShadowMixinTest {
     /** Expected number of call sites per redirect handler in EditBox.renderWidget (1.20.1). */
     private static final Map<String, Integer> EXPECTED_SITES = Map.of(
             "wokInfantry$skipVanillaFrame", 2,
+            "wokInfantry$recolorCursor", 1,
             "wokInfantry$drawSequence", 2,
             "wokInfantry$drawComponent", 1,
             "wokInfantry$drawString", 2);
     /** The GuiGraphics method each redirect must hit in development names. */
     private static final Map<String, String> EXPECTED_NAMES = Map.of(
             "wokInfantry$skipVanillaFrame", "fill",
+            "wokInfantry$recolorCursor", "fill",
             "wokInfantry$drawSequence", "drawString",
             "wokInfantry$drawComponent", "drawString",
             "wokInfantry$drawString", "drawString");
@@ -128,6 +130,31 @@ class EditBoxShadowMixinTest {
             }
         }
         assertEquals(5, shadowed);
+    }
+
+    @Test
+    void theCursorRedirectHitsVanillasFixedGrayBar() throws IOException {
+        // The only RenderType fill of renderWidget is the mid-text cursor bar, pushed as the
+        // constant 0xFFD0D0D0 right before the call; the redirect replaces exactly that colour.
+        MethodNode renderWidget = renderWidget();
+        int cursorBars = 0;
+        for (AbstractInsnNode insn : renderWidget.instructions) {
+            if (insn instanceof MethodInsnNode call && call.owner.equals(GUI_GRAPHICS)
+                    && call.name.equals("fill")
+                    && call.desc.equals("(Lnet/minecraft/client/renderer/RenderType;IIIII)V")) {
+                cursorBars++;
+                AbstractInsnNode colour = call.getPrevious();
+                while (colour != null && colour.getOpcode() < 0) {
+                    colour = colour.getPrevious();
+                }
+                assertTrue(colour instanceof org.objectweb.asm.tree.LdcInsnNode ldc
+                                && Integer.valueOf(
+                                com.wok.infantry.client.screen.TacticalTextField.VANILLA_CURSOR)
+                                .equals(ldc.cst),
+                        "the cursor bar is no longer vanilla's fixed gray: " + colour);
+            }
+        }
+        assertEquals(1, cursorBars);
     }
 
     @Test

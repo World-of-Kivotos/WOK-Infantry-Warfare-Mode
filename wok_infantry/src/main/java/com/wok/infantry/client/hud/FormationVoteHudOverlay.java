@@ -37,7 +37,7 @@ public final class FormationVoteHudOverlay {
 
     private static void render(GuiGraphics graphics, int width, int height) {
         HudFrame frame = HudFrame.current(width, height);
-        if (frame == null || frame.hidden() || frame.vote() == null
+        if (frame == null || frame.coreHidden() || frame.vote() == null
                 || frame.layout().vote() == null) {
             return;
         }

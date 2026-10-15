@@ -12,6 +12,9 @@ import net.minecraft.util.FormattedCharSequence;
  * overlays migrate to the shared tokens. The bright ones the HUD still reads are aliases of the
  * finalised bright tokens; the old dark-panel colours have no tablet equivalent, are no longer
  * used by the core and keep their old values only for source compatibility.
+ *
+ * <p>The bright aliases are frozen to the A scheme ({@link TacticalPalette#A}), not read from the
+ * swappable tokens: this class may first load while a tablet screen draws in a faction palette.
  */
 public final class BattleUiTheme {
     /** @deprecated old dark-panel colour, unused; use {@link TacticalBoardTheme#HUD_PLATE_SOLID}. */
@@ -34,22 +37,22 @@ public final class BattleUiTheme {
     public static final int FRIENDLY_DARK = 0xFF286784;
     /** @deprecated use {@link TacticalBoardTheme#ACCENT_B}. */
     @Deprecated
-    public static final int ACCENT = TacticalBoardTheme.ACCENT_B;
+    public static final int ACCENT = TacticalPalette.A.get(PaletteToken.ACCENT_B);
     /** @deprecated use {@link TacticalBoardTheme#HUD_FRIENDLY} or {@link TacticalBoardTheme#MAP_FRIENDLY}. */
     @Deprecated
     public static final int FRIENDLY = TacticalBoardTheme.HUD_FRIENDLY;
     /** @deprecated use {@link TacticalBoardTheme#LIGHT}. */
     @Deprecated
-    public static final int TEXT = TacticalBoardTheme.LIGHT;
+    public static final int TEXT = TacticalPalette.A.get(PaletteToken.LIGHT);
     /** @deprecated use {@link TacticalBoardTheme#LIGHT_MUTED}. */
     @Deprecated
-    public static final int MUTED_TEXT = TacticalBoardTheme.LIGHT_MUTED;
+    public static final int MUTED_TEXT = TacticalPalette.A.get(PaletteToken.LIGHT_MUTED);
     /** @deprecated use {@link TacticalBoardTheme#DANGER_B}. */
     @Deprecated
-    public static final int DANGER = TacticalBoardTheme.DANGER_B;
+    public static final int DANGER = TacticalPalette.A.get(PaletteToken.DANGER_B);
     /** @deprecated use {@link TacticalBoardTheme#SUCCESS_B}. */
     @Deprecated
-    public static final int SUCCESS = TacticalBoardTheme.SUCCESS_B;
+    public static final int SUCCESS = TacticalPalette.A.get(PaletteToken.SUCCESS_B);
 
     private BattleUiTheme() {
     }

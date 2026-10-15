@@ -14,6 +14,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TacticalBoardSliderTest {
     private static final double EPS = 1.0E-9D;
 
+    // ---- look -----------------------------------------------------------------------------------
+
+    @Test
+    void valueReadOutIsWrittenInTheReadableOrangeText() {
+        // Preview UIX.slider: only the value text moves to ACCENT_TEXT; track and knob stay ADJUST.
+        assertEquals(TacticalBoardTheme.ACCENT_TEXT, TacticalBoardSlider.valueColor(true));
+        assertEquals(TacticalBoardTheme.DISABLED_TEXT, TacticalBoardSlider.valueColor(false));
+    }
+
     // ---- pure layout ----------------------------------------------------------------------------
 
     @Test

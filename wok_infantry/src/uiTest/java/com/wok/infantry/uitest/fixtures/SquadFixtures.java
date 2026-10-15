@@ -45,6 +45,12 @@ import java.util.UUID;
  *
  * <p>The fixture viewer has its own id, so a real deployment of the acceptance player never
  * looks like "the viewer just deployed" (which closes the terminal).
+ *
+ * <p>Every state can be seen from either side ({@link Scenario#withSide}): the Academy (blue,
+ * the preview's viewer) or Caesar (red side, own and enemy faction swapped, the locked formation
+ * {@code caesar_234_mechanized}, red deployment points). The terminal then resolves its livery
+ * from the fixture itself — the battle side, or before the first battle snapshot the joined
+ * catalog faction — so these cases also exercise the live livery rule (no pin).
  */
 public final class SquadFixtures {
     /** Id of the fixture viewer (never the real player's). */
@@ -78,24 +84,39 @@ public final class SquadFixtures {
      * @param points          deployment points (main base, beacons, a rally point)
      * @param respawnSeconds  countdown while waiting (0 = ready)
      * @param resupplySeconds resupply cooldown while in combat
+     * @param side            the viewer's side: the Academy (blue, the preview's viewer) or
+     *                        Caesar (red: own and enemy faction swapped, the formation
+     *                        {@code caesar_234_mechanized}, red deployment points), which picks
+     *                        the tablet livery
      */
     public record Scenario(Stage stage, Role role, DeploymentPhase phase, int points,
-                           int respawnSeconds, int resupplySeconds) {
+                           int respawnSeconds, int resupplySeconds, MockData.Side side) {
+        public Scenario {
+            side = side == null ? MockData.Side.ACADEMY : side;
+        }
+
         public static Scenario ready(Role role) {
-            return new Scenario(Stage.READY, role, DeploymentPhase.WAITING, 3, 12, 0);
+            return new Scenario(Stage.READY, role, DeploymentPhase.WAITING, 3, 12, 0,
+                    MockData.Side.ACADEMY);
         }
 
         public static Scenario of(Stage stage) {
-            return new Scenario(stage, Role.NONE, DeploymentPhase.WAITING, 0, 0, 0);
+            return new Scenario(stage, Role.NONE, DeploymentPhase.WAITING, 0, 0, 0,
+                    MockData.Side.ACADEMY);
         }
 
         public Scenario withPhase(DeploymentPhase value, int resupply) {
             return new Scenario(stage, role, value, points, value == DeploymentPhase.ACTIVE ? 0
-                    : respawnSeconds, resupply);
+                    : respawnSeconds, resupply, side);
         }
 
         public Scenario withPoints(int value) {
-            return new Scenario(stage, role, phase, value, respawnSeconds, resupplySeconds);
+            return new Scenario(stage, role, phase, value, respawnSeconds, resupplySeconds, side);
+        }
+
+        /** The same state seen from {@code value}'s side. */
+        public Scenario withSide(MockData.Side value) {
+            return new Scenario(stage, role, phase, points, respawnSeconds, resupplySeconds, value);
         }
     }
 
@@ -120,13 +141,14 @@ public final class SquadFixtures {
         listen();
         scenario = next;
         fixture = next.stage() == Stage.LOADING ? null : battle(next);
+        MockData.Side side = next.side();
         formationFixture = switch (next.stage()) {
-            case VOTE_WAIT -> FormationFixtures.Scenario.joined(FormationVotePhase.NOT_STARTED)
-                    .build();
-            case VOTE_OPEN -> FormationFixtures.Scenario.joined(FormationVotePhase.OPEN)
-                    .tally(withoutOwnVote()).build();
-            default -> FormationFixtures.Scenario.joined(FormationVotePhase.LOCKED)
-                    .own(MockData.OWN_VOTE).locked(MockData.LOCKED_FORMATION).build();
+            case VOTE_WAIT -> FormationFixtures.Scenario.joined(side,
+                    FormationVotePhase.NOT_STARTED).build();
+            case VOTE_OPEN -> FormationFixtures.Scenario.joined(side, FormationVotePhase.OPEN)
+                    .tally(withoutOwnVote(side)).build();
+            default -> FormationFixtures.Scenario.joined(side, FormationVotePhase.LOCKED)
+                    .own(side.ownVote()).locked(side.lockedFormation()).build();
         };
         apply();
     }
@@ -198,33 +220,41 @@ public final class SquadFixtures {
         }
     }
 
-    /** The open ballot before the viewer voted: {@link MockData#VOTES} minus the viewer's vote. */
-    private static Map<String, Integer> withoutOwnVote() {
+    /**
+     * The open ballot before the viewer voted: {@link MockData#VOTES} minus the viewer's vote
+     * for {@code side}'s formation.
+     */
+    private static Map<String, Integer> withoutOwnVote(MockData.Side side) {
         Map<String, Integer> votes = new LinkedHashMap<>(MockData.VOTES);
-        votes.computeIfPresent(MockData.OWN_VOTE, (id, count) -> Math.max(0, count - 1));
+        votes.computeIfPresent(side.ownVote(), (id, count) -> Math.max(0, count - 1));
         return votes;
     }
 
     // ---- battle snapshot ------------------------------------------------------------------------
 
     private static BattleSnapshot battle(Scenario state) {
+        MockData.Side side = state.side();
+        MockData.FactionData own = side.own();
+        MockData.FactionData other = side.enemy();
+        // Own and enemy faction as the viewer's side sees them (Caesar: swapped).
         FormationContextView context = new FormationContextView(
-                state.stage() == Stage.READY ? MockData.LOCKED_FORMATION : "",
-                state.stage() == Stage.READY ? "千禧年研讨会机动部队" : "",
+                state.stage() == Stage.READY ? side.lockedFormation() : "",
+                state.stage() == Stage.READY ? side.formationName() : "",
                 state.stage() == Stage.READY ? MockData.VIEWER_CLASS : "",
-                MockData.VIEWER_FACTION, MockData.FACTIONS.get(0).name(),
-                MockData.FACTIONS.get(0).capacity(), MockData.FACTIONS.get(1).id(),
-                MockData.FACTIONS.get(1).name(), MockData.FACTIONS.get(1).capacity());
-        int population = MockData.FACTIONS.get(0).population();
-        int enemy = MockData.FACTIONS.get(1).population();
+                own.id(), own.name(), own.capacity(), other.id(), other.name(),
+                other.capacity());
+        int population = own.population();
+        int enemy = other.population();
+        Faction faction = side.faction();
         if (state.stage() != Stage.READY) {
             DeploymentView waiting = new DeploymentView(DeploymentPhase.WAITING, 1L, SERVER_TICK,
                     SERVER_TICK, SERVER_TICK, null, false, false, false, false, List.of());
-            return new BattleSnapshot(VIEWER, Faction.BLUE, null, false, false, population,
+            return new BattleSnapshot(VIEWER, faction, null, false, false, population,
                     enemy, 40, 1, List.of(), List.of(), List.of(),
                     new PermissionView(false, false, false, false, false, false, false),
                     List.of(), SupportView.unavailable(), waiting, System.currentTimeMillis(),
-                    0x5100L + state.stage().ordinal(), context, "", List.of());
+                    0x5100L + side.ordinal() * 256L + state.stage().ordinal(), context, "",
+                    List.of());
         }
         boolean leader = state.role() == Role.LEADER;
         boolean active = state.phase() == DeploymentPhase.ACTIVE;
@@ -264,15 +294,15 @@ public final class SquadFixtures {
             squads.add(new SquadView(callsign, leaderId, members, data.capacity(),
                     limits(members)));
         }
-        SquadCallsign own = leader ? SquadCallsign.ALPHA : null;
+        SquadCallsign ownSquadCallsign = leader ? SquadCallsign.ALPHA : null;
         List<ClassQuotaView> quotas = new ArrayList<>();
-        SquadView ownSquad = own == null ? null : squads.get(0);
+        SquadView ownSquad = ownSquadCallsign == null ? null : squads.get(0);
         for (MockData.ClassData data : MockData.CLASSES) {
             int used = ownSquad == null ? 0 : (int) ownSquad.members().stream()
                     .filter(member -> member.classId().equals(data.id())).count();
             quotas.add(new ClassQuotaView(data.id(), "", data.quota(), used));
         }
-        List<DeploymentPoint> points = points(state.points());
+        List<DeploymentPoint> points = points(state.points(), faction);
         UUID selected = points.isEmpty() ? null
                 : (active && points.size() > 1 ? points.get(1) : points.get(0)).id();
         DeploymentPhase phase = state.phase();
@@ -285,11 +315,12 @@ public final class SquadFixtures {
                 ? new PermissionView(false, false, true, true, true, false, false)
                 : new PermissionView(true, true, false, false, false, false, false);
         int members = squads.stream().mapToInt(squad -> squad.members().size()).sum();
-        return new BattleSnapshot(VIEWER, Faction.BLUE, own, leader, false,
+        return new BattleSnapshot(VIEWER, faction, ownSquadCallsign, leader, false,
                 members + (leader ? 0 : 1), enemy, 40, 8, squads, List.of(), List.of(),
                 permissions, quotas, SupportView.unavailable(), deployment,
-                System.currentTimeMillis(), 0x5200L + state.role().ordinal() * 16L
-                + phase.ordinal(), context, MockData.VIEWER_CLASS, List.of());
+                System.currentTimeMillis(), 0x5200L + side.ordinal() * 256L
+                + state.role().ordinal() * 16L + phase.ordinal(), context, MockData.VIEWER_CLASS,
+                List.of());
     }
 
     private static MemberState stateOf(MockData.MemberData member) {
@@ -312,27 +343,30 @@ public final class SquadFixtures {
         return limits;
     }
 
-    /** Main base, {@code count − 2} beacons and a rally point (two points: base and a beacon). */
-    static List<DeploymentPoint> points(int count) {
+    /**
+     * Main base, {@code count − 2} beacons and a rally point (two points: base and a beacon), all
+     * of {@code faction} (the viewer's side: the server only sends the own side's points).
+     */
+    static List<DeploymentPoint> points(int count, Faction faction) {
         List<DeploymentPoint> points = new ArrayList<>();
         if (count <= 0) {
             return points;
         }
-        points.add(point(0, DeploymentPointKind.MAIN_BASE, -160, 64, 110));
+        points.add(point(0, DeploymentPointKind.MAIN_BASE, -160, 64, 110, faction));
         int beacons = count == 2 ? 1 : Math.max(0, count - 2);
         for (int index = 0; index < beacons; index++) {
             points.add(point(1 + index, DeploymentPointKind.FIELD_BEACON,
-                    -40 + (index % 4) * 38, 71, 20 - (index / 4) * 42));
+                    -40 + (index % 4) * 38, 71, 20 - (index / 4) * 42, faction));
         }
         if (count >= 3) {
-            points.add(point(99, DeploymentPointKind.RALLY, -30, 66, 60));
+            points.add(point(99, DeploymentPointKind.RALLY, -30, 66, 60, faction));
         }
         return points;
     }
 
     private static DeploymentPoint point(int index, DeploymentPointKind kind, int x, int y,
-                                         int z) {
-        return new DeploymentPoint(new UUID(0x5155AD99L, index), Faction.BLUE, OVERWORLD,
+                                         int z, Faction faction) {
+        return new DeploymentPoint(new UUID(0x5155AD99L, index), faction, OVERWORLD,
                 new BlockPos(x, y, z), 0.0F, DeploymentPoint.DEFAULT_SUPPLY_RADIUS, kind);
     }
 }

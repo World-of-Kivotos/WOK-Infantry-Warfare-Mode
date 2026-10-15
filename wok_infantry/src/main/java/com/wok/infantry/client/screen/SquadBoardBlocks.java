@@ -246,6 +246,29 @@ final class SquadBoardBlocks {
         UiLayoutProbe.end(graphics);
     }
 
+    // ---- semantic colours ---------------------------------------------------------------------------
+
+    /**
+     * Text colour of a value the pages may plan before drawing (the key-value rows of "我的状态"
+     * and the vote panel). A plan keeps the ink, never an {@code int}: the theme colours are the
+     * viewer's livery only while {@link TacticalScreen} draws, so a colour read in {@code init()}
+     * would stay the A palette on a faction-painted board.
+     */
+    enum Ink {
+        TEXT,
+        MUTED,
+        SUCCESS;
+
+        /** This ink in the palette active now; call while drawing. */
+        int color() {
+            return switch (this) {
+                case TEXT -> TacticalBoardTheme.TEXT;
+                case MUTED -> TacticalBoardTheme.MUTED;
+                case SUCCESS -> TacticalBoardTheme.SUCCESS;
+            };
+        }
+    }
+
     // ---- small parts --------------------------------------------------------------------------------
 
     /** Capacity pips: one 5×3 cell per slot, filled when occupied; returns the x after them. */

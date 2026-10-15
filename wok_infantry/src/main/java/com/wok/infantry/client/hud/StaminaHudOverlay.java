@@ -69,6 +69,8 @@ public final class StaminaHudOverlay {
      * Forge bus, highest priority, cancelled events skipped: while the bar is shown, cancels the
      * vanilla experience bar (with its level) and the mount jump bar. Cancelling first means no
      * other MOD's listener starts work on these two overlays that would need their Post event.
+     * An open WOK步战 terminal hides the bar but keeps the vanilla row cancelled (only F1 brings
+     * vanilla back), so nothing flickers into that row under the device.
      */
     public static void onOverlayPre(RenderGuiOverlayEvent.Pre event) {
         if (event.getOverlay() == null || !replacesVanillaOverlay(event.getOverlay().id())) {
@@ -98,7 +100,7 @@ public final class StaminaHudOverlay {
 
     private static void render(GuiGraphics graphics, int width, int height) {
         HudFrame frame = HudFrame.current(width, height);
-        if (frame == null || frame.hidden() || !frame.staminaShown()) {
+        if (frame == null || frame.coreHidden() || !frame.staminaShown()) {
             return;
         }
         Minecraft minecraft = Minecraft.getInstance();

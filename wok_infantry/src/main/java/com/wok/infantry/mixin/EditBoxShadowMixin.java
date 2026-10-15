@@ -4,6 +4,7 @@ import com.wok.infantry.client.screen.TacticalTextField;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 import org.spongepowered.asm.mixin.Mixin;
@@ -12,8 +13,10 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 
 /**
  * Lets {@link TacticalTextField} keep vanilla {@link EditBox} behaviour while following the
- * WOK步战 UI rules: no black vanilla box and border (the field draws its own well), and no text
- * shadow on the value, the placeholder, the suggestion or the "_" cursor. Every other
+ * WOK步战 UI rules: no black vanilla box and border (the field draws its own well), no text
+ * shadow on the value, the placeholder, the suggestion or the "_" cursor, and the mid-text cursor
+ * bar in the palette's text-on-well colour ({@link TacticalTextField#cursorColor()}) instead of
+ * vanilla's fixed light gray, which vanishes in the pale Neutral well. Every other
  * {@link EditBox} takes the original calls unchanged.
  *
  * <p>Names: like the other core mixins this runs without a refmap ({@code remap = false}). The
@@ -38,6 +41,17 @@ public abstract class EditBoxShadowMixin {
         if (!((Object) this instanceof TacticalTextField)) {
             graphics.fill(left, top, right, bottom, color);
         }
+    }
+
+    /** The mid-text cursor bar (vanilla: {@code fill(RenderType.guiOverlay(), …, 0xFFD0D0D0)}). */
+    @Redirect(method = {"renderWidget", "m_87963_"}, at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/gui/GuiGraphics;"
+                    + "(Lnet/minecraft/client/renderer/RenderType;IIIII)V"),
+            require = 0, remap = false)
+    private void wokInfantry$recolorCursor(GuiGraphics graphics, RenderType type, int left,
+                                           int top, int right, int bottom, int color) {
+        graphics.fill(type, left, top, right, bottom,
+                (Object) this instanceof TacticalTextField field ? field.cursorColor() : color);
     }
 
     @Redirect(method = {"renderWidget", "m_87963_"}, at = @At(value = "INVOKE",

@@ -22,6 +22,7 @@ import com.wok.infantry.client.map.TacticalMapTerrainRegistry;
 import com.wok.infantry.client.map.TacticalMapTerrainRequest;
 import com.wok.infantry.client.map.TacticalSupportMapPresentation;
 import com.wok.infantry.client.map.TacticalSupportMapPresentationRegistry;
+import com.wok.infantry.client.tablet.TabletSurface;
 import com.wok.infantry.config.InfantryClientConfig;
 import com.wok.infantry.deployment.DeploymentPoint;
 import com.wok.infantry.deployment.DeploymentPointKind;
@@ -57,8 +58,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.lang.ref.WeakReference;
 
-/** Full-screen tactical map backed by an optional JourneyMap or Xaero terrain engine. */
-public final class TacticalMapScreen extends Screen {
+/**
+ * Full-screen tactical map backed by an optional JourneyMap or Xaero terrain engine. A tablet-family
+ * screen with the old full-screen frame (the tablet animation zooms until the device's display
+ * fills the screen; only Esc closes it).
+ */
+public final class TacticalMapScreen extends Screen implements TabletSurface {
     static final int COMPASS_TOP_OFFSET = 36;
     static final int MARKER_DELETE_HEIGHT = 20;
     /** Physical pixels a marker-tool icon keeps clear above and below it inside its key. */
@@ -195,6 +200,12 @@ public final class TacticalMapScreen extends Screen {
         this.previous = previous;
         this.intelMarkerScale = clampIntelMarkerScale(
                 InfantryClientConfig.markerScale());
+    }
+
+    /** The raised tablet's link LED: amber until the first battle snapshot arrives. */
+    @Override
+    public TacticalBoardChrome.LinkState tabletLink() {
+        return TacticalBoardChrome.LinkState.forBattleSnapshot(ClientBattleState.snapshot());
     }
 
     @Override
@@ -870,7 +881,8 @@ public final class TacticalMapScreen extends Screen {
         TacticalBoardTheme.insetPanel(graphics, frame.left(), frame.top(),
                 frame.right(), frame.bottom(), TacticalBoardTheme.INSET);
         graphics.fill(mapLeft, mapTop, mapRight, mapBottom, 0xFF8D9996);
-        graphics.enableScissor(mapLeft, mapTop, mapRight, mapBottom);
+        // Pose-aware: the tablet animation draws this screen moved into the rising device.
+        UiScale.enableScissor(graphics, mapLeft, mapTop, mapRight, mapBottom);
 
         // Map layers are intentionally ordered from world background to interaction chrome.
         // Keep translucent world areas below symbols, and reserve the final pass for labels,
@@ -911,7 +923,7 @@ public final class TacticalMapScreen extends Screen {
         // Map chrome always remains readable regardless of add-on content beneath it.
         renderCompass(graphics);
         renderMapCursor(graphics, mouseX, mouseY);
-        graphics.disableScissor();
+        UiScale.disableScissor(graphics);
         renderMapScale(graphics);
         BattleUiTheme.outline(graphics, mapLeft, mapTop, mapRight, mapBottom,
                 TacticalBoardTheme.BORDER);

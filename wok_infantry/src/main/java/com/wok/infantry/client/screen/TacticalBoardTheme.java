@@ -20,121 +20,148 @@ import net.minecraft.network.chat.Component;
  * The preview's {@code FRIENDLY}/{@code HOSTILE} are HUD colours: {@link #HUD_FRIENDLY} and
  * {@link #HOSTILE}; the Java {@link #FRIENDLY} is the deprecated blue of the old board.
  * Add-on MODs must not hard-depend on this class; copy the values they need instead.
+ *
+ * <p><b>Faction palette.</b> The tokens are in two groups. The swappable ones are
+ * {@code public static int} (not final, so never inlined) and each has a {@link PaletteToken} of
+ * the same name: while a {@link TacticalScreen} renders, {@link TacticalPalette#push} rewrites them
+ * with the palette of the viewer's livery and restores the A values afterwards, so every call site
+ * keeps reading the plain fields. Only {@link TacticalPalette#apply()} may write them. The fixed
+ * ones stay {@code static final} and never change with the faction: world shade, modal dim, hatch,
+ * badge insets, panel shadow / highlight, {@code BODY_DEAD}, {@code DEVICE_EDGE}, the HUD plates and
+ * friend / foe inks, every map and grid colour and every alias. Read a swappable token while
+ * drawing, never in a constructor, {@code init} or {@code tick} (those run outside the palette
+ * scope and would keep the A value); a badge colour that must be fixed earlier passes the sentinel
+ * {@link TacticalButtonStyle#NONE}, which becomes {@link #MUTED} when it is drawn. Static
+ * aliases that other classes keep (HUD, old screens) freeze the A values through
+ * {@link TacticalPalette#A}. The HUD draws outside the scope and always sees the A values.
  */
 public final class TacticalBoardTheme {
     // ---- device shell ----------------------------------------------------------------------
     public static final int WORLD_SHADE = 0xE60A0E11;
-    public static final int FRAME = 0xFF14191B;
-    public static final int FRAME_MID = 0xFF262E30;
+    public static int FRAME = 0xFF14191B;
+    public static int FRAME_MID = 0xFF262E30;
     /** Light outline of the device frame and the rivet highlight. */
     public static final int DEVICE_EDGE = 0xFF77817F;
-    public static final int RIVET = 0xFF080B0C;
+    public static int RIVET = 0xFF080B0C;
 
     // ---- board surfaces (light gray-green) ----------------------------------------------------
-    public static final int BOARD = 0xFFBBC5C1;
-    public static final int BOARD_ALT = 0xFFA9B5B1;
-    public static final int CARD = 0xFFD6DDD9;
-    public static final int CARD_HOVER = 0xFFE6EBE8;
-    public static final int CARD_PRESSED = 0xFFC6CFCB;
-    public static final int CARD_DISABLED = 0xFFA3ADAB;
+    public static int BOARD = 0xFFBBC5C1;
+    public static int BOARD_ALT = 0xFFA9B5B1;
+    public static int CARD = 0xFFD6DDD9;
+    public static int CARD_HOVER = 0xFFE6EBE8;
+    public static int CARD_PRESSED = 0xFFC6CFCB;
+    public static int CARD_DISABLED = 0xFFA3ADAB;
     /** Bottom lip of a raised key or card (drawn as intended, not as the commented-out preview). */
-    public static final int CARD_LIP = 0xFFBAC4C0;
-    public static final int CARD_LIP_HOVER = 0xFFB9C3BF;
-    public static final int WELL = 0xFF1D2527;
-    public static final int WELL_ROW = 0xFF263032;
-    public static final int WELL_ROW_ALT = 0xFF222B2D;
+    public static int CARD_LIP = 0xFFBAC4C0;
+    public static int CARD_LIP_HOVER = 0xFFB9C3BF;
+    public static int WELL = 0xFF1D2527;
+    public static int WELL_ROW = 0xFF263032;
+    public static int WELL_ROW_ALT = 0xFF222B2D;
     /** Outline of empty slots and grid lines inside dark wells. */
-    public static final int WELL_EDGE = 0xFF3A4547;
+    public static int WELL_EDGE = 0xFF3A4547;
     /** Lower/right light edge that makes a dark well look recessed. */
-    public static final int WELL_LIGHT_EDGE = 0xFF3C4749;
-    public static final int BORDER = 0xFF4E5C5A;
-    public static final int BORDER_DARK = 0xFF2E3837;
+    public static int WELL_LIGHT_EDGE = 0xFF3C4749;
+    public static int BORDER = 0xFF4E5C5A;
+    public static int BORDER_DARK = 0xFF2E3837;
     /** Top bevel line of raised keys. */
-    public static final int BEVEL = 0xFFF1F5F2;
+    public static int BEVEL = 0xFFF1F5F2;
     /**
      * Translucent dark hairline separator on boards and panels (preview {@code T.EDGE}). Drawn as
      * intended; the chosen A-scheme screenshots lacked it because the preview line was commented out.
      */
-    public static final int EDGE = 0x40243032;
+    public static int EDGE = 0x40243032;
     /** Same colour as {@link #EDGE} under a descriptive name. */
     public static final int DIVIDER = EDGE;
     public static final int PANEL_SHADOW = 0x50000000;
     public static final int PANEL_HIGHLIGHT = 0x80F1F5F2;
 
     // ---- text ----------------------------------------------------------------------------------
-    public static final int TEXT = 0xFF1B262A;
-    public static final int MUTED = 0xFF52626A;
-    public static final int FAINT = 0xFF6E7C7F;
-    public static final int LIGHT = 0xFFEEF3F0;
-    public static final int LIGHT_MUTED = 0xFF9DAAA8;
-    public static final int DISABLED_TEXT = 0xFF6B7676;
+    public static int TEXT = 0xFF1B262A;
+    public static int MUTED = 0xFF52626A;
+    public static int FAINT = 0xFF6E7C7F;
+    public static int LIGHT = 0xFFEEF3F0;
+    public static int LIGHT_MUTED = 0xFF9DAAA8;
+    public static int DISABLED_TEXT = 0xFF6B7676;
+    /**
+     * Text on solid success fills and on an armed (hovered or confirming) danger fill. The same
+     * colour as {@link #LIGHT} in the A scheme; a faction palette keeps it light where
+     * {@code LIGHT} turns into dark ink (preview {@code 18-device-livery.js} {@code ON_FILL}).
+     */
+    public static int ON_FILL = LIGHT;
 
     // ---- semantics, board variants ---------------------------------------------------------------
-    public static final int SELECT = 0xFF2E679C;
-    public static final int SELECT_HOVER = 0xFF3D7AB2;
-    public static final int SELECT_EDGE = 0xFF1D4B75;
-    public static final int SELECT_BAR = 0xFF8CC3EE;
+    public static int SELECT = 0xFF2E679C;
+    public static int SELECT_HOVER = 0xFF3D7AB2;
+    public static int SELECT_EDGE = 0xFF1D4B75;
+    public static int SELECT_BAR = 0xFF8CC3EE;
     /** Secondary text on a {@link #SELECT} fill. */
-    public static final int SELECT_SUB = 0xFFCFE3F4;
+    public static int SELECT_SUB = 0xFFCFE3F4;
     /** Dark preview well inside a selected card. */
-    public static final int SELECT_WELL = 0xFF1D3843;
+    public static int SELECT_WELL = 0xFF1D3843;
     /** Primary text on a {@link #SELECT} fill. */
-    public static final int ON_SELECT = 0xFFEEF3F0;
+    public static int ON_SELECT = 0xFFEEF3F0;
     /** Attention (cooldown, unsaved). In the A scheme it is the same orange as sections and controls. */
-    public static final int ACCENT = 0xFFBE7A1E;
-    public static final int ACCENT_SOFT = 0xFFE9C58E;
+    public static int ACCENT = 0xFFBE7A1E;
+    public static int ACCENT_SOFT = 0xFFE9C58E;
+    /**
+     * Attention-orange text on light boards, cards and keys, where {@link #ACCENT} itself is only
+     * 1.7–2.8:1 (preview {@code SHARED.ACCENT_TEXT}); fills, LEDs and meters keep {@code ACCENT}.
+     */
+    public static int ACCENT_TEXT = 0xFF844600;
     /** Section markers. */
-    public static final int SECTION = 0xFFBE7A1E;
+    public static int SECTION = 0xFFBE7A1E;
     /** Adjustable controls (sliders, steppers, control-key underline). */
-    public static final int ADJUST = 0xFFBE7A1E;
-    public static final int ADJUST_SOFT = 0xFFE9C58E;
-    public static final int DANGER = 0xFFB0443C;
-    public static final int DANGER_HOVER = 0xFFC2544B;
-    public static final int DANGER_SOFT = 0xFFEBC3BE;
-    public static final int SUCCESS = 0xFF3B7A57;
-    public static final int SUCCESS_HOVER = 0xFF478D66;
-    public static final int SUCCESS_SOFT = 0xFFC0DCC9;
-    public static final int SUCCESS_EDGE = 0xFF285640;
-    public static final int DISABLED_EDGE = 0xFF7F8A89;
+    public static int ADJUST = 0xFFBE7A1E;
+    public static int ADJUST_SOFT = 0xFFE9C58E;
+    public static int DANGER = 0xFFB0443C;
+    public static int DANGER_HOVER = 0xFFC2544B;
+    public static int DANGER_SOFT = 0xFFEBC3BE;
+    /** Dark stripes of the hazard tab on an armed (solid {@link #DANGER}) danger key. */
+    public static int DANGER_DEEP = 0xFF3A0F0C;
+    public static int SUCCESS = 0xFF3B7A57;
+    public static int SUCCESS_HOVER = 0xFF478D66;
+    public static int SUCCESS_SOFT = 0xFFC0DCC9;
+    public static int SUCCESS_EDGE = 0xFF285640;
+    public static int DISABLED_EDGE = 0xFF7F8A89;
     /** Diagonal hatch drawn over disabled keys so "disabled" never relies on colour alone. */
     public static final int HATCH = 0x18000000;
 
     // ---- semantics, bright variants (dark wells, frame, HUD) ------------------------------------
-    public static final int SELECT_B = 0xFF7BB8EA;
-    public static final int ACCENT_B = 0xFFF0A63A;
-    public static final int DANGER_B = 0xFFE8695D;
-    public static final int SUCCESS_B = 0xFF7CCB8F;
-    public static final int NEUTRAL_B = 0xFFB6C2C0;
-    public static final int SECTION_B = 0xFFF0A63A;
-    public static final int ADJUST_B = 0xFFF0A63A;
+    public static int SELECT_B = 0xFF7BB8EA;
+    public static int ACCENT_B = 0xFFF0A63A;
+    public static int DANGER_B = 0xFFE8695D;
+    public static int SUCCESS_B = 0xFF7CCB8F;
+    public static int NEUTRAL_B = 0xFFB6C2C0;
+    public static int SECTION_B = 0xFFF0A63A;
+    public static int ADJUST_B = 0xFFF0A63A;
 
     // ---- rows, cells, inputs and small parts -----------------------------------------------------
-    public static final int ROW_HOVER = 0xFF334043;
-    public static final int OFFLINE = 0xFF7D898A;
-    public static final int INPUT_EDGE = 0xFF55625F;
-    public static final int CELL = 0xFF3A464A;
-    public static final int CELL_EDGE = 0xFF5A6765;
-    public static final int BADGE_BG = 0xFFD6DDD9;
+    public static int ROW_HOVER = 0xFF334043;
+    public static int OFFLINE = 0xFF7D898A;
+    public static int INPUT_EDGE = 0xFF55625F;
+    public static int CELL = 0xFF3A464A;
+    public static int CELL_EDGE = 0xFF5A6765;
+    public static int BADGE_BG = 0xFFD6DDD9;
     public static final int BADGE_ON_SELECT = 0x40FFFFFF;
     public static final int BADGE_ON_CARD = 0x22000000;
     public static final int BODY_DEAD = 0xFF1A1A1A;
     /** Keyboard focus ring. */
-    public static final int FOCUS = 0xFFF4F7F5;
+    public static int FOCUS = 0xFFF4F7F5;
     /** Gun silhouettes in loadout previews. */
-    public static final int SILHOUETTE = 0xFFD9E1DE;
-    public static final int TAB_HOVER = 0xFF2A3437;
-    public static final int KEYCAP_EDGE = 0xFF3A4547;
-    public static final int FEEDBACK_BG = 0xFF1A2224;
-    public static final int SCROLL_TRACK = 0xFF151B1D;
-    public static final int TOOLTIP_BG = 0xF2141A1C;
-    public static final int TOOLTIP_EDGE = 0xFF55625F;
+    public static int SILHOUETTE = 0xFFD9E1DE;
+    public static int TAB_HOVER = 0xFF2A3437;
+    public static int KEYCAP_EDGE = 0xFF3A4547;
+    public static int FEEDBACK_BG = 0xFF1A2224;
+    public static int SCROLL_TRACK = 0xFF151B1D;
+    public static int TOOLTIP_BG = 0xF2141A1C;
+    public static int TOOLTIP_EDGE = 0xFF55625F;
     public static final int MODAL_DIM = 0xB0060909;
 
     // ---- HUD -------------------------------------------------------------------------------------
     public static final int HUD_PLATE = 0xB3121A1D;
     public static final int HUD_PLATE_SOLID = 0xE0121A1D;
     public static final int HUD_EDGE = 0xCC56625F;
-    public static final int HUD_TRACK = 0xCC424E52;
+    public static int HUD_TRACK = 0xCC424E52;
     /** Own side on the HUD and dark wells (preview {@code T.FRIENDLY}). */
     public static final int HUD_FRIENDLY = 0xFF6FB1E6;
     public static final int HUD_HOSTILE = 0xFFE8695D;
@@ -158,6 +185,8 @@ public final class TacticalBoardTheme {
     public static final int GRID_MAJOR = 0x70404A49;
 
     // ---- deprecated aliases (old names; every screen now draws the finalised colours) -------------
+    // Fixed: they keep the A value the swappable token had when this class loaded; new tablet
+    // pages read the swappable token itself.
     /** @deprecated use {@link #FRAME}. */
     @Deprecated
     public static final int DEVICE_FRAME = FRAME;
@@ -201,6 +230,26 @@ public final class TacticalBoardTheme {
     private TacticalBoardTheme() {
     }
 
+    /**
+     * Colour of a section plate's marker for the {@code accent} a caller passes (preview
+     * {@code 18-device-livery.js} {@code UIX.section}): the plate is device-coloured chrome, so a
+     * danger or selection marker takes the bright variant and an attention-orange one the section
+     * orange (the board orange is one step deeper on Academy and Caesar). Any other colour is kept.
+     * Compares with the current palette, so pass a colour read while drawing.
+     */
+    static int sectionMarker(int accent) {
+        if (accent == DANGER) {
+            return DANGER_B;
+        }
+        if (accent == SELECT) {
+            return SELECT_B;
+        }
+        if (accent == ACCENT) {
+            return SECTION;
+        }
+        return accent;
+    }
+
     /** Raised board panel: soft drop shadow, outline and a light top highlight. */
     public static void raisedPanel(GuiGraphics graphics, int left, int top,
                                    int right, int bottom, int fill) {
@@ -233,7 +282,8 @@ public final class TacticalBoardTheme {
 
     /**
      * Section strip with an optional right-aligned meta text (at most 40% of the width).
-     * The title is ellipsized so it never runs under the meta text or past the strip.
+     * The title is ellipsized so it never runs under the meta text or past the strip. The 3px
+     * marker is {@code accent} mapped by {@link #sectionMarker}.
      */
     public static void sectionHeader(GuiGraphics graphics, Font font, Component title,
                                      Component meta, int metaColor,
@@ -242,7 +292,7 @@ public final class TacticalBoardTheme {
             return;
         }
         graphics.fill(left, top, right, bottom, FRAME_MID);
-        graphics.fill(left, top, Math.min(right, left + 3), bottom, accent);
+        graphics.fill(left, top, Math.min(right, left + 3), bottom, sectionMarker(accent));
         int width = right - left;
         int textY = top + Math.max(0, (bottom - top - 8) / 2);
         int metaWidth = 0;

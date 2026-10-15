@@ -21,24 +21,68 @@ import net.minecraft.network.chat.TextColor;
  * class {@code EditBoxShadowMixin} skips vanilla's black box and border and draws its texts
  * without a shadow; every other {@link EditBox} is untouched. Should the mixin ever not apply
  * (another Minecraft build), the field still works and only looks like a vanilla box again.
+ *
+ * <p>Text, read-only text and placeholder colours are re-read from the theme every frame
+ * ({@link #syncColors()}): the field is built in {@code init}, outside the screen's faction
+ * palette, and a light A text colour would vanish in the pale Neutral well. The same goes for the
+ * mid-text cursor bar, which vanilla draws in a fixed light gray ({@link #VANILLA_CURSOR}): the
+ * mixin draws it in {@link #cursorColor()} instead.
  */
 public class TacticalTextField extends EditBox {
+    /** Vanilla's mid-text cursor bar ({@code -3092272}), invisible in the pale Neutral well. */
+    public static final int VANILLA_CURSOR = 0xFFD0D0D0;
+
     private boolean editable = true;
     private Component error;
     private Tooltip ownTooltip;
     private Tooltip errorTooltip;
+    private Component placeholder;
+    /** FAINT the placeholder hint was last styled with; the hint is rebuilt only when it changes. */
+    private int placeholderColor;
 
     public TacticalTextField(Font font, int x, int y, int width, int height, Component name) {
         super(font, x, y, width, height, name == null ? Component.empty() : name);
-        setTextColor(TacticalBoardTheme.LIGHT);
-        setTextColorUneditable(TacticalBoardTheme.FAINT);
+        syncColors();
     }
 
     /** Placeholder shown while the field is empty and not focused, in the faint colour. */
     public TacticalTextField placeholder(Component text) {
-        setHint(text == null ? Component.empty() : text.copy().withStyle(style ->
-                style.withColor(TextColor.fromRgb(TacticalBoardTheme.FAINT & 0xFFFFFF))));
+        placeholder = text == null ? Component.empty() : text;
+        applyPlaceholder(TacticalBoardTheme.FAINT);
         return this;
+    }
+
+    /**
+     * Takes the text, read-only text and placeholder colours from the current palette. Called
+     * while drawing; cheap when nothing changed.
+     */
+    final void syncColors() {
+        setTextColor(TacticalBoardTheme.LIGHT);
+        setTextColorUneditable(TacticalBoardTheme.FAINT);
+        if (placeholder != null && placeholderColor != TacticalBoardTheme.FAINT) {
+            applyPlaceholder(TacticalBoardTheme.FAINT);
+        }
+    }
+
+    private void applyPlaceholder(int color) {
+        placeholderColor = color;
+        setHint(placeholder.copy().withStyle(style ->
+                style.withColor(TextColor.fromRgb(color & 0xFFFFFF))));
+    }
+
+    /**
+     * Colour of the mid-text cursor bar: the palette's text-on-well colour
+     * ({@link TacticalBoardTheme#LIGHT}, the field's own text colour), read while drawing, so the
+     * cursor stands out from the well in every livery (dark ink in the pale Neutral well). The
+     * "_" cursor at the end of the text already takes the text colour from vanilla.
+     */
+    public int cursorColor() {
+        return TacticalBoardTheme.LIGHT;
+    }
+
+    /** Unit-test seam: the FAINT value the placeholder was last styled with. */
+    int placeholderColor() {
+        return placeholderColor;
     }
 
     /**
@@ -86,6 +130,7 @@ public class TacticalTextField extends EditBox {
         if (!isVisible()) {
             return;
         }
+        syncColors();
         TacticalDraw.inputFrame(graphics, UiRect.ofSize(getX(), getY(), width, height),
                 edgeColor());
         // Text, cursor, selection and placeholder: vanilla, without its frame and shadow.

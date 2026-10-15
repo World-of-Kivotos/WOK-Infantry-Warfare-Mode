@@ -10,14 +10,17 @@ import com.wok.infantry.client.ClientFormationState;
 import com.wok.infantry.client.ClientStaminaState;
 import com.wok.infantry.client.KeyBindingDefaults;
 import com.wok.infantry.client.screen.SquadLabels;
+import com.wok.infantry.client.screen.TacticalScreen;
 import com.wok.infantry.client.screen.UiRect;
 import com.wok.infantry.client.screen.UiScale;
+import com.wok.infantry.client.tablet.TabletAnimationController;
 import com.wok.infantry.config.InfantryClientConfig;
 import com.wok.infantry.stamina.StaminaSnapshot;
 import net.minecraft.client.AttackIndicatorStatus;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -35,7 +38,8 @@ import java.util.Objects;
 
 /**
  * Everything the core HUD needs for one rendered frame, captured once and shared by every core
- * overlay and {@link InfantryHudApi}: the screen state (chat, F3, Tab, spectator, F1), the
+ * overlay and {@link InfantryHudApi}: the screen state (chat, F3, Tab, spectator, F1, an open
+ * WOK步战 terminal), the
  * vanilla obstacles (off-hand slot, attack indicator, effect icons), the capture panel, the
  * add-on panels the roster must end above (body-health figure, downed panel, an add-on in the
  * centre-low slot), the content of each part and the resulting {@link WokHudLayout.Layout}.
@@ -45,6 +49,11 @@ import java.util.Objects;
  * battle snapshot, the layout width class, the language or the Unicode font option changes.
  *
  * @param factor       core HUD scale (UiScale.hudFactor()); parts draw in layout pixels
+ * @param hidden       F1: the vanilla "hide GUI" option; add-on slots ({@link InfantryHudApi})
+ *                     follow only this flag
+ * @param terminalOpen a WOK步战 tablet terminal ({@code TacticalScreen}) is open over the HUD:
+ *                     the device floats on the dimmed world, so the core's own overlays stand
+ *                     aside ({@link #coreHidden()}) while add-on HUDs keep their places
  * @param playerListHeld vanilla draws the player list this frame (its key is held and there is
  *                     a list to show, see {@link WokHudLayout#vanillaPlayerListShown})
  * @param strip        manpower content of the battle strip, or null when no manpower is shown
@@ -58,7 +67,8 @@ import java.util.Objects;
  *                     vanilla experience and mount jump bars
  */
 public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, boolean hidden,
-                       boolean chatOpen, boolean debugScreen, boolean playerListHeld,
+                       boolean terminalOpen, boolean chatOpen, boolean debugScreen,
+                       boolean playerListHeld,
                        boolean spectator, boolean creative,
                        WokHudLayout.RosterPresence rosterPresence, SquadRosterModel.Roster roster,
                        TicketNetwork.Snapshot tickets, BattleStripModel.Sides strip,
@@ -92,6 +102,30 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
         notices = List.copyOf(notices);
     }
 
+    /**
+     * Whether the core's own overlays (roster, battle strip and notices, ballot plate, stamina
+     * bar) are left out this frame: F1, or a WOK步战 terminal open over the HUD (plan 4.9: the
+     * D2 device shows the world around it, and the core HUD must not peek out beside the case).
+     * The HUD stays in the A palette either way; only whether it is drawn changes.
+     */
+    public boolean coreHidden() {
+        return coreHidden(hidden, terminalOpen);
+    }
+
+    /** Pure rule of {@link #coreHidden()}. */
+    static boolean coreHidden(boolean hideGui, boolean terminalOpen) {
+        return hideGui || terminalOpen;
+    }
+
+    /**
+     * Whether {@code screen} is a WOK步战 tablet terminal ({@link TacticalScreen}: the squad
+     * terminal, the formation page, the uiTest galleries). Vanilla screens such as the chat and
+     * the old full-frame screens do not count: the chat keeps the HUD, the old screens cover it.
+     */
+    public static boolean terminalOpen(Screen screen) {
+        return screen instanceof TacticalScreen;
+    }
+
     /** Starts a new GUI frame (Forge bus, {@link RenderGuiEvent.Pre}). */
     public static void onRenderGuiPre(RenderGuiEvent.Pre event) {
         frameCounter++;
@@ -121,6 +155,11 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
      */
     public static void onOverlayPre(RenderGuiOverlayEvent.Pre event) {
         if (!isEffectOverlay(event)) {
+            return;
+        }
+        if (event.isCanceled() && TabletAnimationController.hudHidden()) {
+            // Hidden for the tablet, not by another MOD: keep the last measurement, so the first
+            // frame after the HUD returns lays out around the icons (IMPL_PLAN R6).
             return;
         }
         effectIconsDrawn = !event.isCanceled();
@@ -194,6 +233,10 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
         boolean tight = WokHudLayout.isTight(width, height);
         boolean narrow = width < WokHudLayout.NARROW_WIDTH;
         boolean hidden = minecraft.options.hideGui;
+        // 0.5.0-beta.4: the core HUD also stands aside while the tablet comes out or is put away,
+        // and comes back with the vanilla HUD (TabletHudPolicy).
+        boolean terminalOpen = terminalOpen(minecraft.screen)
+                || TabletAnimationController.coreHudHidden();
         boolean chatOpen = minecraft.screen instanceof ChatScreen;
         boolean debugScreen = minecraft.options.renderDebug;
         boolean playerListHeld = playerListShown(minecraft, player);
@@ -297,8 +340,8 @@ public record HudFrame(long frameId, int guiWidth, int guiHeight, int factor, bo
                 .withCapturePanel(capture)
                 .withAddonPanels(addonPanels)
                 .withCenterLowInUse(!hidden && centerLowInUse(frameCounter, centerLowAskedFrame));
-        return new HudFrame(frameCounter, guiWidth, guiHeight, factor, hidden, chatOpen,
-                debugScreen, playerListHeld, spectator, creative, presence, roster, tickets,
+        return new HudFrame(frameCounter, guiWidth, guiHeight, factor, hidden, terminalOpen,
+                chatOpen, debugScreen, playerListHeld, spectator, creative, presence, roster, tickets,
                 strip, objective, notices, vote, stamina, staminaShown,
                 WokHudLayout.compute(input));
     }

@@ -15,8 +15,9 @@ import java.util.function.DoubleFunction;
 /**
  * Board slider of the tactical-tablet style (preview {@code UI.slider}): orange = adjustable.
  *
- * <p><b>Look.</b> Label in {@link TacticalBoardTheme#TEXT} on the left, value in the adjustable
- * orange on the right. A slider lower than {@value #COMPACT_HEIGHT}px puts label, track and value
+ * <p><b>Look.</b> Label in {@link TacticalBoardTheme#TEXT} on the left, value in the readable
+ * orange text colour {@link TacticalBoardTheme#ACCENT_TEXT} on the right; track and knob are the
+ * adjustable orange. A slider lower than {@value #COMPACT_HEIGHT}px puts label, track and value
  * on one line; a taller one writes the text above the track. When a one-line track would be
  * narrower than {@value #MIN_TRACK}px the label is dropped first, then the value text (both stay
  * in the hover tooltip). Disabled sliders are gray throughout and ignore hover; keyboard focus
@@ -122,6 +123,15 @@ public final class TacticalBoardSlider extends AbstractSliderButton {
     }
 
     /**
+     * Pure: colour of the value read-out. It is text on the light key, so it uses
+     * {@link TacticalBoardTheme#ACCENT_TEXT} (preview {@code UIX.slider}); track, knob and the
+     * control underline keep the adjustable orange {@link TacticalBoardTheme#ADJUST}.
+     */
+    static int valueColor(boolean enabled) {
+        return enabled ? TacticalBoardTheme.ACCENT_TEXT : TacticalBoardTheme.DISABLED_TEXT;
+    }
+
+    /**
      * Draws a slider in {@code bounds} with an explicit state (the widget and the uiTest gallery
      * use it; nothing here reads the mouse).
      *
@@ -162,8 +172,7 @@ public final class TacticalBoardSlider extends AbstractSliderButton {
         }
         if (layout.valueShown()) {
             truncated |= TextFit.draw(graphics, font, safeValue, layout.valueX(), layout.textY(),
-                    layout.valueRoom(), enabled ? TacticalBoardTheme.ADJUST
-                            : TacticalBoardTheme.DISABLED_TEXT, TextFit.Align.RIGHT).truncated();
+                    layout.valueRoom(), valueColor(enabled), TextFit.Align.RIGHT).truncated();
         } else if (ownValueWidth > 0) {
             truncated = true;
         }

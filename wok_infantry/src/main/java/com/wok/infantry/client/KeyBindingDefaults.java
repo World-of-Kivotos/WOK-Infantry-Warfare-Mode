@@ -108,7 +108,10 @@ public final class KeyBindingDefaults {
 
     /** Where the terminal key (and the former squad key) goes. */
     public enum TerminalRoute {
-        /** Ask the server for the squad page (BattleOpenPacket SQUAD). */
+        /**
+         * Open the squad page locally in the same frame and ask the server for a fresh snapshot
+         * (since 0.5.0-beta.4; before, BattleOpenPacket SQUAD waited for the server's answer).
+         */
         SQUAD,
         /** Ask the server for the faction/formation catalog, which opens the formation page. */
         FORMATION
@@ -116,7 +119,10 @@ public final class KeyBindingDefaults {
 
     /** Where the tactical-map key goes. */
     public enum MapRoute {
-        /** Ask the server for the tactical map (BattleOpenPacket MAP). */
+        /**
+         * Open the tactical map locally in the same frame and ask the server for a fresh snapshot
+         * (since 0.5.0-beta.4; before, BattleOpenPacket MAP waited for the server's answer).
+         */
         MAP,
         /** Not in a battle yet: open the formation page instead of an empty map. */
         FORMATION,

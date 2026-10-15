@@ -57,7 +57,7 @@ public final class BattleStripOverlay {
 
     private static void render(GuiGraphics graphics, int width, int height) {
         HudFrame frame = HudFrame.current(width, height);
-        if (frame == null || frame.hidden()) {
+        if (frame == null || frame.coreHidden()) {
             return;
         }
         WokHudLayout.Layout layout = frame.layout();

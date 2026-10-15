@@ -3,16 +3,21 @@ package com.wok.infantry.uitest.cases;
 import com.wok.infantry.battle.SquadCallsign;
 import com.wok.infantry.client.screen.BattleTab;
 import com.wok.infantry.client.screen.SquadScreen;
+import com.wok.infantry.client.screen.TacticalBoardChrome;
+import com.wok.infantry.client.screen.TacticalButtonStyle;
 import com.wok.infantry.client.screen.TacticalConfirmDialog;
+import com.wok.infantry.client.screen.TacticalLivery;
 import com.wok.infantry.client.screen.UiTestWidgets;
 import com.wok.infantry.client.ui.probe.UiLayoutFrame;
 import com.wok.infantry.deployment.DeploymentPhase;
 import com.wok.infantry.uitest.UiCapture;
 import com.wok.infantry.uitest.UiCase;
 import com.wok.infantry.uitest.UiCaseContext;
+import com.wok.infantry.uitest.UiDeviceChecks;
 import com.wok.infantry.uitest.UiInputDriver;
 import com.wok.infantry.uitest.UiStep;
 import com.wok.infantry.uitest.UiTier;
+import com.wok.infantry.uitest.fixtures.MockData;
 import com.wok.infantry.uitest.fixtures.SquadFixtures;
 import org.lwjgl.glfw.GLFW;
 
@@ -32,6 +37,13 @@ import java.util.List;
  *   <li>the point list's page count equals the real number of pages, the title says the same;</li>
  *   <li>before the lock no control creates or joins a squad, picks a class or deploys.</li>
  * </ul>
+ *
+ * <p>Liveries (0.5.0-beta.3): the states above are the Academy viewer's, so the terminal is
+ * painted navy ({@code -academy}). Six states are repeated from the Caesar side ({@code -caesar}:
+ * squads, kick, classes, deployment, active, loading) on the same fixture seen from the red side.
+ * Neither is pinned: the terminal resolves its livery from the fixture (battle side, or the joined
+ * catalog faction while loading), and the device checks ({@code UiDeviceChecks}) compare it with
+ * the case's livery. The Caesar kick also checks the red confirmation over the red selection.
  */
 public final class SquadCases {
     private SquadCases() {
@@ -42,6 +54,7 @@ public final class SquadCases {
         SquadFixtures.Scenario leader = SquadFixtures.Scenario.ready(SquadFixtures.Role.LEADER);
         SquadFixtures.Scenario alone = SquadFixtures.Scenario.ready(SquadFixtures.Role.NONE);
         SquadFixtures.Scenario active = leader.withPhase(DeploymentPhase.ACTIVE, 58);
+        SquadFixtures.Scenario loading = SquadFixtures.Scenario.of(SquadFixtures.Stage.LOADING);
         cases.add(squad("squads", leader, BattleTab.SQUADS).build());
         cases.add(squad("other", leader, BattleTab.SQUADS)
                 .steps(viewSquad(SquadCallsign.BRAVO),
@@ -62,8 +75,8 @@ public final class SquadCases {
                 .check((context, capture) -> checkPages(context, capture, 3)).build());
         cases.add(squad("active", active, BattleTab.DEPLOYMENT)
                 .check((context, capture) -> checkPages(context, capture, 3)).build());
-        cases.add(squad("loading", SquadFixtures.Scenario.of(SquadFixtures.Stage.LOADING),
-                BattleTab.SQUADS).build());
+        cases.add(squad("loading", loading, BattleTab.SQUADS)
+                .check(SquadCases::checkWaitingLink).build());
         cases.add(squad("votewait", SquadFixtures.Scenario.of(SquadFixtures.Stage.VOTE_WAIT),
                 BattleTab.SQUADS).check(SquadCases::checkNothingBeforeLock).build());
         cases.add(squad("vote", SquadFixtures.Scenario.of(SquadFixtures.Stage.VOTE_OPEN),
@@ -77,6 +90,24 @@ public final class SquadCases {
                     "deployment").check((context, capture) -> checkPages(context, capture,
                     points)).build());
         }
+        // The Caesar viewer (red side): same squads, classes and points in the red livery.
+        MockData.Side caesar = MockData.Side.CAESAR;
+        cases.add(squad("squads", leader.withSide(caesar), BattleTab.SQUADS).build());
+        cases.add(squad("kick", leader.withSide(caesar), BattleTab.SQUADS)
+                .steps(UiStep.click(SquadPageIds.ROSTER + "/1"),
+                        UiStep.waitTicks(2),
+                        UiStep.click(SquadScreen.ACTION_UI_ID_PREFIX + "kick"),
+                        UiStep.until("the kick confirmation", context -> "kick".equals(
+                                state(context))))
+                .check(SquadCases::checkRedOverRed)
+                .check(SquadCases::checkKick).build());
+        cases.add(squad("classes", leader.withSide(caesar), BattleTab.CLASSES).build());
+        cases.add(squad("deployment", leader.withSide(caesar), BattleTab.DEPLOYMENT)
+                .check((context, capture) -> checkPages(context, capture, 3)).build());
+        cases.add(squad("active", active.withSide(caesar), BattleTab.DEPLOYMENT)
+                .check((context, capture) -> checkPages(context, capture, 3)).build());
+        cases.add(squad("loading", loading.withSide(caesar), BattleTab.SQUADS)
+                .check(SquadCases::checkWaitingLink).build());
         return List.copyOf(cases);
     }
 
@@ -93,11 +124,16 @@ public final class SquadCases {
         return squad(state, scenario, page, state);
     }
 
+    /**
+     * A terminal state on {@code scenario}; its livery is the scenario side's (blue → academy,
+     * red → caesar), resolved by the terminal itself, never pinned.
+     */
     private static UiCase.Builder squad(String state, SquadFixtures.Scenario scenario,
                                         BattleTab page, String expectedState) {
         return UiCase.builder(SquadScreen.SURFACE_ID, state)
                 .tiers(UiTier.ALL)
                 .migrated(true)
+                .livery(TacticalLivery.forSide(scenario.side().faction()))
                 .open(context -> {
                     SquadFixtures.start(scenario);
                     return SquadScreen.forTab(null, page);
@@ -156,7 +192,7 @@ public final class SquadCases {
                         + " under clip " + text.clip());
             }
         }
-        context.observe("squadState[" + context.uiCase().stateId() + "@" + context.tier().id()
+        context.observe("squadState[" + context.uiCase().stateKey() + "@" + context.tier().id()
                 + "]=" + screen.uiStateId());
     }
 
@@ -185,6 +221,34 @@ public final class SquadCases {
     }
 
     /**
+     * Caesar kick (plan 6): the red, armed confirmation key sits over the red (crimson) roster
+     * selection; they are told apart by shape, not by colour alone — the confirm key carries the
+     * hazard stripes (device checks), the selected row its light bar.
+     */
+    private static void checkRedOverRed(UiCaseContext context, UiCapture.Result capture) {
+        UiLayoutFrame frame = capture.frame();
+        UiLayoutFrame.Control confirm = frame.control(TacticalConfirmDialog.CONFIRM_UI_ID);
+        context.require(confirm != null && TacticalButtonStyle.State.DANGER_ARMED.name()
+                        .equals(confirm.state()),
+                "the kick confirmation key is not the armed red key: "
+                        + (confirm == null ? "missing" : confirm.state()));
+        UiLayoutFrame.Control row = frame.control(SquadPageIds.ROSTER + "/1");
+        context.require(row != null && "SELECTED".equals(row.state()),
+                "the kicked member's roster row is not shown selected under the confirmation: "
+                        + (row == null ? "missing" : row.state()));
+        context.observe("squadRedOverRed[" + context.tier().id() + "]=confirm "
+                + confirm.state() + " over row " + row.state() + " livery="
+                + UiDeviceChecks.shellNote(frame).get("livery"));
+    }
+
+    /** Without a battle snapshot the link is still waiting: amber LED, two bars. */
+    private static void checkWaitingLink(UiCaseContext context, UiCapture.Result capture) {
+        String link = UiDeviceChecks.shellNote(capture.frame()).get("link");
+        context.require(TacticalBoardChrome.LinkState.WAIT.name().equals(link),
+                "the loading terminal shows link " + link + " instead of WAIT");
+    }
+
+    /**
      * The point list's page count is the real number of pages for {@code points} points, every
      * row of the first page is on screen, and the title meta names the same count.
      */
@@ -207,7 +271,7 @@ public final class SquadCases {
                             text.text().contains(label) || text.fullText().contains(label)),
                     "the title does not name page " + label);
         }
-        context.observe("squadPointPages[" + context.uiCase().stateId() + "@"
+        context.observe("squadPointPages[" + context.uiCase().stateKey() + "@"
                 + context.tier().id() + "]=" + rows + "x" + page[1]);
     }
 

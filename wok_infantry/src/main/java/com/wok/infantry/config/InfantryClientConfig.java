@@ -1,5 +1,6 @@
 package com.wok.infantry.config;
 
+import com.wok.infantry.client.tablet.TabletMode;
 import net.minecraftforge.common.ForgeConfigSpec;
 
 /** Client-only presentation preferences for WOK Infantry. */
@@ -9,6 +10,8 @@ public final class InfantryClientConfig {
     public static final double DEFAULT_MAP_MARKER_SCALE = 1.0D;
     public static final boolean DEFAULT_MINIMUM_SCALE_2X = true;
     public static final boolean DEFAULT_REDIRECT_XAERO_WORLD_MAP = true;
+    public static final TabletMode DEFAULT_TABLET_ANIMATION = TabletMode.FULL;
+    public static final boolean DEFAULT_TABLET_SOUNDS = true;
 
     public static final HudRosterMode DEFAULT_HUD_ROSTER_MODE = HudRosterMode.AUTO;
     public static final boolean DEFAULT_SHOW_BATTLE_STRIP = true;
@@ -30,6 +33,8 @@ public final class InfantryClientConfig {
     private static final ForgeConfigSpec.DoubleValue MAP_MARKER_SCALE;
     private static final ForgeConfigSpec.BooleanValue REDIRECT_XAERO_WORLD_MAP;
     private static final ForgeConfigSpec.BooleanValue MINIMUM_SCALE_2X;
+    private static final ForgeConfigSpec.EnumValue<TabletMode> TABLET_ANIMATION;
+    private static final ForgeConfigSpec.BooleanValue TABLET_SOUNDS;
     private static final ForgeConfigSpec.IntValue KEY_DEFAULTS_REVISION;
     private static final ForgeConfigSpec.EnumValue<HudRosterMode> HUD_ROSTER_MODE;
     private static final ForgeConfigSpec.BooleanValue SHOW_BATTLE_STRIP;
@@ -60,6 +65,21 @@ public final class InfantryClientConfig {
                         + "Infantry screens and HUD at 2x (960x720 is laid out as 480x360) so CJK "
                         + "text stays readable. Set to false to keep the 1x size.")
                 .define("minimumScale2x", DEFAULT_MINIMUM_SCALE_2X);
+        TABLET_ANIMATION = builder
+                .comment("Animation when the battle terminal, the tactical map or another tablet "
+                        + "screen opens and closes. FULL = both hands lift the tablet, about 1.3 s "
+                        + "(1.2 s with an empty hand), putting it away about 0.9 s; reopening within "
+                        + "2 s is 40% faster, a key or click during the animation jumps to the end; "
+                        + "without a first-person hand pass (vehicles, F1, spectator ...) the screen "
+                        + "lifts the tablet in 2D instead. QUICK = the lit tablet slides in from the "
+                        + "bottom edge in about 0.08 s (tactical map: zooms in within about 0.08 s), "
+                        + "putting it away about 0.06 s. OFF = no animation (the screens still open "
+                        + "at once on the key press).")
+                .defineEnum("tabletAnimation", DEFAULT_TABLET_ANIMATION);
+        TABLET_SOUNDS = builder
+                .comment("Sounds of taking out and putting away the tablet (only you hear them; "
+                        + "they follow the Players volume).")
+                .define("tabletSounds", DEFAULT_TABLET_SOUNDS);
         builder.pop();
         builder.comment("Key binding bookkeeping")
                 .push("keys");
@@ -134,6 +154,26 @@ public final class InfantryClientConfig {
             return DEFAULT_MINIMUM_SCALE_2X;
         }
         return MINIMUM_SCALE_2X.get();
+    }
+
+    /**
+     * {@code ui.tabletAnimation}; {@link #DEFAULT_TABLET_ANIMATION} while the config is not loaded.
+     * The system property {@code wok.ui.tabletAnimation} overrides it ({@code TabletSettings.mode()}).
+     */
+    public static TabletMode tabletAnimation() {
+        if (!SPEC.isLoaded()) {
+            return DEFAULT_TABLET_ANIMATION;
+        }
+        TabletMode mode = TABLET_ANIMATION.get();
+        return mode == null ? DEFAULT_TABLET_ANIMATION : mode;
+    }
+
+    /** {@code ui.tabletSounds}: whether the tablet animation plays its sounds. */
+    public static boolean tabletSounds() {
+        if (!SPEC.isLoaded()) {
+            return DEFAULT_TABLET_SOUNDS;
+        }
+        return TABLET_SOUNDS.get();
     }
 
     /**

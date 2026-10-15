@@ -10,7 +10,7 @@ import net.minecraft.network.chat.Component;
 /**
  * Tactical loadout card with the TaCZ HUD silhouette or a normal item fallback. The card
  * background comes from {@link TacticalButtonStyle#renderCard}: hover darkens the outline,
- * selection is blue with a light left stripe.
+ * selection is solid with a light left bar and lights up one step while hovered.
  */
 final class LoadoutPreviewButton extends Button {
     private final LoadoutEntry entry;
@@ -46,8 +46,9 @@ final class LoadoutPreviewButton extends Button {
         int top = getY();
         int right = left + width;
         int bottom = top + height;
+        boolean hovered = TacticalButtonStyle.hovered(this);
         TacticalButtonStyle.renderCard(graphics, left, top, right, bottom,
-                cardState(selected, active, TacticalButtonStyle.hovered(this)));
+                cardState(selected, active, hovered), hovered);
         if (TacticalButtonStyle.keyboardFocused(this)) {
             TacticalButtonStyle.focusRing(graphics, left, top, right, bottom);
         }

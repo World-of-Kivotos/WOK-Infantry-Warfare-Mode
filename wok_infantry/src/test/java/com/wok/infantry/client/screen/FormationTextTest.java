@@ -9,11 +9,13 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.ToIntFunction;
 
 import static com.wok.infantry.client.screen.FormationVoteFixtures.ACADEMY;
 import static com.wok.infantry.client.screen.FormationVoteFixtures.DEFAULT;
 import static com.wok.infantry.client.screen.FormationVoteFixtures.joined;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Wording choices of {@link FormationText} that depend on who is looking. */
@@ -36,6 +38,61 @@ class FormationTextTest {
             assertEquals(FormationText.PREFIX + "title", keyOf(FormationText.title(width)),
                     "width " + width);
         }
+    }
+
+    // ---- step guide in the status bar (D2, 0.5.0-beta.3) --------------------------------------------
+
+    private static final ToIntFunction<String> WIDTH = text -> text.length() * 6;
+    private static final String TITLE = "TITLE > PAGE";
+    private static final String IDENTITY = "Academy · Alpha · Leader";
+    private static final List<String> GUIDE = List.of("Step 3: pick and vote", "Step 3: vote");
+
+    /** The status bar of a {@code width}-wide display, planned like the shell does. */
+    private static TacticalBoardChrome.StatusPlan status(int width, String guide) {
+        return TacticalBoardChrome.planStatus(new UiRect(0, 0, width, 10), TITLE, guide, IDENTITY,
+                "21:30", WIDTH);
+    }
+
+    @Test
+    void theGuideKeepsTheWholeIdentityWhenTheStatusBarHasRoom() {
+        int room = status(480, null).identityRoom();
+        int index = FormationText.guideVariant(GUIDE, room, IDENTITY, WIDTH);
+        assertEquals(0, index, "the long guide fits beside the whole identity");
+
+        TacticalBoardChrome.StatusPlan plan = status(480, GUIDE.get(index));
+        assertFalse(plan.pill().isEmpty());
+        assertFalse(plan.feedback().truncated());
+        assertEquals(IDENTITY, plan.identity().text());
+    }
+
+    @Test
+    void onANarrowBarTheIdentityKeepsItsFactionNextToTheShortGuide() {
+        int room = status(304, null).identityRoom();
+        int index = FormationText.guideVariant(GUIDE, room, IDENTITY, WIDTH);
+        assertEquals(1, index);
+
+        TacticalBoardChrome.StatusPlan plan = status(304, GUIDE.get(index));
+        assertFalse(plan.feedback().truncated(), "the guide is never cut");
+        assertTrue(plan.identity().shown(), "the identity is never pushed out by the guide");
+        assertTrue(IDENTITY.startsWith(plan.identity().text()));
+    }
+
+    @Test
+    void theShortestGuideIsTheLastResortAndNoIdentityFreesTheRoom() {
+        assertEquals(1, FormationText.guideVariant(GUIDE, 40, IDENTITY, WIDTH),
+                "nothing fits: the shortest variant, which the shell ellipsizes");
+        assertEquals(0, FormationText.guideVariant(GUIDE, 140, null, WIDTH));
+        assertEquals(0, FormationText.guideVariant(GUIDE, 140, " ", WIDTH));
+        assertEquals(-1, FormationText.guideVariant(List.of(), 140, IDENTITY, WIDTH));
+    }
+
+    @Test
+    void theBezelKeysOfThePageUseTheirOwnTexts() {
+        assertEquals(FormationText.PREFIX + "hint.retry", keyOf(FormationText.hintRetry()));
+        assertEquals(FormationText.PREFIX + "hint.retry_unavailable",
+                keyOf(FormationText.retryUnavailable()));
+        assertEquals(FormationText.PREFIX + "hint.back_list",
+                keyOf(FormationText.hintBackToList()));
     }
 
     @Test
