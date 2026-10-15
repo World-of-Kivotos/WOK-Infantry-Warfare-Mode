@@ -4,7 +4,11 @@ import com.wok.trauma.config.TraumaConfig;
 import com.wok.trauma.damage.ModDamageTypeTags;
 import com.wok.trauma.registry.ModEffects;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDamageEvent;
@@ -16,6 +20,10 @@ import java.util.WeakHashMap;
 
 public final class TraumaEvents {
     private static final String PAIN_TICKS_KEY = "wok_trauma.pain_ticks";
+    private static final String PROPITAL_AFTEREFFECTS_KEY =
+            "wok_trauma.propital_aftereffects";
+    private static final String AFTEREFFECT_REMAINING_TICKS_KEY = "remaining_ticks";
+    private static final String AFTEREFFECT_DURATION_TICKS_KEY = "duration_ticks";
     private static final int TREMOR_THRESHOLD = 20 * 20;
     private static final Map<Player, Long> LAST_CONCUSSION_ROLL = new WeakHashMap<>();
 
@@ -26,6 +34,7 @@ public final class TraumaEvents {
 
         Player player = event.player;
         CompoundTag data = player.getPersistentData();
+        applyPropitalAftereffect(player, data);
         if (player.hasEffect(ModEffects.ANALGESIA.get())) {
             player.removeEffect(ModEffects.PAIN.get());
             data.remove(PAIN_TICKS_KEY);
@@ -71,6 +80,61 @@ public final class TraumaEvents {
         if (event.getEffectInstance().getEffect() == ModEffects.PAIN.get()
                 && event.getEntity().hasEffect(ModEffects.ANALGESIA.get())) {
             event.setResult(Event.Result.DENY);
+        }
+    }
+
+    public static void schedulePropitalAftereffect(LivingEntity entity, int delayTicks,
+                                                   int durationTicks) {
+        if (!(entity instanceof Player player) || delayTicks <= 0 || durationTicks <= 0) {
+            return;
+        }
+        CompoundTag data = player.getPersistentData();
+        ListTag scheduledAftereffects = data.getList(
+                PROPITAL_AFTEREFFECTS_KEY, Tag.TAG_COMPOUND);
+        CompoundTag scheduledAftereffect = new CompoundTag();
+        // The injector finishes before PlayerTickEvent.END in the same tick,
+        // so include that immediate countdown step to preserve the advertised delay.
+        scheduledAftereffect.putInt(AFTEREFFECT_REMAINING_TICKS_KEY, delayTicks + 1);
+        scheduledAftereffect.putInt(AFTEREFFECT_DURATION_TICKS_KEY, durationTicks);
+        scheduledAftereffects.add(scheduledAftereffect);
+        data.put(PROPITAL_AFTEREFFECTS_KEY, scheduledAftereffects);
+    }
+
+    private static void applyPropitalAftereffect(Player player, CompoundTag data) {
+        if (!data.contains(PROPITAL_AFTEREFFECTS_KEY, Tag.TAG_LIST)) {
+            return;
+        }
+
+        ListTag scheduledAftereffects = data.getList(
+                PROPITAL_AFTEREFFECTS_KEY, Tag.TAG_COMPOUND);
+        int triggeredDurationTicks = 0;
+        for (int index = scheduledAftereffects.size() - 1; index >= 0; index--) {
+            CompoundTag scheduledAftereffect = scheduledAftereffects.getCompound(index);
+            int remainingTicks = scheduledAftereffect.getInt(
+                    AFTEREFFECT_REMAINING_TICKS_KEY) - 1;
+            if (remainingTicks > 0) {
+                scheduledAftereffect.putInt(AFTEREFFECT_REMAINING_TICKS_KEY, remainingTicks);
+                continue;
+            }
+
+            triggeredDurationTicks = Math.max(
+                    triggeredDurationTicks,
+                    scheduledAftereffect.getInt(AFTEREFFECT_DURATION_TICKS_KEY));
+            scheduledAftereffects.remove(index);
+        }
+
+        if (scheduledAftereffects.isEmpty()) {
+            data.remove(PROPITAL_AFTEREFFECTS_KEY);
+        } else {
+            data.put(PROPITAL_AFTEREFFECTS_KEY, scheduledAftereffects);
+        }
+        if (triggeredDurationTicks > 0) {
+            player.addEffect(new MobEffectInstance(
+                    ModEffects.TREMOR.get(), triggeredDurationTicks,
+                    0, false, true, true));
+            player.addEffect(new MobEffectInstance(
+                    MobEffects.DARKNESS, triggeredDurationTicks,
+                    0, false, false, true));
         }
     }
 

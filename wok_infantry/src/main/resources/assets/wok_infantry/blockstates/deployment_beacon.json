@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "mode=unbound": { "model": "wok_infantry:block/deployment_beacon_unbound" },
+    "mode=blue": { "model": "wok_infantry:block/deployment_beacon_blue" },
+    "mode=red": { "model": "wok_infantry:block/deployment_beacon_red" }
+  }
+}

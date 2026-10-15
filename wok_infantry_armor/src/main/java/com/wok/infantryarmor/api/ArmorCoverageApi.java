@@ -2,6 +2,7 @@ package com.wok.infantryarmor.api;
 
 import com.wok.infantryarmor.armor.PlateArmorCoverage;
 import com.wok.infantryarmor.armor.ProtectedBodyPart;
+import com.wok.infantryarmor.armor.item.HelmetItem;
 import com.wok.infantryarmor.armor.item.PlateArmorItem;
 import com.wok.infantryarmor.shield.item.PlasmaShieldItem;
 import net.minecraft.world.item.ItemStack;
@@ -11,7 +12,7 @@ import java.util.List;
 /** Reflection-friendly optional API; it does not depend on WOK Body Health. */
 public final class ArmorCoverageApi {
 
-    public static final int API_VERSION = 1;
+    public static final int API_VERSION = 2;
 
     private ArmorCoverageApi() {
     }
@@ -36,8 +37,12 @@ public final class ArmorCoverageApi {
     }
 
     private static PlateArmorCoverage.Coverage coverage(ItemStack stack) {
+        // 走逐件配置解析器：与实际战斗判定、提示框使用同一份覆盖部位。
         if (stack.getItem() instanceof PlateArmorItem plate) {
-            return PlateArmorCoverage.forVariant(plate.variant());
+            return plate.coverage();
+        }
+        if (stack.getItem() instanceof HelmetItem helmet) {
+            return helmet.coverage();
         }
         return PlateArmorCoverage.Coverage.unconfigured();
     }

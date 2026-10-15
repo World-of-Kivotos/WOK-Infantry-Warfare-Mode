@@ -1,5 +1,6 @@
 package com.wok.infantryarmor;
 
+import com.wok.infantryarmor.armor.HelmetVariant;
 import com.wok.infantryarmor.armor.PlateArmorVariant;
 import com.wok.infantryarmor.shield.PlasmaShieldVariant;
 import net.minecraft.core.registries.Registries;
@@ -23,6 +24,9 @@ public final class ArmorerCreativeTab {
                     .displayItems((params, output) -> {
                         for (PlateArmorVariant variant : PlateArmorVariant.values()) {
                             output.accept(ArmorerItems.plateArmor(variant).get());
+                        }
+                        for (HelmetVariant variant : HelmetVariant.values()) {
+                            output.accept(ArmorerItems.helmet(variant).get());
                         }
                         for (PlasmaShieldVariant variant : PlasmaShieldVariant.values()) {
                             output.accept(ArmorerItems.plasmaShield(variant).get());

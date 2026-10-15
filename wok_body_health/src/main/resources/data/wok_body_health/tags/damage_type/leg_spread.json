@@ -1,0 +1,8 @@
+{
+  "replace": false,
+  "values": [
+    "minecraft:fall",
+    "minecraft:fly_into_wall",
+    "minecraft:stalagmite"
+  ]
+}

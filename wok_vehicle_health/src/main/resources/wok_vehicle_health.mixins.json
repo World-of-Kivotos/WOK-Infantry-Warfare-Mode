@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.wok.vehiclehealth.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "VehicleEntityBalanceMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
