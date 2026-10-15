@@ -73,6 +73,8 @@ tasks.named('jar', Jar).configure {
                 'Implementation-Vendor'  : mod_authors
         ])
     }
+    // 逐件配置文件头写着“完整说明见模组 JAR 根目录的 CONFIG.md”，只拿到 JAR 的服主也要能看到。
+    from('CONFIG.md')
     finalizedBy 'reobfJar'
 }
 

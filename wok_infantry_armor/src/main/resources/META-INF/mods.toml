@@ -9,7 +9,7 @@ displayName = "WOK步战附属-独立护甲"
 authors = "World of Kivotos"
 description = '''
 Standalone armor module for the WOK Infantry add-on line.
-Includes 54 plate armors, 13 localized-protection helmets with GeckoLib skeletal rendering, and 18 tiered plasma shields; contains no production tables or profession framework.
+Includes 54 plate armors, 17 localized-protection helmets with GeckoLib skeletal rendering, and 18 tiered plasma shields; per-item balance overrides in the server config wok-infantry-armor-items.toml; contains no production tables or profession framework.
 '''
 
 [[dependencies.wok_infantry_armor]]
