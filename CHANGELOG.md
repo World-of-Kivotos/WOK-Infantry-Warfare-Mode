@@ -1,5 +1,93 @@
 # 更新日志
 
+## WOK步战附属-独立护甲 1.3.0-beta.1 — 2026-10-10
+
+#### 新增
+
+- 新增第二个服务端配置 `wok-infantry-armor-items.toml`（逐件配置）：54 件插板和 17 件头盔各一节（节名是完整注册名，如 `[plates.plate_armor_slick]`、`[helmets.helmet_6b47]`），可以单独覆盖等级/类型/材质（`tier`/`weight`/`material`）、防护数值（`ballisticProtectionR`/`armorPiercingBufferQ`/`generalProtectionG`/`pressureCapacityT`）、插板覆盖部位（`coverage`）、耐久上限（`durability`）、磨损倍率（`wearMultiplier`）、移速（`movementModifier`）和额外属性（`attributeModifiers`，增益减益）。写 `"default"` 的项沿用主配置按等级/类型/材质算出的值。
+- 每节第一行注释写中文名、完整 ID、分类、主配置矩阵格号和按代码默认主配置算出的默认数值；文件头写用法、键名与提示框对照、取值范围和分类键作用。
+- 宽松取值：数字和百分数可以写在引号里（`"0.9"`、`"85%"`、`"-10%"`），全角符号自动换成半角，材质/类型/部位可以写中文名，`coverage` 可以写列表或逗号分隔的字符串。所有可覆盖键（包括 `wearMultiplier` 和头盔的 `movementModifier`）都用宽松校验：写错的文字或数字（含 `nan`/`inf`）不会被 Forge 改回默认或删掉，而是回退该项默认值（`wearMultiplier` 与头盔 `movementModifier` 越界时夹到边界），并在每次加载/重载后打一条 WARN（完整键路径、原值、原因），`/wokarmor problems` 同样列出。`attributeModifiers` 例外：必须是方括号字符串列表，列表里不带引号的条目由 Forge 删掉、不写方括号时整项由 Forge 改成 `[]`，这两种情况不进 `/wokarmor problems`（`CONFIG.md` 规则 6 已写明）。
+- 额外属性：每条 `"<属性 id> <操作> <数值>"`，支持 add / multiply_base / multiply_total（及别名）和百分数；同属性同操作合并；拒绝移速、原版护甲值和韧性；属性不存在或玩家没有该属性时忽略。插板的修正按胸甲槽、头盔的按头盔槽施加，使用新的派生 UUID（`wok_infantry_armor:<槽位>:<属性>:<操作>`），提示框逐条显示。
+- 头盔可以配置移速（默认 0），使用新的固定 UUID；胸甲与头盔移速相乘低于 0.05 倍时自动收紧头盔这一项。额外修正按玩家 UUID 记录上次施加的项，复活或末地返回后脱下装备也能正确移除。
+- 客户端断开连接时丢掉上一个服务器同步来的逐件配置，直到再次收到逐件配置前按默认值显示，换到没有逐件配置的服务器（如 1.2.0）时不会沿用旧服务器的覆盖值。
+- 管理命令（权限 2）：`/wokarmor inspect [物品]` 显示胸、头两槽或指定护甲的解析后设置（标注覆盖项、被忽略的属性及原因），`/wokarmor problems` 列出逐件配置里所有无效值。
+- 新增中文说明 `wok_infantry_armor/CONFIG.md`（同时打包进 JAR 根目录，逐件配置文件头也写明了仓库路径）：两个文件的位置与改法、键 ↔ 提示框、分类键作用、公式、各数值对哪些伤害来源生效、可用属性清单、平衡示例、命令用法和已知限制。
+
+#### 修改
+
+- 所有读取点统一走逐件配置解析器：耐久上限、等级/类型/材质（含子弹穿甲判定）、防护数值、覆盖部位（含 `ArmorCoverageApi`）、移速、插板与头盔提示框、普通磨损与子弹磨损。删除按变体直接计算的 `PlateArmorStats.resolve(PlateArmorVariant)`，以及没有被使用、语义相反的 `PlateArmorBodyPartGate`。
+- 覆盖了 `material` 或 `weight` 时，默认耐久跟随解析后的分类：插板按解析后材质的 `materialProfiles.<材质>.durability`，头盔按解析后类型的 `helmetIntegrity`。
+- 代码默认值抽到 `PlateArmorDefaults`（矩阵、移速、头盔耐久和唯一一份泄漏公式），主配置的 spec 默认值、逐件配置注释和运行时计算共用；主配置的键、默认值和注释文字均未改动。
+- 插板子弹磨损改为插板自己的实现（与原来的“普通段 + 穿甲段”按 max(1, floor(X/4)) 结算相同），保证磨损倍率每条路径只乘一次。
+- 插板与头盔提示框显示解析后的等级/类型/材质和数值；头盔移速不为 0 时显示机动修正；显示实际生效的额外属性。
+- `mods.toml` 描述中的头盔数量由过时的 13 件改为 17 件。
+
+#### 修复
+
+- 主配置四张 18 值矩阵长度不对、含非有限数或（热重载读到一半时）根本不是列表时，不再在受击、tick 和提示框里抛异常，并在每次加载/重载后只打一次 ERROR。长度不对或不是列表时整张矩阵改用代码默认值；只有个别格不是有限数时只回退那一格。注意 Forge 会把超出范围的元素（R/Q/G 不在 0 ≤ x < 1、T < 0，含 NaN/Inf）直接从列表里删掉，所以写错一个数通常会让列表变成 17 个、整张矩阵回退（`CONFIG.md` 已知限制）。
+- 受击入口与各磨损路径遇到 NaN/Inf 伤害时直接跳过（补上本体 2026-08-11 的 `Float.isFinite` 修复）；磨损改用 long 饱和运算，极大伤害不再整数溢出成“修复护甲”。
+
+#### 兼容性
+
+- modId、物品 ID、物品身份与主配置键名不变；全部取默认时，防护、穿甲判定、耐久、磨损、移速、覆盖部位与 1.2.0-beta.2 相同（逐件对 71 件做了数值核对）。
+- 仍只强制依赖 Forge、Minecraft、GeckoLib；TaCZ 与部位血量仍为可选，TaCZ 类只在集成包内引用。
+- 已有的护甲/韧性/插板移速 UUID 与 WOK-本体护甲相同，两者仍不能装在同一个整合包里；本版新增的修正都用新 UUID。
+- 网络协议版本未变（仍为 4），1.2.x 客户端仍能进入 1.3.0 服务器，但收不到逐件配置，提示框和耐久条按整类默认值显示（服务端判定按服务器的逐件配置）；客户端请与服务器一起升级到 1.3.0。反过来，1.3.0 客户端进入 1.2.x 服务器时按默认值显示。
+- 在运行中的服务器上把两个配置文件之一改出 TOML 语法错误时，热重载失败、暂时沿用旧值；若在关服或退出世界前没有改好，Forge 会把只剩坏行以上内容的内存配置写回文件，坏行以下的覆盖丢失并在下次启动变回默认，本模组不另行报告；文件坏着期间新玩家无法进服。这是 Forge/night-config 的行为，`CONFIG.md` 第 1 节、规则 2 和逐件配置文件头已写明，建议运行中修改前先备份。拼错的键名/节名同样由 Forge 删掉并恢复默认，不进 `/wokarmor problems`（`CONFIG.md` 规则 6）。
+- 已知限制：等离子护盾不在逐件配置里；头盔耐久→防护效率曲线、穿透阈值、伤害类型白名单仍是代码常量；重新分类不改变穿戴音效和原版图层名；服务器热重载后已联机客户端的提示框/耐久条要重进才刷新；同物品合成/铁砧修复、经验修补、保护附魔书仍可绕过耐久与防护调整；`generic.max_health` 在安装部位血量时无效；`/config showfile wok_infantry_armor SERVER` 只显示逐件配置文件。详见 `CONFIG.md`。
+- WOK-本体护甲未改动。
+
+#### 配置/存档影响
+
+- 新增 `saves/<世界>/serverconfig/wok-infantry-armor-items.toml`，进入世界时自动生成，默认全部为 `"default"`，不改变已有平衡。主配置 `wok-infantry-armor.toml` 原样保留，不迁移、不重写。
+- 若整合包提供 `defaultconfigs/wok-infantry-armor-items.toml`，它会被复制进所有还没有该文件的世界（包括已有世界第一次升级到 1.3.0 时），之后不再覆盖。
+- 耐久仍是存在物品上的绝对损耗值：调低某件的耐久上限会让已经超过新上限的护甲在下一 tick 碎掉，调高等于修复。存档格式无变化。
+
+#### 测试结果
+
+- `wok_infantry_armor` Gradle 构建通过。
+- `tools/verify_mod_independence.ps1` 检查 `wok_infantry_armor-1.20.1-1.3.0-beta.1.jar`：PASS（只强制依赖 forge、minecraft、geckolib）。
+- 独立测试程序（脱离游戏，加载编译产物与 Forge 47.4.22 / night-config 3.6.4）641 项检查全部通过：两次独立构建生成的默认逐件配置逐字节相同（54 + 17 节，49,978 字节 / 1,068 行，约 48.8 KB；`wearMultiplier` 与头盔 `movementModifier` 改为宽松校验后不再有 Forge 的 Range 注释），重新读取后 Forge 判定无需改写；文件头的用法说明（头盔 `movementModifier` 可写百分数、`wearMultiplier` 不行；`attributeModifiers` 必须写方括号；节名/键重复的报错；运行中改出语法错误必须在关服前改好、拼错的键名/节名会被 Forge 删掉；头盔只有按部位判定时才只护头，否则没有胸甲时保护全身）与实现一致；`wearMultiplier`/头盔 `movementModifier` 越界夹到边界、NaN 不触发 Forge 改写；没有逐件配置时解析器给出全默认结果；额外修正按玩家 UUID 记录；热重载 `load()` 与 `correct()` 之间读到类型不对的原始值（`attributeModifiers` 不是列表、主配置矩阵不是列表）时不抛异常、按空列表或代码默认矩阵处理；71 节注释里的默认数值与按 1.2.0-beta.2 常量独立计算的结果一致；带引号数字、百分数、全角符号、非法值、NaN/inf、越界、含 head/未知部位的覆盖部位和各种属性写法的解析结果与问题列表符合预期，且 Forge 不改写这些值；71 件护甲的默认解析结果与 1.2.0-beta.2 公式逐位相等；磨损倍率数学（m = 1 不变、m = 0 不磨损、概率进位均值、饱和）、头盔移速收紧与主配置矩阵回退均符合预期。注册表相关的属性检查（属性是否存在、玩家是否拥有）和实际施加修正需要游戏环境，未在测试程序中覆盖。
+- 已安装到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`（替换 1.2.0-beta.2，旧包改名为 `.bak` 备份）。尚未做游戏内验收（配置生成与热重载、提示框、`/wokarmor` 命令、额外属性施加与移除、复活后恢复），因此保持 beta。
+
+## WOK步战附属-独立护甲 1.2.0-beta.2 — 2026-10-10
+
+#### 新增
+
+- 新增插板护甲模型生成工具 `wok_infantry_armor/tools/plate-armor`（移植自 WOK-本体护甲 `tools/plate_armor`）：每件护甲一份设计脚本、预览页、结构检查（`check.mjs`）、导出（`export.mjs`，产出烘焙网格 JSON 与逐面图集贴图）和导出一致性核对（`parity.mjs`）。
+- 新增 `PlateArmorBakedModel`、`PlateArmorMesh`、`PlateArmorMeshCache`：客户端直接绘制离线烘焙的四边形网格，跟随原版人形部位位姿（走路摆臂、潜行、细手臂、儿童缩放自动跟随）；网格懒加载并在资源重载时清空，缺失或损坏时退回原版胸甲并只打一次警告。
+
+#### 修改
+
+- 全部 54 件插板护甲的穿戴模型和贴图按《逃离塔科夫》原物重做，统一为折中 2× 精度（半像素网格、每格 2 个贴图像素、逐面图集），与 WOK-本体护甲 2026-10-04 的新模型逐字节一致。网格放在 `assets/wok_infantry_armor/armor_meshes/plate_armor_<id>.json`。
+- 删除 49 个手写 `*ArmorModel`、`PlateArmorModelDefinition` 和 `PlateArmorClientRegistration`；头盔原生模型层的注册移到新的 `HelmetArmorClientRegistration`，头盔行为不变。
+- `PlateArmorItem.getArmorTexture` 统一返回 `plate_armor_<id>_layer_1.png`，不再逐个列举外观。
+- 名称按原物修正（与本体同步）：MMAC、RBAV-AF、Strandhogg、AVS、TacTec 的 Ranger Green 中文由“丛林绿”改为“游骑兵绿”；TV-110 “灰褐色”改“卡其色”；Kirasa-N 中文“绿色”改“藏青色”、英文 Green 改 Navy；Gladiator-S “无惧死亡”改“死亡不可避免”（英文 Death is Inevitable）。
+- 物品图标按原物重画（与本体同步）：Kirasa-N 改藏青色，TV-115 改橄榄绿，6B5-15 改 Flora 迷彩。
+
+#### 修复
+
+- 无。
+
+#### 兼容性
+
+- modId、物品 ID、防护数值、重量类型、耐久与部位血量联动均未改动；物品 ID `plate_armor_kirasa_n_green` 保持不变，只改显示名。
+- 覆盖 `textures/models/armor/plate_armor_*_layer_1.png` 的旧资源包与新网格的逐面图集不兼容，需要同步更新或移除。
+- 不支持盔甲纹饰（Trim）：插板护甲本就不在 `#minecraft:trimmable_armor` 中，仅用命令写入 Trim NBT 时会显示错乱。
+- WOK-本体护甲未改动。本体同一轮把 Gladiator-S 维京的重量类型从中型改为轻型，独立护甲本版**未跟进**，仍为中型。
+
+#### 配置/存档影响
+
+- 无。
+
+#### 测试结果
+
+- `tools/plate-armor/parity.mjs`：54/54 PASS，导出网格与预览逐四边形、逐像素一致（位置最大误差 5e-5 px）。
+- 用编译出的 `PlateArmorMesh.parse` 逐件读取：54 个网格全部通过结构校验（共 11162 个四边形），且与 `PlateArmorVariant` 的 54 个物品 ID 一一对应。
+- `wok_infantry_armor` Gradle 构建通过；成品 JAR 内部版本为 `1.2.0-beta.2`，含 54 个网格，旧手写模型类已不在包内。
+- 已安装到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`（替换 1.2.0-beta.1，旧包改名为 `.bak` 备份）。
+- 游戏内外观验收（54 件穿戴、走路潜行、手臂部件、与头盔同时佩戴）尚未完成，因此保持 beta。
+
 ## WOK步战核心 0.5.0-beta.4 — 2026-10-10
 
 > 用户需求（2026-10-10）：按 ` 掏出战斗终端时要有“掏出平板”的动画，看过预览（`ui-preview/tablet-anim/`，设计 `DESIGN.md`）后选定方案 A「双手抬板」，“放慢优化一下就行了 但是要加音效”，随后“实装给我看看”。已定：节奏 tempo 0.3（持枪打开约 1.33 秒、空手 1.2 秒；收起默认“界面缩回平板”的 C1 截帧，持枪 0.9 秒、空手约 0.77 秒），保留“快速”“关闭”两档，2 秒内再开 ×0.6；方案 B「屏幕抬板」只作 A 的自动降级（载具、无人机、旁观、F1、没有第一人称手部渲染）；12 个自制合成音效默认开；没有镜头低头。实装计划 `ui-preview/tablet-anim/IMPL_PLAN.md`（B1–B5）。分支 `claude/掏平板动画`，基于 `claude/平板外壳` 的 `d1a50ba`（0.5.0-beta.3）。不改任何网络协议号。
