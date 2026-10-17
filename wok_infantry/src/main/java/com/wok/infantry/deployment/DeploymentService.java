@@ -81,6 +81,17 @@ public final class DeploymentService {
     private final DeploymentSavedData savedData;
     private final Map<UUID, DeploymentRecord> records = new LinkedHashMap<>();
     private final Set<UUID> releaseInProgress = new HashSet<>();
+    /**
+     * Players whose {@code PlayerContainerEvent.Close} sweep is currently running.
+     *
+     * <p>Forge re-fires that event from every {@code ServerPlayer#closeContainer()} call, and
+     * everything the sweep does can close a container again: {@link #resetLifeBoundary},
+     * {@link #holdPlayer}'s cross-dimension teleport and the respawn it triggers. Re-entering
+     * would re-run {@code AbstractContainerMenu#removed} on a menu that was already removed and
+     * re-dispatch the event from inside its own dispatch, which is what crashed the server when
+     * a deployed player opened the Curios accessory panel.
+     */
+    private final Set<UUID> containerCloseInProgress = new HashSet<>();
     private final Set<UUID> lobbyPlayers = new HashSet<>();
     /** Session-only administrator escape hatch for testing real Superb Warfare vehicles. */
     private final Set<UUID> vehicleTestPlayers = new HashSet<>();
@@ -236,6 +247,28 @@ public final class DeploymentService {
         }
     }
 
+    /**
+     * Close-time enforcement, run once per {@code PlayerContainerEvent.Close} dispatch.
+     *
+     * <p>A nested close (the sweep's own {@code closeContainer}, a holding teleport or a
+     * respawn) is ignored: the outer sweep is still on the stack and has already enforced this
+     * player's inventory. The marker also lets {@link LoadoutService#validateActiveInventory}
+     * know that the menu still sitting in {@code containerMenu} is the one being closed.
+     */
+    public void onContainerClosed(ServerPlayer player) {
+        if (player == null || player.server != server || isVehicleTestMode(player.getUUID())) {
+            return;
+        }
+        if (!containerCloseInProgress.add(player.getUUID())) {
+            return;
+        }
+        try {
+            tickPlayer(player);
+        } finally {
+            containerCloseInProgress.remove(player.getUUID());
+        }
+    }
+
     /** Per-player enforcement: waiting containment plus stale/foreign kit removal. */
     public void tickPlayer(ServerPlayer player) {
         if (isVehicleTestMode(player == null ? null : player.getUUID())) {
@@ -259,7 +292,7 @@ public final class DeploymentService {
                     ? ActionResult.failure(ActionResult.Code.LOADOUT_INCOMPLETE,
                     "配装服务尚未启动")
                     : loadout.validateActiveInventory(player, sessionId, record.issueToken,
-                    deepArmorScan);
+                    deepArmorScan, containerCloseInProgress.contains(player.getUUID()));
             if (inventory.success() && deepArmorScan) {
                 record.nextDeepInventoryScanTick = now + 20L;
             }
@@ -1755,10 +1788,10 @@ public final class DeploymentService {
     }
 
     /** Clears transient combat state at every controlled life boundary. */
-    private static void resetLifeBoundary(ServerPlayer player) {
+    private void resetLifeBoundary(ServerPlayer player) {
         boolean deathScreenEntity = player.isDeadOrDying() || player.getHealth() <= 0.0F;
         player.stopUsingItem();
-        player.closeContainer();
+        closeContainerAtBoundary(player);
         player.stopRiding();
         player.removeAllEffects();
         player.clearFire();
@@ -1779,6 +1812,26 @@ public final class DeploymentService {
         player.setInvisible(false);
         player.setNoGravity(false);
         player.noPhysics = false;
+    }
+
+    /**
+     * Closes whatever container is open, unless this boundary is itself running inside a close.
+     *
+     * <p>Two separate hazards are avoided here. Calling {@code closeContainer()} with nothing
+     * open still runs {@code removed()} on the player's inventory menu and re-fires
+     * {@code PlayerContainerEvent.Close} with it; and calling it from inside a Close dispatch
+     * removes an already-removed menu a second time. Both re-dispatch the event from within its
+     * own dispatch, so the boundary only closes a container that is genuinely still open and is
+     * not already being closed higher up the stack.
+     */
+    private void closeContainerAtBoundary(ServerPlayer player) {
+        if (player.containerMenu == player.inventoryMenu) {
+            return;
+        }
+        if (containerCloseInProgress.contains(player.getUUID())) {
+            return;
+        }
+        player.closeContainer();
     }
 
     private void clearSelections(UUID removedPointId) {

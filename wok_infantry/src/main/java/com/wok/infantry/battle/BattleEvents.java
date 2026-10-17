@@ -249,7 +249,11 @@ public final class BattleEvents {
                 DeploymentService current = DeploymentService.get(player).orElse(null);
                 if (current != null && !current.isVehicleTestMode(player.getUUID())
                         && (current.isActive(player.getUUID())
-                        || current.isWaitingParticipant(player.getUUID()))) {
+                        || current.isWaitingParticipant(player.getUUID()))
+                        // The client may already have closed the menu before this task ran.
+                        // Calling closeContainer() with nothing open would remove() the player's
+                        // inventory menu and re-fire PlayerContainerEvent.Close with it.
+                        && player.containerMenu != player.inventoryMenu) {
                     player.closeContainer();
                 }
             });
@@ -260,11 +264,9 @@ public final class BattleEvents {
     public static void onContainerClosed(PlayerContainerEvent.Close event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             // Close is the last reliable point at which the external menu slots remain visible.
-            DeploymentService.get(player).ifPresent(service -> {
-                if (!service.isVehicleTestMode(player.getUUID())) {
-                    service.tickPlayer(player);
-                }
-            });
+            // The service owns the re-entrancy guard: this event re-fires for every close the
+            // sweep itself performs.
+            DeploymentService.get(player).ifPresent(service -> service.onContainerClosed(player));
         }
     }
 

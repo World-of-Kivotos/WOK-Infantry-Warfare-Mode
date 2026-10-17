@@ -528,9 +528,19 @@ public final class LoadoutService {
         return ActionResult.ok("部署物品事务已提交");
     }
 
-    /** Every ACTIVE tick validates that no weapon or utility bypassed the selected class kit. */
+    /**
+     * Every ACTIVE tick validates that no weapon or utility bypassed the selected class kit.
+     *
+     * <p>{@code closingContainer} marks the sweep that runs from
+     * {@code PlayerContainerEvent.Close}. Forge fires that event from
+     * {@code ServerPlayer#doCloseContainer} <em>before</em> it resets {@code containerMenu}, so
+     * the menu being closed is still the active one. Treating it as "an external container is
+     * open" made every deployed player fail the close we forced on them: the kit was wiped and
+     * the player was sent back to the deployment screen for merely opening a container.
+     */
     public ActionResult validateActiveInventory(ServerPlayer player, UUID sessionId,
-                                                UUID issueToken, boolean deepArmorScan) {
+                                                UUID issueToken, boolean deepArmorScan,
+                                                boolean closingContainer) {
         Objects.requireNonNull(player, "player");
         // Temporary operator-only testing bypass. It allows creative-mode or /give test items to
         // coexist with an ACTIVE deployment without weakening normal-player provenance checks.
@@ -539,13 +549,24 @@ public final class LoadoutService {
         if (player.hasPermissions(ADMIN_PERMISSION_LEVEL)) {
             return ActionResult.ok("管理员测试模式：已跳过活动配装来源校验");
         }
-        if (player.containerMenu != player.inventoryMenu) {
-            return ActionResult.failure(ActionResult.Code.INVENTORY_BLOCKED,
-                    "已部署状态不能打开外部容器");
-        }
-        if (!player.containerMenu.getCarried().isEmpty()) {
-            return ActionResult.failure(ActionResult.Code.INVENTORY_BLOCKED,
-                    "已部署状态不能携带光标物品");
+        if (closingContainer) {
+            // The close sweep must not read the menu that is currently being torn down. The slot
+            // and armor scans below still run, so anything moved from the container into the
+            // player inventory is caught exactly as before; closeContainer has already
+            // transferState()d the carried stack into inventoryMenu, which is where it is read.
+            if (!player.inventoryMenu.getCarried().isEmpty()) {
+                return ActionResult.failure(ActionResult.Code.INVENTORY_BLOCKED,
+                        "已部署状态不能携带光标物品");
+            }
+        } else {
+            if (player.containerMenu != player.inventoryMenu) {
+                return ActionResult.failure(ActionResult.Code.INVENTORY_BLOCKED,
+                        "已部署状态不能打开外部容器");
+            }
+            if (!player.containerMenu.getCarried().isEmpty()) {
+                return ActionResult.failure(ActionResult.Code.INVENTORY_BLOCKED,
+                        "已部署状态不能携带光标物品");
+            }
         }
         for (int slot = 0; slot < 36; slot++) {
             ItemStack stack = player.getInventory().getItem(slot);

@@ -1,5 +1,200 @@
 # 更新日志
 
+## WOK步战核心 0.5.0-beta.5 — 2026-10-17
+
+> 用户需求（2026-10-17）：按导出的崩溃报告（`wok_infantry-0.5.0-beta.4.jar`，整合包 `WOK步战整合包-0.3.0`，崩溃时间 19:54:54）分析“为什么打开饰品栏会崩溃”，随后要求“进行修改，同时不要影响我们的功能”。分析结论是步战核心自己的容器关闭时序缺陷，不是饰品栏或 Curios 的问题。本轮只改这条关闭路径，不引入新功能，不改任何协议号。
+
+### 新增
+
+- 无。
+
+### 修改
+
+- **已部署玩家误开外部容器不再清空配装**：`validateActiveInventory` 在关闭复查里不再把“正在关闭的那个菜单”当成“正在使用外部容器”。改前只要玩家开一次饰品栏、箱子或工作台，我们强制关闭它的那一次 Close 必然判 `INVENTORY_BLOCKED`，于是清空 36 格背包 + 副手 + 四个护甲槽 + 个人合成栏、`beginWaiting` 退回部署页。改后照常继续；真正把容器里的东西塞进背包仍会被同一套来源校验拦住（36 格 / 副手 / 护甲 / 个人合成栏 / 光标，逐项不变）。
+- **光标准入改读对菜单**：关闭复查时 `closeContainer()` 已经把光标栈 `transferState` 进 `inventoryMenu`，因此改读 `inventoryMenu.getCarried()`；“手里拿着东西不能走”的判断强度不变。
+- **关闭复查只认最外层一次**：`onContainerClosed` 增加重入锁 `containerCloseInProgress`，嵌套关闭直接返回——外层仍在栈上，并且已经执行过这名玩家的清点。
+- **人生边界不再无条件关容器**：`resetLifeBoundary` 改为经 `closeContainerAtBoundary`，只在“确有容器打开”且“不在关闭中”时才调用 `closeContainer()`。
+- **延后强关任务加前置判断**：`onContainerOpened` 调度的那次强制关闭，在 `containerMenu` 已经回到 `inventoryMenu`（玩家自己先关了、或菜单已被替换）时不再调用 `closeContainer()`。
+
+### 修复
+
+- **修复已部署玩家打开饰品栏导致整服崩溃**（`crash-2026-10-17_19.54.54-server.txt`，“Exception in server tick loop”）。根因链：
+  1. Forge 在 `ServerPlayer#doCloseContainer` 里派发 `PlayerContainerEvent.Close`，位置在把 `containerMenu` 复位成 `inventoryMenu` **之前**；
+  2. 我们的 Close 监听器同步跑 `tickPlayer` → `validateActiveInventory`，此刻“外部容器仍在打开”的判断必然为真 → 判违规；
+  3. 违规分支调 `resetLifeBoundary`，它再 `closeContainer()` 一次，对**已经被移除的同一个菜单**二次 `removed()`，并从事件派发内部再次派发同一个事件（饰品栏这类带附属槽管理的菜单会抛异常）；
+  4. 嵌套派发里的异常进入 `EventBus.handleException`，它靠打印日志吃掉异常；而整合包里有 MOD 把 `org/apache/logging/log4j/**` 打进了自己的 JAR，打印时撞上 `LinkageError: loader constraint violation … MessageSupplier`，普通异常升级为 `Error`，穿过 `TickTask.run` 打穿服务端 tick 循环。
+  修复见上节四条；第 4 步属整合包侧问题，不在本模块内，见“兼容性”。
+- 顺带修掉两个同源的潜在问题：在没有容器打开时调 `closeContainer()` 会对玩家自己的 `inventoryMenu` 执行 `removed()` 并以它再派发一次 `PlayerContainerEvent.Close`；以及同一菜单被重复 `removed()`。
+
+### 兼容性
+
+- 网络协议号全部不变（战局 `20`、编制 `5`、兵力 `2`、体力 `2`、配装 `11`），没有新增注册项；客户端与服务端可在 0.5.0-beta.1–0.5.0-beta.5 之间混用。
+- `modId`（`wok_infantry`）、JAR 前缀、Java 包根、配置文件字段全部未变。`LoadoutService.validateActiveInventory` 增加一个 `closingContainer` 参数，是模块内部方法，唯一调用方在 `DeploymentService` 内。
+- 不新增 mixin、不新增依赖、不新增资源，不改动 Curios 或其他 MOD 的类。
+- **整合包侧仍需单独处理**：崩溃报告里那个 log4j `LinkageError` 说明有 MOD 把 log4j 打进了自己的 JAR。它不修，任何监听器异常都还会被放大成整服崩溃；本模块这轮只是让自己不再触发它。扫描命令见工作区 `饰品栏崩溃分析.md`。
+
+### 配置/存档影响
+
+- 无。不改配置文件字段与默认值、不改存档结构、不改物品 NBT 结构，旧存档与旧配置可直接沿用。
+- 行为变化只影响“已部署玩家接触外部容器”这一条：不再清空配装、不再退回部署页，容器仍会被强制关闭。
+
+### 测试结果
+
+- 构建：`compileJava` 通过（`BUILD SUCCESSFUL`；只有 `TabletSounds.java:52` 一处既有的 `ResourceLocation(String,String)` 过期 API 提示，非本次改动）。
+- 单元测试：`test` 全量 **1463 个用例全部通过，0 失败 / 0 错误 / 0 跳过**（`build/test-results/test` 210 个 XML 汇总）。
+- 未执行：游戏内验收。本崩溃需要真实客户端的 Curios 饰品栏复现，未在本机实例验证；待用户在步战测试端确认——已部署玩家开饰品栏不再掉配装、不再崩，开箱子 / 工作台行为一致，等待态玩家 Containment 正常。
+- 已知未验证：旧日志里那个被 log4j `LinkageError` 覆盖的原始监听器异常无法从日志还原，因此**不能百分百排除还有第二个抛异常方**；修掉整合包侧 log4j 重复后复现一次，日志里应出现 `Exception caught during firing event …` 带完整原始栈。
+
+## WOK步战附属-TaCZ换皮肤 1.1.0-beta.2 — 2026-10-15
+
+按用户拍板，列表缩略图从枪包的 `slot` 竖版物品栏图**改为 `hud` 横向图**，并按实测比例放宽缩略图井。
+**网络协议不变**，可与 1.0.0-beta.1 / 1.1.0-beta.1 互连。
+
+#### 新增
+
+- **hud 素材实测登记**：把 wokzz 1.0.21 枪包的真实贴图纳入预览工具——`assets/wokzz/hud/`（19 张横向图）、`assets/wokzz/slot/`（20 张竖版图），并在 `slot_assets.py` 里加 `WOKZZ_GUNS` / `WOKZZ_NO_HUD` 登记表与 `load_wokzz` / `wokzz_fit` 取值函数。素材均为枪包原文件，未做加工。
+- 两张对照出图：`out/wokzz_kinds.png`（同一把枪的 `slot` vs `hud` 并排）、`out/wokzz_comment_paths.txt`（枪包里含 `//` 注释的 JSON 清单，按目录分组带行号）。
+
+#### 修改
+
+- **列表缩略图改用 `hud` 横向图**（`WeaponSkinScreen.thumbTexture()`）：取值顺序由原来的 `slot` → `hud` 兜底，**对调为 `hud` → `slot` 兜底** → 剪影。一处改动同时覆盖全部 4 处缩略图（主武器卡、预览皮肤大图、列表行、紧凑布局）。
+- **缩略图井加宽**（`THUMB_W` 46 → 56，`THUMB_W_COMPACT` 30 → 40）：实测 wokzz 1.0.21 的 18 张 hud 图比例**全部落在 2.63~3.42**（最小 `awp_xc` 为 180×60 = 3:1 的缩略版），而 46×26 的井是 1.77:1，枪被高度卡死只能画出 42×12~16、看着像细线；56 宽可画出 52×15~20，枪型才认得出来。预览工具 `THUMB_WIDTH` 同步改成 `ROOMY/STANDARD 56`、`COMPACT 40`。
+- 预览演示数据换成 wokzz 1.0.21 的真实内容：每行的 `gun` 字段对应枪包里真实存在的 `*_display.json`，缩略图直接读该枪的 `hud` 图，使预览与游戏内看到的是同一张图。行内说明文案改短以贴合实际可用宽度。
+- `gradle.properties` 的 `mod_version` 由 `1.1.0-beta.1` 升到 `1.1.0-beta.2`；同步根 `README.md`、`docs/VERSIONING.md`、本模块 `README.md`、`tools/ui_preview/README.md` 与本文件。
+
+#### 修复
+
+- **纠正 1.1.0-beta.1 交付说明里的一处误判**：此前把「`slot` 贴图宽高读到 `0×0`」当成模块缺陷，实际是**诊断脚本读错字节序**（用了小端 `BitConverter`）；模块内 `WeaponSkinScreen.textureSize()` 用的是大端 `readInt`，读法正确，且已有 `w <= 0 || h <= 0` 守卫。模块本身无此问题，无需修改。
+- 确认并记录：列表行的说明文字与品质徽章**没有重叠**——`textRight` 同时扣除了 `STATE_COL_W`(34) 与 `chipWidth`，文字只在自己的可用宽度内被裁切。此前预览里看到的"被压住"是演示文案过长所致，已改短。
+- 预览工具补齐 `slot` 之外的真图来源，不再出现"有真图却回落到剪影"的演示行。
+
+#### 兼容性
+
+- **网络协议不变**，仍然只有换皮、授权同步与批量授权三条；客户端与服务端可分别停留在 1.0.0-beta.1 / 1.1.0-beta.1 / 1.1.0-beta.2。
+- `modId`（`wok_weapon_skins`）、JAR 前缀、Java 包根（`com.wok.weaponskins`）、配置文件字段与语义全部未变，旧配置可直接沿用。
+- 强制依赖仍只有 Forge 与 Minecraft；TaCZ `1.1.7`–`1.1.8` 必需，LR 战术工坊 `0.3.0+` 可选；**本模块仍不依赖 `wok_infantry`**。
+- 本次只改客户端绘制与常量，**不改任何枪械数据**、不写 NBT 结构、不影响已有存档。
+- 对外部枪包的要求更宽了：以前必须有 `slot` 图才好看，现在只要有 `hud` 就行；两者都没有时按既有降级链画剪影，不会空块。
+
+#### 配置/存档影响
+
+- 服务端配置文件 `config/wok_weapon_skins.json` 字段与语义未变，无需迁移。
+- 皮肤状态仍写在武器物品 NBT 上，随物品保存与转移，存档结构未变。
+- 不新增任何打包资源；本模块 JAR 内仍不含任何 TaCZ / LR / 核心的类或贴图。
+
+#### 测试结果
+
+- 构建：`compileJava` 与完整 `build`（含 `reobfJar`）在 JDK 17 + ForgeGradle 下通过，`BUILD SUCCESSFUL`，产物 `wok_weapon_skins-1.1.0-beta.2.jar`。
+- 依赖边界：产物 JAR 内 `com/tacz/`、`me/xjqsh/`、`com/wok/infantry/` 均为 **0 个类**。
+- 复制品核对：`tools/ui_preview/_diff_core_ui.py` 差异仍为 **186 行**，与 1.1.0-beta.1 时一致，**未引入新漂移**。
+- 预览自检：`tools/ui_preview/check.py` **全部通过**（机身 ⊃ 玻璃 ⊃ 屏、状态栏不相交、页键不压 Esc / R、文字截断与对比度全绿）。
+- 降级链实测：`ak_12_tz_h`（无 `hud` 图）走 `slot` 回落、近战演示行与缺图行走剪影兜底，三档都出图正常。
+- 未执行：本模块无自动化测试源，未跑 GameTest 与 uiTest。
+- 游戏内验收：待用户在步战测试端完成——三种涂装、960×720 GUI 1 与 320×240、**每行缩略图是否为该枪的 hud 横向图**、无 hud 枪的 slot 回落、锁定与无效行的降级、文字溢出与控件重叠、滚轮与上下键、`Enter` 应用、底框 `Esc` / `R` 点击、授权页勾选与授予、回执胶囊。
+
+## WOK步战附属-TaCZ换皮肤 1.1.0-beta.1 — 2026-10-15
+
+两个界面（玩家选皮页、管理员授权页）按《WOK步战 UI 永久风格规则》的实体战术平板外壳重做，
+并给每个皮肤配上枪包里真实的物品栏贴图。**网络协议不变**，可与 1.0.0-beta.1 互连。
+
+#### 新增
+
+- 新版玩家选皮页：整屏是 D2 实体按键平板（机壳、橡胶护角、侧键、摄像头、螺帽、磨砂斑点、玻璃反光），顶部状态栏写「标题 › 当前页」、回执胶囊、身份、信号、电池、时钟；页签改为底框实体页面键（`Esc 返回` / `皮肤` / `R 刷新`），当前页的键按下、上方 LED 点亮；整屏按所属阵营涂装（学院军海军蓝 / 凯撒正红 / 中立浅钢灰）。
+- 新版管理员授权页：同样是平板外壳，玩家 × 授权内容双列表、页脚两行按键（全玩家 / 清玩家 / 全内容 / 清内容 + 授予已选 + 返回），提交结果走状态栏回执胶囊。
+- **每个皮肤一行真实物品栏贴图**：读枪包 display JSON 的 `slot` 字段（TaCZ 的 `GunDisplayInstance.getSlotTextureLocation()` / `getSlotTexture()`），取不到退 `hud` 剪影；适配层新增 `WeaponSkinAccess.slotTextureFor` / `hudTextureFor`（仍走反射，不硬链接 TaCZ）。实测已装的三个枪包：138 个枪械 display 全部带 `slot` 与 `hud`，贴图文件 137/138 存在。
+- 品质等级（消费级 / 军规级 / 稀少 / 史诗 / 传说）配色：行首色条与品质徽章按品质着色，选中行另有阵营色实心底 + 左侧浅色竖条，两者语义不冲突。
+- 列表交互：鼠标滚轮滚动、上下键在可用皮肤之间跳转（跳过锁定与无效的）、`Enter` 应用、点击无效或未授权的行时在状态栏回执里说明原因（不弹新窗口）。
+- 本模块自带一套 `com.wok.weaponskins.client.ui`：从 `WOK步战核心` 的战术平板外壳美术层**逐字复制** 11 个类（`DeviceArt`、`TextFit`、`BezelKey`、`TacticalBezelPlan`、`TacticalPalette`、`TacticalBoardTheme`、`TacticalShellLayout`、`TacticalLiveryTables`、`DeviceSkin`、`TacticalTextures`、`UiRect`、`InkContrast`）与 6 张烘焙贴图，**只改 `package` 一行**；另写 7 个本地替身（`SkinScreen`、`SkinChrome`、`Livery`、`SkinLivery`、`UiTheme`、`TacticalPages`、`SkinKeyHint`、`SkinProbe`）。因此本模块**依旧可以单独安装**，没有核心的客户端上界面同样长这样。
+- `tools/ui_preview/`（预览出图工具）：D2 外壳与 P3 涂装的 Python 复刻、两页设计稿、迁移前对照、三张自检（文字溢出 / 对比度 / 外壳几何）、核心类搬运脚本与"复制品 vs 核心"差异核对脚本。
+
+#### 修改
+
+- `WeaponSkinScreen` / `AdminGrantScreen` 由原来"深色扁平面板 + 固定像素布局"改为平板外壳 + 按尺寸档（紧凑 / 标准 / 宽松）响应式布局；窄屏（320×240）下武器区压成两行、清单占满下方。
+- 界面文案集中到语言文件 `assets/wok_weapon_skins/lang/zh_cn.json`（标题、分区、按键、品质名、状态字、提示语）。
+- 阵营判定不再需要战局数据：`Livery.current()` 先取本模块钉死的涂装，其次读玩家所在计分板队伍名（识别 blue / academy / red / caesar），都没有则中立；并留了 `Livery.acceptFromCore` 供将来与核心软联动。
+- `gradle.properties` 的 `mod_version` 由 `1.0.0-beta.1` 升到 `1.1.0-beta.1`；同步根 `README.md`、`docs/VERSIONING.md`、本模块 `README.md` 与根 `CHANGELOG.md`。
+
+#### 修复
+
+- 修正选中行与品质色条的语义冲突：原先把品质色画在行首竖条上，与"选中 = 阵营色实心底 + 左侧浅色竖条"的永久规则撞车；现在选中行用阵营色竖条，品质改由行首色条（非选中行）与徽章承担。
+- 锁定 / 无效行不再把缩略图压成一团黑：整行斜纹先画、缩略图井后画，且只把外形压暗一档，仍看得清是哪把枪、什么配色。
+- 缩略图按贴图真实比例等比缩放（从资源包 PNG 头读宽高并缓存），不再拉伸：tacz 默认包的 `slot` 是 64×64 方图，klee727 的是 576×307 / 710×368 横图，比例差得很远。
+- 贴图缺失时不再有可能的崩溃或空块：`textureSize` 拿不到就这一帧不画，行文字写明"外观未在枪包注册表里找到"。
+
+#### 兼容性
+
+- **网络协议不变**，仍然只有换皮、授权同步与批量授权三条；客户端与服务端可分别停留在 1.0.0-beta.1 / 1.1.0-beta.1。
+- `modId`（`wok_weapon_skins`）、JAR 前缀、Java 包根（`com.wok.weaponskins`）、配置文件字段与语义全部未变，旧配置可直接沿用。
+- 不新增任何强制依赖：`mods.toml` 的强制依赖仍只有 Forge 与 Minecraft；TaCZ `1.1.7`–`1.1.8` 必需（换皮接口），LR 战术工坊 `0.3.0+` 可选。**本模块不依赖 `wok_infantry`**，装上核心也不会冲突（不读它的类、不碰它的调色板作用域）。
+- 复制的核心类与本模块的 `client.ui` 包共存于本模块内，包名不同，不会与核心的同名类冲突。
+
+#### 配置/存档影响
+
+- 服务端配置文件 `config/wok_weapon_skins.json` 的字段与语义未变，无需迁移。
+- 皮肤状态仍写在武器物品 NBT 上，随物品保存与转移，存档结构未变。
+- 新增客户端资源：本模块 `assets/wok_weapon_skins/textures/gui/` 下 4 张平板外壳贴图（由核心的同一批生成物复制而来，本项目原创美术）；不打包任何 TaCZ / LR 的贴图或类。
+
+#### 测试结果
+
+- 构建：`wok_weapon_skins` 的 `compileJava` 与完整 `build`（含 `reobfJar`）在 JDK 17 + ForgeGradle 下通过，产物 `wok_weapon_skins-1.1.0-beta.1.jar`。本机默认 `java` 是 11，故以 `JAVA_HOME` 指向 Gradle 工具链里的 JDK 17、并用仓库既有的 `.dsh-nofoojay-settings.gradle` 绕行配置构建（未修改任何受版本控制的文件）。
+- 复制品核对：`tools/ui_preview/_diff_core_ui.py` 逐行比对 11 个复制类与核心源码，差异合计 186 行，**全部对应运行脚本里逐条写明的受控替换**（包名、`TacticalLivery`→`Livery`、`BattleUiTheme`→`UiTheme`、uiTest 探针下调等），无计划外改动；`UiRect` / `PaletteToken` / `InkContrast` / `TacticalLiveryTables` / `TacticalShellLayout` 等为零差异。
+- 预览自检：`tools/ui_preview/check.py` 全绿——5 档字号 × 4 种宽度上限的文字截断都不越界；16 组「前景色 / 它真正落在的底色」× 3 涂装全部达到正文 ≥ 4.5:1、次要字 ≥ 3:1（其中查出核心状态栏时钟在中立涂装下仅 1.34:1，属核心既有问题，已记录在预览 README）；三个尺寸档下机身 ⊃ 玻璃 ⊃ 屏、页键不压 Esc / R。
+- 枪包覆盖核查：`tools/ui_preview/slot_coverage.py --verify` 扫已装三个枪包，`slot` / `hud` 字段 138/138 齐全、贴图文件 137/138 存在（缺口为 `klee727:gun/slot/g43`，字段有写、贴图未放，界面按设计降级）。
+- 未执行：本模块没有自动化测试源，未跑 GameTest 与 uiTest（界面为客户端表现，核心那套 uiTest 探针在本模块是空实现）。
+- 游戏内验收：待用户在步战测试端完成——三种涂装、960×720 GUI 1 与 320×240、每行缩略图是否为该皮肤的真实物品栏贴图、锁定与无效行的降级、文字溢出与控件重叠、滚轮与上下键、`Enter` 应用、底框 `Esc` / `R` 点击、授权页勾选与授予、回执胶囊。
+
+## WOK步战附属-TaCZ换皮肤 1.0.0-beta.1 — 2026-10-15
+
+本模块从 R6 项目里的 `wok-weapon-skins` 1.0.0 迁入本仓库，按步战模块规矩重建，并补上抽箱 / 商店对接入口。
+
+#### 新增
+
+- 新模块 `wok_weapon_skins`（`WOK步战附属-TaCZ换皮肤`），可独立安装：服务端 JSON 皮肤清单、按玩家名白名单授权、玩家选皮界面（默认 `` ` `` 键）、管理员发放界面、`/wokskins` 指令组。
+- 公开 API `com.wok.weaponskins.api.WokWeaponSkinsApi`，供抽箱、商店、活动发放等外部模块调用：`apply` / `applyForced` / `applyToStack` / `applyEntry` / `canUse` / `notifyIfFailed`，返回值 `SkinApplyResult(applied, code, weaponId, skinId)`，`code` 为 `ok` / `unknown_weapon` / `unknown_skin` / `forbidden` / `bad_display`。参数与返回值只用原语和 Minecraft 自身类型，调用方不需要 TaCZ 或 LR 的类。
+- 唯一第三方接触层 `com.wok.weaponskins.adapter.WeaponSkinAccess`：TaCZ 与 LR 战术工坊全部经反射访问，TaCZ 或 LR 缺失、版本不符、方法改名时只返回“不可用”，不抛异常、不阻止启动。
+- 指令：`/wokskins status`（运行环境自检：TaCZ 是否就绪、近战是否可用、配置规模）、`/wokskins api <武器id> <皮肤id>`（走公开 API 换皮并打印结果，验证抽箱接入链路）、`/wokskins displays <武器id> [页]`（列出该枪当前真实可用的 gun display id，40 条一页，登记皮肤时查用）。
+- `README.md` 写明配置字段、指令表、权限与同步机制、公开 API 用法、与 WOK 本体开箱模块的接法与游戏内验收清单。
+- `tools/make_karambit_doppler_skin.py` 与多普勒爪子刀皮肤资源（`assets/wok_weapon_skins/display/melee/karambit_doppler.json`、近战 UV 与槽位贴图、枪械 UV 贴图）随模块入库。
+
+#### 修改
+
+- 目标环境升到 Forge `47.4.22`：`gradle.properties` 的 `forge_version` 由 `47.4.16` 改为 `47.4.22`，与步战其它模块一致。
+- 编译期依赖由“写死的 `D:/WOKR6/.../mods` 绝对路径”改为本模块 `dev/libs/`（可被 `-Ptacz_jar_path` / `-Plrtactical_jar_path` 覆盖），该目录已加入 `.gitignore`，第三方 JAR 不入库；新增 `dependencyReport` 任务打印实际使用的依赖路径。
+- `mods.toml`：TaCZ 依赖范围写为 `[1.1.7,1.1.9)`（1.1.7 与 1.1.8 的换皮 API 逐字节相同，两个版本都支持）；LR 战术工坊由 `mandatory=true` 改为 `mandatory=false`。
+- 界面、指令、配置类不再直接 `import` TaCZ 与 LR 的类，统一改走反射适配层；皮肤是否可用改由适配层查询 TaCZ 注册表。
+- 默认皮肤清单改为只登记默认枪包里确实存在的枪（`tacz:m4a1`、`tacz:ak47`、`tacz:hk416d`、`tacz:scar_h`），移除对 `klee727` 与 `maxstuff` 枪包的引用，保留可用的 `tacz:rpk_display` 作为示例皮肤。
+- `settings.gradle` 与仓库其它模块保持一致（仍使用 `foojay-resolver-convention`）；插件门户不可达的机器改用仓库里的 `.dsh-nofoojay-settings.gradle` 绕行配置构建，两种方式的产物内容一致。
+
+#### 修复
+
+- 修复未安装 LR 战术工坊时模块无法启动的问题：原先四个类直接链接 LR 的类，缺 LR 时加载即 `NoClassDefFoundError`。改造后逐个类反编译核对，成品 JAR 内不存在任何 `me/xjqsh/` 引用。
+- 修复近战武器的“当前皮肤”判定：原实现一律用 TaCZ 的默认枪械 display 作比较，近战恢复默认外观时判定不出默认皮肤；现同时接受 LR 的空覆盖值与 TaCZ 默认 display。
+- 修复皮肤 id 标记键在两处各写一份字面量的问题，统一为 `SkinConfig.SKIN_ID_TAG`。
+
+#### 兼容性
+
+- modId 仍为 `wok_weapon_skins`，JAR 前缀仍为 `wok_weapon_skins-`，Java 包根仍为 `com.wok.weaponskins`；已有服务器配置 `config/wok_weapon_skins.json` 的字段与语义未变，旧配置可直接沿用。
+- TaCZ 支持 `1.1.7` 与 `1.1.8`；LR 战术工坊 0.3.0+ 为可选，装了才有近战武器换皮。
+- 不强制依赖任何其它 WOK 模块，也不把 TaCZ / LR 的类打进 JAR；`mods.toml` 的强制依赖只有 Forge 与 Minecraft。
+- 网络协议随本模块首次交付，未与旧版本混连过；客户端与服务端应使用同一版本。
+- 已知限制：`/wokskins displays` 依赖客户端已加载的 TaCZ 显示注册表，需在客户端执行；换皮只改外观，不改变伤害、配件、弹药与弹道。
+
+#### 配置/存档影响
+
+- 新增服务端配置文件 `config/wok_weapon_skins.json`（首次启动自动生成默认清单），`/wokskins reload` 可热重载且无需重启。
+- 皮肤状态写在武器物品 NBT 上（当前皮肤 id 标记），随物品保存与转移；不改动存档结构，移除本模块后物品恢复为原版外观，不损坏存档。
+- 武器必须先登记在配置里才允许换皮，未登记武器不会出现在界面中。
+
+#### 测试结果
+
+- 构建：`wok_weapon_skins` 的 `clean build`（含 `reobfJar`）在 JDK 17 + ForgeGradle 下通过，产物 `wok_weapon_skins-1.0.0-beta.1.jar`（6,081,759 字节，SHA-256 `9C47A10DE99CE71EDD0EF73EE583C70866C9B28B656F8A9B61D86C48962D2632`）。
+- 独立安装检查：成品 JAR 内 28 个类逐个反编译核对，无 `me/xjqsh/` 引用、无 `com/tacz/` 类被打包，第三方只以反射字符串出现。
+- 依赖元数据核对：JAR 内 `META-INF/mods.toml` 的 `modId` / `version` / TaCZ 与 LR 依赖范围与 `gradle.properties` 一致。
+- 版本核对：`tools/verify_versions.ps1 -Modules wok_weapon_skins` PASS（该脚本的模块清单、产品名与说明已同步为本模块与九个模块）。
+- 已安装：`D:\WOK步战测试\1.20.1-Forge_47.4.22\mods\wok_weapon_skins-1.0.0-beta.1.jar`（该目录本轮新建；步战核心等其它模块 JAR 尚未部署，完整联动验收需等测试端齐套）。
+- 未执行：本模块当前没有自动化测试源，未跑 GameTest 与 UI 测试。
+- 游戏内验收：待用户在步战测试端完成，清单见 `wok_weapon_skins/README.md` 末节（环境自检、界面权限过滤、换皮后枪械数据不变、退出重进保持、越权被拒、无 LR 时的降级、热重载）。
+
 ## WOK步战附属-独立护甲 1.3.0-beta.1 — 2026-10-10
 
 #### 新增
