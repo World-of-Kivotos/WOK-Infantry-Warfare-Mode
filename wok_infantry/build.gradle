@@ -14,6 +14,125 @@ base {
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
+File defaultUiJourneyMapJar = project.file(
+        'run/compat-cache/journeymap-forge-1.20.1-6.0.2.jar')
+File uiJourneyMapJar = project.hasProperty('uiJourneyMapJar')
+        ? project.file(project.property('uiJourneyMapJar'))
+        : (defaultUiJourneyMapJar.isFile() ? defaultUiJourneyMapJar : null)
+if (uiJourneyMapJar != null && !uiJourneyMapJar.isFile()) {
+    throw new GradleException("UI JourneyMap JAR is missing: ${uiJourneyMapJar}")
+}
+
+String networkTestRunId = (project.findProperty('networkTestRunId')
+        ?: 'MISSING-networkTestRunId').toString().trim()
+String networkTestPort = (project.findProperty('networkTestPort') ?: '25566').toString().trim()
+int parsedNetworkTestPort
+try {
+    parsedNetworkTestPort = Integer.parseInt(networkTestPort)
+} catch (NumberFormatException ignored) {
+    throw new GradleException("networkTestPort must be an integer: ${networkTestPort}")
+}
+if (parsedNetworkTestPort < 1024 || parsedNetworkTestPort > 65535) {
+    throw new GradleException("networkTestPort must be between 1024 and 65535: ${networkTestPort}")
+}
+File networkTestResultsDir = layout.projectDirectory
+        .dir('run/network-test/results').asFile.canonicalFile
+File networkTestRoot = layout.projectDirectory.dir('run/network-test').asFile.canonicalFile
+// Windows JDK 17.0.19 prefers AF_UNIX for Selector wake-up pipes. The managed test host can
+// create that socket but rejects its connect operation, so point each client-only acceptance
+// harness at an absent socket directory and let the JDK's PipeImpl fall back to TCP loopback.
+File networkSelectorFallbackDir = layout.projectDirectory
+        .dir('run/network-test/.selector-tcp-fallback/not-created').asFile.canonicalFile
+File uiTestResultFile = layout.projectDirectory
+        .file('run/ui-test/ui-test-results/wok_ui_acceptance.txt').asFile.canonicalFile
+// Written on every harness phase change, so a client that exits without a result still shows
+// how far it got.
+File uiTestProgressFile = layout.projectDirectory
+        .file('run/ui-test/ui-test-results/wok_ui_progress.txt').asFile.canonicalFile
+File uiTestOptionsFile = layout.projectDirectory
+        .file('run/ui-test/options.txt').asFile.canonicalFile
+File uiSelectorFallbackDir = layout.projectDirectory
+        .dir('run/ui-test/.selector-tcp-fallback/not-created').asFile.canonicalFile
+// UI acceptance runs in the language players actually use unless -PuiLang says otherwise.
+String uiLanguage = (project.findProperty('uiLang') ?: 'zh_cn').toString().trim()
+        .toLowerCase(Locale.ROOT)
+// Only guards the options.txt line. Vanilla 1.20.1 also ships codes such as lzh, esan and
+// zlm_arab; whether the code is really provided is checked by the harness after login.
+if (!(uiLanguage ==~ /[a-z]{2,8}(_[a-z]{2,8})?/)) {
+    throw new GradleException("uiLang must be a Minecraft language code such as zh_cn or en_us: ${uiLanguage}")
+}
+// UI acceptance case selection (see UiRuntimeAcceptanceHarness): -PuiCases=kit,legacy picks groups,
+// surfaces or case ids (empty: all; without "legacy" the live flow is skipped), -PuiTiers=320x240,...
+// limits the tiers and -PuiLayoutStrict=false only reports layout violations of migrated screens.
+// List items may be separated by , ; or + (the last two survive wrappers that split on commas).
+// Tier ids may end in gN (0.5.0-beta.4: 480x270g4 is 1920x1080 at GUI 4).
+String uiCases = (project.findProperty('uiCases') ?: '').toString().trim()
+String uiTiers = (project.findProperty('uiTiers') ?: '').toString().trim()
+String uiLayoutStrict = (project.findProperty('uiLayoutStrict') ?: 'true').toString().trim()
+if (!(uiCases ==~ /[A-Za-z0-9_.,;+-]*/) || !(uiTiers ==~ /[0-9xg,;+]*/)) {
+    throw new GradleException("uiCases/uiTiers contain unexpected characters: ${uiCases} / ${uiTiers}")
+}
+if (!(uiLayoutStrict in ['true', 'false'])) {
+    throw new GradleException("uiLayoutStrict must be true or false: ${uiLayoutStrict}")
+}
+// The layout preview's PNGs (ui-preview/shots next to the repository) for the side-by-side
+// index.html of the acceptance results; -PuiPreviewShots overrides the lookup.
+String uiPreviewShots = (project.findProperty('uiPreviewShots') ?: '').toString().trim()
+if (uiPreviewShots.isEmpty()) {
+    for (File probe = project.projectDir.canonicalFile; probe != null; probe = probe.parentFile) {
+        File candidate = new File(probe, 'ui-preview/shots')
+        if (candidate.isDirectory()) {
+            uiPreviewShots = candidate.absolutePath
+            break
+        }
+    }
+}
+if (!networkTestRoot.toPath().startsWith(layout.projectDirectory.asFile.canonicalFile.toPath())
+        || !networkTestResultsDir.toPath().startsWith(networkTestRoot.toPath())
+        || !networkSelectorFallbackDir.toPath().startsWith(networkTestRoot.toPath())) {
+    throw new GradleException(
+            "Network-test results path escapes the project fixture root: ${networkTestResultsDir}")
+}
+
+// A client-only visual acceptance harness. It is deliberately isolated from main/test so the
+// harness is available to runUiTestClient but can never enter the production JAR.
+sourceSets {
+    gameplayTest {
+        java.srcDir 'src/gameplayTest/java'
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
+    rallyTest {
+        java.srcDir 'src/rallyTest/java'
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
+    staminaTest {
+        java.srcDir 'src/staminaTest/java'
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
+    catalogTest {
+        java.srcDir 'src/catalogTest/java'
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
+    uiTest {
+        java.srcDir 'src/uiTest/java'
+        // Set, not added: src/uiTest/resources is already the convention directory, and adding it
+        // twice makes processUiTestResources fail on the duplicate uiTest language files.
+        resources.srcDirs = ['src/uiTest/resources']
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
+    networkTest {
+        java.srcDir 'src/networkTest/java'
+        resources.srcDir 'src/networkTest/resources'
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
+}
+
 minecraft {
     mappings channel: mapping_channel, version: mapping_version
     copyIdeResources = true
@@ -31,21 +150,689 @@ minecraft {
 
         client {}
 
+        clientGameplayTest {
+            parent runs.client
+            workingDirectory project.file(project.findProperty('gameplayTestRoot')
+                    ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/gameplay-acceptance/current')
+            jvmArgs '-Xms256m', '-Xmx2G'
+            jvmArgs "-Djdk.net.unixdomain.tmpdir=${networkSelectorFallbackDir.absolutePath}"
+            args '--mixin', 'wok_infantry.mixins.json', '--username', 'WokGameplayTest',
+                    '--quickPlaySingleplayer', 'wok_gameplay_test', '--width', '960', '--height', '720'
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', layout.buildDirectory.file('createSrgToMcp/output.srg').get().asFile.absolutePath
+            mods { "${mod_id}" { source sourceSets.main; source sourceSets.gameplayTest } }
+        }
+
+        clientRallyTest {
+            parent runs.client
+            workingDirectory project.file(project.findProperty('rallyTestRoot')
+                    ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/rally-acceptance/current')
+            jvmArgs '-Xms256m', '-Xmx2G'
+            jvmArgs "-Djdk.net.unixdomain.tmpdir=${networkSelectorFallbackDir.absolutePath}"
+            args '--mixin', 'wok_infantry.mixins.json', '--username', 'WokRallyTest',
+                    '--quickPlaySingleplayer', 'wok_rally_test', '--width', '960', '--height', '720'
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.rallyTest
+                }
+            }
+        }
+
+        clientStaminaTest {
+            parent runs.client
+            workingDirectory project.file(project.findProperty('staminaTestRoot')
+                    ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/stamina-acceptance/current')
+            jvmArgs '-Xms256m', '-Xmx2G'
+            jvmArgs "-Djdk.net.unixdomain.tmpdir=${networkSelectorFallbackDir.absolutePath}"
+            args '--mixin', 'wok_infantry.mixins.json', '--username', 'WokStaminaTest',
+                    '--quickPlaySingleplayer', 'wok_stamina_test', '--width', '960', '--height', '720'
+            property 'wok.staminaTestTacz', project.hasProperty('staminaTestTaczJar').toString()
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', layout.buildDirectory
+                    .file('createSrgToMcp/output.srg').get().asFile.absolutePath
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.staminaTest
+                }
+            }
+        }
+
+        clientCatalogTest {
+            parent runs.client
+            workingDirectory project.file(project.findProperty('catalogTestRoot')
+                    ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/catalog-transfer-acceptance/current')
+            jvmArgs '-Xms256m', '-Xmx2G'
+            args '--username', 'WokCatalogTest', '--quickPlaySingleplayer', 'wok_catalog_test',
+                    '--width', '960', '--height', '720'
+            property 'wok.catalogTest', 'true'
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.catalogTest
+                }
+            }
+        }
+
+        uiTestClient {
+            parent runs.client
+            workingDirectory project.file('run/ui-test')
+            singleInstance true
+            jvmArgs "-Djdk.net.unixdomain.tmpdir=${uiSelectorFallbackDir.absolutePath}"
+            // Userdev does not read the JAR manifest's MixinConfigs, so the core mixins must be
+            // named here or the UI acceptance runs without them (same as the other client runs).
+            args '--mixin', 'wok_infantry.mixins.json',
+                    '--quickPlaySingleplayer', 'wok_ui_test', '--width', '960', '--height', '720'
+            property 'wok.ui.expectedLanguage', uiLanguage
+            property 'wok.ui.cases', uiCases
+            property 'wok.ui.tiers', uiTiers
+            property 'wok.ui.layoutStrict', uiLayoutStrict
+            property 'wok.ui.previewShots', uiPreviewShots
+            property 'wok.ui.expectedTerrainProvider',
+                    (project.findProperty('uiExpectedTerrainProvider') ?: 'journeymap').toString()
+            property 'wok.ui.expectedJourneyMapLoaded',
+                    (project.findProperty('uiExpectedJourneyMapLoaded') ?: 'true').toString()
+            // The tablet's status-bar clock (TacticalBoardChrome.CLOCK_PROPERTY) is fixed, so probe
+            // texts and screenshots do not change with the time of day.
+            property 'wok.ui.clock', '21:30'
+            // Every case runs with the tablet animation off (TabletSettings.MODE_PROPERTY of core
+            // 0.5.0-beta.4 overrides ui.tabletAnimation); the animation cases opt back in.
+            property 'wok.ui.tabletAnimation', 'OFF'
+            if (uiJourneyMapJar != null) {
+                // Production mods ship SRG refmaps. Userdev runs official names, so Mixin needs
+                // ForgeGradle's generated SRG-to-MCP table for third-party injections.
+                property 'mixin.env.remapRefMap', 'true'
+                property 'mixin.env.refMapRemappingFile', layout.buildDirectory
+                        .file('createSrgToMcp/output.srg').get().asFile.absolutePath
+            }
+            mods {
+                "${mod_id}" {
+                    // A child run's mods block replaces the inherited source association.
+                    // Keep production classes/resources in the same logical mod as the
+                    // client-only acceptance harness instead of exposing resources/main as a
+                    // second, classless mod file.
+                    source sourceSets.main
+                    source sourceSets.uiTest
+                }
+            }
+        }
+
+        networkTestHost {
+            parent runs.client
+            workingDirectory project.file('run/network-test/host')
+            singleInstance false
+            jvmArgs '-Xms256m', '-Xmx1536m',
+                    "-Djdk.net.unixdomain.tmpdir=${networkSelectorFallbackDir.absolutePath}"
+            // Forge's userdev launch omits the normal launcher auth tokens. Supplying only the
+            // distinct username lets the launch handler derive its matching offline UUID.
+            args '--username', 'WokNetHost',
+                    '--quickPlaySingleplayer', 'wok_network_test',
+                    '--width', '960', '--height', '540'
+            property 'wok.net.role', 'host'
+            property 'wok.net.port', networkTestPort
+            property 'wok.net.runId', networkTestRunId
+            property 'wok.net.resultsDir', networkTestResultsDir.absolutePath
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', layout.buildDirectory
+                    .file('createSrgToMcp/output.srg').get().asFile.absolutePath
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.networkTest
+                }
+            }
+        }
+
+        networkTestGuestA {
+            parent runs.client
+            workingDirectory project.file('run/network-test/guest-a')
+            singleInstance false
+            jvmArgs '-Xms256m', '-Xmx1536m',
+                    "-Djdk.net.unixdomain.tmpdir=${networkSelectorFallbackDir.absolutePath}"
+            args '--username', 'WokNetGuestA',
+                    '--quickPlayMultiplayer', "127.0.0.1:${networkTestPort}",
+                    '--width', '960', '--height', '540'
+            property 'wok.net.role', 'guest-a'
+            property 'wok.net.port', networkTestPort
+            property 'wok.net.runId', networkTestRunId
+            property 'wok.net.resultsDir', networkTestResultsDir.absolutePath
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', layout.buildDirectory
+                    .file('createSrgToMcp/output.srg').get().asFile.absolutePath
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.networkTest
+                }
+            }
+        }
+
+        networkTestGuestB {
+            parent runs.client
+            workingDirectory project.file('run/network-test/guest-b')
+            singleInstance false
+            jvmArgs '-Xms256m', '-Xmx1536m',
+                    "-Djdk.net.unixdomain.tmpdir=${networkSelectorFallbackDir.absolutePath}"
+            args '--username', 'WokNetGuestB',
+                    '--quickPlayMultiplayer', "127.0.0.1:${networkTestPort}",
+                    '--width', '960', '--height', '540'
+            property 'wok.net.role', 'guest-b'
+            property 'wok.net.port', networkTestPort
+            property 'wok.net.runId', networkTestRunId
+            property 'wok.net.resultsDir', networkTestResultsDir.absolutePath
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', layout.buildDirectory
+                    .file('createSrgToMcp/output.srg').get().asFile.absolutePath
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                    source sourceSets.networkTest
+                }
+            }
+        }
+
         server {
             args '--nogui'
+        }
+
+        // Server-object integration coverage for faction, squad, class and tactical-map rules.
+        // Forge's isolated GameTest target never edits or changes run/eula.txt.
+        gameTestServer {
+            property 'forge.enabledGameTestNamespaces', mod_id
         }
     }
 }
 
 repositories {
     mavenCentral()
+    maven {
+        name = 'JourneyMap API'
+        url = 'https://maven.blamejared.com'
+    }
+    if (uiJourneyMapJar != null) {
+        flatDir {
+            name = 'Acceptance-test JourneyMap compatibility fixture'
+            dirs uiJourneyMapJar.parentFile
+        }
+    }
 }
 
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    if (project.hasProperty('gameplayTestFixtures')) {
+        gameplayTestRuntimeOnly fileTree(dir: project.property('gameplayTestFixtures'), include: '*.jar')
+    }
+    if (project.hasProperty('staminaTestTaczJar')) {
+        File staminaTaczJar = project.file(project.property('staminaTestTaczJar'))
+        if (!staminaTaczJar.isFile()) throw new GradleException('Missing mapped stamina TaCZ test fixture')
+        staminaTestRuntimeOnly files(staminaTaczJar)
+    }
+    // Required client integration, compile-only so JourneyMap's API is never shaded into our JAR.
+    compileOnly 'info.journeymap:journeymap-api-forge:1.20.1-2.0.0'
+    // UI and network acceptance load one exact local JourneyMap 6 distribution. ForgeGradle
+    // remaps it for the userdev namespace; these uiTest/networkTest configurations are
+    // acceptance-test-only and never shaded.
+    if (uiJourneyMapJar != null) {
+        String fileStem = uiJourneyMapJar.name.substring(
+                0, uiJourneyMapJar.name.length() - '.jar'.length())
+        String journeyMapModule
+        String journeyMapVersion
+        if (fileStem.startsWith('journeymap-forge-')) {
+            journeyMapModule = 'journeymap-forge'
+            journeyMapVersion = fileStem.substring('journeymap-forge-'.length())
+        } else if (fileStem.startsWith('journeymap-')) {
+            journeyMapModule = 'journeymap'
+            journeyMapVersion = fileStem.substring('journeymap-'.length())
+        } else {
+            throw new GradleException(
+                    "Unsupported JourneyMap compatibility filename: ${uiJourneyMapJar.name}")
+        }
+        uiTestRuntimeOnly fg.deobf("ui.compat:${journeyMapModule}:${journeyMapVersion}")
+        // All three loopback roles are real Forge clients. Reuse the exact local JourneyMap 6
+        // fixture required by production metadata without copying anything into an external
+        // Minecraft installation or the production JAR.
+        networkTestRuntimeOnly fg.deobf(
+                "ui.compat:${journeyMapModule}:${journeyMapVersion}")
+    }
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    // Unit tests exercise the API-only JourneyMap UI gate. This remains test-scoped and is never
+    // copied into the production JAR; the real JourneyMap 6 client supplies the API at runtime.
+    testImplementation 'info.journeymap:journeymap-api-forge:1.20.1-2.0.0'
+    // StaminaTestLauncher is a compiled test utility, so the launcher API must be present on
+    // both the test compile and runtime classpaths. Runtime-only hid this during clean rebuilds.
+    testImplementation 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test', Test).configure {
+    useJUnitPlatform()
+}
+
+tasks.register('prepareRallyTestWorld') {
+    doLast {
+        File root = project.file(project.findProperty('rallyTestRoot')
+                ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/rally-acceptance/current').canonicalFile
+        File allowed = new File('D:/WOK步战测试/1.20.1-Forge_47.4.22/rally-acceptance').canonicalFile
+        if (root == allowed || !root.toPath().startsWith(allowed.toPath())) {
+            throw new GradleException('Rally acceptance must use the dedicated infantry test directory')
+        }
+        if (new File(root, 'saves/wok_rally_test/level.dat').exists()) {
+            throw new GradleException('Use a fresh rallyTestRoot to preserve previous results')
+        }
+        copy {
+            from layout.projectDirectory.dir('run/world')
+            into new File(root, 'saves/wok_rally_test')
+            exclude 'session.lock'
+        }
+        File config = new File(root, 'config/wok_infantry/loadouts.json')
+        config.parentFile.mkdirs()
+        config.setText(layout.projectDirectory.file('dev/vanilla_test_loadouts.json').asFile
+                .getText('UTF-8').replace('minecraft:iron_sword', 'wok_infantry:rally_radio'), 'UTF-8')
+    }
+}
+
+tasks.matching { it.name == 'runClientRallyTest' }.configureEach {
+    dependsOn 'prepareRallyTestWorld'
+    doLast {
+        File root = project.file(project.findProperty('rallyTestRoot')
+                ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/rally-acceptance/current')
+        File result = new File(root, 'rally-acceptance.txt')
+        if (!result.isFile() || !result.getText('UTF-8').startsWith('status=PASS')) {
+            throw new GradleException('Rally client acceptance failed or did not write a result')
+        }
+    }
+}
+
+// A fresh, disposable world inside the dedicated infantry test installation. Never use WOK本体.
+tasks.register('prepareStaminaTestWorld') {
+    doLast {
+        File root = project.file(project.findProperty('staminaTestRoot')
+                ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/stamina-acceptance/current').canonicalFile
+        File allowed = new File('D:/WOK步战测试/1.20.1-Forge_47.4.22/stamina-acceptance').canonicalFile
+        if (root == allowed || !root.toPath().startsWith(allowed.toPath())) {
+            throw new GradleException('Stamina acceptance must use the dedicated infantry test directory')
+        }
+        if (new File(root, 'saves/wok_stamina_test/level.dat').exists()) {
+            throw new GradleException('Use a fresh staminaTestRoot; previous results must be preserved')
+        }
+        copy {
+            from layout.projectDirectory.dir('run/world')
+            into new File(root, 'saves/wok_stamina_test')
+            exclude 'session.lock'
+        }
+        // Let Forge populate the current default instead of inheriting the seed's old 16 ticks.
+        File serverConfig = new File(root, 'saves/wok_stamina_test/serverconfig/wok_infantry-server.toml')
+        if (serverConfig.isFile()) {
+            serverConfig.setText(serverConfig.getText('UTF-8').replaceAll(
+                    /(?m)^[\t ]*recoveryDelayTicks[\t ]*=.*\r?\n?/, ''), 'UTF-8')
+        }
+        copy {
+            from layout.projectDirectory.file('dev/vanilla_test_loadouts.json')
+            into new File(root, 'config/wok_infantry')
+            rename { 'loadouts.json' }
+        }
+    }
+}
+tasks.matching { it.name == 'runClientStaminaTest' }.configureEach {
+    dependsOn 'prepareStaminaTestWorld'
+    doLast {
+        File root = project.file(project.findProperty('staminaTestRoot')
+                ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/stamina-acceptance/current')
+        File result = new File(root, 'stamina-acceptance.txt')
+        if (!result.isFile() || !result.getText('UTF-8').startsWith('status=PASS')) {
+            throw new GradleException('Stamina client acceptance failed or did not write a result')
+        }
+    }
+}
+
+tasks.register('prepareGameplayTestWorld') {
+    doLast {
+        File testRoot = project.file(project.property('gameplayTestRoot')).canonicalFile
+        File allowed = new File('D:/WOK步战测试/1.20.1-Forge_47.4.22/gameplay-acceptance').canonicalFile
+        if (!testRoot.toPath().startsWith(allowed.toPath()) || testRoot == allowed)
+            throw new GradleException('Gameplay tests must remain in the dedicated test directory')
+        if (new File(testRoot, 'saves/wok_gameplay_test/level.dat').exists())
+            throw new GradleException('Use a fresh gameplayTestRoot')
+        copy { from layout.projectDirectory.dir('run/world'); into new File(testRoot, 'saves/wok_gameplay_test'); exclude 'session.lock' }
+        def loadouts = new groovy.json.JsonSlurper().parse(file('dev/vanilla_test_loadouts.json'))
+        if (project.hasProperty('gameplayTestFixtures')) {
+            def primary = loadouts.classes.find { it.id == 'assault' }.slots.primary[0]
+            primary.itemId = 'tacz:modern_kinetic_gun'
+            primary.snbt = '{GunId:"tacz:m249",GunCurrentAmmoCount:100,GunFireMode:"AUTO",HasBulletInBarrel:1b,wok_infantry_vertical_recoil_scale:8.0f,wok_infantry_horizontal_recoil_scale:6.0f}'
+            primary.ammoReserveLimit = 20
+            copy {
+                from 'D:/WOK步战测试/1.20.1-Forge_47.4.22/tacz/tacz_default_gun'
+                into new File(testRoot, 'tacz/tacz_default_gun')
+            }
+        }
+        File config = new File(testRoot, 'config/wok_infantry/loadouts.json')
+        config.parentFile.mkdirs()
+        config.setText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(loadouts)), 'UTF-8')
+    }
+}
+tasks.matching { it.name == 'runClientGameplayTest' }.configureEach {
+    dependsOn 'prepareGameplayTestWorld'
+    doLast {
+        File result = new File(project.file(project.property('gameplayTestRoot')), 'gameplay-acceptance.txt')
+        if (!result.isFile() || !result.getText('UTF-8').startsWith('status=PASS'))
+            throw new GradleException('Gameplay acceptance failed or did not finish')
+    }
+}
+
+tasks.register('prepareCatalogTestWorld') {
+    doLast {
+        File testRoot = project.file(project.findProperty('catalogTestRoot')
+                ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/catalog-transfer-acceptance/current').canonicalFile
+        File allowedRoot = new File('D:/WOK步战测试/1.20.1-Forge_47.4.22/catalog-transfer-acceptance').canonicalFile
+        if (!testRoot.toPath().startsWith(allowedRoot.toPath()) || testRoot == allowedRoot) {
+            throw new GradleException('Catalog acceptance must stay within the dedicated infantry test directory')
+        }
+        if (new File(testRoot, 'saves/wok_catalog_test/level.dat').exists()) {
+            throw new GradleException('Use a fresh -PcatalogTestRoot to preserve previous acceptance artifacts')
+        }
+        copy {
+            from layout.projectDirectory.dir('run/world')
+            into new File(testRoot, 'saves/wok_catalog_test')
+            exclude 'session.lock'
+        }
+        copy {
+            from layout.projectDirectory.file('dev/vanilla_test_loadouts.json')
+            into new File(testRoot, 'config/wok_infantry')
+            rename { 'loadouts.json' }
+        }
+    }
+}
+
+tasks.matching { it.name == 'runClientCatalogTest' }.configureEach {
+    dependsOn 'prepareCatalogTestWorld'
+    doLast {
+        File testRoot = project.file(project.findProperty('catalogTestRoot')
+                ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/catalog-transfer-acceptance/current')
+        File result = new File(testRoot, 'catalog-acceptance.txt')
+        if (!result.isFile() || !result.getText('UTF-8').startsWith('status=PASS')) {
+            throw new GradleException('Catalog client acceptance failed or did not write a result')
+        }
+    }
+}
+
+def prepareGameTestStructures = tasks.register('prepareGameTestStructures', Copy) {
+    description = 'Copies source-controlled Forge GameTest structures into the run directory.'
+    from layout.projectDirectory.dir('src/gametest/resources/gameteststructures')
+    into layout.projectDirectory.dir('run/gameteststructures')
+}
+
+def prepareUiTestWorld = tasks.register('prepareUiTestWorld', Sync) {
+    description = 'Rebuilds the isolated UI acceptance world from the clean GameTest seed.'
+    from layout.projectDirectory.dir('run/world')
+    into layout.projectDirectory.dir('run/ui-test/saves/wok_ui_test')
+    exclude 'session.lock'
+    doFirst {
+        File expected = layout.projectDirectory
+                .dir('run/ui-test/saves/wok_ui_test').asFile.canonicalFile
+        File actual = destinationDir.canonicalFile
+        if (actual != expected) {
+            throw new GradleException("Refusing to sync unexpected UI fixture path: ${actual}")
+        }
+        if (!layout.projectDirectory.file('run/world/level.dat').asFile.isFile()) {
+            throw new GradleException('UI fixture seed run/world/level.dat is missing')
+        }
+    }
+}
+
+def prepareUiTestLoadouts = tasks.register('prepareUiTestLoadouts', Copy) {
+    description = 'Installs the source-controlled six-slot vanilla loadout into the UI fixture.'
+    from layout.projectDirectory.file('dev/vanilla_test_loadouts.json')
+    into layout.projectDirectory.dir('run/ui-test/config/wok_infantry')
+    rename { 'loadouts.json' }
+}
+
+def prepareUiTestOptions = tasks.register('prepareUiTestOptions') {
+    description = 'Pins the UI acceptance language (-PuiLang, default zh_cn) and resets WOK keys to their defaults.'
+    inputs.property('uiLang', uiLanguage)
+    outputs.upToDateWhen { false }
+    doLast {
+        File uiRoot = layout.projectDirectory.dir('run/ui-test').asFile.canonicalFile
+        if (uiTestOptionsFile.parentFile.canonicalFile != uiRoot) {
+            throw new GradleException("Refusing to manage unexpected UI options path: ${uiTestOptionsFile}")
+        }
+        uiRoot.mkdirs()
+        List<String> lines = uiTestOptionsFile.isFile() ? uiTestOptionsFile.readLines('UTF-8') : []
+        // Minecraft writes every key binding back to options.txt. Dropping the WOK entries makes
+        // each run use the mod's current default keys instead of whatever an older build saved.
+        List<String> kept = lines.findAll {
+            !it.startsWith('lang:') && !it.startsWith('key_key.wok_infantry.')
+                    && !it.startsWith('pauseOnLostFocus:')
+        }
+        // 0.5.0-beta.4: a click elsewhere on the desktop must not open the pause menu mid-run
+        // (it ended a frozen tablet close and timed the case out).
+        kept.add('pauseOnLostFocus:false')
+        if (!kept.any { it.startsWith('version:') }) {
+            // 1.20.1 data version; without it Minecraft would run every options data fixer.
+            kept.add(0, 'version:3465')
+        }
+        if (!kept.any { it.startsWith('onboardAccessibility:') }) {
+            kept.add('onboardAccessibility:false')
+        }
+        kept.add("lang:${uiLanguage}".toString())
+        uiTestOptionsFile.setText(kept.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle("UI acceptance language: ${uiLanguage}")
+    }
+}
+
+def prepareNetworkTestWorld = tasks.register('prepareNetworkTestWorld', Sync) {
+    description = 'Rebuilds the isolated loopback network-test host world from the clean seed.'
+    from layout.projectDirectory.dir('run/world')
+    into layout.projectDirectory.dir('run/network-test/host/saves/wok_network_test')
+    exclude 'session.lock'
+    doFirst {
+        File projectRoot = layout.projectDirectory.asFile.canonicalFile
+        File sourceRoot = layout.projectDirectory.dir('run/world').asFile.canonicalFile
+        File allowedDestinationRoot = layout.projectDirectory
+                .dir('run/network-test/host/saves').asFile.canonicalFile
+        File expectedDestination = layout.projectDirectory
+                .dir('run/network-test/host/saves/wok_network_test').asFile.canonicalFile
+        File actualDestination = destinationDir.canonicalFile
+        if (!sourceRoot.toPath().startsWith(projectRoot.toPath())) {
+            throw new GradleException("Refusing to read network fixture outside project: ${sourceRoot}")
+        }
+        if (!allowedDestinationRoot.toPath().startsWith(projectRoot.toPath())
+                || !actualDestination.toPath().startsWith(allowedDestinationRoot.toPath())
+                || actualDestination != expectedDestination) {
+            throw new GradleException(
+                    "Refusing to sync unexpected network fixture path: ${actualDestination}")
+        }
+        if (!new File(sourceRoot, 'level.dat').isFile()) {
+            throw new GradleException('Network fixture seed run/world/level.dat is missing')
+        }
+    }
+}
+
+def validateNetworkTestRun = tasks.register('validateNetworkTestRun') {
+    description = 'Rejects network acceptance launches without an explicit unique run ID.'
+    doLast {
+        if (!project.hasProperty('networkTestRunId') || networkTestRunId.isEmpty()) {
+            throw new GradleException(
+                    'Network acceptance runs require -PnetworkTestRunId=<unique-safe-id>')
+        }
+        if (!(networkTestRunId ==~ /[A-Za-z0-9][A-Za-z0-9._-]{0,63}/)) {
+            throw new GradleException(
+                    'networkTestRunId must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}')
+        }
+    }
+}
+
+prepareNetworkTestWorld.configure {
+    dependsOn validateNetworkTestRun
+}
+
+// ForgeGradle materializes the run task late, so configureEach must be lazy here.
+tasks.matching { it.name == 'runGameTestServer' }.configureEach {
+    dependsOn prepareGameTestStructures
+}
+
+tasks.matching { it.name == 'runUiTestClient' }.configureEach {
+    dependsOn prepareUiTestWorld, prepareUiTestLoadouts, prepareUiTestOptions
+    doFirst {
+        if (uiJourneyMapJar == null || !uiJourneyMapJar.isFile()) {
+            throw new GradleException(
+                    'JourneyMap 6.0.2 is required for UI acceptance; provide '
+                            + '-PuiJourneyMapJar=<journeymap-forge-1.20.1-6.0.2.jar>')
+        }
+        File expectedResult = layout.projectDirectory
+                .file('run/ui-test/ui-test-results/wok_ui_acceptance.txt').asFile.canonicalFile
+        if (uiTestResultFile != expectedResult
+                || !uiTestResultFile.toPath().startsWith(
+                layout.projectDirectory.dir('run/ui-test').asFile.canonicalFile.toPath())) {
+            throw new GradleException("Refusing to manage unexpected UI result path: ${uiTestResultFile}")
+        }
+        if (uiTestResultFile.exists() && !uiTestResultFile.delete()) {
+            throw new GradleException("Could not remove stale UI acceptance result: ${uiTestResultFile}")
+        }
+        if (uiTestProgressFile.parentFile.canonicalFile != uiTestResultFile.parentFile.canonicalFile) {
+            throw new GradleException("Refusing to manage unexpected UI progress path: ${uiTestProgressFile}")
+        }
+        if (uiTestProgressFile.exists() && !uiTestProgressFile.delete()) {
+            throw new GradleException("Could not remove stale UI acceptance progress: ${uiTestProgressFile}")
+        }
+        // Layout report of the previous run (written by UiResultWriter next to the result file).
+        ['wok_ui_layout.json', 'wok_ui_manifest.json', 'index.html'].each { name ->
+            File stale = new File(uiTestResultFile.parentFile, name)
+            if (stale.exists() && !stale.delete()) {
+                throw new GradleException("Could not remove stale UI layout report: ${stale}")
+            }
+        }
+    }
+    doLast {
+        if (!uiTestResultFile.isFile()) {
+            String reached = 'no progress file'
+            if (uiTestProgressFile.isFile()) {
+                List<String> progress = uiTestProgressFile.readLines('UTF-8')
+                reached = progress.findAll {
+                    it.startsWith('phase=') || it.startsWith('totalTicks=')
+                            || it.startsWith('screen=') || it.startsWith('failure=')
+                }.join(', ')
+            }
+            throw new GradleException('UI acceptance client exited without writing a result; '
+                    + "last progress: ${reached} (${uiTestProgressFile})")
+        }
+        List<String> resultLines = uiTestResultFile.readLines('UTF-8')
+        String status = resultLines.find { it.startsWith('status=') }
+        String captures = resultLines.find { it.startsWith('captures=') }
+        File layoutIndex = new File(uiTestResultFile.parentFile, 'index.html')
+        logger.lifecycle("UI acceptance ${status ?: 'status=?'} ${captures ?: ''}")
+        if (layoutIndex.isFile()) {
+            logger.lifecycle("UI layout report: ${layoutIndex}")
+        }
+        if (status != 'status=PASS') {
+            String failure = resultLines.find { it.startsWith('failure=') }
+            throw new GradleException("UI acceptance failed: ${failure ?: status ?: 'missing status'}")
+        }
+        // A PASS must come with its manifest: every capture listed with its screenshot, so the
+        // archive (archiveUiAcceptance) and the side-by-side index.html are complete.
+        File manifest = new File(uiTestResultFile.parentFile, 'wok_ui_manifest.json')
+        if (!manifest.isFile()) {
+            throw new GradleException("UI acceptance passed without a manifest: ${manifest}")
+        }
+        def captureList = new groovy.json.JsonSlurper().parse(manifest, 'UTF-8').captures
+        File shots = layout.projectDirectory.dir('run/ui-test/screenshots').asFile
+        List<String> missingShots = captureList.collect { it.file }.findAll {
+            it && !new File(shots, it.toString()).isFile()
+        }
+        if (!missingShots.isEmpty()) {
+            throw new GradleException("UI acceptance manifest lists missing screenshots: ${missingShots}")
+        }
+        logger.lifecycle("UI acceptance manifest: ${captureList.size()} capture(s) (${manifest})")
+    }
+}
+
+// Copies the last runUiTestClient run (the screenshots its manifest lists, the result file, the
+// layout report and the side-by-side index.html) into the infantry test installation, where the
+// user reviews it: D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\<yyyyMMdd>-<version>\<label>\.
+// The label defaults to the language the run used, so the zh_cn run and the en_us report run of
+// one round sit side by side; -PuiArchiveLabel / -PuiArchiveDate override. Nothing outside the
+// ui-acceptance folder is touched and an existing folder is never overwritten.
+tasks.register('archiveUiAcceptance') {
+    group = 'verification'
+    description = 'Archives the last UI acceptance run into the infantry test installation.'
+    doLast {
+        File allowedRoot = new File('D:/WOK步战测试/1.20.1-Forge_47.4.22/ui-acceptance')
+                .canonicalFile
+        String date = (project.findProperty('uiArchiveDate')
+                ?: new Date().format('yyyyMMdd')).toString().trim()
+        // The language the archived run really used (its result file), so an en_us report run is
+        // never filed under zh_cn by an archive call without -PuiLang.
+        String ranLanguage = uiTestResultFile.isFile() ? uiTestResultFile.readLines('UTF-8')
+                .find { it.startsWith('languageCode=') }?.substring('languageCode='.length())
+                ?.split(' ')?.getAt(0)?.trim() : null
+        String label = (project.findProperty('uiArchiveLabel') ?: ranLanguage ?: uiLanguage)
+                .toString().trim()
+        if (!(date ==~ /\d{8}/) || !(label ==~ /[A-Za-z0-9_.-]{1,40}/)) {
+            throw new GradleException("uiArchiveDate must be yyyyMMdd and uiArchiveLabel a plain name: ${date} / ${label}")
+        }
+        File target = new File(allowedRoot, "${date}-${project.version}/${label}").canonicalFile
+        if (!target.toPath().startsWith(allowedRoot.toPath()) || target == allowedRoot) {
+            throw new GradleException("Refusing to archive outside ${allowedRoot}: ${target}")
+        }
+        if (target.exists()) {
+            throw new GradleException("UI acceptance archive already exists, choose another -PuiArchiveLabel: ${target}")
+        }
+        File results = uiTestResultFile.parentFile
+        File manifest = new File(results, 'wok_ui_manifest.json')
+        if (!uiTestResultFile.isFile() || !manifest.isFile()) {
+            throw new GradleException("No UI acceptance run to archive; run runUiTestClient first (${results})")
+        }
+        File shots = layout.projectDirectory.dir('run/ui-test/screenshots').asFile
+        Set<String> files = new groovy.json.JsonSlurper().parse(manifest, 'UTF-8').captures
+                .collect { it.file?.toString() }.findAll { it } as Set
+        List<String> missing = files.findAll { !new File(shots, it).isFile() }.sort()
+        if (!missing.isEmpty()) {
+            throw new GradleException("Screenshots listed in the manifest are missing: ${missing}")
+        }
+        project.copy {
+            from shots
+            include files
+            into new File(target, 'screenshots')
+        }
+        project.copy {
+            from results
+            include 'wok_ui_acceptance.txt', 'wok_ui_progress.txt', 'wok_ui_layout.json',
+                    'wok_ui_manifest.json', 'index.html'
+            into new File(target, 'ui-test-results')
+        }
+        String status = uiTestResultFile.readLines('UTF-8').find { it.startsWith('status=') }
+        logger.lifecycle("Archived UI acceptance (${status ?: 'status=?'}, ${files.size()} screenshot(s), "
+                + "lang=${ranLanguage ?: '?'}) to ${target}")
+        logger.lifecycle("Open ${new File(target, 'ui-test-results/index.html')}")
+    }
+}
+
+tasks.matching { it.name == 'runNetworkTestHost' }.configureEach {
+    dependsOn prepareNetworkTestWorld
+}
+
+tasks.matching {
+    it.name in ['runNetworkTestHost', 'runNetworkTestGuestA', 'runNetworkTestGuestB']
+}.configureEach {
+    dependsOn validateNetworkTestRun
+    doFirst {
+        if (uiJourneyMapJar == null || !uiJourneyMapJar.isFile()) {
+            throw new GradleException(
+                    'JourneyMap 6.0.2 is required for network acceptance; provide '
+                            + '-PuiJourneyMapJar=<journeymap-forge-1.20.1-6.0.2.jar>')
+        }
+        if (networkSelectorFallbackDir.exists()) {
+            throw new GradleException(
+                    'Network-test selector fallback target must remain absent: '
+                            + networkSelectorFallbackDir)
+        }
+    }
 }
 
 tasks.named('processResources', ProcessResources).configure {
+    // Gradle's platform-default filter encoding corrupts the Chinese product name on Windows.
+    filteringCharset = 'UTF-8'
     def replaceProperties = [
             minecraft_version      : minecraft_version,
             minecraft_version_range: minecraft_version_range,
@@ -74,7 +861,8 @@ tasks.named('jar', Jar).configure {
                 'Implementation-Title'    : project.name,
                 'Implementation-Version'  : project.jar.archiveVersion,
                 'Implementation-Vendor'   : mod_authors,
-                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+                'MixinConfigs'             : 'wok_infantry.mixins.json'
         ])
     }
     finalizedBy 'reobfJar'

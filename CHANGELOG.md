@@ -1,8 +1,1850 @@
 # 更新日志
 
-本文件按模块记录可发布变化。版本规则见 `docs/VERSIONING.md`。
+## WOK步战核心 0.5.0-beta.5 — 2026-10-17
 
-## 未发布
+> 用户需求（2026-10-17）：按导出的崩溃报告（`wok_infantry-0.5.0-beta.4.jar`，整合包 `WOK步战整合包-0.3.0`，崩溃时间 19:54:54）分析“为什么打开饰品栏会崩溃”，随后要求“进行修改，同时不要影响我们的功能”。分析结论是步战核心自己的容器关闭时序缺陷，不是饰品栏或 Curios 的问题。本轮只改这条关闭路径，不引入新功能，不改任何协议号。
+
+### 新增
+
+- 无。
+
+### 修改
+
+- **已部署玩家误开外部容器不再清空配装**：`validateActiveInventory` 在关闭复查里不再把“正在关闭的那个菜单”当成“正在使用外部容器”。改前只要玩家开一次饰品栏、箱子或工作台，我们强制关闭它的那一次 Close 必然判 `INVENTORY_BLOCKED`，于是清空 36 格背包 + 副手 + 四个护甲槽 + 个人合成栏、`beginWaiting` 退回部署页。改后照常继续；真正把容器里的东西塞进背包仍会被同一套来源校验拦住（36 格 / 副手 / 护甲 / 个人合成栏 / 光标，逐项不变）。
+- **光标准入改读对菜单**：关闭复查时 `closeContainer()` 已经把光标栈 `transferState` 进 `inventoryMenu`，因此改读 `inventoryMenu.getCarried()`；“手里拿着东西不能走”的判断强度不变。
+- **关闭复查只认最外层一次**：`onContainerClosed` 增加重入锁 `containerCloseInProgress`，嵌套关闭直接返回——外层仍在栈上，并且已经执行过这名玩家的清点。
+- **人生边界不再无条件关容器**：`resetLifeBoundary` 改为经 `closeContainerAtBoundary`，只在“确有容器打开”且“不在关闭中”时才调用 `closeContainer()`。
+- **延后强关任务加前置判断**：`onContainerOpened` 调度的那次强制关闭，在 `containerMenu` 已经回到 `inventoryMenu`（玩家自己先关了、或菜单已被替换）时不再调用 `closeContainer()`。
+
+### 修复
+
+- **修复已部署玩家打开饰品栏导致整服崩溃**（`crash-2026-10-17_19.54.54-server.txt`，“Exception in server tick loop”）。根因链：
+  1. Forge 在 `ServerPlayer#doCloseContainer` 里派发 `PlayerContainerEvent.Close`，位置在把 `containerMenu` 复位成 `inventoryMenu` **之前**；
+  2. 我们的 Close 监听器同步跑 `tickPlayer` → `validateActiveInventory`，此刻“外部容器仍在打开”的判断必然为真 → 判违规；
+  3. 违规分支调 `resetLifeBoundary`，它再 `closeContainer()` 一次，对**已经被移除的同一个菜单**二次 `removed()`，并从事件派发内部再次派发同一个事件（饰品栏这类带附属槽管理的菜单会抛异常）；
+  4. 嵌套派发里的异常进入 `EventBus.handleException`，它靠打印日志吃掉异常；而整合包里有 MOD 把 `org/apache/logging/log4j/**` 打进了自己的 JAR，打印时撞上 `LinkageError: loader constraint violation … MessageSupplier`，普通异常升级为 `Error`，穿过 `TickTask.run` 打穿服务端 tick 循环。
+  修复见上节四条；第 4 步属整合包侧问题，不在本模块内，见“兼容性”。
+- 顺带修掉两个同源的潜在问题：在没有容器打开时调 `closeContainer()` 会对玩家自己的 `inventoryMenu` 执行 `removed()` 并以它再派发一次 `PlayerContainerEvent.Close`；以及同一菜单被重复 `removed()`。
+
+### 兼容性
+
+- 网络协议号全部不变（战局 `20`、编制 `5`、兵力 `2`、体力 `2`、配装 `11`），没有新增注册项；客户端与服务端可在 0.5.0-beta.1–0.5.0-beta.5 之间混用。
+- `modId`（`wok_infantry`）、JAR 前缀、Java 包根、配置文件字段全部未变。`LoadoutService.validateActiveInventory` 增加一个 `closingContainer` 参数，是模块内部方法，唯一调用方在 `DeploymentService` 内。
+- 不新增 mixin、不新增依赖、不新增资源，不改动 Curios 或其他 MOD 的类。
+- **整合包侧仍需单独处理**：崩溃报告里那个 log4j `LinkageError` 说明有 MOD 把 log4j 打进了自己的 JAR。它不修，任何监听器异常都还会被放大成整服崩溃；本模块这轮只是让自己不再触发它。扫描命令见工作区 `饰品栏崩溃分析.md`。
+
+### 配置/存档影响
+
+- 无。不改配置文件字段与默认值、不改存档结构、不改物品 NBT 结构，旧存档与旧配置可直接沿用。
+- 行为变化只影响“已部署玩家接触外部容器”这一条：不再清空配装、不再退回部署页，容器仍会被强制关闭。
+
+### 测试结果
+
+- 构建：`compileJava` 通过（`BUILD SUCCESSFUL`；只有 `TabletSounds.java:52` 一处既有的 `ResourceLocation(String,String)` 过期 API 提示，非本次改动）。
+- 单元测试：`test` 全量 **1463 个用例全部通过，0 失败 / 0 错误 / 0 跳过**（`build/test-results/test` 210 个 XML 汇总）。
+- 未执行：游戏内验收。本崩溃需要真实客户端的 Curios 饰品栏复现，未在本机实例验证；待用户在步战测试端确认——已部署玩家开饰品栏不再掉配装、不再崩，开箱子 / 工作台行为一致，等待态玩家 Containment 正常。
+- 已知未验证：旧日志里那个被 log4j `LinkageError` 覆盖的原始监听器异常无法从日志还原，因此**不能百分百排除还有第二个抛异常方**；修掉整合包侧 log4j 重复后复现一次，日志里应出现 `Exception caught during firing event …` 带完整原始栈。
+
+## WOK步战附属-TaCZ换皮肤 1.1.0-beta.2 — 2026-10-15
+
+按用户拍板，列表缩略图从枪包的 `slot` 竖版物品栏图**改为 `hud` 横向图**，并按实测比例放宽缩略图井。
+**网络协议不变**，可与 1.0.0-beta.1 / 1.1.0-beta.1 互连。
+
+#### 新增
+
+- **hud 素材实测登记**：把 wokzz 1.0.21 枪包的真实贴图纳入预览工具——`assets/wokzz/hud/`（19 张横向图）、`assets/wokzz/slot/`（20 张竖版图），并在 `slot_assets.py` 里加 `WOKZZ_GUNS` / `WOKZZ_NO_HUD` 登记表与 `load_wokzz` / `wokzz_fit` 取值函数。素材均为枪包原文件，未做加工。
+- 两张对照出图：`out/wokzz_kinds.png`（同一把枪的 `slot` vs `hud` 并排）、`out/wokzz_comment_paths.txt`（枪包里含 `//` 注释的 JSON 清单，按目录分组带行号）。
+
+#### 修改
+
+- **列表缩略图改用 `hud` 横向图**（`WeaponSkinScreen.thumbTexture()`）：取值顺序由原来的 `slot` → `hud` 兜底，**对调为 `hud` → `slot` 兜底** → 剪影。一处改动同时覆盖全部 4 处缩略图（主武器卡、预览皮肤大图、列表行、紧凑布局）。
+- **缩略图井加宽**（`THUMB_W` 46 → 56，`THUMB_W_COMPACT` 30 → 40）：实测 wokzz 1.0.21 的 18 张 hud 图比例**全部落在 2.63~3.42**（最小 `awp_xc` 为 180×60 = 3:1 的缩略版），而 46×26 的井是 1.77:1，枪被高度卡死只能画出 42×12~16、看着像细线；56 宽可画出 52×15~20，枪型才认得出来。预览工具 `THUMB_WIDTH` 同步改成 `ROOMY/STANDARD 56`、`COMPACT 40`。
+- 预览演示数据换成 wokzz 1.0.21 的真实内容：每行的 `gun` 字段对应枪包里真实存在的 `*_display.json`，缩略图直接读该枪的 `hud` 图，使预览与游戏内看到的是同一张图。行内说明文案改短以贴合实际可用宽度。
+- `gradle.properties` 的 `mod_version` 由 `1.1.0-beta.1` 升到 `1.1.0-beta.2`；同步根 `README.md`、`docs/VERSIONING.md`、本模块 `README.md`、`tools/ui_preview/README.md` 与本文件。
+
+#### 修复
+
+- **纠正 1.1.0-beta.1 交付说明里的一处误判**：此前把「`slot` 贴图宽高读到 `0×0`」当成模块缺陷，实际是**诊断脚本读错字节序**（用了小端 `BitConverter`）；模块内 `WeaponSkinScreen.textureSize()` 用的是大端 `readInt`，读法正确，且已有 `w <= 0 || h <= 0` 守卫。模块本身无此问题，无需修改。
+- 确认并记录：列表行的说明文字与品质徽章**没有重叠**——`textRight` 同时扣除了 `STATE_COL_W`(34) 与 `chipWidth`，文字只在自己的可用宽度内被裁切。此前预览里看到的"被压住"是演示文案过长所致，已改短。
+- 预览工具补齐 `slot` 之外的真图来源，不再出现"有真图却回落到剪影"的演示行。
+
+#### 兼容性
+
+- **网络协议不变**，仍然只有换皮、授权同步与批量授权三条；客户端与服务端可分别停留在 1.0.0-beta.1 / 1.1.0-beta.1 / 1.1.0-beta.2。
+- `modId`（`wok_weapon_skins`）、JAR 前缀、Java 包根（`com.wok.weaponskins`）、配置文件字段与语义全部未变，旧配置可直接沿用。
+- 强制依赖仍只有 Forge 与 Minecraft；TaCZ `1.1.7`–`1.1.8` 必需，LR 战术工坊 `0.3.0+` 可选；**本模块仍不依赖 `wok_infantry`**。
+- 本次只改客户端绘制与常量，**不改任何枪械数据**、不写 NBT 结构、不影响已有存档。
+- 对外部枪包的要求更宽了：以前必须有 `slot` 图才好看，现在只要有 `hud` 就行；两者都没有时按既有降级链画剪影，不会空块。
+
+#### 配置/存档影响
+
+- 服务端配置文件 `config/wok_weapon_skins.json` 字段与语义未变，无需迁移。
+- 皮肤状态仍写在武器物品 NBT 上，随物品保存与转移，存档结构未变。
+- 不新增任何打包资源；本模块 JAR 内仍不含任何 TaCZ / LR / 核心的类或贴图。
+
+#### 测试结果
+
+- 构建：`compileJava` 与完整 `build`（含 `reobfJar`）在 JDK 17 + ForgeGradle 下通过，`BUILD SUCCESSFUL`，产物 `wok_weapon_skins-1.1.0-beta.2.jar`。
+- 依赖边界：产物 JAR 内 `com/tacz/`、`me/xjqsh/`、`com/wok/infantry/` 均为 **0 个类**。
+- 复制品核对：`tools/ui_preview/_diff_core_ui.py` 差异仍为 **186 行**，与 1.1.0-beta.1 时一致，**未引入新漂移**。
+- 预览自检：`tools/ui_preview/check.py` **全部通过**（机身 ⊃ 玻璃 ⊃ 屏、状态栏不相交、页键不压 Esc / R、文字截断与对比度全绿）。
+- 降级链实测：`ak_12_tz_h`（无 `hud` 图）走 `slot` 回落、近战演示行与缺图行走剪影兜底，三档都出图正常。
+- 未执行：本模块无自动化测试源，未跑 GameTest 与 uiTest。
+- 游戏内验收：待用户在步战测试端完成——三种涂装、960×720 GUI 1 与 320×240、**每行缩略图是否为该枪的 hud 横向图**、无 hud 枪的 slot 回落、锁定与无效行的降级、文字溢出与控件重叠、滚轮与上下键、`Enter` 应用、底框 `Esc` / `R` 点击、授权页勾选与授予、回执胶囊。
+
+## WOK步战附属-TaCZ换皮肤 1.1.0-beta.1 — 2026-10-15
+
+两个界面（玩家选皮页、管理员授权页）按《WOK步战 UI 永久风格规则》的实体战术平板外壳重做，
+并给每个皮肤配上枪包里真实的物品栏贴图。**网络协议不变**，可与 1.0.0-beta.1 互连。
+
+#### 新增
+
+- 新版玩家选皮页：整屏是 D2 实体按键平板（机壳、橡胶护角、侧键、摄像头、螺帽、磨砂斑点、玻璃反光），顶部状态栏写「标题 › 当前页」、回执胶囊、身份、信号、电池、时钟；页签改为底框实体页面键（`Esc 返回` / `皮肤` / `R 刷新`），当前页的键按下、上方 LED 点亮；整屏按所属阵营涂装（学院军海军蓝 / 凯撒正红 / 中立浅钢灰）。
+- 新版管理员授权页：同样是平板外壳，玩家 × 授权内容双列表、页脚两行按键（全玩家 / 清玩家 / 全内容 / 清内容 + 授予已选 + 返回），提交结果走状态栏回执胶囊。
+- **每个皮肤一行真实物品栏贴图**：读枪包 display JSON 的 `slot` 字段（TaCZ 的 `GunDisplayInstance.getSlotTextureLocation()` / `getSlotTexture()`），取不到退 `hud` 剪影；适配层新增 `WeaponSkinAccess.slotTextureFor` / `hudTextureFor`（仍走反射，不硬链接 TaCZ）。实测已装的三个枪包：138 个枪械 display 全部带 `slot` 与 `hud`，贴图文件 137/138 存在。
+- 品质等级（消费级 / 军规级 / 稀少 / 史诗 / 传说）配色：行首色条与品质徽章按品质着色，选中行另有阵营色实心底 + 左侧浅色竖条，两者语义不冲突。
+- 列表交互：鼠标滚轮滚动、上下键在可用皮肤之间跳转（跳过锁定与无效的）、`Enter` 应用、点击无效或未授权的行时在状态栏回执里说明原因（不弹新窗口）。
+- 本模块自带一套 `com.wok.weaponskins.client.ui`：从 `WOK步战核心` 的战术平板外壳美术层**逐字复制** 11 个类（`DeviceArt`、`TextFit`、`BezelKey`、`TacticalBezelPlan`、`TacticalPalette`、`TacticalBoardTheme`、`TacticalShellLayout`、`TacticalLiveryTables`、`DeviceSkin`、`TacticalTextures`、`UiRect`、`InkContrast`）与 6 张烘焙贴图，**只改 `package` 一行**；另写 7 个本地替身（`SkinScreen`、`SkinChrome`、`Livery`、`SkinLivery`、`UiTheme`、`TacticalPages`、`SkinKeyHint`、`SkinProbe`）。因此本模块**依旧可以单独安装**，没有核心的客户端上界面同样长这样。
+- `tools/ui_preview/`（预览出图工具）：D2 外壳与 P3 涂装的 Python 复刻、两页设计稿、迁移前对照、三张自检（文字溢出 / 对比度 / 外壳几何）、核心类搬运脚本与"复制品 vs 核心"差异核对脚本。
+
+#### 修改
+
+- `WeaponSkinScreen` / `AdminGrantScreen` 由原来"深色扁平面板 + 固定像素布局"改为平板外壳 + 按尺寸档（紧凑 / 标准 / 宽松）响应式布局；窄屏（320×240）下武器区压成两行、清单占满下方。
+- 界面文案集中到语言文件 `assets/wok_weapon_skins/lang/zh_cn.json`（标题、分区、按键、品质名、状态字、提示语）。
+- 阵营判定不再需要战局数据：`Livery.current()` 先取本模块钉死的涂装，其次读玩家所在计分板队伍名（识别 blue / academy / red / caesar），都没有则中立；并留了 `Livery.acceptFromCore` 供将来与核心软联动。
+- `gradle.properties` 的 `mod_version` 由 `1.0.0-beta.1` 升到 `1.1.0-beta.1`；同步根 `README.md`、`docs/VERSIONING.md`、本模块 `README.md` 与根 `CHANGELOG.md`。
+
+#### 修复
+
+- 修正选中行与品质色条的语义冲突：原先把品质色画在行首竖条上，与"选中 = 阵营色实心底 + 左侧浅色竖条"的永久规则撞车；现在选中行用阵营色竖条，品质改由行首色条（非选中行）与徽章承担。
+- 锁定 / 无效行不再把缩略图压成一团黑：整行斜纹先画、缩略图井后画，且只把外形压暗一档，仍看得清是哪把枪、什么配色。
+- 缩略图按贴图真实比例等比缩放（从资源包 PNG 头读宽高并缓存），不再拉伸：tacz 默认包的 `slot` 是 64×64 方图，klee727 的是 576×307 / 710×368 横图，比例差得很远。
+- 贴图缺失时不再有可能的崩溃或空块：`textureSize` 拿不到就这一帧不画，行文字写明"外观未在枪包注册表里找到"。
+
+#### 兼容性
+
+- **网络协议不变**，仍然只有换皮、授权同步与批量授权三条；客户端与服务端可分别停留在 1.0.0-beta.1 / 1.1.0-beta.1。
+- `modId`（`wok_weapon_skins`）、JAR 前缀、Java 包根（`com.wok.weaponskins`）、配置文件字段与语义全部未变，旧配置可直接沿用。
+- 不新增任何强制依赖：`mods.toml` 的强制依赖仍只有 Forge 与 Minecraft；TaCZ `1.1.7`–`1.1.8` 必需（换皮接口），LR 战术工坊 `0.3.0+` 可选。**本模块不依赖 `wok_infantry`**，装上核心也不会冲突（不读它的类、不碰它的调色板作用域）。
+- 复制的核心类与本模块的 `client.ui` 包共存于本模块内，包名不同，不会与核心的同名类冲突。
+
+#### 配置/存档影响
+
+- 服务端配置文件 `config/wok_weapon_skins.json` 的字段与语义未变，无需迁移。
+- 皮肤状态仍写在武器物品 NBT 上，随物品保存与转移，存档结构未变。
+- 新增客户端资源：本模块 `assets/wok_weapon_skins/textures/gui/` 下 4 张平板外壳贴图（由核心的同一批生成物复制而来，本项目原创美术）；不打包任何 TaCZ / LR 的贴图或类。
+
+#### 测试结果
+
+- 构建：`wok_weapon_skins` 的 `compileJava` 与完整 `build`（含 `reobfJar`）在 JDK 17 + ForgeGradle 下通过，产物 `wok_weapon_skins-1.1.0-beta.1.jar`。本机默认 `java` 是 11，故以 `JAVA_HOME` 指向 Gradle 工具链里的 JDK 17、并用仓库既有的 `.dsh-nofoojay-settings.gradle` 绕行配置构建（未修改任何受版本控制的文件）。
+- 复制品核对：`tools/ui_preview/_diff_core_ui.py` 逐行比对 11 个复制类与核心源码，差异合计 186 行，**全部对应运行脚本里逐条写明的受控替换**（包名、`TacticalLivery`→`Livery`、`BattleUiTheme`→`UiTheme`、uiTest 探针下调等），无计划外改动；`UiRect` / `PaletteToken` / `InkContrast` / `TacticalLiveryTables` / `TacticalShellLayout` 等为零差异。
+- 预览自检：`tools/ui_preview/check.py` 全绿——5 档字号 × 4 种宽度上限的文字截断都不越界；16 组「前景色 / 它真正落在的底色」× 3 涂装全部达到正文 ≥ 4.5:1、次要字 ≥ 3:1（其中查出核心状态栏时钟在中立涂装下仅 1.34:1，属核心既有问题，已记录在预览 README）；三个尺寸档下机身 ⊃ 玻璃 ⊃ 屏、页键不压 Esc / R。
+- 枪包覆盖核查：`tools/ui_preview/slot_coverage.py --verify` 扫已装三个枪包，`slot` / `hud` 字段 138/138 齐全、贴图文件 137/138 存在（缺口为 `klee727:gun/slot/g43`，字段有写、贴图未放，界面按设计降级）。
+- 未执行：本模块没有自动化测试源，未跑 GameTest 与 uiTest（界面为客户端表现，核心那套 uiTest 探针在本模块是空实现）。
+- 游戏内验收：待用户在步战测试端完成——三种涂装、960×720 GUI 1 与 320×240、每行缩略图是否为该皮肤的真实物品栏贴图、锁定与无效行的降级、文字溢出与控件重叠、滚轮与上下键、`Enter` 应用、底框 `Esc` / `R` 点击、授权页勾选与授予、回执胶囊。
+
+## WOK步战附属-TaCZ换皮肤 1.0.0-beta.1 — 2026-10-15
+
+本模块从 R6 项目里的 `wok-weapon-skins` 1.0.0 迁入本仓库，按步战模块规矩重建，并补上抽箱 / 商店对接入口。
+
+#### 新增
+
+- 新模块 `wok_weapon_skins`（`WOK步战附属-TaCZ换皮肤`），可独立安装：服务端 JSON 皮肤清单、按玩家名白名单授权、玩家选皮界面（默认 `` ` `` 键）、管理员发放界面、`/wokskins` 指令组。
+- 公开 API `com.wok.weaponskins.api.WokWeaponSkinsApi`，供抽箱、商店、活动发放等外部模块调用：`apply` / `applyForced` / `applyToStack` / `applyEntry` / `canUse` / `notifyIfFailed`，返回值 `SkinApplyResult(applied, code, weaponId, skinId)`，`code` 为 `ok` / `unknown_weapon` / `unknown_skin` / `forbidden` / `bad_display`。参数与返回值只用原语和 Minecraft 自身类型，调用方不需要 TaCZ 或 LR 的类。
+- 唯一第三方接触层 `com.wok.weaponskins.adapter.WeaponSkinAccess`：TaCZ 与 LR 战术工坊全部经反射访问，TaCZ 或 LR 缺失、版本不符、方法改名时只返回“不可用”，不抛异常、不阻止启动。
+- 指令：`/wokskins status`（运行环境自检：TaCZ 是否就绪、近战是否可用、配置规模）、`/wokskins api <武器id> <皮肤id>`（走公开 API 换皮并打印结果，验证抽箱接入链路）、`/wokskins displays <武器id> [页]`（列出该枪当前真实可用的 gun display id，40 条一页，登记皮肤时查用）。
+- `README.md` 写明配置字段、指令表、权限与同步机制、公开 API 用法、与 WOK 本体开箱模块的接法与游戏内验收清单。
+- `tools/make_karambit_doppler_skin.py` 与多普勒爪子刀皮肤资源（`assets/wok_weapon_skins/display/melee/karambit_doppler.json`、近战 UV 与槽位贴图、枪械 UV 贴图）随模块入库。
+
+#### 修改
+
+- 目标环境升到 Forge `47.4.22`：`gradle.properties` 的 `forge_version` 由 `47.4.16` 改为 `47.4.22`，与步战其它模块一致。
+- 编译期依赖由“写死的 `D:/WOKR6/.../mods` 绝对路径”改为本模块 `dev/libs/`（可被 `-Ptacz_jar_path` / `-Plrtactical_jar_path` 覆盖），该目录已加入 `.gitignore`，第三方 JAR 不入库；新增 `dependencyReport` 任务打印实际使用的依赖路径。
+- `mods.toml`：TaCZ 依赖范围写为 `[1.1.7,1.1.9)`（1.1.7 与 1.1.8 的换皮 API 逐字节相同，两个版本都支持）；LR 战术工坊由 `mandatory=true` 改为 `mandatory=false`。
+- 界面、指令、配置类不再直接 `import` TaCZ 与 LR 的类，统一改走反射适配层；皮肤是否可用改由适配层查询 TaCZ 注册表。
+- 默认皮肤清单改为只登记默认枪包里确实存在的枪（`tacz:m4a1`、`tacz:ak47`、`tacz:hk416d`、`tacz:scar_h`），移除对 `klee727` 与 `maxstuff` 枪包的引用，保留可用的 `tacz:rpk_display` 作为示例皮肤。
+- `settings.gradle` 与仓库其它模块保持一致（仍使用 `foojay-resolver-convention`）；插件门户不可达的机器改用仓库里的 `.dsh-nofoojay-settings.gradle` 绕行配置构建，两种方式的产物内容一致。
+
+#### 修复
+
+- 修复未安装 LR 战术工坊时模块无法启动的问题：原先四个类直接链接 LR 的类，缺 LR 时加载即 `NoClassDefFoundError`。改造后逐个类反编译核对，成品 JAR 内不存在任何 `me/xjqsh/` 引用。
+- 修复近战武器的“当前皮肤”判定：原实现一律用 TaCZ 的默认枪械 display 作比较，近战恢复默认外观时判定不出默认皮肤；现同时接受 LR 的空覆盖值与 TaCZ 默认 display。
+- 修复皮肤 id 标记键在两处各写一份字面量的问题，统一为 `SkinConfig.SKIN_ID_TAG`。
+
+#### 兼容性
+
+- modId 仍为 `wok_weapon_skins`，JAR 前缀仍为 `wok_weapon_skins-`，Java 包根仍为 `com.wok.weaponskins`；已有服务器配置 `config/wok_weapon_skins.json` 的字段与语义未变，旧配置可直接沿用。
+- TaCZ 支持 `1.1.7` 与 `1.1.8`；LR 战术工坊 0.3.0+ 为可选，装了才有近战武器换皮。
+- 不强制依赖任何其它 WOK 模块，也不把 TaCZ / LR 的类打进 JAR；`mods.toml` 的强制依赖只有 Forge 与 Minecraft。
+- 网络协议随本模块首次交付，未与旧版本混连过；客户端与服务端应使用同一版本。
+- 已知限制：`/wokskins displays` 依赖客户端已加载的 TaCZ 显示注册表，需在客户端执行；换皮只改外观，不改变伤害、配件、弹药与弹道。
+
+#### 配置/存档影响
+
+- 新增服务端配置文件 `config/wok_weapon_skins.json`（首次启动自动生成默认清单），`/wokskins reload` 可热重载且无需重启。
+- 皮肤状态写在武器物品 NBT 上（当前皮肤 id 标记），随物品保存与转移；不改动存档结构，移除本模块后物品恢复为原版外观，不损坏存档。
+- 武器必须先登记在配置里才允许换皮，未登记武器不会出现在界面中。
+
+#### 测试结果
+
+- 构建：`wok_weapon_skins` 的 `clean build`（含 `reobfJar`）在 JDK 17 + ForgeGradle 下通过，产物 `wok_weapon_skins-1.0.0-beta.1.jar`（6,081,759 字节，SHA-256 `9C47A10DE99CE71EDD0EF73EE583C70866C9B28B656F8A9B61D86C48962D2632`）。
+- 独立安装检查：成品 JAR 内 28 个类逐个反编译核对，无 `me/xjqsh/` 引用、无 `com/tacz/` 类被打包，第三方只以反射字符串出现。
+- 依赖元数据核对：JAR 内 `META-INF/mods.toml` 的 `modId` / `version` / TaCZ 与 LR 依赖范围与 `gradle.properties` 一致。
+- 版本核对：`tools/verify_versions.ps1 -Modules wok_weapon_skins` PASS（该脚本的模块清单、产品名与说明已同步为本模块与九个模块）。
+- 已安装：`D:\WOK步战测试\1.20.1-Forge_47.4.22\mods\wok_weapon_skins-1.0.0-beta.1.jar`（该目录本轮新建；步战核心等其它模块 JAR 尚未部署，完整联动验收需等测试端齐套）。
+- 未执行：本模块当前没有自动化测试源，未跑 GameTest 与 UI 测试。
+- 游戏内验收：待用户在步战测试端完成，清单见 `wok_weapon_skins/README.md` 末节（环境自检、界面权限过滤、换皮后枪械数据不变、退出重进保持、越权被拒、无 LR 时的降级、热重载）。
+
+## WOK步战附属-独立护甲 1.3.0-beta.1 — 2026-10-10
+
+#### 新增
+
+- 新增第二个服务端配置 `wok-infantry-armor-items.toml`（逐件配置）：54 件插板和 17 件头盔各一节（节名是完整注册名，如 `[plates.plate_armor_slick]`、`[helmets.helmet_6b47]`），可以单独覆盖等级/类型/材质（`tier`/`weight`/`material`）、防护数值（`ballisticProtectionR`/`armorPiercingBufferQ`/`generalProtectionG`/`pressureCapacityT`）、插板覆盖部位（`coverage`）、耐久上限（`durability`）、磨损倍率（`wearMultiplier`）、移速（`movementModifier`）和额外属性（`attributeModifiers`，增益减益）。写 `"default"` 的项沿用主配置按等级/类型/材质算出的值。
+- 每节第一行注释写中文名、完整 ID、分类、主配置矩阵格号和按代码默认主配置算出的默认数值；文件头写用法、键名与提示框对照、取值范围和分类键作用。
+- 宽松取值：数字和百分数可以写在引号里（`"0.9"`、`"85%"`、`"-10%"`），全角符号自动换成半角，材质/类型/部位可以写中文名，`coverage` 可以写列表或逗号分隔的字符串。所有可覆盖键（包括 `wearMultiplier` 和头盔的 `movementModifier`）都用宽松校验：写错的文字或数字（含 `nan`/`inf`）不会被 Forge 改回默认或删掉，而是回退该项默认值（`wearMultiplier` 与头盔 `movementModifier` 越界时夹到边界），并在每次加载/重载后打一条 WARN（完整键路径、原值、原因），`/wokarmor problems` 同样列出。`attributeModifiers` 例外：必须是方括号字符串列表，列表里不带引号的条目由 Forge 删掉、不写方括号时整项由 Forge 改成 `[]`，这两种情况不进 `/wokarmor problems`（`CONFIG.md` 规则 6 已写明）。
+- 额外属性：每条 `"<属性 id> <操作> <数值>"`，支持 add / multiply_base / multiply_total（及别名）和百分数；同属性同操作合并；拒绝移速、原版护甲值和韧性；属性不存在或玩家没有该属性时忽略。插板的修正按胸甲槽、头盔的按头盔槽施加，使用新的派生 UUID（`wok_infantry_armor:<槽位>:<属性>:<操作>`），提示框逐条显示。
+- 头盔可以配置移速（默认 0），使用新的固定 UUID；胸甲与头盔移速相乘低于 0.05 倍时自动收紧头盔这一项。额外修正按玩家 UUID 记录上次施加的项，复活或末地返回后脱下装备也能正确移除。
+- 客户端断开连接时丢掉上一个服务器同步来的逐件配置，直到再次收到逐件配置前按默认值显示，换到没有逐件配置的服务器（如 1.2.0）时不会沿用旧服务器的覆盖值。
+- 管理命令（权限 2）：`/wokarmor inspect [物品]` 显示胸、头两槽或指定护甲的解析后设置（标注覆盖项、被忽略的属性及原因），`/wokarmor problems` 列出逐件配置里所有无效值。
+- 新增中文说明 `wok_infantry_armor/CONFIG.md`（同时打包进 JAR 根目录，逐件配置文件头也写明了仓库路径）：两个文件的位置与改法、键 ↔ 提示框、分类键作用、公式、各数值对哪些伤害来源生效、可用属性清单、平衡示例、命令用法和已知限制。
+
+#### 修改
+
+- 所有读取点统一走逐件配置解析器：耐久上限、等级/类型/材质（含子弹穿甲判定）、防护数值、覆盖部位（含 `ArmorCoverageApi`）、移速、插板与头盔提示框、普通磨损与子弹磨损。删除按变体直接计算的 `PlateArmorStats.resolve(PlateArmorVariant)`，以及没有被使用、语义相反的 `PlateArmorBodyPartGate`。
+- 覆盖了 `material` 或 `weight` 时，默认耐久跟随解析后的分类：插板按解析后材质的 `materialProfiles.<材质>.durability`，头盔按解析后类型的 `helmetIntegrity`。
+- 代码默认值抽到 `PlateArmorDefaults`（矩阵、移速、头盔耐久和唯一一份泄漏公式），主配置的 spec 默认值、逐件配置注释和运行时计算共用；主配置的键、默认值和注释文字均未改动。
+- 插板子弹磨损改为插板自己的实现（与原来的“普通段 + 穿甲段”按 max(1, floor(X/4)) 结算相同），保证磨损倍率每条路径只乘一次。
+- 插板与头盔提示框显示解析后的等级/类型/材质和数值；头盔移速不为 0 时显示机动修正；显示实际生效的额外属性。
+- `mods.toml` 描述中的头盔数量由过时的 13 件改为 17 件。
+
+#### 修复
+
+- 主配置四张 18 值矩阵长度不对、含非有限数或（热重载读到一半时）根本不是列表时，不再在受击、tick 和提示框里抛异常，并在每次加载/重载后只打一次 ERROR。长度不对或不是列表时整张矩阵改用代码默认值；只有个别格不是有限数时只回退那一格。注意 Forge 会把超出范围的元素（R/Q/G 不在 0 ≤ x < 1、T < 0，含 NaN/Inf）直接从列表里删掉，所以写错一个数通常会让列表变成 17 个、整张矩阵回退（`CONFIG.md` 已知限制）。
+- 受击入口与各磨损路径遇到 NaN/Inf 伤害时直接跳过（补上本体 2026-08-11 的 `Float.isFinite` 修复）；磨损改用 long 饱和运算，极大伤害不再整数溢出成“修复护甲”。
+
+#### 兼容性
+
+- modId、物品 ID、物品身份与主配置键名不变；全部取默认时，防护、穿甲判定、耐久、磨损、移速、覆盖部位与 1.2.0-beta.2 相同（逐件对 71 件做了数值核对）。
+- 仍只强制依赖 Forge、Minecraft、GeckoLib；TaCZ 与部位血量仍为可选，TaCZ 类只在集成包内引用。
+- 已有的护甲/韧性/插板移速 UUID 与 WOK-本体护甲相同，两者仍不能装在同一个整合包里；本版新增的修正都用新 UUID。
+- 网络协议版本未变（仍为 4），1.2.x 客户端仍能进入 1.3.0 服务器，但收不到逐件配置，提示框和耐久条按整类默认值显示（服务端判定按服务器的逐件配置）；客户端请与服务器一起升级到 1.3.0。反过来，1.3.0 客户端进入 1.2.x 服务器时按默认值显示。
+- 在运行中的服务器上把两个配置文件之一改出 TOML 语法错误时，热重载失败、暂时沿用旧值；若在关服或退出世界前没有改好，Forge 会把只剩坏行以上内容的内存配置写回文件，坏行以下的覆盖丢失并在下次启动变回默认，本模组不另行报告；文件坏着期间新玩家无法进服。这是 Forge/night-config 的行为，`CONFIG.md` 第 1 节、规则 2 和逐件配置文件头已写明，建议运行中修改前先备份。拼错的键名/节名同样由 Forge 删掉并恢复默认，不进 `/wokarmor problems`（`CONFIG.md` 规则 6）。
+- 已知限制：等离子护盾不在逐件配置里；头盔耐久→防护效率曲线、穿透阈值、伤害类型白名单仍是代码常量；重新分类不改变穿戴音效和原版图层名；服务器热重载后已联机客户端的提示框/耐久条要重进才刷新；同物品合成/铁砧修复、经验修补、保护附魔书仍可绕过耐久与防护调整；`generic.max_health` 在安装部位血量时无效；`/config showfile wok_infantry_armor SERVER` 只显示逐件配置文件。详见 `CONFIG.md`。
+- WOK-本体护甲未改动。
+
+#### 配置/存档影响
+
+- 新增 `saves/<世界>/serverconfig/wok-infantry-armor-items.toml`，进入世界时自动生成，默认全部为 `"default"`，不改变已有平衡。主配置 `wok-infantry-armor.toml` 原样保留，不迁移、不重写。
+- 若整合包提供 `defaultconfigs/wok-infantry-armor-items.toml`，它会被复制进所有还没有该文件的世界（包括已有世界第一次升级到 1.3.0 时），之后不再覆盖。
+- 耐久仍是存在物品上的绝对损耗值：调低某件的耐久上限会让已经超过新上限的护甲在下一 tick 碎掉，调高等于修复。存档格式无变化。
+
+#### 测试结果
+
+- `wok_infantry_armor` Gradle 构建通过。
+- `tools/verify_mod_independence.ps1` 检查 `wok_infantry_armor-1.20.1-1.3.0-beta.1.jar`：PASS（只强制依赖 forge、minecraft、geckolib）。
+- 独立测试程序（脱离游戏，加载编译产物与 Forge 47.4.22 / night-config 3.6.4）641 项检查全部通过：两次独立构建生成的默认逐件配置逐字节相同（54 + 17 节，49,978 字节 / 1,068 行，约 48.8 KB；`wearMultiplier` 与头盔 `movementModifier` 改为宽松校验后不再有 Forge 的 Range 注释），重新读取后 Forge 判定无需改写；文件头的用法说明（头盔 `movementModifier` 可写百分数、`wearMultiplier` 不行；`attributeModifiers` 必须写方括号；节名/键重复的报错；运行中改出语法错误必须在关服前改好、拼错的键名/节名会被 Forge 删掉；头盔只有按部位判定时才只护头，否则没有胸甲时保护全身）与实现一致；`wearMultiplier`/头盔 `movementModifier` 越界夹到边界、NaN 不触发 Forge 改写；没有逐件配置时解析器给出全默认结果；额外修正按玩家 UUID 记录；热重载 `load()` 与 `correct()` 之间读到类型不对的原始值（`attributeModifiers` 不是列表、主配置矩阵不是列表）时不抛异常、按空列表或代码默认矩阵处理；71 节注释里的默认数值与按 1.2.0-beta.2 常量独立计算的结果一致；带引号数字、百分数、全角符号、非法值、NaN/inf、越界、含 head/未知部位的覆盖部位和各种属性写法的解析结果与问题列表符合预期，且 Forge 不改写这些值；71 件护甲的默认解析结果与 1.2.0-beta.2 公式逐位相等；磨损倍率数学（m = 1 不变、m = 0 不磨损、概率进位均值、饱和）、头盔移速收紧与主配置矩阵回退均符合预期。注册表相关的属性检查（属性是否存在、玩家是否拥有）和实际施加修正需要游戏环境，未在测试程序中覆盖。
+- 已安装到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`（替换 1.2.0-beta.2，旧包改名为 `.bak` 备份）。尚未做游戏内验收（配置生成与热重载、提示框、`/wokarmor` 命令、额外属性施加与移除、复活后恢复），因此保持 beta。
+
+## WOK步战附属-独立护甲 1.2.0-beta.2 — 2026-10-10
+
+#### 新增
+
+- 新增插板护甲模型生成工具 `wok_infantry_armor/tools/plate-armor`（移植自 WOK-本体护甲 `tools/plate_armor`）：每件护甲一份设计脚本、预览页、结构检查（`check.mjs`）、导出（`export.mjs`，产出烘焙网格 JSON 与逐面图集贴图）和导出一致性核对（`parity.mjs`）。
+- 新增 `PlateArmorBakedModel`、`PlateArmorMesh`、`PlateArmorMeshCache`：客户端直接绘制离线烘焙的四边形网格，跟随原版人形部位位姿（走路摆臂、潜行、细手臂、儿童缩放自动跟随）；网格懒加载并在资源重载时清空，缺失或损坏时退回原版胸甲并只打一次警告。
+
+#### 修改
+
+- 全部 54 件插板护甲的穿戴模型和贴图按《逃离塔科夫》原物重做，统一为折中 2× 精度（半像素网格、每格 2 个贴图像素、逐面图集），与 WOK-本体护甲 2026-10-04 的新模型逐字节一致。网格放在 `assets/wok_infantry_armor/armor_meshes/plate_armor_<id>.json`。
+- 删除 49 个手写 `*ArmorModel`、`PlateArmorModelDefinition` 和 `PlateArmorClientRegistration`；头盔原生模型层的注册移到新的 `HelmetArmorClientRegistration`，头盔行为不变。
+- `PlateArmorItem.getArmorTexture` 统一返回 `plate_armor_<id>_layer_1.png`，不再逐个列举外观。
+- 名称按原物修正（与本体同步）：MMAC、RBAV-AF、Strandhogg、AVS、TacTec 的 Ranger Green 中文由“丛林绿”改为“游骑兵绿”；TV-110 “灰褐色”改“卡其色”；Kirasa-N 中文“绿色”改“藏青色”、英文 Green 改 Navy；Gladiator-S “无惧死亡”改“死亡不可避免”（英文 Death is Inevitable）。
+- 物品图标按原物重画（与本体同步）：Kirasa-N 改藏青色，TV-115 改橄榄绿，6B5-15 改 Flora 迷彩。
+
+#### 修复
+
+- 无。
+
+#### 兼容性
+
+- modId、物品 ID、防护数值、重量类型、耐久与部位血量联动均未改动；物品 ID `plate_armor_kirasa_n_green` 保持不变，只改显示名。
+- 覆盖 `textures/models/armor/plate_armor_*_layer_1.png` 的旧资源包与新网格的逐面图集不兼容，需要同步更新或移除。
+- 不支持盔甲纹饰（Trim）：插板护甲本就不在 `#minecraft:trimmable_armor` 中，仅用命令写入 Trim NBT 时会显示错乱。
+- WOK-本体护甲未改动。本体同一轮把 Gladiator-S 维京的重量类型从中型改为轻型，独立护甲本版**未跟进**，仍为中型。
+
+#### 配置/存档影响
+
+- 无。
+
+#### 测试结果
+
+- `tools/plate-armor/parity.mjs`：54/54 PASS，导出网格与预览逐四边形、逐像素一致（位置最大误差 5e-5 px）。
+- 用编译出的 `PlateArmorMesh.parse` 逐件读取：54 个网格全部通过结构校验（共 11162 个四边形），且与 `PlateArmorVariant` 的 54 个物品 ID 一一对应。
+- `wok_infantry_armor` Gradle 构建通过；成品 JAR 内部版本为 `1.2.0-beta.2`，含 54 个网格，旧手写模型类已不在包内。
+- 已安装到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`（替换 1.2.0-beta.1，旧包改名为 `.bak` 备份）。
+- 游戏内外观验收（54 件穿戴、走路潜行、手臂部件、与头盔同时佩戴）尚未完成，因此保持 beta。
+
+## WOK步战核心 0.5.0-beta.4 — 2026-10-10
+
+> 用户需求（2026-10-10）：按 ` 掏出战斗终端时要有“掏出平板”的动画，看过预览（`ui-preview/tablet-anim/`，设计 `DESIGN.md`）后选定方案 A「双手抬板」，“放慢优化一下就行了 但是要加音效”，随后“实装给我看看”。已定：节奏 tempo 0.3（持枪打开约 1.33 秒、空手 1.2 秒；收起默认“界面缩回平板”的 C1 截帧，持枪 0.9 秒、空手约 0.77 秒），保留“快速”“关闭”两档，2 秒内再开 ×0.6；方案 B「屏幕抬板」只作 A 的自动降级（载具、无人机、旁观、F1、没有第一人称手部渲染）；12 个自制合成音效默认开；没有镜头低头。实装计划 `ui-preview/tablet-anim/IMPL_PLAN.md`（B1–B5）。分支 `claude/掏平板动画`，基于 `claude/平板外壳` 的 `d1a50ba`（0.5.0-beta.3）。不改任何网络协议号。
+
+### 新增
+- 动画纯逻辑（B1，包 `com.wok.infantry.client.tablet`，尚未接入渲染，游戏里还看不到动画）：`TabletAnimationModel`（预览 `anim-spec.js` 的全部常量，含 tempo）、`TabletEasing`、`TabletTimeMap`、`TabletMotion`（状态机、时间→进度、中途反向、2 秒内再开、按键补完与点击快进、打断、进入 / 离开判定、输入规则、分拍名、音效节点与淡出事件）、`TabletPath2D`（方案 B 与快速档的整像素几何）、`TabletPose3D` / `TabletFrame`（方案 A 的屏幕矩形与姿态互推、k_read 与采样方式、关键帧、枪与双手的变换、举在眼前的下沉、贴近回弹、逐帧画面参数）、`TabletCues`、`TabletKeyLatch`、`TabletSurface`。和预览预期值逐项一致（见“测试结果”）。
+- 预览之外的两处 Java 修正：空手收起时“收回”音效改在 p 0.60 触发（枪械和持物仍 0.52），按合落在平板出画那一刻（误差从 72ms 降到 2ms）；开机途中（0.61–0.74）按 Esc 收起时，平板当时的下沉量带进收起、0.1 秒内缓出，不再跳一帧（1080p 最多 13 像素）。
+- 客户端配置 `ui.tabletAnimation`（`FULL` 完整 / `QUICK` 快速 / `OFF` 关闭，默认 `FULL`）与 `ui.tabletSounds`（默认开）；系统属性 `wok.ui.tabletAnimation`（覆盖配置，uiTest 固定为 `OFF`）与 `wok.ui.tabletFreeze`（验收冻结帧，B2 起可加 `,hand=gun|item|empty`、`,path=a|b`）。B2 起生效。
+- 动画接入游戏（B2，`TabletAnimationController`，只在客户端线程）：从世界里打开小队页、编制页、战术地图或配装页（包括服务端推来的部署页）时播放掏出动画，关掉回到世界时播放收起；平板族界面之间切换不播，从死亡、加载等其他界面进入直接就绪，切到补给箱、暂停菜单等非平板界面立即结束。B2 时“完整”档暂按自动降级方案 B 播放（B3 起改回双手抬板，见下一条）；方案 B 本身：
+  - 战斗终端、编制页（方案 B，打开约 0.2 秒）：整台 D2 平板从屏幕下沿外整像素滑到位（玻璃息屏），再从上往下扫描亮屏（扫描线 LIGHT α0.6），世界压暗随抬起淡入；收起约 0.12 秒：息屏的透明玻璃平板（GLASS α0.20，能看见后面的世界；底框画空白键帽，字和灯都灭）整像素落出屏幕，画在 HUD 层 `wok_infantry:tablet_motion`。
+  - 战术地图、配装页（仍是旧全屏外框）：一台 D2 外框（亮屏区就是内屏，按终端这一档的密度现画，不占终端机身的缓存）围着 0.8 倍内屏抬起，界面左上角钉在内屏左上角、只平移和裁切，息屏层渐隐、扫描后贴近铺满；收起约 0.12 秒。
+  - 快速档：亮着的平板约 0.08 秒从下沿滑到位（地图约 0.08 秒贴近铺满），收起约 0.06 秒；关闭档没有动画，界面照样当帧打开。
+- 动画中的输入（DESIGN 2.5）：按键照常交给界面，同时 0.1 秒内补完；界面还没亮的地方（抬起中、扫描线以下、地图息屏层未退）的点击、滚轮、拖动不交给界面、直接跳到就绪；已亮的部分按看到的位置平移后交给界面再跳到就绪；地图外框和世界上的点击不交给地图。打开那一刻已经按着的键和鼠标键（例如还没松开的 `、正在走路的 W、开火时的左键拖动）不算新输入。
+- 收起中开枪、瞄准、切换物品（数字键或滚轮）立即结束收起；打开或收起途中死亡、换维度、上载具、镜头实体变化立即结束；平板收回之前不能冲刺。
+- **方案 A「双手抬板」接上（B3，“完整”档的默认画法）**：
+  - 3D 层画在第一人称手部渲染那一遍（`RenderHandEvent` HIGH，LOWEST 按事件实例收尾，共享 PoseStack 始终平衡；同一帧只画一次，夜视仪一类 MOD 把手部渲染跑两遍也不会画两台）：从单位阵起算（不跟行走晃动、TaCZ 镜头动画、体力晃动），先乘手部投影的 FOV 补偿，举起来的就是 0.5.0-beta.3 的 D2 平板本身——前脸是 `DeviceArt.rasterize` 现画的整机图（哑光斑点、这一页底框的空白键帽、链路灯都在图里，不画投影和丝印；全亮、无雾、不吃方向光，所以 0.61 交给 2D 时机身颜色不跳；整像素档最近邻、GUI 2 / GUI 1 线性采样），侧面沿整机图轮廓往后拉 2u（机身内 CASE、护角与侧键 RUBBER），背板 CASE_LO，侧面和背板吃世界光照；收起时玻璃中线一条 LIGHT α0.6 息屏线收缩到 0。
+  - 双手：玩家自己的左右手臂（先发 Forge 的 `RenderArmEvent`，护甲袖套照样显示）从机身背后托住两侧下部，贴近段松手出画；隐身时只画平板（测试世界部署前玩家是隐身的）。
+  - 手里的枪 / 物品 / 空手原版手臂：p < 0.30 时在同一事件上对整把枪（整个手持物）推压低变换后放行，TaCZ 照常画枪；之后取消主手和副手的手部渲染事件。不调用 TaCZ / SBW 的任何接口。
+  - 2D 层：举到眼前（p 0.61）起界面才画——战斗终端、编制页经 `TacticalScreen` 设备钩子按整物理像素画进阅读位矩形（320×240、480×270（GUI 4）、640×360（GUI 3）在阅读位每个布局像素正好 2×2 物理像素），GUI 2、GUI 1 先画进与窗口同尺寸的离屏目标再线性缩小贴回（缩小比 < 0.5 时用 mipmap；机身不透明度在离屏目标里按整机图遮罩补回，投影、确认层压暗照常半透明）；地图、配装页在 `Render.Pre/Post` 里同样画进 P 区里的地图矩形（一律平滑缩小）；p < 0.61 不画界面。开机黑带、背光遮罩、两条亮线只盖玻璃开口，世界压暗 0.61 起淡入，机身投影随黑带展开淡入；p = 1 恒等交接。
+  - 收起默认 C1：离开那一帧（新一帧画任何东西之前）把上一帧主画面里平板占的那一块（终端为 E 区，地图为地图矩形）拷进纹理一次，终端按整机图遮罩把圆角外的世界像素清掉；之后在 HUD 层 `tablet_motion` 按收起映射从停住的位置缩回手里（世界压暗随之淡出、投影另画并随黑带合拢淡出），0.74 → 0.61 黑带合拢、亮线并成一条，0.61 那一帧交给 3D 平板。开机途中（0.61–0.74）收起不截帧，从举在眼前起步并带入当时的下沉量。截不到时这一次自动改走不截帧的旧收起（日志记一次 `[TabletAnim] capture ok …`）。
+  - 自动降级：打开时 F1、非第一人称、旁观、睡觉、镜头不是玩家、坐载具就直接走方案 B；打开后第一帧发现手部渲染没跑到动画（例如 SBW 载具在 HIGHEST 取消了手部渲染），从打开那一刻起改走方案 B；播到一半才失去手部渲染（中途按 F1）时打开直接就绪、收起直接结束。
+  - 方案 A 的点击：p < 0.61 拦下并跳到就绪；之后点在已亮的界面上按看到的位置反算回原坐标交给界面再跳到就绪，点在开机黑带上或界面外拦下并跳到就绪。
+  - 资源：前脸贴图（最多留 4 张，换尺寸、涂装、链路状态时新建，旧的释放）、白贴图、离屏目标、截帧纹理在登出和资源重载（F3+T、换资源包）时释放，用到再建；窗口改尺寸时离屏目标跟着改。
+- uiTest 验收接缝：`TabletAnimationController.overrideForAcceptance`（档位、强制方案 B、手持、冻结点与方向、链路灯）、`clearAcceptanceOverride`、`debugSnapshot()`（B3 起另带方案 A 的逐帧参数、截帧是否就绪、手部渲染是否跑到动画）。B3 的 uiTest 冒烟组 `tabletsmoke` 已由 B5 的冻结帧验收组 `tablet` 取代（见“测试结果”）。
+- **12 个自制音效（B4，默认开）**：收枪 `holster`、布料 `rustle`、抽板 `draw`、握稳 `grip`、电源键 `power`、开机 `boot`、联网就绪 `ready`、搜索中 `search`、贴近 `zoom`、息屏 `sleep`、收回 `stow`、举枪 `raise`（事件 `wok_infantry:tablet.<名字>`；资源 `assets/wok_infantry/sounds/tablet/*.ogg`，单声道 44.1kHz Vorbis，合计约 71KB；`assets/wok_infantry/sounds.json` 带每个事件的响度均衡音量与 `preload`；中英字幕键 `subtitles.wok_infantry.tablet.*`）。**自制合成音效**：用代码离线合成，不读取、不混入任何游戏或素材库的音频，可自由使用；生成脚本与种子见 WOK步战工作区的 `ui-preview/tablet-anim/tools/make-sounds.mjs`（随机种子 20261010），资源目录另附 `readme.txt` 说明。
+  - 只在本地客户端播放，别人听不到；受客户端配置 `ui.tabletSounds` 和“玩家”音量滑杆控制；音量 = 0.25（同原版界面点击声）× sounds.json 的均衡音量，音高恒 1。
+  - 按动画进度越过节点触发（预览 `anim-spec.js` 的触发表，中途反向、2 秒内连开 ×0.6 都自动对齐）：持枪响收枪 / 举枪，空手和拿着其他东西换成布料；方案 B 只放开机、就绪、息屏三声电子音；快速档、关闭档不放；按键补完、点击快进时中间越过的声音不放、只补一声就绪；同一个音效 150ms 内不重复。
+  - “就绪”看链路：首次进服还没收到战局快照（或编制页还在等编制目录）时改成每 0.5 秒一声“搜索中”、最多 6 声，链路通了再响“就绪”；收起就停。卡顿后不会连响两声。
+  - 中途反向、打断、按键补完 / 点击快进时，已经在响的那个方向的声音淡出停掉（12ms 时间常数）。原版声音引擎每秒只更新 20 次音量，所以按 tick 取样：上一个 tick 已低于 2% 才停，实际 60–150ms 内停，不会从听得见的音量直接截断出“咔”声。
+  - 所有音效实例统一为 `TabletSoundInstance extends AbstractTickableSoundInstance`（`SoundSource.PLAYERS`、相对听者、`Attenuation.NONE`）；空手收起时“收回”的触发点见上面 B1 一条（p 0.60）。
+  - 新类：`TabletSounds`（播放入口）、`TabletSoundBook`（事件 → 播放 / 淡出 / 搜索中的纯逻辑，记最近 64 条播放与淡出，`TabletSounds.recent()` 供调试与 uiTest 读取）、`TabletLinkChime`、`TabletSoundFade`、`TabletSoundInstance`。
+  - 打开字幕时：原版字幕框不区分相对音效，字幕旁的小箭头会指向世界原点方向（只影响字幕箭头，不影响声音）。
+- uiTest 冻结帧验收组 `tablet`（B5，`src/uiTest/.../cases/TabletCases.java`，只在验收代码里，不进生产 JAR）：取代 B3 的冒烟组；新增两个只出报告的选开档 `480x270g4`（1920×1080 GUI 4）、`640x360`（1920×1080 GUI 3），即动画预览的两个默认档；用例可关掉平板外壳检查（`UiCase.deviceChecks(false)`，动画帧用）。用例清单和检查见 `wok_infantry/docs/UI_ACCEPTANCE.md` 第 5 节。
+
+### 修改
+- 战斗终端键（默认 `）和战术地图键（M）改为按键当帧在本地打开小队页 / 战术地图（用本地缓存的战局快照），同时静默请求一次新快照；不再发 `BattleOpenPacket`（包和服务端处理都保留）。不再等服务端回包，不受服务端开界面 1 秒冷却影响，晚到的回包也不会把已经关掉的界面重新打开。没有编制时仍打开编制页（本来就是本地打开）。
+- 按住终端键不再连开连关：一次按下只打开或关闭一次，松开后才能再触发；小队页里按 ` 关闭同样要求是新的一次按下。
+- 战术地图的裁切改用 `UiScale.enableScissor`（随当前变换换算，动画时地图内容跟着移动；不在动画中结果和原来相同）。
+- 平板族界面：`TacticalScreen`（小队页、编制页、uiTest 陈列页）、`TacticalMapScreen`、`PlayerLoadoutScreen` 标记为 `TabletSurface`；小队页按 ` 关闭，其余只认 Esc（和现状一致）。
+- 平板族界面打开着（包括动画中）时，原版 HUD 按白名单隐藏：只留聊天、标题、字幕和原版的全屏世界效果（暗角、南瓜头 / 细雪、冰冻、传送门、睡觉渐暗、望远镜）；热栏、血条、弹药数、准星、F3 调试文字、其他 MOD 的 HUD 不再从平板四周露出来。方案 B / 快速档收起第一帧全部恢复；方案 A 收起到 p 0.40 先恢复准星，p 0.17（平板出画）恢复其余。方案 A 动起来时（打开到 p = 1 之前、收起到 p 0.17 之前）原版暗角也一起让开：它会压暗 3D 平板却压不到 0.61 接手的 2D 设备，夜里交接那一帧机身会突然变亮最多三成（uiTest 世界实测）；就绪画面和方案 B / 快速 / 关闭档照旧保留暗角。WOK步战核心自己的 HUD（小队名单、战况条、投票牌、体力条）和原版 HUD 同步隐藏、同步恢复；隐藏期间不更新药水图标的测量，恢复后第一帧布局不跳。
+- 战术地图键也防连发：按住地图键打开地图、按 Esc 关掉后，不会再按键盘重复率重新打开（原来靠服务端 1 秒冷却挡着）。
+- `TacticalScreen.render` 加设备钩子 `DeviceHooks`（backdrop α、设备层作用域 `DeviceScope`：设备 → 页面 → 确认层 → 玻璃罩层 → 浮动提示整组跟着走，出异常也恢复变换、只在正常画完时画屏幕效果；投影 α），`DeviceArt` 加 backdrop α 重载、投影 α、透明玻璃版机身（`underClear` / `overClear`，玻璃开口挖空、凹槽唇边保留）、不进共享缓存的 `buildUncached`、息屏设备 `drawSleepingDevice` 与空白键帽 `BlankKey`，`TacticalBoardChrome.shell` 加投影 α 重载，`TacticalScreen.faceKeys()`；不在动画中时画面与 0.5.0-beta.3 逐像素相同。
+- B3：`DeviceArt.rasterize` 加选项 `RasterOptions`（去投影、哑光斑点按屏幕同样的 16×16 平铺、空白键帽、链路灯；默认选项与原版本逐像素相同），空白键帽的 2D 画法改用同一组矩形 `blankKeyRuns`（画面不变）；`TacticalScreen` 加 `resolveDeviceLivery()` / `devicePalette(livery)`（3D 平板在界面画第一帧之前按界面自己的涂装和调色板取色）。
+- uiTest 运行器：窗口和显示器一样高的档位（1920×1080 的 `960x540`、`480x270g4`、`640x360`）去掉标题栏、放到屏幕左上角，回到其他档位时恢复——原来带标题栏的窗口被 Windows 压成 1920×1061，`960x540` 档每个用例都记为 REPORT（0.5.0-beta.3 那一轮没跑这一档）。只影响验收代码。
+
+### 修复
+- 无。
+
+### 兼容性
+- 网络协议号全部不变（战局 `20`、编制 `5`、兵力 `2`、体力 `2`、配装 `11`），没有新增注册项，客户端与服务端可在 0.5.0-beta.1–0.5.0-beta.4 之间混用；旧版客户端照样用 `BattleOpenPacket` 打开界面。动画不加 mixin、不加依赖，只用 Forge 事件；不调用 TaCZ / Superb Warfare 的接口（手持枪械按物品类型判断，SBW 按物品命名空间和类名判断，不链接）。其他 MOD 注册的 HUD 层在平板打开时同样按白名单隐藏。方案 A 只用 Forge 的 `RenderHandEvent`（HIGH 推变换或取消，LOWEST 收尾）和 `RenderArmEvent`，对整把枪只做 PoseStack 变换；Superb Warfare 载具、无人机等在 HIGHEST 取消手部渲染时自动改走方案 B。离屏目标与截帧用原版 `TextureTarget` 和 `glBlitFramebuffer`，不加 mixin、不加依赖、不新增贴图资源（前脸贴图运行时生成）。12 个音效**不注册 `SoundEvent`**：客户端用 `SoundEvent.createVariableRangeEvent` 构造事件、按 `sounds.json` 的位置直接播放，不进 Forge 的音效注册表——该注册表在登录时由 Forge 同步，注册了 beta.4 服务端就会以“缺少注册项”拒绝 0.5.0-beta.1–beta.3 客户端，按 `docs/VERSIONING.md` 要改成 0.6.0；以后要让别人也听到（服务端广播）时再注册并按协议规则升号。
+
+### 配置/存档影响
+- 客户端配置 `config/wok_infantry-client.toml` 的 `[ui]` 段新增 `tabletAnimation = "FULL"` 与 `tabletSounds = true`（`false` 关掉全部 12 个掏平板音效，包括“搜索中”“就绪”；动画照常），旧配置文件自动补上默认值；服务端配置与存档不受影响。
+
+### 测试结果
+- B1：新增 JUnit 72 项（`com.wok.infantry.client.tablet.*`）。和预览导出的比对向量 `src/test/resources/tablet_anim/vectors.json`（`ui-preview/tablet-anim/tools/export-java-vectors.mjs` 生成，`--check` 校验与预览一致）逐值比对，容差 1e-9（像素矩形 1e-6）：25 条时间映射中的 23 条（另 2 条是预览才有的“等回包”对照）、36 组分拍名、5 档几何、976 帧方案 A 画面参数、40 组方案 B / 快速档帧、1170 行输入规则、26 个状态机场景逐帧（状态、进度、曲线、音效与淡出事件）、三种手持的音效触发表；另加 DESIGN 6.6 的性质检查（2 秒连开、连按不乱序、反向连续、终端键锁存、不会同时出现四条手臂、拳头遮挡规则、p ≥ 0.97 双手出画、开机段收起下沉带入）。
+- B2：新增 JUnit 58 项，全量 1397 项全过（六个附加源集照常编译）；全量 uiTest（动画关闭档）PASS：87 个用例、424 张截图、严格布局违规 0（本地打开后旧验收流程照常，没有截到“加载中”的小队页）。HUD 白名单与分拍恢复（和方案 A 逐帧参数、方案 B 帧的 HUD 标志逐帧一致）；输入裁决（按键补完、按住的键不算、抬起中 / 扫描线以下拦下快进、已亮部分平移放行、GUI 1 + 2x 时 1 lp = 2 GUI 像素、地图内屏外不放行、开前按住的拖动只吞不跳）；地图 D2 外框在 5 档 × 打开 / 收起 × 完整 / 快速 × 100 个进度上 P、S、D 与帧几何逐格重合；Render.Pre/Post 配对（Pre 取消时 Post 照样收尾、分层界面按实例配对）；打断与降级预测真值表；平板族成员与动画方式（小队页 / 其他 TacticalScreen / 地图与配装页）；`TacticalScreen` 钩子顺序（backdrop → 作用域 → 页面 → 玻璃 → 效果 → 关闭，抛异常时照样关闭、不画效果、变换平衡）；设备作用域的整像素平移与配对；`DeviceArt` 透明玻璃版与“整机合成后挖空玻璃开口”逐像素相同、投影段识别、`buildUncached` 不挤共享缓存、α 换算；方案 A 开机效果的黑带对称、只在玻璃开口内。
+- B3：新增 JUnit 33 项，全量 `build` 1430 项全过。方案 A 的渲染路径和预览逐值一致：平板矩阵、左右手前六步链放到真实 `PoseStack` 上（`TabletPoseOps`，渲染器用的就是这条路）与 976 帧 `tabletM` / `rightPre` / `leftPre` 的误差在 float 精度内；D 区四角经该矩阵和 70° 手部投影后落在 `deviceQuadPx` ±0.5 px 内；整像素变换把设备放在帧的 `devicePx` 上；阅读位在三个整像素档每布局像素正好 2 物理像素；渲染器实际画的手臂（链 + 模型部件）落进 E 区的拳头采样点都在背板之后；前脸四边形、UV、息屏线与 `tiers[].face3D` 一致；侧面沿整机图轮廓闭合、法线朝外、护角与侧键是 RUBBER，背板正好盖住实心像素；`RasterOptions` 默认与原版逐像素相同、去投影后只有全透明 / 全不透明、斑点只落在斑点带并与屏幕平铺一致、链路灯只改灯和 1px 光晕、键帽与 2D 画法同一组矩形；手部事件配对（中间的监听取消事件、同一帧跑两遍手部渲染）后 PoseStack 回到原位、一帧只画一次平板、没跑到手部渲染时第一帧改走方案 B / 之后直接就绪或结束；C1 只从画过界面的帧截、不在开机段截，截取块覆盖 E 区 / 地图矩形且在窗口内，起步那一帧原位回放、之后随帧矩形缩回，0.61 那一帧归 3D；方案 A 点击反算（中心对中心、黑带和界面外拦下）；暗角只在方案 A 动起来时让开。
+- B3 uiTest 冒烟（`-PuiCases=tabletsmoke`，动画只在这组用例里打开）：16 个用例 26 张截图全部画出且不崩溃（21 张 PASS，5 张布局只出报告——冻结帧里界面画在缩小的矩形中，探针按原尺寸量会报字小，B5 的冻结帧用例本来就关掉布局检查），日志无异常、无 OpenGL 报错、无 “Pose stack not empty”；`[TabletAnim] capture ok 954x714 at (3, 3) from p=1.000`（320×240 的 E 区）、`capture ok 843x647 at (59, 57) from p=0.870`（贴近途中收起截的是那一帧正在凑近的矩形）。中途修掉一处 OpenGL 报错：给混合模式“预先套用着色器”时会绑上着色器上次记下、已被释放的贴图名，改为先设好这次要用的贴图。看图：3D 平板（涂装、空白键帽、链路灯、侧面厚度）、玩家双手从背后托住、空手原版右臂和手持指南针按压低曲线下沉、开机黑带与亮线、GUI 1 平滑缩小（字不碎、机身不透明）、C1 缩回与黑带合拢、收起的息屏线、地图画进 P 区。交接帧对比（p 0.6099 的 3D 与 p 0.61 的 2D）：320×240（GUI 3）机身逐像素相同，只差键帽上的字、当前页的灯和开机亮线（设计如此）；960×720（GUI 1，平滑缩小档）位置一致，边缘线性采样差 1 档色阶、STANDARD 档多出丝印。第一次对比时 3D 机身边缘被原版暗角压暗到 68%–97%，据此让暗角在方案 A 动起来时让开，复测后相同。TaCZ 持枪、Alex 细手、袖套、真实客户端 GUI 3 / GUI 4 还没看（开发端没有 TaCZ 运行时）。
+- B4：新增 JUnit 33 项，全量 `build` 1463 项全过，六个附加源集照常编译。资源：`sounds.json` 与预览 `sounds/sounds.json`（比对向量的 `sounds.json` 段）逐项相同、只多字幕键；12 个事件 = 12 个 OGG（按 Ogg / Vorbis 文件头核对单声道 44.1kHz，ffprobe 时长与预览清单一致，SHA-256 与预览产物相同）= 中英两份字幕；资源目录里的文件名都是合法资源路径（大写的 `README.txt` 会让游戏每次加载资源都报 “Invalid path in pack”，已改小写）。26 个状态机场景的音效与淡出事件逐条送进 `TabletSoundBook`：每个音效只播一次，11 次淡出（两种反向、三个阶段按 Esc、按键补完、点击快进、三种打断）每次都正好淡掉那个方向还在响的声音、不碰另一方向。真实 `TabletMotion` 逐帧驱动：方案 A 持枪 / 空手 / 持物的完整音效顺序，方案 B 终端与地图只有开机、就绪、息屏，快速 / 关闭档无声，`ui.tabletSounds` 关掉无声，三种手持“收回”的主击打都落在 K0 的一帧内（空手原来晚 72ms），首次进服无快照时“就绪”换成 4 声“搜索中”、收起后不补“就绪”。另测 150ms 不重复、搜索中每 0.5 秒且最多 6 声、卡顿后不连响、链路通了只响一次“就绪”、淡出在 tick 的每个相位都 2–3 个 tick 内停且停之前音量已低于 2%。uiTest 冒烟加用例 `tabletsmoke.sounds`（共 17 个用例 27 张截图，PASS）：开发端客户端里 12 个事件都从 `sounds.json` 加载到（字幕、OGG 文件都在），直接播放一个 `TabletSoundInstance` 声音引擎接受（`active true`），完整打开一次按序请求了 收枪、抽板、握稳、电源键、开机、就绪、贴近（验收时动画音效静音，只看记录）；日志没有声音相关警告。真实客户端还没听：逐个听、和枪声一起听、2 秒内连开、开机段按 Esc、首次进服的搜索中、`ui.tabletSounds = false`，待用户验收。
+- B5 关闭档回归（归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261010-0.5.0-beta.4\off-zh\`）：全量 `runUiTestClient`（实时流程 + 全部用例，5 个标准档加选开的 960×540）`status=PASS`，104 个用例、532 张截图，`strictLayoutViolations=0`；5 个标准档的 415 行用例结果与 0.5.0-beta.3 的 `final-zh` 逐行相同（410 PASS + 5 REPORT，同为管理员旧界面），两张地图截图的 `mapIcons` 不变。960×540 那一轮的 81 行因窗口被压成 1920×1061 全部记为 REPORT（见“修改”最后一条），修正运行器后在 960×540 与新档 640×360 上重跑 kit、mapicons、formation、squad、hud 五组（`off-wide-zh`）：81 个用例、162 张截图 `status=PASS`、严格违规 0；33 条只出报告的违规都是 0.5.0-beta.3 的页面内容，与动画无关（这两档以前没跑过）：编制详情的支援名“F-16C GBU-12 宝石路 II 500磅精准空袭”被截断却没有完整提示 29 条，960×540 投票阶段小队页的编制简介同样 4 条；另有 `kit.inputs@960x540` 的语义检查（候选列表要溢出出“更多”一行）在宽松档不成立，记 REPORT。
+- B5 冻结帧验收（`-PuiCases=tablet`，归档 `…\20261010-0.5.0-beta.4\tablet-zh\`，最终提交上重跑为 `tablet-zh-final\`，结果相同；含 `tablet` 组的全量轮 `full-zh-r1\` 里 `tablet` 以外的 705 行用例与外壳记录与 0.5.0-beta.3 逐行相同）：95 个用例、238 张截图 `status=PASS`（195 PASS + 43 REPORT，REPORT 都是冻结帧里页面画在缩小矩形中引起的布局报告），0 FAIL。状态、路径、进度、方向、冻结点、手部渲染、阅读位采样方式（GUI 3 / GUI 4 整像素、GUI 2 / GUI 1 平滑缩小）、C1 的 0.61 归 3D / 以上回放截帧全部符合；玻璃像素抽样 26 帧 47 个点全部符合（打开 0.61 黑带全合、0.74 已亮、C1 0.66 上下黑带、方案 B 0.70 扫描线以下息屏）；交接 44 组：真实播完的 `shown` 与关闭档 `off` 0 像素差（小队页两种涂装、编制加入页、地图，5 档；单跑这一组时整张都是 0），冻结的 p = 1 在玻璃开口（地图为整个窗口）内 0 像素差，开口外只差动画期间不画的手持物。判据定为“终端比玻璃开口、地图整张比且容许 0.05% 像素”：先跑实时流程的全量 uiTest 里，平板四周压暗的实时世界在两次截图之间会动，JourneyMap 地形也会随世界重画（地图差 14–254 像素），这些与动画无关；12 个音效全部加载、`TabletSoundInstance` 播放被接受，完整打开一次请求 收枪 → 抽板 → 握稳 → 电源键 → 开机 → 就绪 → 贴近。开发端没有 TaCZ，持枪由原版弩代替（走持物的同一时间轴与下压），持枪画面和收枪 / 举枪声只能在真实客户端看。
+- B5 与预览逐帧对比：按同一档位、涂装、界面、手持、方向和进度（进度经比对向量的时间映射换成预览的 t）用预览 `tools/shots.mjs` 出 236 张同帧，Java / 预览 / 差值三联图和统计在归档的 `preview-compare\`。平板（3D 机身、阅读位矩形、2D 设备、C1 缩回、息屏线、方案 B 与快速档的位置）在所有档位与预览重合（差值图上机身区域为 0，只在轮廓边缘有个别像素差）；其余差别都来自环境或数据：开发端世界是夜里的暗色、预览是蓝天；双手是开发端玩家皮肤、预览是校服；手持物是弩、预览是步枪；页面数据是夹具（未选中队员、身份全称、时钟 21:30），预览是 mock；战术地图在游戏里仍是旧全屏外框，预览画的是新版地图稿（设计已注明）。真实客户端验收（GUI 3 / GUI 4、TaCZ 持枪、Steve / Alex、音效、交火、载具、F1、夜视仪）待用户进行。
+- 收尾：用户 2026-10-10 要求“结束这些测试吧 直接安装推送PR”，所以计划中 B5 之后的两路代码审查（正确性与兼容性、规格与仓库规则）没有跑，审查与修正留到真实客户端验收之后。部署前在最终提交上重新打包（`assemble`，未重跑测试；最后一次全量 JUnit 是 B4 的 1463 项全过，之后的提交只改了 uiTest 验收代码和文档，生产代码未动）。
+## WOK步战附属-倒地救援 0.1.0-alpha.4 — 2026-10-10
+
+> 用户反馈（2026-10-10）：“救治伤员有个BUG，人会黏在人物屁股上，放不下来”。原因：拖行时伤员每 tick 都被传送到拖拽者**视线方向**正后方 1.15 格，拖拽者怎么转身伤员都跟着转到背后，准星永远点不到它；而放下的唯一办法是“潜行右键点击伤员”，所以一旦拖起就放不下，也没法救治（伤员只能等失血死亡或自己 `/wokdowned giveup`）。原来的双客户端回归测试直接调用 `stopDraggingByParticipant` 放下伤员，没有走玩家输入，因此没有发现。分支 `claude/拖行放下`，基于 `claude/平板外壳` 的 `d1a50ba`；只改 `wok_downed`。
+
+### 新增
+- 轻按潜行放下：拖行中按一下潜行（Shift）并在半秒（10 tick）内松开即放下伤员，不用瞄准。开始拖行时按着的那次潜行不算（要先松开一次）；按住潜行超过半秒（蹲着躲掩体）不会放下；在松开时才放下，所以“潜行右键点击伤员”仍是原来的开关，不会放下后又被同一下右键拖起来。判定在 `SneakTap`（纯逻辑，有单测）。
+- 绳断自动放下：拖拽者与伤员三维距离超过“救援距离与跟随距离中较大者 + 1 格”（默认 4 格，例如拖拽者爬梯子上去、跳下高台）时自动解除拖行并提示“已停止拖行”。
+
+### 修改
+- 拖行跟随改为绳索式（`DragLeash`，纯逻辑，有单测）：拖拽者离伤员超过跟随距离（`dragFollowDistance`，默认 1.15 格）才把伤员沿两人连线拉到该距离，距离以内伤员原地不动。转身、原地环顾不再甩动伤员；倒退时伤员在面前；直线行走时与原来一样拖在身后，拐弯后会沿走过的路逐渐回到身后。伤员朝向改为面朝拖拽者。
+- 拉动时避开方块：目标位置被方块占住时依次尝试抬高 0.55、1.05 格（台阶、半砖、下坡），再把绳长缩到一半，最后才放到拖拽者脚下（拖拽者站立处一定是空的）。原实现不检查碰撞，拖拽者背靠墙时会把伤员塞进墙里，窒息伤害过了保护期会直接补死伤员。
+- 拖行开始提示改为“正在拖行 %s；轻按一下潜行（Shift）放下伤员。”（英文“Dragging %s. Tap sneak to put them down.”）。
+- `DownedService.isDragged(ServerPlayer)` 改为公开，供验收测试和以后的联动查询。
+
+### 修复
+- 修复拖起伤员后放不下来、也无法救治的问题（用户反馈“人会黏在人物屁股上，放不下来”）：现在可以轻按潜行放下，也可以转身看着伤员潜行右键放下。
+
+### 兼容性
+- 只改服务端拖行逻辑和语言文件，不加网络通道、不改协议；客户端装旧版也能用新的放下方式（潜行状态原版就会同步到服务端）。
+- 仍可独立安装：必需依赖只有 `forge`、`minecraft`；`wok_trauma`、`wok_body_health`、`wok_infantry` 仍为可选，JAR 里没有其他 WOK 模块的类。WOK步战核心按类名反射 `DownedService.isDowned`，不受影响。
+
+### 配置/存档影响
+- 不新增配置项。`dragFollowDistance` 的键名、范围（0.4–2.5）、默认值 1.15 不变，含义从“跟在身后的距离”改为“绳长”（注释随之更新，配置文件里的英文注释在下次保存时更新）。
+- 不改存档格式；拖行状态仍只在内存里，重启或重进不会保留。
+
+### 测试结果
+- `wok_downed`：`clean test build compileDragTestJava compilePoseTestJava` BUILD SUCCESSFUL；JUnit 14 项全部通过（原有 3 项 + `DragLeashTest` 6 项：绳松不动、绳紧沿连线拉、转身不甩到背后、倒退时在面前、朝向、绳断距离；`SneakTapTest` 5 项：开始手势的潜行不算、短按算、先松开再短按算、正好半秒算、超过半秒不算且之后短按仍有效）。产物 `wok_downed/build/libs/wok_downed-0.1.0-alpha.4.jar`，内部版本 `0.1.0-alpha.4`，不含测试源码集的类。
+- 双客户端真实回归测试（`src/dragTest`，两个 ForgeGradle 开发客户端经真实回环 TCP 连接，伤员的传送确认延迟 150ms）改为全程走玩家输入：拖拽者对准伤员按住潜行 6 tick、中间右键开始拖行，松开潜行后拖行不断；向南走、向西走后伤员在身后且绳长保持 1.15 格；**原地转身面向伤员 40 tick 后伤员位置不变、准星仍落在伤员身上**；轻按潜行 4 tick 放下，拖行减速被移除；走开后伤员留在原地；救起后恢复站姿。两端位置一致性检查与原来相同。
+  - 修复版：最终代码（`release-final2-20261010`）拖拽者 33 项、伤员 18 项全部 PASS，已查看两端截图；改配置注释与版本号之前的同一逻辑（`release-fixed-20261010`）也全部 PASS。中间一轮（`release-final-20261010`）伤员客户端登录时没收到服务端已发出的任何 Forge 握手包，30 秒后超时，没有执行到任何检查，属本机回环连接偶发问题，换新目录重跑即通过。
+  - 同一测试跑原实现（`release-baseline-20261010`，只把 `isDragged` 临时改成公开）：在“转身后准星仍落在伤员身上”处 FAIL——拖拽者转身面向东，伤员被从 x=-7.96 传送到 x=-10.27（拖拽者身后），准星只打到地面（`BlockHitResult`），复现了用户反馈的问题。
+  - 结果副本见 `wok_downed/docs/acceptance/2026-10-10-release-*.txt`，截图在步战测试实例 `wok-downed-acceptance/` 下对应目录。
+- 未做：测试端（PCL）真实客户端游戏内验收，待用户。重点：多人联机下拖行、轻按 Shift 放下、转身看伤员后潜行右键放下与救治；楼梯、半砖、墙角、门口拖行；爬梯子 / 跳台阶时绳断；手持 TaCZ 枪械时能否右键伤员（枪的右键是瞄准，可能拦截交互，本版未改）。
+
+## WOK步战核心 0.5.0-beta.3 — 2026-10-10
+
+> 用户需求（2026-10-10）：“我们现在 UI 整体还是有些不太像……还是本着平板的方向”，随后要求“凯撒、学院、中立做三套，会随着玩家加入的阵营不同而改变——学院蓝色、凯撒红色、中立偏淡色”；看过预览后选定 D2「实体按键平板」外壳（`ui-preview/surfaces/17-device.js`）与 P3「整屏涂装」（`ui-preview/surfaces/18-device-livery.js`）。用户 2026-10-10 拍板：范围档 1（战斗终端小队 / 兵种 / 部署三页、编制页、uiTest 陈列页上平板外壳并按阵营换色；HUD、战术地图和其余旧界面不动），涂装按战局蓝方 / 红方对应（蓝 = 学院军海军蓝，红 = 凯撒正红，未加入阵营 = 中立浅钢灰），同意改写 AGENTS.md UI 规则第 3、6 条，掏平板动画顺延到 0.5.0-beta.4 并改用这套外壳。方案见 `ui-preview/audit/DEVICE_PORT_PLAN.md`。分支 `claude/平板外壳`，基于 `claude/新版界面` 的 `826785a`（0.5.0-beta.2）：骨架 `d1272c0`，共享层 B1–B4（调色板与涂装判定、设备外壳与状态栏、底框实体键、部件状态线索）合入后接缝修正 `c8cae23`，界面 B5–B7（战斗终端三页、编制页、uiTest / 陈列页 / HUD 隔离）合入后接缝修正 `0ece674`，实机截图对照修正 `8abd040`，整体审查修正 `c52530d`（本版最后一个源码提交）。不改任何网络协议号。
+
+### 新增
+- D2 实体平板外壳（`TacticalScreen` 系列：战斗终端小队 / 兵种 / 部署三页、编制投票页、uiTest 组件陈列页与地图标点陈列页）：界面画成一台拿在手里的平板，浮在压暗的世界上（世界压暗加暗角，机身四周能看到世界；原来是铺满全屏的外框）。
+  - 机身：圆角机壳、四角护角、侧键、摄像头、底部螺丝、“WOK-T7”丝印，顶边框上一盏电源灯和一盏链路灯（OK 用外壳灯色，WAIT 用琥珀色）；屏幕是内凹玻璃，带反光，玻璃罩层画在确认层之上、浮动提示之下。
+  - 几何按预览 `geom(w,h,2)` 分紧凑 / 常规 / 宽松三档（`TacticalShellLayout` 的 `device`、`glass`、`display`、`status`、`body`、`bezel` 区域）；页面内容区 320×240 为 296×192、427×240 为 403×192、480×270 为 456×222、480×360（960×720 GUI 1）为 416×284、640×336 为 576×260、960×540 为 846×434。
+  - 机身程序化绘制（`DeviceArt`，按逻辑宽高、档位和涂装缓存矩形行程），另有两张贴图：16×16 磨砂斑点平铺图 `device_specks.png` 与 64×64 暗角 `device_vignette.png`，由界面预览工具 `ui-preview/tools/export-ui-atlas.mjs` 从预览的外壳画法生成，本项目原创，SHA-256 记在 `ui_atlas_manifest.json`。
+- 状态栏（取代原页头）：左起阵营色条、“标题 › 当前页”（最多占 55% 宽，紧凑档用短页名）；中间是回执胶囊（取代原页脚回执，余量不足 40px 时不画，太长加省略号、悬停显示全文）；身份用外壳的身份色画（按“阵营 · 编制 · 小队 · 职务”逐级缩短）；右侧信号格（OK 亮 4 格，WAIT 亮 2 格琥珀色）、电池（装饰，常满）和本机时间 `HH:mm`。标题或身份被省略时悬停同样显示全文。
+- 底框实体键：
+  - 页面键：终端六个页签（小队 / 兵种 / 部署 / 配装 / 战术地图 / 编制）改为底框上等宽的实体键，居中排在 Esc 与 R 之间，先放全名、放不下换短名（最小键宽紧凑档 28、其余 38）；当前页的键是按下状态（字下沉 1px），上方 LED 亮起，其余 LED 熄灭。控件本身保留：焦点、←/→、朗读、禁用原因提示、放不下时退成翻页条、Ctrl+Tab，以及 uiTest 用的 `terminal.tabs/<id>`。
+  - 硬件键 Esc / R：Esc 键等同按键盘 Esc（各界面保留自己的含义）；R 键执行界面的刷新——战斗终端为“R 刷新”（与键盘 R 同一动作，请求战局快照），编制页为“R 重试”（只在等待编制目录时可按，其余时候禁用，悬停写“编制目录已同步，有变化会自动更新，无需重试”）。底框键排在 Tab 焦点顺序最后；页面键快要退成翻页条时（英文 320×240），Esc / R 先缩成只写键名，动作留在提示和朗读里。
+  - 键的状态：悬停换亮一档的键面（学院军另按对比度求解，键名 ≥4.5:1、动作字 ≥3:1）；禁用键是平键加斜纹，键名和动作字都变暗（`DeviceSkin.keyOff`，在键面上仍 ≥3:1、与正常键名差 ≥2:1）；键盘焦点框用键字色。
+- P3 阵营整屏涂装：外壳、屏内拼板、井、选中色一起换。
+  - 学院军（战局蓝方）：海军蓝机身、深海军蓝机壳件，选中 `#2660A8`；凯撒（红方）：正红机身、深正红机壳件，选中深绯红 `#8E1A34`（战术地图作用域另有石墨选中，本轮地图没有换壳，暂未使用）；未加入阵营（中立）：浅钢灰机身与机壳件配深色字，选中石墨 `#384246`。
+  - 判定（`TacticalLivery`，每帧一次）：有战局快照时蓝方 → 学院军、红方 → 凯撒；没有快照时看编制目录里加入的阵营，按本次会话从快照学到的“阵营 id → 蓝 / 红方”表（默认 `academy` = 蓝、`caesar` = 红）查，查不到为中立；退出世界时清表。编制页按自己显示的目录判定：未加入一律中立，加入后跟阵营。
+  - 换色只在 `TacticalScreen.render` 的调色板作用域里改写可换肤令牌（`TacticalPalette` 的 A / ACADEMY / CAESAR / NEUTRAL，71 个 `PaletteToken`），作用域外（HUD、旧界面）始终是 A 配色；作用域按栈恢复，可嵌套。三套配色与外壳色（`DeviceSkin`，含电源灯色）由 `ui-preview/tools/export-palette.mjs` 从预览导出到测试资源 `ui_palette/p3_palette.json`，单测逐值核对。
+  - 新令牌：`ON_FILL`（实心成功底与确认态危险底上的字）、`DANGER_DEEP`（`#3A0F0C`，确认态危险键的深色斜纹）、`ACCENT_TEXT`（`#844600`，浅色拼板上的较深橙色文字，各配色同值）。
+- 部件状态线索（`TacticalButtonStyle`、`TacticalDraw`、`TacticalList`，所有配色都生效，包括 A）：
+  - 选中：阵营色实心底 + `SELECT_EDGE` 外框 + 左侧浅色竖条（键高 ≥16 时 3px，否则 2px），不画凸起斜面；列表行的竖条外侧加 1px 深线（中立浅色井里也看得见）；悬停在已选项上亮一档。
+  - 危险：常态为浅色键面配红描边、红字和左侧警示斜纹（宽 4 / 3px，按行合并填充，每键不超过 32 次，不用贴图）；悬停或确认态为整块红底配深色斜纹和浅色字。
+  - 成功：浅色字；没有图标且放得下时自动带 ✓ 图标。禁用：禁用描边加斜纹。计数角标：选中 / 当前为深色内嵌，禁用为浅色内嵌。
+  - 浅色拼板上的橙色数值（键值行的值、滑杆数字、“倒地”字）改用较深的 `ACCENT_TEXT`；分区色条、指示灯、进度和可调控件的轨道仍用原橙色。
+- 终端打开时隐藏 WOK HUD：`TacticalScreen` 开着时，核心自己的 HUD 叠层（小队名单、战况条与通知、编制投票条、体力条）不画，免得从机身四周露出来；关掉后照常。`InfantryHudApi` 的隐藏判断仍只看 F1，附属 MOD 的 HUD 槽位照常给；体力条在终端开着时仍取消原版经验条。
+- 中立输入框光标：平板界面里输入框的文中光标改用调色板的井上文字色（中立浅色井里为深色），不再是原版固定的浅灰 `#D0D0D0`（`EditBoxShadowMixin.recolorCursor`）。
+- 为 0.5.0-beta.4 掏平板动画留的接口：`TacticalScreen.render` 分步（背景 `renderBackdrop` 与机身 / 页面绘制分开）、`DeviceArt.rasterize` / `plate`、`TacticalShellLayout.compute(w, h, Density)`；动画本身不在本版。
+- 其他新类型与方法：`InkContrast`（WCAG 对比度与混色）、`TacticalBezelPlan`（底框纯布局）、`BezelKey`、`TacticalLiveryTables`、`TacticalBoardChrome.shellTitle` / `planStatus` / `StatusPlan.fullTextAt`、`TacticalScreen.offerFullText`（静态绘制的文字被截断时给悬停全文）、`TextFit.carryFrom`。
+- uiTest：新增 16 个用例——凯撒战斗终端 squads、kick（红色确认态危险键压在红色选中行上）、classes、deployment、active、loading；凯撒编制页 vote、locked、admin；组件陈列页 default、confirm、cards 各配凯撒与中立；HUD 回归 `hud.terminal-caesar`（开关凯撒终端后 HUD 颜色仍是 A）。用例写明涂装，截图名与用例 id 带 `-academy` / `-caesar` / `-neutral`；新增平板外壳语义检查 `UiDeviceChecks`（涂装与链路备注、外壳区域非实心、Esc / R 在底框、当前页键按下且其上 LED 唯一点亮、危险键带斜纹、底框没有页脚回执、文字和控件不出玻璃区）；夹具按阵营方参数化；可选的只出报告档 960×540（唯一用到宽松档机身的档位，`-PuiTiers=960x540` 点名才跑）。
+- 语言：中英各新增 `screen.wok_infantry.formation.hint.retry_unavailable` 1 个键；uiTest 语言各新增 `kit.title_short`、`kit.identity.caesar`、`kit.identity.neutral`、`mapicons.title_short`、`mapicons.page.dark`、`mapicons.page.paper`、`mapicons.refresh_reason`。
+
+### 修改
+- AGENTS.md「WOK步战 UI 永久风格规则」（用户 2026-10-10 同意，单独的纯文档提交 `7d1373f`，按方案第 8 节原文）：第 3 条整句改为实体战术平板外壳、按玩家所属阵营整屏涂装（学院军海军蓝、凯撒正红、中立浅钢灰配深色字）、三阵营选中色（`#2660A8` / `#8E1A34` / `#384246`）、凯撒在战术地图页改用石墨 `#3B4247` + 玫瑰粉竖条且地图页的选中不用红色、机壳件上“当前 / 已选”字色（`#8AC4F5` / `#FF9EB4` / `#2F3A3E`）、禁用为灰色加斜纹、地图上友军蓝敌军红不变；第 6 条原文保留，末尾补形状线索（选中竖条、危险警示斜纹、禁用斜线、成功 ✓ 无竖条、可调控件底部橙线）。
+- 布局宽窄翻转（D2 外壳占掉一圈，和预览阈值一致）：640×336 与 640×360 下小队页变窄版（内容宽 576 < 600：呼号条换成小队列表列，右侧“我的状态”栏收起）；960×720 GUI 1（480×360，内容宽 416 < 440）下兵种页、部署页变窄版，编制页详情变单列滚动。
+- 页脚取消：Esc / R 改为底框硬件键，回执改到状态栏胶囊，页面不再画页脚按键提示；“Ctrl+Tab 切页”提示去掉（Ctrl+Tab 照常可用）；编制页的“Enter 投票”“滚轮 浏览 / 滚动”不再印出（功能保留）。
+- 战斗终端：底框 Esc 键写“Esc 返回”（行为不变）；状态栏标题在宽度 ≥400 且“WOK步战 // 战斗终端 › 页名”三页都放得下时用全称，否则用“战斗终端”（427×240 起用全称，原为 440 起）；身份上限改用状态栏实际余量，宽屏能显示更长的身份（例如 640×336 下“学院军 · 千禧年研讨会机动部队 · 阿尔法小队 · 小队长”）。
+- 编制页：底框 Esc 文案随状态（窄屏详情“返回列表”、未加入“关闭（～ 键可重开）”、已加入“暂时关闭”）；R 的文案“重新请求”改“重试”；分步引导按状态栏真实余量挑长短文案，先保证身份完整；短标题“编制投票”仍在宽度不足 440 时使用，“标题 › 页”放不下时也用短标题（英文 480×360）；已加入的阵营键为当前态（阵营色实心 + 浅色竖条 + 深色角标内嵌），其他阵营为禁用斜纹；票数细条的轨道跟随行底色（悬停时亮一档的行也一样）。
+- 与预览有意不同、保持现状的两处（已决定）：未加入阵营时编制页正在浏览的阵营键仍画描边 + 选中色竖条 + 眼睛图标，不画成实心（用户 10-04 反馈 1）；部署页重生倒计时“N 秒”及其指示灯仍用正文色 / 灰色，不用橙色（橙色只表示分区与可调控件）。
+- 两个陈列页：宽度不足 440 或“标题 › 页”放不下时用短标题；地图标点陈列页的两种底图改为底框页面键，R 键禁用并写原因；组件陈列页按 D2 几何重排，HUD 页的样品始终按 A 配色画。
+- 共享部件（旧 A 界面也共用，按 A 配色画）：战术地图、配装、补给、导入导出、武器调校、管理员配装的按键也会出现危险斜纹、3px 选中竖条和成功 ✓；浮动提示改为 `FRAME` 底（α F2）、`INPUT_EDGE` 外框、`ACCENT_B` 顶线，滚动条轨道改 `FRAME`，深色面上的标签底改 `WELL`（A 配色下这几处每通道最多差 3）；分区标题板的色标危险 → `DANGER_B`、选中 → `SELECT_B`、橙 → `SECTION`；拼板上的键盘焦点框改为双色（外 1px 焦点色、内 1px `SELECT_EDGE`，占地仍 2px）；选中格的数量字改 `ON_SELECT`。
+- `TacticalBoardTheme` 拆成可换肤组（71 个 `public static int`，只在 `TacticalScreen` 的绘制作用域里是阵营值）与固定组（世界压暗、模态压暗、斜纹、HUD、地图与网格、全部别名等）；`BattleUiTheme`、`TacticalHud.SELF_ROW_TINT`、`StaminaBarModel.LOCK_*` 改读 `TacticalPalette.A`，任何时候都是 A 值。
+- 删去不再使用的界面内部接口与语言键：`TacticalBoardChrome` 的 `planHeader` / `planFooter` / `HeaderPlan` / `FooterPlan` / `HintSlot` / `drawFeedback` / `applyTabs` / `placeTabs` / 四参数 `shell(...)`、`LinkState.identityColor()`、`KeyHint.switchTab()`；语言键 `screen.wok_infantry.hint.switch_tab`、`screen.wok_infantry.formation.hint.wheel` / `browse` / `scroll`（中英各 4 个），uiTest 语言键 `kit.hint.terminal`。
+- uiTest：`build.gradle` 的 `runUiTestClient` 固定 `wok.ui.clock=21:30`、预留 `wok.ui.tabletAnimation=OFF`；结果文件、`wok_ui_layout.json`、清单与 `index.html` 记涂装与外壳备注；窗口被手动最大化时先还原再改尺寸。
+
+### 修复
+- 换行避头尾：行尾已经是收尾标点时连同前一个字一起移到下一行（“散），”不再以“），”起行），拉丁词整词下移，切点前的开括号也一起下移（`TextFit.carryFrom`）。
+- 编制列表的已选行在悬停时不亮（此前悬停判断排除了已选行）。
+- 交付前修正（都在本版交付前，没有另改版本号）：
+  - 实机截图对照（`8abd040`）：状态栏标题和身份被省略时没有悬停全文（zh 严格轮 5 项 `text-truncated-no-tip`）；陈列页在 320×240 把“未加入阵营”挤成“未加入…”；英文 320×240 页面键退成翻页条，实时流程找不到“兵种”键；投票等待区候选名“千禧年研讨会机动部队”在 320×240 被截断且没有全文（表决关闭时先让出编制类别）；编制页动作栏理由、未加入提示、状态行被截断时没有全文；陈列页卡片在英文 480×360、427×240 被截；中立与凯撒的禁用底框键看不出禁用（斜纹叠两遍）。
+  - 整体审查（`c52530d`）：凯撒禁用底框键的键名与正常只差 1.21:1、动作字与正常同色，违反 UI 规则 6（改为 `keyOff` 变暗、去掉亮上沿）；学院军底框键悬停时动作字只有 2.69:1（改为 `keyHover`）；学院军 / 凯撒近白的焦点框在浅色拼板上只有 1.39 / 1.45:1（改为双色焦点框）；中立选中格的数量字在石墨底上约 1.5:1；战斗终端新快照重建后键盘焦点从 Esc / R 丢回第一个控件（Esc / R 登记进焦点角色）。
+  - 合入接缝：机身、玻璃、底框键与屏内配色取同一帧判定的涂装，帧中途换战局快照也不会不一致；投票等待区“你的票 / 截止 / 领先”行此前在构建页面时取色、冻结成 A 配色，改为绘制时取色。
+
+### 兼容性
+- 网络协议号全部不变（战局 `20`、编制 `5`、兵力 `2`、体力 `2`、配装 `11`），客户端与服务端可在 0.5.0-beta.1、0.5.0-beta.2、0.5.0-beta.3 之间混用；本版只改客户端界面，服务端逻辑与数据不变。
+- 附属 MOD 都不用改、不用发版：部位血量、独立护甲、创伤治疗、载具部位血量、指挥官支援、占点、倒地救援都不引用本版删去或改动的界面类（全仓 grep 核实），核心强制依赖仍只有 `forge`、`minecraft`，各自独立安装检查 PASS。
+- 过渡外观（档 1 的范围）：战术地图、作战配装、弹药补给、导入导出、武器调校、管理员配装暂时仍是旧的全屏 A 外框、A 配色，在终端里切到“地图”或“配装”页签时会从阵营色平板跳回这种外观，留待后续轮次迁移；HUD 不套外壳、不换阵营色，所有阵营下都是 A 配色。
+- 终端开着时只隐藏核心自己的 HUD；部位血量、占点、倒地救援等附属 MOD 的 HUD 这一轮不隐藏，可能在机身四周压暗地露出一点；原版快捷栏在 640×336、960×720 下也会在底框下方压暗地露出一条（方案 4.9 接受）。
+- 截图与录像：机身四周透出实时世界，同一状态的截图不再逐字节相同。
+- `TacticalBoardTheme` 的可换肤字段只在 `TacticalScreen` 绘制作用域里是阵营值；别的 MOD 或旧界面在作用域外读取，得到的仍是 A 值（行为同前）。在作用域里取色并缓存成 int 的代码会拿到阵营色，要固定 A 值请用 `TacticalPalette.A.get(token)`。
+
+### 配置/存档影响
+- 不新增客户端或服务端配置项，不改任何存档格式。
+- 只多了两个仅 uiTest 使用的系统属性：`wok.ui.clock`（固定状态栏时钟，`runUiTestClient` 设为 `21:30`）与 `wok.ui.tabletAnimation`（为 0.5.0-beta.4 动画预留，`OFF`，目前没有代码读它）；正常游戏不设置它们，时钟显示本机时间。
+- 语言文件中英各新增 1 个键、删去 4 个键，`screen.wok_infantry.formation.hint.retry` 的中文由“重新请求”改为“重试”；新增两张界面贴图（见“新增”）。
+
+### 测试结果
+- 代码 `c52530d`（本版最后一个源码提交；之后只有 AGENTS.md 提交 `7d1373f` 与本条文档提交）。各阶段（B1–B7 分支、两次合入、`8abd040`）的中间结果见方案与阶段记录，这里只列最终结果。
+- JUnit：PASS。限流脚本跑 `cleanTest test` 加六个附加测试源集编译（gameplay、rally、stamina、catalog、uiTest、network）：exit=0，1267 项，0 失败、0 跳过；`:test` 确实重新执行（不是从缓存恢复），结果 XML 14:00:45 重写；`compileJava` 与六个附加源集的编译在 `c52530d` 的干净工作区上为 UP-TO-DATE。1267 = `8abd040` 的 1261 + `c52530d` 新增 6 项（三套皮肤禁用字 ≥3:1 且与正常键名 ≥2:1、悬停双标签对比度、派生色固定值与非内置皮肤同解、焦点框在各底色至少一条线 ≥3:1、选中格数量字对比度）；比 0.5.0-beta.2 的 1007 项多 260 项（新增 `TacticalPaletteTest`、`TacticalPaletteContrastTest`、`TacticalLiveryTest`、`TacticalLiveryResolverTest`、`DeviceSkinTest`、`DeviceArtTest`、`DeviceArtGoldenTest`〔3 档 × 3 涂装逐像素〕、`TacticalScreenDeviceTest`、`TacticalScreenHooksTest`、`TacticalShellCompositionTest`、`TacticalBezelPlanTest`、`TacticalTabStripBezelTest`、`BezelKeyTest`、`SquadTerminalDeviceTest`、`FormationPaletteTest`、`HudFrameTerminalTest`、`DeviceProbeNotesTest`、`TacticalTooltipTest` 等，并扩充了外壳布局、按键样式、列表、避头尾与 `UiTierMatrixTest`）。日志 `gradle-locked-20261010-140029-31172.log`。
+- `runGameTestServer`：PASS，`defaultBatch:1` 22 项，“All 22 required tests passed”，exit=0，BUILD SUCCESSFUL in 26s。
+- `runUiTestClient` zh_cn 严格轮（默认档位，含实时流程，`layoutStrict=true`）：`status=PASS`，8678 tick，87 个用例、424 张截图（清单完整），`strictLayoutViolations=0`，`layoutViolations=121`，`uiClock=21:30`，`tabletAnimation=OFF`，`finalActiveMarkers=1`，`temporaryOperatorCleanup=revoked`。
+  - 用例行 415 = 410 PASS + 5 REPORT + 0 FAIL；REPORT 是 `admin.legacy_list@320x240`、`admin.legacy_list_large@960x720` 与 `admin.noclass@320x240/960x720/640x336`。
+  - 平板外壳检查 290 行：学院军 OK 165、WAIT 5，凯撒 OK 55、WAIT 5，中立 OK 50、WAIT 10。
+  - 121 条违规全部只出报告，都在未迁移界面或实时流程截图上，已迁移界面 0 条：管理员配装 64（GUI 1 下 1× 中文 44、禁用键没写原因 20）、玩家配装 30（22、8）、战术地图 26（1× 中文 22、控件截断没有全文 3、占位文字 1）、实时流程小队终端 1（`wok_ui_01_deployment_320x240` 的“先加入一个未满员小队”截断没有全文，与 0.5.0-beta.1、0.5.0-beta.2 相同的已知项）。按规则：`cjk-too-small` 88、`control-disabled-no-reason` 28、`control-truncated-no-tip` 3、`text-truncated-no-tip` 1、`placeholder-text` 1。
+  - 与 `8abd040` 那一轮（`device-r1-zh`）比：415 行用例结果与 290 行外壳记录逐行相同，121 条违规逐条相同（文件、规则、对象），2024 行结果文件只有 `totalTicks` 和 `deploymentPreflight` 里两个对象哈希码不同。04 / 06 两张地图截图的 `mapIcons` 不变（8 种各 1 个，牌 30 物理像素）；`formationHeaderIdentity` 在中文 427×240 下已加入的状态全部显示（要求项）；960×720 档（480×360）的 detail、longcaps、admintie、admin 四个学院军状态因 D2 内容区变窄、身份收起（0.5.0-beta.2 时除 320 档外都显示，不是要求项）。
+  - 归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261010-0.5.0-beta.3\final-zh\`（424 张截图与 5 个结果文件）。
+- `runUiTestClient` en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`，8672 tick，87 个用例、424 张截图，`strictLayoutViolations=0`，`layoutViolations=223`（0.5.0-beta.2 为 229）。
+  - 用例行 415 = 336 PASS + 79 REPORT + 0 FAIL；外壳检查 290 行，分布同 zh_cn。
+  - 按界面：小队终端 71（已迁移的 squad 用例 66、实时流程 01 / 07 共 5；`text-truncated-no-tip` 66、`control-truncated-no-tip` 5，即 `squad.action.transfer_leader`）、管理员配装 64、编制页 52（已迁移 49、旧图 10 / 11 共 3，都是 `text-truncated-no-tip`）、玩家配装 22、战术地图 6、HUD 4、地图标点陈列 2、弹药补给 2；组件陈列页 0。按规则：`text-truncated-no-tip` 128、`cjk-too-small` 59、`control-disabled-no-reason` 28、`control-truncated-no-tip` 8。
+  - 已迁移界面上的 121 条全是英文太长被省略号截断，留给 i18n：最多的是“Administrator lock (no timer)”×23、“Resupply needs you deployed inside the main base”×14、“3 (the faction picks one)”×8、“Alpha Squad · 6 players”“Yuuka_Hayase”“千禧年研讨会机动部队 5 votes”各 ×6、移交队长键 ×4、HUD“→ Formation to change”“to pick a squad and deploy”、标点陈列“Fixed screen size at every zoom”×2。
+  - 与 `device-r1-en` 比：415 行用例、290 行外壳记录、223 条违规全部相同，结果文件只有 `totalTicks` 不同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261010-0.5.0-beta.3\final-en\`。
+  - 同一日期目录下的 `device-zh`、`device-en`、`device-en-recheck`、`device-en-liveflow` 是 `8abd040` 之前的几轮（当时 zh 严格轮 320×240 有 6 项严格违规、英文 `kit.default-caesar@960x720` 被手动最大化的窗口跑坏、英文实时流程找不到“兵种”键），`device-r1-zh` / `device-r1-en` 是 `8abd040` 那一轮；都只作对照。
+- 截图目视与像素比对（对照 `device-2-livery` 预览，3 档 × 3 涂装）：960×720 凯撒底框与预览 0 个像素不同（容差 30），中立左右与顶边框、学院军状态栏与小队列表面板（含玻璃反光）在容差 3 内相同，只有时钟数字、个别丝印像素、禁用斜纹相位和字体字形的差别；640×336 小队页、480×360 兵种 / 部署页、480×360 编制详情的宽窄翻转与方案 4.8 一致；凯撒确认态危险键与红色选中行靠斜纹和色相分得开；关掉凯撒终端后 HUD 颜色不变，WOK HUD 没有出现在机身四周。
+- 整体审查（B8，调色板泄漏与 HUD、输入与焦点、对照预览、性能与渲染四个视角）：10 条发现确认 5 条，修正提交 `c52530d` 共改 8 项（确认项加阶段记录列出的无人用代码）；没做的两项：①“键盘焦点在 R 上、重建后仍在新 R 上”的单测没加——`SquadScreen.initTactical` 要真实字体，JUnit 里跑不了，修法与编制页已有的三行循环相同，留待下一轮 uiTest 或真实客户端核对（Tab 到“R 刷新”、来一个快照、焦点框还在 R 上）；② 性能审查自己列的无人用代码清单没有交到修正方，只删了阶段记录里点名且 grep 核实过的几项。
+- 构建：限流脚本对 8 个模块逐个 `clean build`，全部 BUILD SUCCESSFUL：`wok_infantry`（JUnit 1267 项，0 失败；`:test` 重新执行，含 `reobfJar`）、`wok_body_health`（126 项）、`wok_infantry_armor`、根目录 `wok_trauma`、`wok_commander_support`（163 项）、`wok_capture_points`（34 项）、`wok_downed`（3 项）、`wok_vehicle_health`（18 项）。只有核心改了版本，其余 7 个模块源码与版本都没动。
+- 产物 `wok_infantry/build/libs/wok_infantry-0.5.0-beta.3.jar`，2,437,934 字节，SHA-256 `0EAC020C721E82800F3A116D8FF5D2B2E3BB7BA49DB0919F2381B501B5B5D80D`（`c52530d` 的 `clean build`）；JAR 里没有 uiTest 的类，内部版本 `0.5.0-beta.3`。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 8 个模块新构建的 JAR 全部 PASS，核心强制依赖只有 `forge`、`minecraft`。
+- 版本核对（Windows PowerShell 5.1）：`tools/verify_versions.ps1`（8 个模块）PASS；`tools/verify_versions.ps1 -Modules wok_infantry -Release` PASS（本条目不再“进行中”、六栏不空，JAR 晚于核心源码最后一次提交且源码没有未提交改动）。逐模块加 `-Release` 时部位血量、指挥官支援、占点、倒地救援也 PASS；创伤治疗 0.1.0-beta.1、独立护甲 1.2.0-beta.1、载具部位血量 0.1.0-beta.1 不过，原因是它们各自的旧条目早于六栏格式（缺“新增”栏），这三个模块本轮没有改动，历史条目不动。
+- 已部署：2026-10-10 把 SHA-256 为 `0EAC020C…B5D80D` 的 `wok_infantry-0.5.0-beta.3.jar` 部署到测试端 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，部署后哈希与构建产物一致；0.5.0-beta.2（SHA-256 `4727A2CB…5551A9`）改名为 `wok_infantry-0.5.0-beta.2.jar.backup-20261010-142236-before-0.5.0-beta.3.bak`。测试端 8 个 WOK步战 JAR 的独立安装检查全部 PASS；测试端其余文件没有改动。
+- 真实客户端游戏内验收：待用户（清单见 `wok_infantry/docs/UI_ACCEPTANCE.md` 第 7 节第 13 条：三种涂装、960×720 GUI 1 / 320×240 / 640×336、文字溢出与控件重叠、按键七态加确认态危险键、字体清晰度、底框键点击与 Ctrl+Tab / ←→ / Esc / R、踢人确认、反馈胶囊与信号格、HUD 不变色、切到地图或配装页签的过渡外观、帧率）。
+
+## WOK步战核心 0.5.0-beta.2 — 2026-10-05
+
+> 用户反馈（2026-10-05）：“占领点的 UI 太大了，挡视野”。按用户已选定的 HUD 定稿（预览 `surfaces/10-hud.js` 新版与说明第 115 行起“战况条：一行放下双方兵力、据点进度；宽屏第二行写据点状态和剩余时间”，零件 `kit/hud-parts.js` 的 `HUDP.battle`），把 WOK步战附属-占点的据点进度并进核心顶部兵力战况条，占点自己的 330×52 大面板随占点 0.1.0-alpha.4（见下一条）退场。分支 `claude/占点HUD`，基于 `claude/新版界面` 的 `1d9f8bc`（0.5.0-beta.1）。不改任何网络协议号，可与 0.5.0-beta.1 互连。
+
+### 新增
+- 战况条据点小牌（`BattleStripOverlay`）：玩家站在占点据点里时，第一行中间画一块实心 HUD 小底板“B 62%”（距战况条顶 3px、高 11px），左贴边颜色为正在占领的一方（己方友军蓝、敌方红）；争夺中贴边与数字为橙色，已控制时为拥有方颜色，中立为灰，停用时为灰色半透明底板并写“停用”代替百分比；本方暂时不能占（顺序占点未解锁）时名字前加锁图标；百分比为 `|control|`，颜色为领先一方。双方兵力条在小牌两侧 4px 处收住；名字放不下时先省略名字，百分比从不截断。
+- 非紧凑屏（布局宽 ≥400 且高 ≥280）在据点里时战况条变为 30 高的宽形，第二行居中写“据点名 · 占点给出的状态 · 剩余 m:ss”（剩余时间只在有人正在占领时写）；整行放不下时先省掉据点名（小牌上已有短名），写“状态 · 剩余 m:ss”，仍放不下才用省略号截断；紧凑屏（320×240、480×270、427×240）仍是 17 高一行，只留小牌。没有兵力数据时战况条照样显示据点；编制投票条显示期间，据点条放在投票条下方。不在据点里时战况条与 0.5.0-beta.1 完全相同。
+- `InfantryHudApi.rendersCapturePoints()`：客户端配置 `hud.showBattleStrip` 开着、且能读到占点的据点数据时为 true；占点 0.1.0-alpha.4 反射调用它决定自己画不画。
+- `CaptureHudBridge` 反射读取占点 `com.wok.capturepoints.api.CaptureHudApi.currentPoint()`（只按类名，不编译期依赖），解析成新记录 `CaptureObjective`（外观、对本方是否上锁、时间格式）；同一份 Map 只解析一次。`BattleStripModel` 新增 `objective`、`line`、`tile`、`tileMaxWidth`、带小牌的 `geometry` 重载；`WokHudLayout` 新增 `STRIP_HEIGHT_WIDE`（30）与 `Input.withStrip(shown, wide)`。
+- 语言：中英成对新增 4 个键 `hud.wok_infantry.capture.line`（“%s · %s”）、`hud.wok_infantry.capture.line_time`（“%s · %s · 剩余 %s” / “%s · %s · %s left”）、`hud.wok_infantry.capture.status_time`（“%s · 剩余 %s” / “%s · %s left”）、`hud.wok_infantry.capture.disabled`（“停用” / “Off”）。
+- UI 验收新增 5 个用例：`hud.capture`、`hud.capture-contested`、`hud.capture-secured`、`hud.capture-disabled`、`hud.capture-locked`（全部 `migrated(true)`，5 个档位）；uiTest 语言成对新增 5 个据点夹具键。
+
+### 修改
+- 占点由核心画进战况条时，核心不再为它挪动名单、战况条、通知和 Boss 条（新占点此时也不再报告面板）。占点自己画 HUD 时——旧占点 0.1.0-alpha.3 的大面板（没有 `CaptureHudApi`，仍按其面板坐标镜像避让，与 0.5.0-beta.1 相同），或新占点在核心关闭战况条后画的薄条（经 `CaptureHudApi.panelRect` 报告）——核心照旧避让。
+- Boss 条下移：此前没有核心顶部底板时 Boss 条一律不动；现在占点薄条贴顶、压到第一条 Boss 条所在行时，Boss 条也移到它下方（alpha.3 面板在 y 26–28，仍不移动）。占点 0.1.0-alpha.4 只在 Boss 条真的压到薄条时才把薄条移到 Boss 条下方，两边因此会稳定下来：薄条先在、Boss 条后出现时，Boss 条在薄条下方；Boss 条先在、玩家后走进据点时，薄条在 Boss 条下方（y 21 起），核心此时不再移动 Boss 条（审查修正，见占点条目“修改”）。
+- `top_center_next` 槽位：顶部没有任何核心底板时，槽位从战况条列实际开始的位置起算——屏幕边缘，或状态效果图标让列宽不够、列移到图标下方时的那一行；此前总从屏幕边缘起算，关闭战况条后占点薄条可能压到右上角的状态效果图标（审查修正）。顶部有底板时不变。
+- 客户端配置 `hud.showBattleStrip` 的注释补写据点小牌，以及关闭后由占点附属自己画薄条；键名、默认值不变。
+- `WokHudLayout.Input` 规范构造器末尾追加 `stripWide`，原 20 参构造器保留（窄战况条）；`HudFrame` 记录追加 `objective` 组件；`BattleStripOverlay.drawStrip` 多一个据点参数（包内可见）。
+
+### 修复
+- 修复站在据点里时占点 330×52 大面板挡住视野的问题（用户反馈“占领点的 UI 太大了，挡视野”）：据点信息改为战况条里的一块小牌，宽屏多一行文字，不再另占屏幕中上部的一大块。
+
+### 兼容性
+- 网络协议号全部不变：战局 `20`、编制 `5`、兵力 `2`、体力 `2`、配装 `11`；本版与 0.5.0-beta.1 可以互连，据点显示只由客户端决定。
+- 与占点的组合（核心 / 占点）：0.5.0-beta.2 + 0.1.0-alpha.4＝据点并入战况条，占点什么都不画；0.5.0-beta.2 + 0.1.0-alpha.3＝alpha.3 的大面板 + 核心避让（与现在相同，战况条仍是 17 高、没有小牌）；0.5.0-beta.1 或更早 + 0.1.0-alpha.4＝占点薄条（放进核心 `top_center_next` 槽位，核心照 `panelRect` 让开）；只装占点＝占点薄条；核心关闭战况条（`hud.showBattleStrip=false`）＝占点薄条。
+- 失败回退：读取 `currentPoint()` 失败或返回的 Map 不符合约定（缺必需键、类型不对、`version` 不是 1）时只记一次日志，之后不再显示据点，`rendersCapturePoints()` 变为 false，占点改画自己的薄条并报告位置；`panelRect()` 失败时回到 alpha.3 面板的镜像避让。
+- 两个 MOD 仍可各自独立安装：核心只按类名反射占点，占点只按类名反射核心；核心强制依赖仍只有 `forge`、`minecraft`。
+- 公共 API 只新增或保持兼容（见“修改”）；附属 MOD 都不用改，占点要显示进战况条需升到 0.1.0-alpha.4。
+
+### 配置/存档影响
+- 不新增配置项；`hud.showBattleStrip` 的键名、默认值 `true` 不变，只改注释（配置文件里的英文注释在下次保存时更新）。
+- 不改任何存档格式。语言文件各新增 4 个键。
+
+### 测试结果
+- 以下为独立审查修正后的最终结果：代码 `565a16f`（本版最后一个源码提交，审查修正只改了顶部没有底板时 `top_center_next` 槽位的起点；之后只有文档提交）。JUnit、GameTest、zh_cn 严格轮（归档 `zh_cn-final2`）、产物、独立安装与版本核对都按 `565a16f` 重跑；en_us 报告轮没有重跑，下面的 en_us 数字来自审查前的 `4934b45`（改动的槽位只在关闭战况条时给占点用，核心自己的验收截图没有用到）。审查前的最终一轮（`4934b45`）归档在 `…\20261005-0.5.0-beta.2\zh_cn-final\`，用例结果与 `zh_cn-final2` 逐行相同。首轮（`241c403`/`e59803c`，第二行放不下时直接截断）跑过一轮 zh_cn 严格轮，归档 `…\20261005-0.5.0-beta.2\zh_cn\`，用例结果与最终一轮逐行相同，留作对照；那一轮的 en_us 报告轮里 640×336、960×720 两档的英文第二行被省略号截断 4 条，由 `4934b45` 修正（先省掉据点名），那一轮没有归档。
+- `wok_infantry`：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`，六个测试源集全部编译通过）；JUnit 1007 项全部通过，0 失败、0 跳过（审查修正 +1：`WokHudLayoutTest` 顶部没有底板时 `top_center_next` 起点等于战况条列起点，8 个档位 × 0–8 个状态效果图标下 23 高的薄条都不压图标；审查前 1006 项，比 0.5.0-beta.1 的 989 项多 17 项：`CaptureObjectiveTest` 7 项——读占点 Map 的全部字段、可选值回退与名称回退、缺必需键 / 类型不对 / 阵营名不对 / `version`≠1 / `status` 不是 Component 时拒绝、数值夹紧与名称截长、外观优先级（含自家人站在自家占满的据点算已控制）、对本方上锁、百分比与时间格式；`BattleStripModelTest` +4——小牌几何（距顶 3、高 11、名字后数字右对齐、锁图标、长名只省名字、最窄也放得下数字与锁）与兵力条在小牌两侧 4px 收住、按本方视角的贴边与数字颜色（占领中 / 被敌方占领 / 争夺 / 敌方已控制 / 停用）、第二行中英文案、放不下时先省掉据点名；`WokHudLayoutTest` +3——投票条期间据点条在其下方（8 个档位）、宽战况条 30 高把通知与 `top_center_next` 往下推且 8 个档位 × 有无状态效果图标都互不重叠、贴顶的占点薄条让 Boss 条下移；`CaptureHudBridgeTest` +2——没有占点时什么都不读也不避让、验收注入等同于新占点在据点里；`InfantryHudApiTest` +1——`rendersCapturePoints` 只在战况条开着且读得到据点时为 true）。翻译契约测试登记了 3 个带参数的新键。
+- 产物 `wok_infantry/build/libs/wok_infantry-0.5.0-beta.2.jar`，2,342,088 字节，SHA-256 `4727A2CBB64B24C34079FD185DA9E79A6DB7A0C74073C2764178A4E6583551A9`（`565a16f` 的 `clean build`；GameTest、zh_cn 严格轮与占点两轮 uiTest 跑完后重新核对，不变）。审查前的 2,342,092 字节、`847D7002…6FEF1E66` 作废。
+- `runGameTestServer`（`565a16f`）：22 项必需 GameTest 全部通过。
+- `runUiTestClient` zh_cn 严格轮（`565a16f`）：`status=PASS`，7177 tick，71 个用例、344 张截图，`strictLayoutViolations=0`，`layoutViolations=121`；335 行用例结果与审查前的 `zh_cn-final` 逐行相同，`finalActiveMarkers=1`，`temporaryOperatorCleanup=revoked`。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.2\zh_cn-final2\`（344 张截图与 5 个结果文件）。
+- 审查前 zh_cn 严格轮（`4934b45`）：`status=PASS`，7174 tick，71 个用例、344 张截图，`strictLayoutViolations=0`，`layoutViolations=121`（与 0.5.0-beta.1 相同，全是只出报告的旧界面）。新增的 `hud.capture*` 5 个用例 × 5 档 = 25 张全部 PASS、0 违规（含 480×270、427×240 两个报告档）：探针记录的外观、贴边色、数字、锁、实心都符合各状态（例：`capture@960x720` 为 CAPTURING、贴边 `FF6FB1E6`、62%、第二行有；`capture-locked@640x336` 为 CAPTURING、贴边 `FFE8695D`、35%、锁；`capture-disabled` 为 DISABLED、贴边 `FF7D898A`、“停用”、半透明）；960×720 与 640×336 战况条 30 高并画出整行第二行，320×240、480×270、427×240 为 17 高只留小牌。其余 310 行用例结果与 0.5.0-beta.1 的 `zh_cn-merged` 逐行相同。`finalActiveMarkers=1`，`temporaryOperatorCleanup=revoked`。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.2\zh_cn-final\`（344 张截图与 5 个结果文件）。
+- 截图目视（Read）：320×240 的“B 62%”小牌在兵力条正中、左边蓝色贴边，两侧兵力数字与条不被压；锁定状态小牌前有锁图标、红贴边、红色 35%；960×720（2×）停用为灰色半透明小牌写“停用”，第二行“B点 · 指挥所 · 据点已停用”；640×336 第二行“B点 · 指挥所 · 蓝方正在占领 · 速度 ×2 · 剩余 0:09”居中，不碰顶边与底边；浅色天空背景下文字可读。
+- `runUiTestClient` en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`（语义检查全部通过），7173 tick，71 个用例、344 张截图，`strictLayoutViolations=0`，`layoutViolations=229`，与 0.5.0-beta.1 的 `en_us-merged` 相同；`hud.capture*` 25 张 0 违规（640×336 与 960×720 的英文整行放不下时改写“Red Force capturing · speed ×2 · 0:15 left”，不截断）；其余 310 行用例结果与 `en_us-merged` 逐行相同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.2\en_us\`。
+- 占点联动（真实反射链路，见下一条占点 0.1.0-alpha.4 的测试结果）：占点 uiTest（带一条原版 Boss 条）以本版最终 JAR 运行 PASS——本版读 `CaptureHudApi.currentPoint()` 画出小牌，占点不再画；关闭 `hud.showBattleStrip` 后本版不画小牌、占点薄条贴顶进 `top_center_next`，本版把 Boss 条挪到薄条下方并在 320×240 右移让开名单。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对本 JAR PASS，强制依赖只有 `forge`、`minecraft`；JAR 里没有占点或 uiTest 的类。
+- 版本核对：`tools/verify_versions.ps1 -Modules wok_infantry,wok_capture_points -Release`（Windows PowerShell 5.1）PASS（源码版本、根 README 与 VERSIONING 版本表、模块 README 产物名、CHANGELOG 标题、JAR 名、modId 与内部版本一致；两条条目六栏不空，JAR 晚于各自源码最后一次提交且源码没有未提交改动）。
+- 兼容矩阵覆盖：新核心 + 新占点、核心关闭战况条、旧核心 0.5.0-beta.1 + 新占点三种组合在真实开发客户端里跑过（上一条与占点条目，审查修正后都带 Boss 条重跑）；新核心 + 旧占点 alpha.3 走的是未改动的镜像避让分支（`CaptureHudBridgeTest` 的 alpha.3 几何与 `WokHudLayoutTest` 的据点避让用例照旧通过；`bossShift` 新分支对 alpha.3 面板（y 26/28 起）不生效），只装占点的位置由占点单测覆盖，这两种没有在客户端里跑。
+- 未做：真实客户端（PCL）人工验收——多人进出据点、争夺、顺序占点的锁图标、剩余时间随同步跳动、长据点名、GUI 1 下 2× 清晰度、投票条期间站进据点。
+- 已部署：2026-10-05 把 SHA-256 为 `4727A2CB…5551A9` 的 `wok_infantry-0.5.0-beta.2.jar` 与占点 0.1.0-alpha.4 一起部署到测试端 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，部署后哈希与构建产物一致；0.5.0-beta.1 改名为 `wok_infantry-0.5.0-beta.1.jar.backup-20261005-234524-before-0.5.0-beta.2.bak`。测试端 8 个 WOK步战 JAR 的独立安装检查全部 PASS。
+
+## WOK步战附属-占点 0.1.0-alpha.4 — 2026-10-05
+
+> 用户反馈（2026-10-05）：“占领点的 UI 太大了，挡视野”。本版去掉站在据点里时屏幕顶部 330×52（窄屏 x=140 到右边缘、35 高）的大面板：装了核心 0.5.0-beta.2 并开着战况条时，据点改由核心画进战况条（见上一条）；其余情况本附属只画一条宽不超过 200 的薄条。
+
+### 新增
+- 只读客户端接口 `com.wok.capturepoints.api.CaptureHudApi`：`currentPoint()` 返回当前所在据点的不可修改 `Map<String, Object>`（`version`=1、`id`、`name`、`shortName`、`control`、`percent`、`leading`、`owner`、`capturing`、`bluePlayers`、`redPlayers`、`enabled`、`blueAllowed`、`redAllowed`、`speed`、`captureSeconds`、`remainingSeconds`、`state`、`status`；除 `status` 是翻译好的 `Component` 外都是 JDK 类型），不在据点里时为 `null`，同一次同步内返回同一个实例；`panelRect(int, int)` 报告本附属薄条的 GUI 矩形（核心接管时为 `null`）。
+- 薄条（`CaptureHudOverlay` 重写）：顶部居中、宽不超过 200，一行“据点名 │ 蓝方人数 ▬|▬ 红方人数”（14 高；进度条从中线向领先一方伸出，蓝左红右，与核心战况条一致），宽屏（布局宽 ≥400 且高 ≥280）第二行写状态与剩余时间（共 23 高）。底板为半透明 HUD 底板、1px 描边，顶边 1px 为状态色（占领方 / 争夺橙 / 拥有方 / 灰）；文字无阴影；颜色常量在本模块内定义，不依赖核心。GUI 缩放 1 的大窗口按 2× 画。
+- 剩余时间：正在占领时按当前速度算出到占满的秒数（`m:ss`）。
+- 纯逻辑 `CaptureHudModel`（状态、百分比、剩余时间、状态文字与配色）、`CaptureStripLayout`（薄条几何）；`InfantryHudLink`（只用反射找核心 `InfantryHudApi`）。
+- 语言：中英成对新增 `hud.wok_capture_points.capturing_plain`（“%s正在占领”）、`hud.wok_capture_points.remaining`（“%s · 剩余 %s” / “%s · %s left”）。
+
+### 修改
+- 去掉 0.1.0-alpha.3 的 330×52 大面板与窄屏 35 高面板。核心 `InfantryHudApi.rendersCapturePoints()` 为 true 时不画任何东西；方法不存在（核心早于 0.5.0-beta.2）或为 false（核心关闭战况条）时画薄条：有核心时放在 `InfantryHudApi.slot("top_center_next")` 给的位置（核心早于 0.4.0-beta.1、取不到槽位时按 alpha.3 面板的位置：宽屏居中于 GUI y 28，GUI 宽 ≤360 的窄屏从 x 140 到右边缘 8、y 26，避开旧核心左上的名单），只装本附属时贴顶；原版 Boss 条真的压到薄条时移到最后一条 Boss 条下方 4px（按 Forge `BossEventProgress` 实测名字行与条的位置，含核心对 Boss 条的平移）。
+- 审查修正（交付前）：Boss 条已经在薄条下方时薄条不再跟着下移。此前薄条只要看到比自己顶边低的 Boss 条就移到它下面，而核心会把 Boss 条再挪到薄条下方，两边逐帧互相推：核心 0.5.0-beta.1 开着战况条（或新核心关掉战况条、但有通知或投票条）时，一条 Boss 条就能让薄条几帧内跑出屏幕。现在三种核心下都在几帧内稳定（`CaptureStripBossTest` 逐帧模拟）。核心 0.5.0-beta.2 起会把 Boss 条挪到贴顶薄条（起点在第一条 Boss 条所在行，GUI y < 21）的下方，这时薄条保持原位、交给核心挪，即使玩家走进据点时 Boss 条已经在了也一样；此前薄条会先让到 Boss 条下面，核心便把它当成 Boss 条右侧的障碍，窄屏时 Boss 条不再右移、压到小队名单上（uiTest 320×240 截图可见）。核心早于 0.4.0-beta.1 时窄屏的回退位置也按 alpha.3 改到名单右侧（此前居中，会压到旧核心的名单）。薄条只在玩家站在据点里时才反射查询核心，状态行文字每次同步只翻译一次，不再每帧新建。
+- 速度倍率为 1 时状态只写“蓝方正在占领”，不再写“速度 ×1”；倍率大于 1 时照旧写“速度 ×N”。
+- 自家人站在自家已占满的据点里时状态改为“蓝方控制”（此前按“正在占领”显示）。
+- 原有语言键全部保留（`title`、`ratio`、`compact_heading` 等；战术地图仍用 `ratio`）。
+
+### 修复
+- 修复站在据点里时据点面板太大、挡住视野的问题（用户反馈）。
+
+### 兼容性
+- 无新增硬依赖；未安装核心时照常独立运行（薄条贴顶）。所有跨 MOD 调用都是按类名反射，调用失败只记一次日志并回退：`rendersCapturePoints` 失败按“核心不接管”画薄条，`slot` 失败按自己的位置画。
+- 与核心的组合见上一条“兼容性”：新核心 0.5.0-beta.2＝据点并入战况条；核心 0.5.0-beta.1 或更早＝本附属薄条（放进核心槽位，核心照 `panelRect` 避让并让 Boss 条下移）；只装本附属＝薄条；核心关闭战况条＝薄条。已知限制：核心 0.5.0-beta.1 关掉战况条（非默认）时顶部没有核心底板，旧核心不挪 Boss 条，薄条移到 Boss 条下方，窄屏时 Boss 条会压到小队名单的标题行——旧核心的限制，配 alpha.3 时同样如此，核心升到 0.5.0-beta.2 后没有。
+- 不改网络协议：`CaptureSnapshotPacket` 格式不变，可与 0.1.0-alpha.3 的服务端互连（据点数据由服务端同步，HUD 只由客户端决定）。
+
+### 配置/存档影响
+- 无。不新增配置项，存档格式不变；语言文件各新增 2 个键。
+
+### 测试结果
+- 以下为独立审查修正后的最终结果：源码最后一次提交 `f8826f8`（审查修正 `d2a7901`、`f8826f8`；此前生产源码 `d5b6f9a`，uiTest `67011d6`，版本号 `e59803c`），以核心 0.5.0-beta.2 的最终 JAR（`565a16f`）编译。
+- `wok_capture_points`：用限流脚本运行 `clean build compileUiTestJava`，BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 34 项全部通过，0 失败、0 跳过（审查修正新增 6 项：`CaptureStripBossTest` 4 项——逐帧模拟核心 0.5.0-beta.1（战况条开 / 关）、0.5.0-beta.2（关战况条，有无通知、列被状态效果图标推下）与无核心下的 Boss 条下移，1–3 条 Boss 条、Boss 条先在或后来，薄条与 Boss 条都必须 3 帧内稳定、互不重叠、留在屏幕上半部；`CaptureStripLayoutTest` +2——旧核心无槽位时窄屏在名单右侧、新核心清第一行 Boss 条时薄条不让。修正前代码跑 `CaptureStripBossTest` 的旧核心用例失败：薄条几帧内出屏。审查前为 28 项，比 alpha.3 的 9 项多 19 项：`CaptureHudModelTest` 6 项——状态优先级与“自家人站在自家占满的据点里算已控制”、百分比不提前到 100、剩余时间按当前速度、短名、中英状态文字、配色；`CaptureStripLayoutTest` 8 项——2× 规则、320 档进核心槽位、960 档 GUI 1 按 2× 带状态行且宽 200 居中于槽位、无槽位时贴顶或 GUI y 28、压到 Boss 条时下移、5 个档位宽 ≤200 不出屏且只在非紧凑屏有状态行、名字让位给最短进度条、进度条从中线向领先一方伸出；`CaptureHudApiTest` 3 项——给核心的 Map 的全部键、类型与含义、同一次同步返回同一实例、不在据点或据点已删时为 null；`CaptureLanguageTest` 2 项——中英键与参数一致、HUD 键齐全）。
+- 产物 `wok_capture_points/build/libs/wok_capture_points-0.1.0-alpha.4.jar`，82,489 字节，SHA-256 `B718BB4B0360F7ED19B4DEAD9D991F28A764918E64F3811EC33BCADFF5B9EF07`（`f8826f8` 之后的 `clean build`，晚于两轮 uiTest）。JAR 里没有核心或 uiTest 的类。审查前的 81,635 字节、`E1C6A277…BECE345` 作废。
+- `runUiTestClient`（在核心 `run/ui-test`，zh_cn；审查修正起每张 HUD 截图都带一条只在客户端的原版 Boss 条，并要求薄条四个 tick 内位置不变、在屏幕上半部）对核心 0.5.0-beta.2 最终 JAR：`PASS`，6 张截图。320×240 与 960×720 两档 `rendersCapturePoints=true`、本附属 `panelRect=null`、核心 `HudFrame.objective()` 有值（真实反射链路：核心读 `CaptureHudApi.currentPoint()` 画出“A 35%”小牌与“A点 · 火车站 · 蓝方正在占领 · 剩余 0:30”）；把核心 `hud.showBattleStrip` 临时关掉后 `rendersCapturePoints=false`、核心不再画小牌、本附属薄条 `[123, 2, 195, 14]`（320×240）与 `[460, 8, 400, 46]`（960×720，2× 时 200×23 布局像素）贴顶放进核心槽位，Boss 条（玩家进据点前就在）由核心挪到薄条下方，320×240 时还右移让开名单；结束后配置还原为 true。
+- 同一套 uiTest 对测试端在用的核心 0.5.0-beta.1（`-Pinfantry_dev_jar_path` 指向从测试端只读复制的 `wok_infantry-0.5.0-beta.1.jar`，SHA-256 `A930A26E…FA0BFC`）：`PASS`，旧核心没有 `rendersCapturePoints`，四张 HUD 截图都是本附属薄条：战况条开着时在旧核心战况条下方的槽位里（320×240 `[123, 22, 195, 14]`，960×720 `[460, 50, 400, 46]`），旧核心照 `panelRect` 把 Boss 条挪到薄条下方；关掉战况条时薄条在 Boss 条下方（`[123, 21, 195, 14]`、`[460, 22, 400, 46]`）。修正前的代码对同一旧核心跑同一套 uiTest 失败：960×720 时薄条 `panelRect` 已到 `[460, 3600, 400, 46]`（Boss 条追赶出屏），结果留在 `run/ui-acceptance/20261005-0.1.0-alpha.4/review-repro-prefix-core-0.5.0-beta.1/`。
+- 截图目视（Read）：新核心下据点小牌在战况条中间；薄条一行“A点 · 火车站 │ 3 ▬|▬ 2”，宽屏第二行蓝字“蓝方正在占领 · 剩余 0:30”；新核心关战况条时薄条贴顶、Boss 条在其下且不压名单；旧核心开战况条时薄条在旧战况条下方、Boss 条在薄条下方，都不压名单；旧核心关战况条（非默认）的 320×240 截图里 Boss 条压到名单标题行（见“兼容性”已知限制）。截图与结果文件保存在 `wok_capture_points/run/ui-acceptance/20261005-0.1.0-alpha.4/review-core-0.5.0-beta.2/` 与 `review-core-0.5.0-beta.1/`（审查前的 `core-0.5.0-*` 两组没有 Boss 条，只作对照；都被 Git 忽略，核心的 `archiveUiAcceptance` 只归档核心清单里的截图）。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对本 JAR PASS，强制依赖只有 `forge`、`minecraft`。
+- 版本核对：`tools/verify_versions.ps1 -Modules wok_infantry,wok_capture_points -Release`（Windows PowerShell 5.1）PASS。
+- 未做：只装本附属（不装核心）与新核心 + 旧占点 alpha.3 的真实客户端没有跑（uiTest 依赖核心类；alpha.3 是重混淆过的生产 JAR，要反混淆后才能放进开发客户端，本轮没做），这两种只有单测覆盖。真实对局里的人工验收（多人进出据点、争夺、顺序占点、真实 Boss 战同屏、剩余时间随同步每 10 tick 跳一次）。
+- 已部署：2026-10-05 把 SHA-256 为 `B718BB4B…B9EF07` 的 `wok_capture_points-0.1.0-alpha.4.jar` 与核心 0.5.0-beta.2 一起部署到测试端 `mods`，部署后哈希与构建产物一致；0.1.0-alpha.3 改名为 `wok_capture_points-0.1.0-alpha.3.jar.backup-20261005-234524-before-0.1.0-alpha.4.bak`。
+
+## WOK步战核心 0.5.0-beta.1 — 2026-10-05
+
+> 用户需求（2026-10-05）：“按 ` 进入的主页面 UI 还是老版本的”，并选择“先做战斗终端”。本版把战斗终端的小队 / 兵种 / 部署三页按预览 `20-squad.js` 的“新版”战术平板界面重做：先补齐小队终端需要的战局数据和不画图的纯逻辑层（`7a6ec50`），再在其上重画三页、编制投票等待区和确认层（`e1c44d6`），最后是交付前的独立审查修正（`0cd6377`、`66ba47c`、`60abe6d`）。战局协议 19→20，与 0.4.0 线不兼容，按 `docs/VERSIONING.md` 提升次版本号（用户此前已同意协议升级）。本版建立在 0.4.0-beta.3（战术地图 Squad 式标点，见下一条）之上：战斗终端分支在 0.4.0-beta.2 上开发，交付前与 0.4.0-beta.3 合并。本版同时包含体力条 A4（快捷栏上方战术凹槽）：用户 2026-10-05 在预览 `16-stamina` 里选定 A4，分支 `claude/体力条` 在 0.4.0-beta.3 上实现（`c815300`–`7b5cf20`）、经独立审查修正（`b2dd63f`），没有单独改版本号，随后并入本版（`91f0c93`）；体力条不改任何网络协议号。下面“测试结果”中标“合并前（分支）”的数字只覆盖各自分支，合并后的最终数字见该栏最后几条。
+
+### 新增
+- 新版战斗终端三页（`SquadScreen` 重写，外壳为 `TacticalScreen` / `TacticalBoardChrome`，GUI 缩放 1 时按 2× 排版）：顶部换成统一的页签条 `BattleTab.strip`（小队 / 兵种 / 部署 / 配装 / 战术地图 / 编制，`Ctrl+Tab` 切页），“编制”页签取代旧版临时“编制”键、经 `BattleTerminalNav` 打开编制页；三页在同一个界面里原地切换。页脚按键提示写实际按键（Esc 关闭、Ctrl+Tab 切页、R 刷新）。
+- 小队页（`SquadPagePainter`）：宽屏顶部是五个呼号的呼号条（人数 / 本队容量、队长名，或可创建 / 已满 / 未建立 / 冷却中 / 本阵营编制无此呼号），窄屏换成两行一项的小队列表；名单按服务端顺序编号，带状态点、职务、状态字（待部署 / 阵亡 / 离线）、兵种和血量，空位画成“空位”行；名单下方是本队兵种名额签、操作对象和操作组（查看本队：移交队长、踢出 | 退出小队、解散小队；查看别队：加入或创建与返回本队），按键下方写当前操作的说明或禁用原因；右栏（窄屏为左下）是我的状态、指挥官（申请 / 卸任 / 移交指挥权，可移交给别队的在线队长）和阵营兵力。
+- 兵种页（`ClassPagePainter`）：本队每个兵种一行，写名额 n/m、正在使用的队员卡片（含血量）和状态（当前兵种 / 名额已满 / 点击更换 / 本小队未开放）；右栏是当前兵种（名额、能否更换与原因）、“配置当前兵种装备”键（打开配装页签）和更换规则；窄屏收成兵种列表加当前兵种条。“部署时发放”（当前兵种的配装槽位预览）只在客户端已有配装缓存时显示，不为它另发请求。
+- 部署页（`DeploymentPagePainter`）：部署点列表（图标、名称、中文维度名与坐标、说明、已选；按可见行分页，标题写“16 个 · 第 1/3 页”，翻页键在列表下方）；宽屏另有部署点方位图（`DeploymentPointMap`：上方为北的网格与比例尺，只画已选部署点所在维度，主基地画补给半径，已选点的标签优先、其余放不下就让位、互不重叠，点图上的点即选中该部署点）；部署状态（等待重生倒计时与进度条，倒计时每帧读快照、用中性色；部署清单；部署 / 补给 / 重新部署键与原因；须知）。
+- 编制投票等待区（`FormationVotePanel`）：编制锁定前三页共用——投票未开启 / 进行中（已投人数）、规则说明、“打开编制投票”键、本阵营候选编制的票数与占比（领先标记；名字放不下时先收起“领先”，再把“4 票 · 50%”收成“4 票”）、你的票和截止方式。这时没有任何建队、选兵种或部署的可点控件，其余页签禁用并悬停写原因。
+- 确认层（`TacticalConfirmDialog`）：踢出、退出小队、解散小队、重新部署为红色危险确认（焦点先在“取消”，Tab 到红键后回车和空格也不会按下它，只能用鼠标点），移交队长、移交指挥权为普通确认，卸任指挥官不弹确认；去掉旧版“3 秒内再点一次确认”。每个禁用的按键都有悬停原因。
+- `TextFit.wrapBest` / `wrapBestPlain` 与 `TextFit.Wrapped`：从长到短挑第一个不留孤字（末行只剩一两个字）、不超行数的文案。
+- uiTest：`SquadCases` 18 个用例——预览的 14 个状态（squads、other、nosquad、kick、classes、classesnosquad、classesactive、deployment、active、loading、votewait、vote、voteclasses、votedeploy）加 2 / 8 / 15 / 16 个部署点，全部 `migrated(true)`，在 320×240、960×720、640×336 三个必需档和 480×270、427×240 两个报告档运行；客户端夹具 `SquadFixtures` 只换客户端缓存、不动服务端。每个状态核对界面报告的预览状态、夹具在截图时没被服务端快照换掉、裁剪区里没有半行字；踢出核对红色确认、焦点在取消、Tab 到红键后回车和空格都不确认、Esc 取消且终端还在；部署页核对页数等于实际页数、首页每一行都画出、标题写出同一页码；锁定前核对没有可点的建队 / 兵种 / 部署控件且有通往编制页的键。
+- 语言：中英成对再新增 304 个语言键（各由 924 个增至 1228 个，都在 `screen.wok_infantry.squad_board.*` 下）：三页的标题、名单、状态、规则、部署点方位图、投票等待区和窄屏短文案（各三到四档），以及审查修正加的确认层失效提示 `squad_board.confirm.stale`（“情况已变化，“…”未执行，请重新确认”）。
+- 战局快照（协议 20）：每个小队多带各兵种的名额与已用数（`SquadView.classLimits`，`ClassLimitView`：兵种 id、本队名额、本队已用，按编制兵种顺序，名额不超过本队容量）；快照末尾多带本人视角的上下文：`FormationContextView`（本局编制 id 与公开名、编制默认兵种、己方与对方公开阵营 id、名称和人数上限；编制投票未锁定时编制为空）、`viewerClassId`（本人当前预留的兵种，不在小队里也有；没有编制时为空）、`kickCooldowns`（只发本人的踢出冷却，每个呼号至多一条，带到期时间）。
+- 纯逻辑 `SquadBoardModel`（`client/screen`，不画图）：权限（未入队 / 队员 / 队长 / 指挥官，另有管理员提示）；五个呼号的状态（待锁定、未开放、本队、可创建、未建立、已满、可加入、冷却中）；名单下方的操作组（查看本队时为移交队长、踢出 | 退出小队、解散小队，查看别队时只有加入或创建与返回本队）；指挥官面板（申请、卸任、移交指挥权——目标可以是任意小队的在线队长）；兵种行、部署点行、部署 / 重新部署 / 补给；部署清单；页头身份按“阵营 · 编制 · 小队 · 职务”逐级缩短的候选；终端页签的禁用原因；统一的分页规则 `Page`（标题页码、列表行和翻页键共用一次计算的结果）。每个操作都给出是否可用、禁用原因（长 / 短 / 极短三档语言键）或可用时的说明，以及是否需要二次确认和确认层文案。
+- 二次确认按用户拍板：踢出、退出小队、解散小队、重新部署（红色危险确认）、移交队长、移交指挥权（普通确认）；卸任指挥官不弹确认。踢出的确认写明 60 秒内不能重新加入，对方正在作战时另写会撤回等待区并收回配装；退出写明兵种重置为编制默认，指挥官退出会卸任，队长退出时队长交给谁（与服务端规则相同：先在线、再按入队顺序）；解散写明人数、作战中的队员会被撤回、本队指挥官会卸任。
+- `SquadLabels` 补齐：完整职务名与短职务名（指挥官 / 小队长 / 队员 / 未入队）、按任意人数与容量的“n/容量”、公开阵营名与对方阵营名（没有上下文时退回蓝方 / 红方）、本局编制名；兵种名的实现搬到这里。
+- 服务端：`LoadoutService.squadClassLimits(ServerPlayer)`（每个呼号的已启用兵种名额，与本人名额用同一套过滤和回退），`FormationService.formationContext(Faction, String)`（只读目录，不回读战局服务）。
+- 语言：中英成对新增 243 个语言键（各由 681 个增至 924 个）：小队终端的操作名与短名、呼号状态、禁用原因与说明（各三档）、确认层、部署清单、页头身份、部署点标题与坐标；另加 `role.wok_infantry.unassigned`、`role.wok_infantry.member_short` 和主世界 / 下界 / 末地三个维度名（部署点行用中文维度名代替 `minecraft:overworld`）。
+- 体力条“战术平板凹槽”（预览 `16-stamina` 的 A4，用户 2026-10-05 选定），位置在快捷栏正上方、原版经验条那一行：
+  - 底板和小队名单、战况条同款，半透明；两条凹槽并排，手从左端起填，腿从右端起填。
+  - 手槽 50%、腿槽 15% 有刻度。
+  - 两端耳朵放手掌 / 靴子剪影，外侧 2px 贴边随各自状态变色；布局宽 ≥640 时耳朵里显示百分比（无阴影）。
+  - 刚消耗的一段留 0.6 秒残影；恢复时条头亮 1px。
+  - 腿耗尽时腿槽变暗红空槽、靴子换红锁；回到 15 时显示绿勾 1 秒。
+  - 骑马等可跳坐骑时腿槽显示跳跃蓄力（向上箭头；骆驼冲刺冷却时变灰）；乘坐其他载具时腿段变灰。
+- 客户端配置 `hud.staminaBar`（默认 true）：设为 false 时保留原版经验条和跳跃条、不画体力条（腿耗尽照样锁疾跑）。
+- `InfantryHudApi.usesBodyHealthCompanionSlot()`（返回 false），供部位血量以后判断是否还要为体力预留伴随槽。
+- 界面图标图集追加手掌、靴子、跳跃箭头，共 48 个（`TacticalIcon.HAND`、`BOOT`、`JUMP`）。
+- 体力条纯逻辑类 `StaminaBarLayout`（几何）、`StaminaBarModel`（状态与配色）、`StaminaTrend`（残影与恢复中，由 `ClientStaminaState` 持有）。
+- UI 验收新增 stamina-a4 的 8 个状态：full、sprint、aim、legsout、recover、unlock、vehicle、horse（组 `hud`，全部 `migrated(true)`，5 个档位）。截图和预览 PNG 同名，结果页并排显示。
+
+### 修改
+- `BattleNetwork.PROTOCOL_VERSION` 由 `19` 改为 `20`；包编号、原有字段的顺序与含义都不变，新字段只追加在每个小队末尾和快照末尾。快照编解码对新字段做上界校验并失败关闭：兵种名额最多 64 项、同一兵种不能重复、名额不超过本队容量、已用数必须等于名单里持有该兵种的人数；本人兵种必须与名单里本人那一行一致；踢出冷却每个呼号至多一条、到期时间必须晚于快照时间且不超过 60 秒；上下文里的 id 与名称在构造时就规范化和截断（名称最多 40 个 UTF-16 码元），过长的管理员命名不会让快照编不出来。
+- 快照版本指纹（`BattleSnapshotRevision`）把编制上下文、本人兵种、各小队兵种名额和“哪些呼号在冷却中”算进结构；冷却剩余秒数不算，倒计时不会让界面每秒重建，冷却到期那一次会重建以恢复“加入”。
+- 配装界面请求改用独立限流类别 `LOADOUT_OPEN`（1 秒），不再和战斗终端键的 `OPEN_UI` 共用窗口：按终端键后立刻点“配装”不再被无声丢弃（squad-07）。编制目录请求此前已是独立的 `FORMATION_CATALOG`。
+- `SquadScreen.callsign`、`className` 三个重载改为委托 `SquadLabels`（签名不变）；部署页的分页静态方法改为委托 `SquadBoardModel.Page`（签名和行为不变）。
+- 终端导航：小队 / 兵种 / 部署三个页签在已打开的终端里原地切页（新增 `SquadScreen.forTab`、`showPage`、`page()`），不再叠一层新界面；删去 `BattleTerminalNav.rootSkippingSquadPages`。`SquadBoardModel.tabDisabledReason` 让“编制”页签任何时候都可用。
+- 服务端要求打开部署页（登录、重生）时：终端已打开就切到部署页，不再叠第二个终端；没打开时照旧打开；已部署、正在打字、开着容器 / 配装 / 调枪等界面时不打断（`BattleClientNetworkBridge.deploymentArrival`）。编制锁定后推送的部署页同理（`FormationClientNetworkBridge`）。
+- 创建、加入小队只发请求，不再预先切换正在查看的小队，等服务端快照到了再跟随本队。
+- 换行避头尾补上“开括号、开引号不留在行尾”（`TextFit.NO_LINE_END`），例如“由本阵营共享编制（”不再把“（”留在行尾。
+- 布局探针：新增 `UiLayoutProbe.layer()` / `UiLayoutFrame.layer()`，`TacticalScreen` 画确认层前标记新图层，确认层的按键不再“认领”压在它下面的页面文字（只影响 uiTest 的布局报告）。
+- uiTest 旧流程：`openCompactClasses` 改为按 uiId 找“兵种”页签再点；`HudFixtures` 改用 21 参 `BattleSnapshot` 并保留真实上下文。14 张旧截图的文件名与顺序不变，其中 `wok_ui_01`–`wok_ui_09` 的小队 / 兵种 / 部署画面随新界面改变（预期）；占点 uiTest 的字段与结果文件格式不变。
+- 体力 HUD 不再画在部位血量人形下的 52×11 伴随槽里，也删掉了没装部位血量时左下的“手 / 腿”双条；装不装部位血量，体力条位置都一样。核心仍调用部位血量的伴随槽接口，让小队名单避开人形。
+- 体力条显示时（生存或冒险、服务端启用体力、活着、没按 F1、`hud.staminaBar` 开着）取消原版经验条与等级数字，以及骑马时的跳跃条。创造、旁观、死亡或体力关闭时，原版照常显示。
+- 体力条窄屏（GUI 宽约 445 以下）：右端停在 TaCZ 弹药读数前 2px，靴子进快捷栏上方的中缝凸台，左耳缩成 10px。
+- GUI 缩放 1 的 2× HUD：体力条凹槽保持 1×、贴着原版快捷栏，耳朵按 2×；窗口窄到左耳会碰聊天栏时，耳朵保持 1×。
+- `vitals` 槽现在也停在体力条左耳左侧 4px（320 宽时为 `[2,55)`），核心自己不再使用它；`HudFrame` 去掉 `companionSlot`，`WokHudLayout` 改为 `withStaminaText`、布局里带 `staminaBar`。
+- stamina 覆盖层改为紧接在原版经验条之后绘制（`registerAbove(EXPERIENCE_BAR)`），id `wok_infantry:stamina` 不变。
+- uiTest 的 hud 用例改查快捷栏上方的体力条：凹槽在原版经验条那一行 `[h−30, h−23)`、与 `StaminaBarLayout` 算出的位置一致，不碰快捷栏、选中框、副手格、状态行、TaCZ 读数禁区和聊天，并确认截图那一帧原版经验条和跳跃条没有运行。
+- 体力条绘制时不再每帧格式化百分比（查预先生成的 “0%”–“100%” 表）、不再每帧重算底板外轮廓（窗口、HUD 倍率、字宽、聊天右缘不变就复用上一帧的布局），也不再每帧新建分块列表（体力条分支的审查修正 `b2dd63f`）。
+
+### 修复
+- 旧小队页审查问题随重写处理（编号见界面审查报告）：标题页码与实际分页不一致（squad-01，标题、列表行和翻页键共用一次计算）；编制没配的呼号还亮着“创建”（squad-02）；人数分母用全编制最大容量（squad-03，改用本队容量）；服务端拒绝或限流后界面停在错的小队上（squad-04）；踢出、退出、移交、解散没有或只有“再点一次”确认（squad-05、squad-06）；GUI 缩放 1 时中文 1:1 绘字认不出（squad-08，按 2× 排版）；查看别队时还能“解散 / 退出”本队（squad-10）；重建界面后旧按钮残留焦点（squad-11，改用完整重建并按角色还原焦点）；窄屏小队名被压成字母、名单行贴边（squad-12、squad-13）；宽屏大片空白而名单不显示状态与血量（squad-14）；禁用按键没有原因、踢出冷却期间“加入”仍亮（squad-15）；未入队时兵种与身份显示错（squad-16）；分区色条和刷新键配色不合规则（squad-17）；三处页签条不统一（squad-18，统一用 `BattleTab.strip`）；部署点写 `minecraft:overworld` 注册名（squad-19）；兵种页标题与名额为 0 的原因不对（squad-20）。
+- 审查修正（交付前独立审查，`0cd6377`、`66ba47c`、`60abe6d`；不改协议、版本号和存档）：
+  - 清空快照（玩家被移出阵营、重置战局时服务端发 `BattleClearPacket`）若落在两个 tick 之间，下一帧会用空快照去画按“编制已锁定”建好的页面，兵种 / 部署 / 我的状态等处对空快照取值会让客户端崩溃；现在每帧先比对模型阶段与页面阶段，不一致就先重建再画。
+  - 确认层（踢出、退出、解散、重新部署、移交队长、移交指挥权）打开后，新快照到达时按“同一操作、同一对象”复核：仍可执行就换成最新说明（例如对方刚部署），不再可执行（对象已离队、小队进入作战、自己不再是队长、已不在作战中）就关闭并在页脚写“情况已变化，“…”未执行，请重新确认”；按下确认时再用最新快照核对一次，绝不发送打开确认层时的旧意图（`SquadBoardModel.stillOffered`）。
+  - 点击呼号或页签会在点击处理中重建界面，原版随后把焦点交给已移除的旧控件，之后的按键会落到看不见的旧列表上；现在交给重建后同一角色的控件，没有就清空焦点。
+  - 320 宽部署页作战中状态条第一行原本是空的（作战中没有待办清单），按预览改为小队、兵种和所在部署点。
+  - 快照编码对“本人兵种”多做了一条目录 id 格式检查（只许小写字母、数字和 `_.-`），而名单里每个队员的兵种都原样发送、从不按这个格式检查；旧存档读回的兵种只去首尾空白、不改大小写，这样的玩家每次快照都会在编码时被拒（服务端只记日志），终端一直停在“同步中”。现在本人兵种只要求与名单里本人那一行一致（长度仍受线上 64 字符上限约束），与名单同一标准。
+  - 解散确认写“全部 N 名队员退出小队”，N 却只数了除自己以外的人；改为全队人数（队长本人也离队）。
+  - 绘制性能：每个行渲染器和悬停说明原来各自重建整套 `SquadBoardModel`（每帧二三十次）；先改为每帧一次，再改为只在输入变化时重建（快照或投票阶段换了对象、查看的小队或操作对象变了、等待回执的操作或管理员提示变了，或时钟进入下一个 250 毫秒档——只有踢出冷却读时钟，最多晚 250 毫秒），操作键状态与页头身份也只在模型或页签条变化时重算。事件处理与确认复核仍用最新快照现建的模型。
+- 体力条（A4）随本版修复：
+  - 体力位置跟着部位血量人形走，低头看快捷栏时看不到。
+  - 320 宽时体力伴随槽压住副手格。
+  - GUI 1 下伴随槽里的体力只剩两条无标签细条。
+  - 腿力竭时看不出疾跑被锁了，也看不出什么时候能再跑。
+
+### 兼容性
+- 网络协议：战局协议 19→20（`BattleNetwork.PROTOCOL_VERSION`），版本严格相等，客户端与服务端必须同为 0.5.0-beta.1；与 0.4.0-beta.1 / 0.4.0-beta.2 / 0.4.0-beta.3 混用时 Forge 在连接阶段拒绝。编制协议 `5`、兵力协议 `2`、体力协议 `2`、配装协议 `11` 不变。
+- 公共 API 只新增或保持兼容：`BattleSnapshot` 规范构造器改为 21 参（末尾追加 `formationContext`、`viewerClassId`、`kickCooldowns`），原 18 参、17 参、16 参构造器保留（18 参时本人兵种取名单里本人那一行）；新增 `withViewerContext`、`withFormationContext`、`formationLocked()`、`squad(SquadCallsign)`、`kickCooldown(...)`、`kickCooldownRemainingMillis(...)`；`SquadView` 规范构造器改为 5 参，原 4 参保留；新增记录 `ClassLimitView`、`KickCooldownView`、`FormationContextView`；`BattleSnapshotRevision.visible` 原 12 参重载保留；`BattleService.snapshotFor` 原三个重载保留，另加带各呼号名额的 4 参重载。`MemberView` 10 参兼容构造器、`SquadScreen` 三个构造器和 `callsign` / `className` 静态方法签名不变。
+- 附属 MOD：都不直接解码战局快照；占点 uiTest 只读 `ClientBattleState`。指挥官支援 0.1.0-beta.3 的依赖范围 `[0.3.0-beta.6,)` 包含本版，但测试端要把附属和本版核心一起装上验证。
+- 界面：小队、兵种、部署三页整体换成新界面；`SquadScreen` 三个构造器（含登录 / 重生自动开部署页用的那个）、`uiSurfaceId()` 仍为 `squad`。旧版按钮式名单和“3 秒内再点一次”的确认不再存在，依赖旧控件位置的外部脚本需要改按 uiId 找控件。
+- 本版新增的语言键只在 0.5.0-beta.1 客户端里；旧小队页用过的 39 个语言键本版不再引用，暂时保留未删。
+- 体力条不改任何网络协议号（体力协议仍为 `2`）；它只由客户端决定，服务端与体力数据不变。
+- 部位血量本轮不用发版：新旧核心和新旧部位血量都能各自独立安装。旧部位血量仍会在人形下预留那条伴随槽，只是空着；`ClientStaminaState.snapshot().enabled()` 的签名和语义不变。
+- 原版经验条、跳跃条两个覆盖层都不改 `leftHeight` / `rightHeight`；取消在最高优先级进行、不接收已取消事件，不影响其他 MOD 的状态行和覆盖层。需要经验条的整合包可以设 `hud.staminaBar=false`；用隐藏 HUD 的 MOD 按 id 屏蔽 `wok_infantry:stamina` 时，原版经验条仍会被取消、那一行空着，这种情况也应改用 `hud.staminaBar=false`。
+- 卓越前线 0.8.9 自带的体力线（客户端配置 `stamina_hud`，默认开）已反汇编核实：画在 `[cx−90, cx+90)×[h−24, h−23)`，压在体力条凹槽底边。核心不取消别的 MOD 的覆盖层，整合包应把它设为 false（步战测试端的 `superbwarfare-client.toml` 已于 2026-10-05 20:38 改为 `stamina_hud = false`，原文件备份为同目录的 `superbwarfare-client.toml.backup-20261005-203838-before-stamina-hud-off.bak`）。
+
+### 配置/存档影响
+- 新增客户端配置 `hud.staminaBar`（体力条），默认 true，旧配置文件由 Forge 自动补上；不新增服务端配置。
+- 不改任何存档格式（`wok_infantry_battle.dat` 仍为 Version 6；踢出冷却仍只在内存里，重启清空，与此前相同；体力数据仍随玩家保存，格式不变）。
+- 体力条没有新增语言键，“手 / 腿”短键保留（战斗终端新增的语言键见“新增”）。
+- `ui_icons.png` 重新生成，共 48 个图标，旧图标 UV 不变。
+
+### 测试结果
+- 本栏先列合并前（分支）各批的结果，保留为历史，那些产物都已作废、未部署；合并后的最终结果在本栏最后几条，以那里为准。
+- 合并前（分支 `claude/战斗终端`）数据与逻辑层（`7a6ec50`）：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`，六个测试源集全部编译通过）；JUnit 938 项全部通过，0 失败、0 跳过（比 0.4.0-beta.2 多 31 项：`SquadBoardModelTest` 18 项——只配阿尔法/布拉沃的编制、8 人与 4 人混合容量、查看别队没有退出/解散、未入队取 `viewerClassId` 与编制默认兵种提示、踢出冷却禁用加入和创建且归零即恢复、队长管理与作战中仍可踢人、普通队员只能退出与退出确认的后果、非队长管理员、指挥官把指挥权移交给别队在线队长、申请指挥官的原因顺序、二次确认清单、兵种行规则、部署原因推断、作战中重新部署确认、2/3/16 个部署点的统一分页、投票锁定前一切不可点、同步中与页头身份逐级缩短、全部语言键中英都有；`BattleSnapshotCodecTest` 新增 6 项——协议 20 新字段往返、兼容构造器、兵种名额矛盾被拒、本人上下文非法被拒、上下文规范化与截断、解码拒绝未规范化文本与超长冷却表；`BattleServiceSnapshotContextTest` 2 项；`BattleSnapshotRevisionTest`、`ServerRequestLimiterTest` 各 1 项；`SquadLabelsTest` 3 项）。翻译契约测试把小队终端按枚举拼出的语言键与参数个数一并核对。
+- 合并前（分支）数据与逻辑层那一批的产物（2,139,592 字节，SHA-256 `43E72062A590B355929C6F578ACB3394BFA8098A36CD93134804422242E954E4`）已作废，未部署。
+- 合并前（分支 `claude/战斗终端`）界面那一批（`e1c44d6`）：同样的 `clean build` 加六个测试源集编译通过；JUnit 949 项全部通过（比数据与逻辑层多 11 项：`DeploymentPointMapTest` 4 项——点、标签和比例尺都在图内且标签互不重叠、已选点标签优先与主基地补给圈、只画已选点所在维度、16 个密集信标让出标签；`DeploymentArrivalTest` 3 项——终端已开时切页、登录与重生照旧打开、已部署或打字 / 开容器时不打断；`TextFitTest` 3 项——孤字时换短文案、行数上限与回退、开括号不留行尾；`UiLayoutReportTest` 1 项——确认层按键不认领下层文字；`SquadBoardModelTest` 的页签用例改为逐个核对）；22 项 GameTest 通过；zh_cn 严格轮 PASS（6042 tick，279 张，严格违规 0），归档 `…\20261005-0.5.0-beta.1\zh_cn-final\`，保留作对照。那一批的产物（2,289,111 字节，SHA-256 `F2374A615A67AAF50F231A9920F038D5D60D44AB071370D00F71230FCDC23C53`）已作废，未部署。审查途中在 `0cd6377` 上跑过一轮 zh_cn（归档 `zh_cn-final2`，用例结果与下文审查修正后那一轮逐行相同），只作参考。
+- 合并前（分支 `claude/战斗终端`）审查修正后（代码 `60abe6d`，分支在 0.4.0-beta.2 之上，不含 0.4.0-beta.3 的地图标点）：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`，六个测试源集全部编译通过）；JUnit 953 项全部通过，0 失败、0 跳过（比界面那一批多 4 项：`SquadBoardModelTest` 3 项——确认层复核的各种失效情形、作战中重新部署确认失效、作战中窄屏状态条写小队兵种部署点；`BattleSnapshotCodecTest` 1 项——不合目录格式的旧存档兵种在队内与队外都能往返；另在队长管理用例里补了解散确认人数的断言）。
+- 合并前（分支）产物 `wok_infantry-0.5.0-beta.1.jar`，2,292,921 字节，SHA-256 `5423FADFF84A2FFA4742EC41079252ED35B471258A79B3791DB4E75CC94C3D5F`（当时 GameTest 与中英两轮 uiTest 跑完后重新核对，不变）；当时 `tools/verify_versions.ps1 -Modules wok_infantry -Release` 与 `tools/verify_mod_independence.ps1` 都 PASS。这个产物已被合并后的构建取代，作废、未部署。
+- 合并前（分支 `claude/战斗终端`）`runGameTestServer`：22 项必需 GameTest 全部通过。
+- 合并前（分支 `claude/战斗终端`）`runUiTestClient` zh_cn 严格轮：`status=PASS`，6029 tick，58 个用例、279 张截图（`squad.*` 18 个用例 × 5 档 = 90 张，全部 PASS、0 违规，含 480×270、427×240 两个报告档），`strictLayoutViolations=0`，`layoutViolations=121`（0.4.0-beta.2 为 169，少掉的是旧小队页的违规，剩下的全是未迁移的旧界面），`finalActiveMarkers=1`；270 行用例结果与 `zh_cn-final`、`zh_cn-final2` 逐行相同。14 张旧截图的文件名和顺序不变。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.1\zh_cn-final3\`（`zh_cn-final` 已被界面那一批占用，归档任务不覆盖已有目录）。
+- 合并前（分支 `claude/战斗终端`）`runUiTestClient` en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`（语义检查全部通过），6042 tick，279 张截图，`strictLayoutViolations=0`，`layoutViolations=229`（0.4.0-beta.2 的 `en_us-final2` 为 172）。新三页 77 条，全部是英文比中文长、被省略号截断而没有完整提示（`text-truncated-no-tip` 75 条，`control-truncated-no-tip` 2 条：320 档“Promote”键）：最多的是部署页作战区说明“Resupply needs you deployed inside the main base”（960 / 640 / 480 档共 18 条），其次是投票等待区和部署清单里的英文短句（“Opens after the lock”“Formation default (after the lock)”“When the admin locks (no deadline)”等）、320 档指挥官名、640 档“我的状态”里的中文编制名加“(faction-wide)”；其余 152 条不在新三页：已迁移界面原有的英文截断 51 条（编制页 37、陈列页 8、HUD 4、标点陈列 2），只出报告的旧界面 101 条（分项见下文合并后 en_us 一条，两轮逐张相同）。英文措辞缩短或换行留给 i18n 收尾。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.1\en_us-final\`。
+- 合并前（分支 `claude/战斗终端`）占点兼容：`wok_capture_points` 的 `compileJava compileUiTestJava` 以当时的核心 JAR 编译通过。
+- uiTest 过程中发现：嵌套类上的 `@Mod.EventBusSubscriber` 在 dev 客户端里登记了却收不到事件，`SquadFixtures` 改为第一次 `start` 时用 `MinecraftForge.EVENT_BUS.addListener` 挂监听（每个客户端 tick 两端、每帧 HUD 与界面绘制前重装夹具）。`HudFixtures` 用的是同样的写法，本版没有改它。
+- 合并前（分支 `claude/体力条`，审查修正后 `b2dd63f`；分支在 0.4.0-beta.3 之上、没有改版本号，产物仍叫 `wok_infantry-0.4.0-beta.3.jar`，作废、未部署）：限流脚本 `clean build` 加六个测试源集编译 BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 943 项全过（比 0.4.0-beta.3 的 922 项多 21 项：新增 `StaminaBarLayoutTest` 11、`StaminaBarModelTest` 9、`StaminaTrendTest` 4，`HudOverlayContractTest` +2，删除旧的 `StaminaHudOverlayTest` 5 项）；GameTest 22/22；zh_cn 严格轮 `status=PASS`，5033 tick，48 个用例、229 张截图，`strictLayoutViolations=0`，`layoutViolations=169`（全是当时的旧界面，含旧小队页）；原有 180 行与 0.4.0-beta.3 逐行相同，stamina-a4 的 40 行全部 PASS、0 违规。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.3\stamina-a4-review-zh_cn\`（实现者那一轮 `stamina-a4-pre0.5.0-zh_cn` 的 220 行与它逐行相同）。en_us 轮在分支上没有跑。
+- 合并后（最终，代码 `91f0c93`：`claude/新版界面` 依次并入 0.4.0-beta.3、`claude/战斗终端`、`claude/体力条`；之后只有本条文档提交）：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`，六个测试源集全部编译通过）；JUnit 989 项全部通过，0 失败、0 跳过（= 0.4.0-beta.3 的 922 项 + 战斗终端 46 项〔分支 953 − 0.4.0-beta.2 的 907〕+ 体力条 21 项〔分支 943 − 922〕，三边的测试都在）。
+- 合并后产物 `wok_infantry/build/libs/wok_infantry-0.5.0-beta.1.jar`，2,326,073 字节，SHA-256 `A930A26E5BBD92F0B35BFBB43BCDA1714D361650AC3BD27A9393403AF2FA0BFC`（GameTest 与中英两轮 uiTest 跑完后重新核对，不变）。
+- 合并后 `runGameTestServer`：22 项必需 GameTest 全部通过。
+- 合并后 `runUiTestClient` zh_cn 严格轮：`status=PASS`，6744 tick，66 个用例、319 张截图，`strictLayoutViolations=0`。战斗终端 `squad.*` 18 个用例 × 5 档 = 90 张、体力条 `stamina-a4.*` 8 个用例 × 5 档 = 40 张，全部 PASS、0 违规（含 480×270、427×240 两个报告档）。`layoutViolations=121`，与战斗终端分支逐张相同：管理员终端 64 条，实时流程截图 57 条（配装 30、战术地图 26，部署页 1——`wok_ui_01` 里 320 档“先加入一个未满员小队”被截断、没有完整提示，实时流程截图只出报告，合并前就有）。310 行用例结果中，270 行与战斗终端分支的 `zh_cn-final3` 逐行相同，220 行与体力条分支的 `stamina-a4-review-zh_cn` 逐行相同（两边共有的 180 行两边一致），没有缺少、多出或改变的行。两张地图截图 `mapIcons[wok_ui_04_map_320x240.png]`、`mapIcons[wok_ui_06_map_960x720.png]` 都画出 8 种标点各 1 个、牌 30 物理像素（每美术像素 2 物理像素），960 档另有 6 个工具键图标；地图标点陈列页 10 个“档位 × 底图”的标点都是 30 物理像素。`finalActiveMarkers=1`，`temporaryOperatorCleanup=revoked`。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.1\zh_cn-merged\`（319 张截图与 5 个结果文件）。
+- 合并后 `runUiTestClient` en_us 报告轮（`-PuiLang=en_us -PuiLayoutStrict=false`）：`status=PASS`（语义检查全部通过），6736 tick，66 个用例、319 张截图，`strictLayoutViolations=0`，`layoutViolations=229`，与战斗终端分支的 `en_us-final` 逐张相同（新三页 77 条英文截断；已迁移界面原有的英文截断 51 条：编制页 37、陈列页 8、HUD 4、标点陈列 2；其余 101 条是只出报告的管理员终端 64、实时流程截图 32、旧图 10/11 编制页 3、弹药补给 2）；体力条 40 张 0 违规（体力条只有百分比数字，没有可翻译的文字）。270 行用例结果与 `en_us-final` 逐行相同，stamina-a4 的 40 行全部 PASS；两张地图截图的 `mapIcons[...]` 与 zh_cn 轮相同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.5.0-beta.1\en_us-merged\`。
+- 合并后独立安装检查：`tools/verify_mod_independence.ps1 -JarPath …\wok_infantry-0.5.0-beta.1.jar` PASS，强制依赖只有 `forge`、`minecraft`。
+- 合并后版本核对：`tools/verify_versions.ps1 -Modules wok_infantry -Release`（Windows PowerShell 5.1）PASS（源码版本、文档、JAR 名、modId 与内部版本一致；本条目六栏不空，JAR 晚于核心源码最后一次提交且源码没有未提交改动）。
+- 合并后占点兼容：`wok_capture_points` 的 `compileJava compileUiTestJava`（`--rerun` 强制重编）以合并后的核心 JAR 编译通过；占点 uiTest 本身没有运行。
+- 合并后的构建与验收没有发现合并引入的问题，没有额外修复。
+- 已部署：2026-10-05 把 SHA-256 为 `A930A26E…FA0BFC` 的 `wok_infantry-0.5.0-beta.1.jar` 部署到测试端 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，部署后哈希与构建产物一致；0.4.0-beta.3 改名为 `wok_infantry-0.4.0-beta.3.jar.backup-20261005-204832-before-0.5.0-beta.1.bak`。测试端 8 个 WOK步战 JAR 的独立安装检查全部 PASS。同日测试端 `config/superbwarfare-client.toml` 的 `stamina_hud` 改为 `false`（用户同意，原文件备份为 `.bak`），避免卓越前线自带体力线压在本版体力条凹槽下沿。
+- 未做：真实客户端人工验收——战斗终端（窄屏与大屏、文字、按键状态、确认层、部署流程，以及需要两个号的踢人冷却、移交队长、跨队移交指挥权、作战中踢人）；体力条（联网时的残影和恢复节奏、真骑马和骆驼冲刺冷却、坐 SBW 载具、与部位血量人形和 TaCZ 读数同屏、`hud.staminaBar` 开关切换；uiTest 里体力状态是固定注入的，玩家没有真的骑乘，截图里没有坐骑血量行）。新增英文文案的母语审校。`networkTest` 的 `NetworkRuntimeAcceptanceHarness` 仍期待战局协议 `"14"`（早于本版即已过时，本版没有动）。
+
+## WOK步战核心 0.4.0-beta.3 — 2026-10-05
+
+> 用户反馈（2026-10-05）：“我们的地图标记好像没生效”。原因是 0.4.0-beta.1 只做了 Squad 式剪影标点的图集和绘制原件（`map_icons.png`、`client/map/TacticalMapIcons`），战术地图 `TacticalMapScreen` 仍在画旧的 11×11 白线小图、坦克/步战车俯视贴图和部署点字母方块。本版只把战术地图的标点绘制换成新图标（移植方案的“档 1+”，地图分片 C3）；侧栏、外壳、手势、标签避让器等地图档 2 的其余内容不在本版。网络协议号与存档格式都不变，可与 0.4.0-beta.1、0.4.0-beta.2 互连。
+
+### 新增
+- 战术地图标点改用 Squad 式剪影图标，底牌形状说类别、白色剪影说种类：7 种战术标记里，敌方步兵、坦克、步战车是红色圆牌，卫星/无人机侦察目标是暗红圆牌、虚线描边（未确认）；进攻方向（橙）、防守（蓝）、集结点（绿）是圆角方牌。3 种部署点（主基地、部署信标、小队队包）是友军蓝定位针，针尖压在部署点上。进攻方向保留箭头线，起点放进攻方向图标（线在图标下面；起点出了视口不画图标）；放置进攻方向时，已记下的起点也戴同一个图标（光标移出地图时也在）。
+- 状态：地图上选中的标记加黄圈（选中的进攻方向是起点图标加黄圈，线下的高亮带也改成同一黄色），鼠标悬停的标记加白圈；卫星/无人机红点可以悬停，仍然不能选中、不能删除。两种圈外都垫一圈 1 美术像素的深色衬边（深-亮-深），浅色地形上也看得清；悬停和选中的标记最后画，圈不会被相邻图标盖住。悬停按光标的亚像素位置判定，白圈出现的范围与点击能选中的范围一致。
+- 即将过期变淡（整块 45% 不透明）：手工标记剩余 30 秒以内；无人机/卫星红点在最后一批租期的最后 25%。支援任务每次扫描都整批替换红点（卫星每 5 秒一批、租期 5.5 秒；无人机每 2 秒一批、租期 12 秒），所以本阵营有还会再扫描的支援任务、同维度、其扫描范围（起点 + 选项半径 + 1 格）盖住该红点时，红点不变淡——否则卫星红点每次扫描前都会淡下去约 1 秒再恢复；任务扫描完后，卫星最后一批在最后约 1.4 秒变淡，无人机最后一批在最后 3 秒变淡，不会一出现就是淡的。
+- 部署点定位针让位：针原位压到标点图标（例如小队队包和集结点同坐标）、进攻方向的起点图标或箭头头部、或先放好的定位针时，整根针让到旁边——围绕压到的东西试 9 个位置（左、右、左上、右上、正上方，再往外一个针宽的左、右、左上、右上），取视口内压得最少的一个，相同时取靠前的；只擦边（不超过 6 美术像素²）不挪；需要让位时还会避开本帧已画的支援任务卡、支援标签、据点注记和罗盘、比例尺（只在让位时考虑，不会因为它们把针从原位挪走）。挪开的针从针尖拉一条友军蓝引线（深色衬边）指回真实位置，真实位置画一个小菱形；所有位置都压着标点图标时，这根针画在标点图标之上，针头不会被盖住。
+- 玩家选定的出生点在针头右上角挂绿色对勾角标（针让到左边或靠近地图右缘时放左上），取代以前的橙色方块；黄圈只表示“在地图上选中”。
+- 纯逻辑：`client/map/TacticalMapPinPlanner`（定位针让位、引线、出生点角标）；`TacticalMapIcons` 新增 `symbolScale`、`mapArtPx`（尺寸方案 B）和 `expiring`、`alpha`（变淡阈值，另有带 `refreshPending` 的重载）；`TacticalMapScreen.contactRefreshPending`（红点所属的支援任务是否还会再扫描）与 `MARKER_HIT_ORDER`（光标下命中的排序）。
+
+### 修改
+- 标点尺寸改为方案 B：一块牌 15×15 美术像素（定位针 15×18），每个美术像素 = round(2 × “情报图标”比例 × max(1, GUI 缩放 / 3)) 个物理像素。GUI 1–3 是同一屏幕物理尺寸（100% 时一块牌 30 物理像素：GUI 3 下 10 个 GUI 像素、GUI 1 下 30 个）；GUI 4 放大 4/3 后取整为每美术像素 3 物理像素（45 物理像素）。地图缩放不再改变标点大小（旧版战略缩放时会缩到约 42%）。图标先把锚点取整到物理像素再绘制，比例 125%、150% 时也不会落在半个像素上。
+- “情报图标”比例旋钮（`tacticalMap.intelMarkerScale`，0.75–1.75）现在缩放全部标点（敌情、命令、部署点始终同一大小），以前只缩放步兵、坦克、步战车；滑杆悬停提示（中英）和客户端配置注释同步改写。
+- 点击判定：标点改为图标牌外扩 1 美术像素（随尺寸方案和旋钮一起变），进攻方向仍可点线身（10 物理像素内）或起点图标；光标下的图标排在只压到进攻方向线身的命中之前（进攻线从图标下面穿过时，悬停白圈和第一次点击都落在这个图标上；以前按“离线身的距离”和“离图标中心的距离”混排，进攻线常抢走点击）；在重叠的标记上反复点击照旧循环选中；放置标记后工具保持选中、可连续放置，都不变。
+- 标记颜色（进攻方向箭头线、选中目标卡的标题条和名称、工具键）改用各自图标的牌色，与地图上的图标一致（例如步战车从黄色改为敌情红、进攻方向从红色改为橙色）。
+- 侧栏“战术标记”工具键（宽屏 2 列、窄屏底部抽屉）里的小图标改画同一套地图图标：键高能在 30 物理像素的牌子上下各留 2 物理像素时用 2 物理像素一个美术像素（与地图上一样大），否则 1 物理像素；侧栏布局不变。
+- `TacticalMapIcons.draw` 画悬停/选中圈时先画深色衬边，圈本身在衬边上不透明绘制（悬停白圈不再被衬边压成灰色）；地图标点陈列页、组件陈列页跟着变化。
+- 删除旧标点绘制路径：11×11 白线小图图案、坦克/步战车俯视贴图的绘制、部署点字母方块（B/D/R）、选中小菱形，以及按地图缩放缩小图标的尺寸计算。贴图 `textures/gui/tactical_markers/tank.png`、`ifv.png`（及两个 `.mcmeta`）已不被引用，为避免资源变动仍保留在 JAR 里。
+
+### 修复
+- 修复战术地图上的标点没有换成新版 Squad 式剪影图标的问题（用户反馈“我们的地图标记好像没生效”）。
+
+### 兼容性
+- 网络协议号全部不变：战局 `19`、编制 `5`、兵力 `2`、体力 `2`、配装 `11`。0.4.0-beta.3 与 0.4.0-beta.1、0.4.0-beta.2 可以互连；标点外观只由客户端决定，服务端是哪一版都一样。
+- 保留：指挥官支援 0.3.0-beta.5 起的支援绘制（照射许可内圈、所有任务先画范围后画标签、标签让开比例尺和指北针）；卫星红点与手工标记各保底 32 个快照名额，客户端不截断、不重排、不去重；`TacticalSupportMapPresentationRegistry`、`TacticalMapAreaOverlayRegistry`、`TacticalMapTerrainRegistry` 等公开签名；`TacticalMapScreen` 的两个公开构造器和 uiTest 反射读取的字段（核心 harness 读 `supportButtons`、`terrainTextures`、`desiredTerrainRequests`，占点 harness 读 `centerWorldX`、`centerWorldZ`、`zoom`、`mapLeft`、`mapTop`、`mapRight`、`mapBottom`）。
+- 删除的只是 `TacticalMapScreen` 包内可见的静态方法（`markerIconPattern`、`markerIconTexture`、`markerIconSize`、`markerPhysicalIconSizeForMap`、`markerIconSizeForMap`、`markerTextureSize`、`markerForegroundColor`）和记录 `MarkerIconSize`，附属 MOD 都没有用到；`TacticalMapIcons` 只新增公开方法。附属 MOD 都不用改。
+- 图层次序与以前相同：支援任务卡仍画在标点之下（标点可能压住任务卡的一角，任务卡移到标签层留给地图档 2），友军菱形仍画在标点之上。
+
+### 配置/存档影响
+- 不新增配置项；`tacticalMap.intelMarkerScale` 的键名、默认值 `1.0` 和范围 0.75–1.75 不变，作用范围扩大到全部标点（配置文件里的英文注释在下次保存时更新）。
+- 存档格式不变。语言文件只改了 `screen.wok_infantry.map.icon_scale.tooltip` 一条的中英文措辞，键数不变（各 681 个）。
+
+### 测试结果
+- 以下为审查修正后的最终结果（`9db2698`）。首轮（`1814e74`：JUnit 919 项、2,075,575 字节、SHA-256 `EDBC3FC186DDE7C8BD09533093F63F7305F93EF299EC654949B1F9390D0C4A70`，归档 `zh_cn-final`）和第一次审查修正（`bec2438`：JUnit 920 项、2,076,140 字节、SHA-256 `4DFFBABFE0F75A8D306756B67B6DC0584B85FB2FEBDC22F357DBB819D05C3B12`，归档 `zh_cn-final2`）的产物已作废，归档留作对照；三轮的 180 行用例结果逐行相同。
+- `wok_infantry` 在 `9db2698`（本版最后一个源码提交）：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 922 项全部通过，0 失败、0 跳过。比 0.4.0-beta.2 的 907 项多 15 项：审查修正补 3 项（`TacticalMapScreenLayoutTest` 的图标命中优先于线身命中、红点所属任务还会再扫描的判定，`TacticalMapIconsSizingTest` 的任务仍在扫描时红点不变淡）；其余 12 项：`TacticalMapScreenLayoutTest` 删去 9 项旧标点用例（11×11 图案、红点、步兵线框、命令尺寸、坦克/步战车贴图 3 项、按缩放缩小、只缩放情报标记），补 3 项（牌色、工具键图标尺寸、旋钮范围）；新增 `TacticalMapIconsSizingTest` 7 项（方案 B 在 GUI 1–3 与 `physicalPerArt` 一致、GUI 4 取整为 3/5 等、旋钮单调且不低于 1、所有标点锚点落在整物理像素且牌宽 = 15 × 美术像素、手工标记剩余 30 秒变淡、侦察红点寿命最后 25% 变淡）和 `TacticalMapPinPlannerTest` 11 项（空位不动、压集结点时左移并画引线、擦边 ≤6 美术像素² 不动、视口外候选跳过、无空位时画在图标之上、挪不动时留在下层、三根针互相让开、线身按 1/4 计、出生点对勾角标左右规则、角标和引线也挡住后来的针、标签只在让位时避开）。产物 `wok_infantry-0.4.0-beta.3.jar`，2,076,666 字节，SHA-256 `9B7C2890170CB7414DDFCF11DDFDFBC6E37877A017D0DE4D6EB91960B609360D`；GameTest 与 UI 验收跑完后重新核对，SHA-256 不变。
+- `runGameTestServer`（同一提交）：22 项必需 GameTest 全部通过。
+- `runUiTestClient` zh_cn 严格轮（同一提交）：`status=PASS`，4338 tick，40 个用例、189 张截图，`strictLayoutViolations=0`，`layoutViolations=169`；180 行用例结果与首轮 `zh_cn-final`、0.4.0-beta.2 的 `zh_cn-final2` 逐行相同（战术地图仍是旧界面，只出报告）。实时流程的两张地图截图新增记录：`mapIcons[wok_ui_04_map_320x240.png]` 与 `mapIcons[wok_ui_06_map_960x720.png]` 都画出 8 种标点（敌方步兵、坦克、步战车、卫星侦察目标、进攻方向、防守、集结点、主基地定位针）各 1 个，每美术像素 2 物理像素（牌 30 物理像素；320 档 GUI 3、960 档 GUI 1），960 档另有 6 个侧栏工具键图标为 1 物理像素一个美术像素；没有画出新标点会判整轮失败。地图标点陈列页与组件陈列页的标点在 5 个档位都是 30 物理像素，与地图上一致。`finalActiveMarkers=1`，与 0.4.0-beta.2 相同。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.3\zh_cn-final3\`（`zh_cn-final2` 已被第一次审查修正那一轮占用，归档任务不覆盖已有目录，所以最终一轮用 `zh_cn-final3`）。
+- 截图目视（Read 放大查看 `zh_cn-final3`，与首轮所见相同）：320×240（`wok_ui_04`）8 种标点都清楚，像素边缘整齐、带深色描边和投影；主基地定位针针尖压在基地上、右上角挂绿色对勾；进攻方向线从进攻方向图标下面出发；没有标点压到罗盘和比例尺。960×720（`wok_ui_06`，默认缩放下 7 个标记挤在约 90 GUI 像素内）：主基地定位针原位会压住卫星侦察目标和防守图标，让到步战车左边并用友军蓝引线指回基地，对勾挂在左上；比例尺和罗盘都没被压。验收前用 `-PuiCases=legacy+mapicons` 试跑过两轮（都 PASS、24 张截图）：第一轮里这根针让到了上方、压住了 F-15EX 任务卡，因此加了“让位时避开本帧已画的标签、罗盘和比例尺”，第二轮起不再压卡。悬停白圈、选中黄圈和即将过期在标点陈列页检查（深色衬边可见，悬停圈为白色）。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_infantry-0.4.0-beta.3.jar` PASS，强制依赖只有 `forge`、`minecraft`；连同测试端 `mods` 里其余 7 个 WOK步战附属 JAR（只读取，版本未变）一起核对，8 个全部 PASS。
+- `tools/verify_versions.ps1 -Modules wok_infantry -Release`（Windows PowerShell 5.1）：PASS（源码版本、根 README 与 VERSIONING 版本表、模块 README 产物名、CHANGELOG 标题、JAR 名、modId 与内部版本一致；本条目六栏不空，JAR 晚于核心源码最后一次提交 `9db2698` 且源码没有未提交改动）。
+- 已部署：2026-10-05 把 SHA-256 为 `9B7C2890…09360D` 的 `wok_infantry-0.4.0-beta.3.jar` 部署到测试端 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，部署后哈希与构建产物一致；0.4.0-beta.2 改名为 `wok_infantry-0.4.0-beta.2.jar.backup-20261005-180115-before-0.4.0-beta.3.bak`。测试端 8 个 WOK步战 JAR 的独立安装检查全部 PASS。
+- 未做：en_us 报告轮；真实客户端（PCL）里的游戏内验收——鼠标悬停白圈、点选黄圈、30 秒变淡、卫星扫描期间红点不闪、扫描结束后红点变淡、集结点上放小队队包看定位针让位，以及 1080p GUI 4（自动验收的 480×270 档实际是 GUI 2，GUI 4 的 45 物理像素牌子只有单测）。
+- 已知、未改（与本版无关，按代码推算、未在游戏里观察）：卫星每批红点租期 5.5 秒、每 5 秒扫一次，而战局快照每 20 tick 才发一次；按任务相位，约一半的卫星呼叫里红点会在两批之间从客户端消失最多约 0.45 秒（指挥官支援附属的租期或核心的快照节奏可以消掉，需另开一轮）。
+
+## WOK步战核心 0.4.0-beta.2 — 2026-10-05
+
+> 用户需求（2026-10-05）：“加一个功能 测试模式，因为现在我需要部署点 没法测试功能”。选阵营/编制时人在黑色等待空间里，超平坦测试世界两方都没有主基地，没法测试部署后的功能。本版新增全服测试模式与一键测试开局（命令和编制页按钮），不改任何网络协议号，可与 0.4.0-beta.1 互连。
+
+### 新增
+- 全服测试模式：`/battle admin test mode on|off|status`（权限等级 2）。开关写进独立存档 `<世界>/data/wok_infantry_test_mode.dat`（只记开关、开关人和时间），对全服生效、重启后保留。开启时全服公告，所有在线玩家（之后登录或重生的也一样）顶部显示黄色 Boss 条“WOK步战测试模式已开启 · /battle admin test mode off 关闭”；关闭时移除 Boss 条并公告，公告里说明补出的主基地保留。`status` 显示开关、谁在何时开关的和两方主基地坐标。
+- 测试模式开启时：缺主基地的一方自动在主世界出生点附近补设并公告坐标——蓝方在出生点的安全落脚处，红方在出生点 +64 X 的安全落脚处，复用部署点的安全落点查找（2 格内、向上 2 格），尊重世界边界；出生点在水里等找不到落脚处时，在中心 24 格内按 8 格步长逐圈外扩，红方东边全不行再试 -64 X（这时红方朝东、面向出生点），两方的候选列互不重叠；地面是树叶的落脚处（普通地形的树冠）跳过；都找不到就在公告和回执里写明原因（例如“出生点（0, 0）周围 24 格内没有安全落脚位置（地表多为 minecraft:water）”）。已有的主基地不动。正在进行的部署倒计时立即结束，之后部署倒计时和阵亡后的重生等待都是 0（请求部署后立即部署）；兵力、配装、体力、部位血量、倒地等其余规则全部照常。
+- 一键测试开局：`/battle admin test start [阵营] [编制] [玩家]`（权限等级 2，须在游戏内执行，默认对执行者本人生效，加玩家参数可把局域网的第二个玩家也送进去）。先在不做任何改动的情况下核对阵营、编制和该阵营的空位：参数写错、锁定编制当前不可用、阵营已满（上限取阵营人数上限与编制容量中较小者）时直接回报原因，不开启测试模式、不补基地、不开或锁定投票、不动玩家。核对通过后依次：测试模式未开启则先开启；选阵营——参数优先，否则当前所在阵营，否则目录第一个公开阵营，测试开局可以换到另一阵营（绕过“本轮不可换阵营”，只有这条命令可以）；选编制——参数优先，否则该阵营已锁定的编制，否则 `default`，否则第一个候选；该阵营投票未锁定时（必要时先开启投票、候选过期时重开）直接锁定为所选编制，已锁定为别的编制时不改锁定结果、直接加入锁定编制并说明；没有小队就创建第一个空闲呼号的小队并当队长（呼号都已有小队时加入第一个有空位的）；最后选本方主基地并以生存模式部署、发配装。每一步都在聊天回报，失败的一步写成红字并停止，不留半截状态：部署被拒（例如配装不完整）时玩家停在部署页（阵营、编制、小队已就绪），页脚写原因，聊天写补法（点“配装”补齐必需槽位，或用 `/loadoutadmin` 配置该编制的兵种装备，再点“部署”或重新执行）。锁定照常推给该阵营其他成员（与管理员锁定命令相同；锁定之后的某一步失败时也一样推送，其他客户端不会停在旧投票上），被测试开局的玩家本人只收到战局快照和不带锁定标记的目录，不会在部署前被推到别的页面。
+- 编制投票页的“测试开局”键（uiId `formation.admin.test`）：只对客户端判断有权限等级 2 的玩家显示，可调/橙色样式、扳手图标。没加入阵营或阵营已锁定时，单独放在紧凑管理员区（标题行“管理员 测试开局：学院军 · 常规编制”）；投票未锁定时与“开启编制投票”/“锁定投票结果”并排，最多占该行 45%。阵营取当前浏览的阵营，编制取高亮的编制，阵营已锁定时用锁定编制；编制停用、缺 MOD 或容量小于阵营人数时禁用，悬停写原因。点击后弹出 B2c 普通确认层（页面状态 `testconfirm`）：“开启全服测试模式，并自动加入<阵营>、锁定“<编制>”、建小队、补主基地后直接部署？”（已锁定时写“沿用本局已锁定的“<编制>””），另起一段说明测试模式全服生效、重启后保留、用完执行 `/battle admin test mode off`；确认后经 `ClientPacketListener.sendCommand` 发送 `battle admin test start <阵营> <编制>`，页脚显示“正在执行测试开局：…”；成功部署时编制页随部署关闭——不论编制页是服务端推出、用战斗终端键打开还是从终端“编制”页签打开的（只有发出过测试开局的这一页会这样关闭；部署被拒时照常换成部署页）。
+- 语言：中英成对新增 18 个语言键（各由 663 个增至 681 个）：编制页 12 个（按键、悬停、目标行、确认层、处理中与不可用回执），服务端公告 6 个（Boss 条、开启、关闭、补设成功、补设失败、登录提醒），公告与 Boss 条按玩家客户端语言显示。
+- 开发用：`LoadoutService.swapCatalogForGameTest` / `catalogForGameTest`（只在内存里换配装目录，不写 `loadouts.json`），供 GameTest 部署不依赖测试世界的配装文件。
+
+### 修改
+- 部署：测试模式开启时，部署一律切到生存模式，管理员在创造模式下等待时“保留创造”的例外不再适用（等待区里仍保留，便于布置）；部署前已是生存模式时不再调用切换（原版会把“没有变化”当成失败，从而误报“服务器阻止切换到生存模式”；正常流程中等待区是冒险模式，以前碰不到）。
+- 部署：阵亡、重新部署和首次进入的等待时长在测试模式下为 0，关闭后恢复为编制配置或默认 15 秒；`/battle admin test` 下新增 `mode`、`start` 两个子命令，原有 `vehicle` 子命令和载具测试模式不变。
+- 编制页：管理员区的按键行在投票未锁定时分成两键（开启/锁定键在左，测试开局键在右）；未加入阵营或已锁定时管理员会多出一个紧凑管理员区，320×240 窄屏列表页的编制预览因此可能收起（列表照常滚动）。普通玩家的编制页布局与 0.4.0-beta.1 完全相同。`FormationScreenLayout` 新增带 `testKeyWidth` 的 `compute` 重载和 `testKey` 区域，原 9 参签名行为不变。
+
+### 修复
+- 无。
+
+### 兼容性
+- 网络协议号全部不变：战局 `19`、编制 `5`、兵力 `2`、体力 `2`、配装 `11`。0.4.0-beta.2 与 0.4.0-beta.1 可以互连；编制页按钮只是发聊天命令，没有新增网络包。服务端是 0.4.0-beta.1 时按钮发出的命令会被回“未知命令”；客户端是 0.4.0-beta.1 时看不到按钮，Boss 条和公告显示为语言键原文（新语言键只在 0.4.0-beta.2 客户端里）。
+- 测试模式是全服开关：开启后同一服务器的所有玩家都没有部署倒计时和重生等待，并显示 Boss 条；正式对局前务必 `/battle admin test mode off`。测试开局会锁定阵营投票，要恢复正常流程需 `/battle admin reset`（测试模式开关不受重置影响）。
+- 与载具测试模式（`/battle admin test vehicle on|off|status [玩家]`：单人、不保存、切创造并暂停部署限制）互不影响；处于载具测试模式的玩家不能执行测试开局。
+- 公共 API 只新增：`TestModeService`、`TestModeRules`、`TestModeSavedData`（`com.wok.infantry.testmode`）、`DeploymentService.provisionMainBase` / `skipWaitingCountdowns`、`MainBaseProvision`、`FormationVoteModel.TestStart` / `testStart()`、`FormationSelectionScreen.awaitingTestStart()` / `closesOnTestStartDeployment(...)`、`FormationScreenLayout` 的新重载与 `testKey()`（record 多一个分量）。附属 MOD 都不用改：没有任何附属直接构造 `FormationScreenLayout`；指挥官支援 0.1.0-beta.3 的依赖范围 `[0.3.0-beta.6,)` 包含本版。
+- 已知限制：测试开局须在游戏内执行（各步骤以执行者的管理员身份进行），控制台和命令方块执行会被要求“需要玩家”；主基地补设只在主世界、只在开启测试模式（含重启后恢复）和测试开局时检查，开启期间被手动清除的主基地要再执行一次 `/battle admin test mode on` 或测试开局才会补回。
+
+### 配置/存档影响
+- 新增存档文件 `<世界>/data/wok_infantry_test_mode.dat`（`Version`、`Enabled`、`ChangedAt`、`ChangedBy` 四个字段）；旧版本读不到它也不影响加载，其余存档格式不变（`wok_infantry_battle.dat` 仍为 Version 6，部署、投票、支援、载具存档都不变）。
+- 开启测试模式时补出的主基地写进原有的 `wok_infantry_deployment.dat`（与 `/battle deployment setbase` 写入的完全相同），关闭测试模式后保留。测试开局对投票、阵营、小队的改动与对应的管理员命令相同，照常写进 `wok_infantry_battle.dat` 与编制投票存档。
+- 服务端配置、客户端配置、`formations.json`、`loadouts.json` 都不新增项、不被改写。
+
+### 测试结果
+- 以下为审查修正后的最终结果（`19d2114`）；首轮（`c40e4d9`：JUnit 905 项、21 项 GameTest、2,062,775 字节、SHA-256 `1230DE869343EED83C3D83920662639A78C5F78FBA21468396890153A53AD324`，归档 `zh_cn-final`、`en_us-final`）的产物已作废，归档留作对照。
+- `wok_infantry` 在 `19d2114`（本版最后一个源码提交）：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 907 项全部通过，0 失败、0 跳过（比 0.4.0-beta.1 多 31 项：`TestModeRulesTest` 15 项——开关状态机、存档往返与字段钳制、阵营与编制选择规则、阵营空位（阵营上限与编制容量取较小者）、首个空闲呼号、两方基地候选列与外扩、朝向（红方退到 -64 X 时朝东）、世界边界；`FormationTestStartTest` 14 项——按键可见性与阵营/编制取值、锁定时沿用锁定编制、禁用原因、`testconfirm` 状态、发送的命令、发出测试开局后部署成功才关页、6 个尺寸下的按键布局；`BattleCommandsRegistrationTest` 2 项——`test mode on|off|status` 与 `test start [阵营] [编制] [玩家]` 命令树和解析）。产物 `wok_infantry-0.4.0-beta.2.jar`，2,066,819 字节，SHA-256 `60829BC47C86F4AF894CA32C1A210B5CA5E2D824B52A495892003BC6BAF50582`；GameTest 与两轮 UI 验收跑完后重新核对，SHA-256 不变。
+- `runGameTestServer`（同一提交）：22 项必需 GameTest 全部通过，含本版新增 3 项：`testModeAddsBothMainBasesAndShowsItsBossBarUntilTurnedOff`（清掉两方主基地后开启：两方都补出主基地，在主世界、世界边界内、蓝方在出生点附近、红方在出生点 +64 X 附近，开关写进存档，Boss 条显示；重复开启不动已有基地；关闭后 Boss 条移除且没有观看者、两方基地保留、回执说明“保留”）、`testStartDeploysAWaitingAdministratorAndOffRestoresTheCountdown`（黑色等待空间 lobby 里的管理员执行测试开局：阵营投票被锁定为 `default`，管理员加入该阵营、当上新建 Alpha 小队的队长，以生存模式从本方主基地部署到主世界；测试模式下新一条生命的等待为 0，关闭后倒计时恢复，再开启立即结束倒计时）和 `testStartWithUnknownArgumentsChangesNothing`（审查修正：写错阵营、写错编制各执行一次，都只回报一行原因，测试模式不开、不显示 Boss 条、不补主基地、两方投票阶段不变、不给玩家建战局记录）。GameTest 世界的出生点 (0, 63, 0) 在水里，补设走了外扩：蓝方落在 (-16, 64, 16)，红方落在 (48, 66, 16)，正好覆盖“出生点落水”的退路。三项测试结束时还原测试模式开关、两方主基地、阵营投票和内存配装目录（GameTest 世界 `run/world` 也是 UI 验收种子）。
+- `runUiTestClient` zh_cn 严格轮（同一提交）：`status=PASS`，4358 tick，40 个用例、189 张截图（新增 `formation.testmode`、`formation.testconfirm` 各 5 档），`strictLayoutViolations=0`；新增 10 张在 5 个档位（含 427×240）都是 0 违规。`layoutViolations=169`，180 行用例结果与首轮 `zh_cn-final` 逐行相同（原有 179 张截图的结果也与 0.4.0-beta.1 的 `zh_cn-final2` 相同，违规全是旧界面）；`finalActiveMarkers=1` 与首轮相同（比 0.4.0-beta.1 的 3 少，是整轮多了 10 张截图、标记按存活时间过期所致）。“测试开局”键（屏幕像素）：320×240 303×14、427×240 820×28（2× 排版）、480×270 170×14、640×336 200×18、960×720 332×36（2× 排版）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.2\zh_cn-final2\`。
+- `runUiTestClient -PuiLang=en_us -PuiLayoutStrict=false` 报告轮（同一提交）：`status=PASS`（语义检查全部通过），4335 tick，189 张截图，`layoutViolations=172`、`strictLayoutViolations=0`，180 行用例结果与首轮 `en_us-final` 逐行相同。比 0.4.0-beta.1 的 `en_us-final2`（168）多 4 条，都在新增截图里：testmode、testconfirm 两个状态 960、480 档阵营概况里的“3 (the faction picks one)”被省略号截断，与原有 join、confirm 状态同一行、同一位置的已知英文截断相同（留给 i18n 收尾）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.2\en_us-final2\`。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_infantry-0.4.0-beta.2.jar` PASS，强制依赖只有 `forge`、`minecraft`；连同工作区里其余 7 个附属 JAR（均为此前构建、版本未变）一起核对，8 个全部 PASS。
+- `tools/verify_versions.ps1 -Modules wok_infantry -Release`（Windows PowerShell 5.1）：PASS（源码版本、根 README 与 VERSIONING 版本表、模块 README 产物名、CHANGELOG 标题、JAR 名、modId 与内部版本一致；本条目六栏不空，JAR 晚于核心源码最后一次提交 `19d2114` 且源码没有未提交改动）。不带参数完整核对 8 个模块也 PASS。
+- 已部署：2026-10-05 把上面 SHA-256 为 `60829BC4…F50582` 的 `wok_infantry-0.4.0-beta.2.jar` 部署到测试端 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，部署后哈希与构建产物一致；0.4.0-beta.1 改名为 `wok_infantry-0.4.0-beta.1.jar.backup-20261005-061040-before-0.4.0-beta.2.bak`，两者不并存。测试端 8 个 WOK步战 JAR 的独立安装检查全部 PASS。
+- 未做：测试端真实客户端（PCL）里点“测试开局”的游戏内验收（含部署成功后编制页按三种打开方式都自动关闭）、重启后测试模式与 Boss 条恢复、局域网双人用 `/battle admin test start <阵营> <编制> <玩家>` 送第二个号；测试端 `loadouts.json` 的配装是否完整决定部署能否一次成功（不完整时会停在部署页并说明）。
+
+## WOK步战核心 0.4.0-beta.1 — 2026-10-05
+
+> 新版界面档 1：共享界面组件与 GUI 1 最低 2× 缩放、编制选择与投票页重写、新战斗 HUD、键位调整，并修掉此前仍在的 P1 问题（map-render-01 可能崩服、弹药箱标题压住点数）和管理员“职业管理”NPE。小队、地图、配装、管理员、补给等旧界面本版只换配色，布局留给档 2/档 3。三个网络协议升级，客户端和服务端必须同为本版（见“兼容性”）。本版原计划编号 0.3.0-beta.8，因网络协议与 0.3.x 不兼容改为 0.4.0-beta.1；测试端曾以 0.3.0-beta.8 文件名部署过同一功能的预交付构建（当时界面标题前缀仍为“WOK //”，编制页在 400–439 宽仍用完整标题，素材声明为旧版，其余功能相同）。
+
+### 新增
+- 编制页：编制投票页重写（`FormationSelectionScreen` 改为继承新基类 `TacticalScreen`）。宽屏分三区：阵营条、按类别分组的编制列表、编制详情；窄屏（如 320×240、427×240）分为列表页和详情页，用“列表”返回键和 `‹ n/m ›` 翻页。
+- 编制页：目录还没到时显示等待态，页头写中性的“正在读取编制信息”，可点“重新请求目录”或按 `R`；请求后 3 秒仍没收到，标题、提示、状态灯和页脚都改为“编制目录没有送达 · 点“重新请求目录”或按 R 重试”（只提示，不自动重发）。
+- 编制页：加入阵营改为单独的绿色“加入××”键，并二次确认。确认框以阵营名开头（未锁定时先写当前人数，如“学院军当前 18/40 人。”）；未锁定时写明候选数和“全阵营共用、个人不能单独选择、本轮不可换阵营”，已锁定时写“加入后直接使用该编制并进入部署”；阵营简介放在最后一段，小屏上最先省略。
+- 编制页：页脚右侧常驻分步说明（中性色），按宽度从长到短选一条：第一步：点“加入××”加入阵营（需确认）→ 第二步：等待管理员开启投票（管理员看到“点“开启编制投票”开始投票”）→ 第三步：选中编制，点“投票给此编制”（还没投票的管理员看到“选中编制投票，或直接点“锁定投票结果””）→ 第四步：已投票，等待管理员锁定 → 完成：本局编制 X · 点“前往部署”。3 秒回执出现时临时替换。宽屏阵营条右侧另有阶段状态灯（灰=未开启，橙=投票中，绿=已锁定）和“已投 n/人数”。
+- 编制页：编制详情改为结构化显示。徽标按 64/32 整数档绘制；标签有我的票、已锁定、未入选、停用、容量不足；另有容纳检查行；配属载具（数量加补充时间或“不可再生”）、兵种名额（中文名 + 每队人数）、小队、能力（兵站、小队队包、重生等待、移动重生载具、指挥官支援的中文名）分 1–3 列排布。只画完整的行，放不下时写“还有 n 项：… · 滚轮查看”，可用滚轮滚动。
+- 编制页：管理员区（只管理自己所在阵营）。“开启编制投票”默认允许改票，写明候选数和“无自动截止，由你锁定结果”；红色危险键“锁定投票结果”的目标就是当前高亮的编制，上方写目标票数，目标不是唯一领先项或平票时显示橙条，容量不足时禁用并写原因；锁定前弹出危险确认，Enter 不会确认。
+- 编制页：入口。战斗终端新增“编制”页签，锁定后仍可回来查看本局结果；旧小队页的页签行临时加一个“编制”键（档 2 换成正式页签条），从这里打开时编制页替换小队页、以终端的根返回屏为父屏，按一次 Esc 关闭整个终端，切页签也不再叠层；没有编制时战斗终端键直接打开编制页。参战玩家（已有阵营和编制）登录时，服务端顺带下发一次编制目录（不打开界面），“编制”页签可以直接显示锁定结果。
+- 编制页：徽标预缩小纹理 `millennium_seminar_mobile_64.png`、`millennium_seminar_mobile_32.png`，由千禧年研讨会编制徽标原图（256×256）按面积平均缩小得到。该徽标由本项目成员参照《蔚蓝档案》（Blue Archive）中“千禧年研讨会”的标志自行像素化重绘，属于非官方二次创作，原标志及相关名称的权利归原权利人所有，本项目未获得授权或认可（见 `THIRD_PARTY_NOTICES.md`）；管理员自定义的徽标没有预缩小版时，按源图整数分频绘制。
+- HUD：新战斗 HUD 统一布局 `WokHudLayout`：左上小队名单、顶部中间战况条与通知条（编制锁定前为编制投票条）、左下体征槽、屏幕中下槽统一排布。320×240 到 960×720 各档互不重叠，并避开原版快捷栏、副手格、攻击指示器、状态效果图标（包括被 JourneyMap 挪到小地图旁的位置）和占点面板；GUI 缩放 1 时随 `ui.minimumScale2x` 按 2× 画。
+- HUD：编制投票条（新 overlay `wok_infantry:formation_vote`，开战前占用战况条的位置）。分等待管理员开启 / 投票进行中·你尚未投票 / 已投某编制（可改票或查看计票）三种状态：等待态写本阵营人数（小屏省略），后两种写“已投 n/人数”，宽屏带已投人数细条；编制锁定瞬间显示 3 秒锁定通知（编制徽标，底边细线逐渐缩短）。键帽显示玩家实际绑定的战斗终端键，未绑定时省略键帽，改写成“在编制页投票”。
+- HUD：小队名单的成员状态。服务端判定 5 种状态并随战局快照下发（`MemberState`）：已部署（绿）、倒地（橙）、阵亡（红）、待部署（空心）、离线（灰），除已部署外都写状态字（放不下“待部署”时写“待命”）；本人行浅蓝底。同时下发可信血量比例 `MemberView.healthRatio`：没装 WOK步战附属-部位血量 时为原版血量比例，装了时为“未知”（-1）。装了 WOK步战附属-倒地救援 时通过反射 `DownedService.isDowned` 判断倒地。
+- HUD：对外槽位接口 `com.wok.infantry.client.hud.InfantryHudApi`。`slot(id, 宽, 高)` 返回 `top_center_next`、`center_low`、`vitals` 三个槽位的 GUI 像素矩形，`topCenterBottom(宽, 高)` 返回顶部中间底板的下缘；附属可反射调用，取不到时退回各自原位置。
+- HUD：小队公共标签 `SquadLabels`（呼号全称和短名、职务短标签、人数/本队容量、维度名），HUD 先用，小队页与地图以后复用；新增呼号短名语言键 `squad.wok_infantry.<呼号>.short`。
+- 键位：新按键“打开战斗终端（小队页）”（`key.wok_infantry.open_terminal`），默认反引号 `` ` ``（数字 1 左边的键），没选 `P` 是为了避开原版社交键。反引号在原版字体里只有一两个像素宽，键帽和提示里改显示键面上的全角“～”（语言键 `key.wok_infantry.cap.grave`）。
+- 键位：页脚提示和 HUD 键帽显示玩家实际绑定的键名，含 Ctrl 等修饰键（`ClientBootstrap.keyLabel` / `keyHint`）；没绑定的键不显示提示。
+- 键位：Xaero 世界地图重定向（客户端配置 `tacticalMap.redirectXaeroWorldMap`，默认开）。进入战局（已加入阵营且编制已锁定）后，任何打开 Xaero 世界地图的操作（默认是它的 `M`）都会在界面打开前换成战术地图，不会先闪出 Xaero 地图，Esc 直接回游戏；未加入阵营或编制尚未锁定时，Xaero 地图照常打开。
+- 共享组件：新界面基类 `TacticalScreen` 与最低 2× 缩放。GUI 缩放为 1 且窗口至少 640×480 时，界面整体按 2× 排版和绘制（960×720 窗口按 480×360 排），鼠标坐标和裁剪框自动换算；客户端配置 `ui.minimumScale2x`（默认开）同时管界面和 HUD。本版只有编制投票页和战斗 HUD 用到。
+- 共享组件：新外壳 `TacticalBoardChrome.shell`，分紧凑、标准、宽松三档。页头放状态灯、标题、页签、身份，页脚放键帽提示和回执，三者互不重叠；空间不够时先收起身份，再把页签换成短名，最后才缩短标题。回执新增“处理中”（橙色）和“步骤说明”（中性色）两态。
+- 共享组件：页签条 `TacticalTabStrip` 与战斗终端六个页签 `BattleTab`（小队、兵种、部署、配装、地图、编制）。放不下全名时换短名，再放不下变成 `‹ 名称 n/m ›`；禁用页签悬停显示原因；`Ctrl+Tab` / `Ctrl+Shift+Tab` 切页，原版 Tab 焦点切换保留。`BattleTerminalNav` 记住进入终端前的界面，切页签时替换当前界面，不再层层叠加。
+- 共享组件：界面内模态确认层 `TacticalConfirmDialog`。危险操作用红色分区条和红色确认键，默认焦点在“取消”，Enter 和空格都不会确认危险操作，Esc 取消；关闭后原界面不重建，草稿、滚动位置和选中项都保留。用 Tab 或方向键切换焦点时朗读当前按键，危险确认键读出“需鼠标点击确认”。
+- 共享组件：平板样式提示框 `TacticalTooltip`（深色底、橙色顶线、无阴影、不出屏）；文字工具 `TextFit`（按宽度裁切，超宽以“…”结尾，不拆字、无阴影，支持“名称裁、状态完整”的两段式标签和中文逐字折行避头尾）；按钮状态表 `TacticalButtonStyle`（普通、悬停、选中、禁用、危险、成功、可调七态，外加“当前”态，优先级为禁用 > 当前/选中 > 种类 > 悬停）。按钮、滑杆、卡片的文字被省略时悬停显示完整文字；键盘操作时获得焦点的控件外圈显示焦点框。
+- 共享组件：绘制原件 `TacticalDraw`（面板、分区、凹槽、行、卡片、物品格、标签片、仪表、键值行、空状态、滚动条、翻页）；凹槽列表 `TacticalList`（只画完整的行，溢出时最后一行写“↓ 还有 n 项”并配橙色细滚动条，支持滚轮、拖动和键盘，禁用行悬停写“不可用：原因”，刷新时保留选中项和滚动位置）；滑杆刻度 `TacticalSliderScale`（连续、对数、整档）；步进器 `TacticalStepper`；无阴影输入框 `TacticalTextField`（配套客户端 Mixin `EditBoxShadowMixin`，只作用于这种输入框）。
+- 共享组件：三张界面图集。`ui_icons.png` 为 45 个 9×9 单色图标，绘制时按文字色着色；`ui_hatch.png` 为禁用斜纹平铺块；`map_icons.png` 为分层地图标点（牌底、描边与投影、悬停/选中圈、10 种白色剪影）。三张都是本项目原创像素图，由仓库外的本地预览工具 `ui-preview/tools/export-ui-atlas.mjs` 生成，不含第三方素材，单测核对 SHA-256，不要手改 PNG。配套 `TacticalIcon`、`TacticalMapIcons`（标点屏幕尺寸不随 GUI 缩放和地图缩放变化）和 HUD 原件 `TacticalHud`；按钮可以带图标或只显示图标。战术地图本版还没换用新标点（档 2）。
+- 共享组件：`TacticalBoardTheme` 改为公开类，收录 A 方案（战术平板）全部颜色令牌。
+- 开发用 UI 验收：主源码新增布局探针 `com.wok.infantry.client.ui.probe`（`UiLayoutProbe`、`UiLayoutFrame`、`UiLayoutReport`、`UiSurfaceInfo`）。共享组件绘制时上报框、文字、控件状态、截断、禁用原因、uiId 和地图标点物理尺寸；生产环境没有接收端，每个钩子只读一次 volatile 就返回，不分配对象。
+- 开发用 UI 验收：用例运行器 `UiCaseRunner`。320×240、960×720（GUI 1，按 480×360 排版）、640×336 为必过档，480×270、427×240 只出报告；截图名 `wok_ui_<界面>_<状态>_<档位>.png`，另写 `wok_ui_layout.json`、`wok_ui_manifest.json`、`index.html` 和进度文件 `wok_ui_progress.txt`。用例覆盖组件陈列页、地图标点陈列、编制页 15 态、HUD 9 态，以及回归 `ammo.small320`（player-01）和 `admin.noclass`（admin-01），整轮 38 个用例、179 张截图。
+- 开发用 UI 验收：`runUiTestClient` 新参数 `-PuiLang`（默认 `zh_cn`）、`-PuiCases`、`-PuiTiers`、`-PuiLayoutStrict`、`-PuiPreviewShots`；新 Gradle 任务 `archiveUiAcceptance` 把最近一轮结果复制到步战测试端 `ui-acceptance\<日期>-<版本>\<标签>\`（目录已存在就拒绝）；新文档 `wok_infantry/docs/UI_ACCEPTANCE.md`。
+- 工具：`tools/verify_versions.ps1` 新增 `-Modules`（只核对指定模块）和 `-Release`（要求当前 CHANGELOG 条目已去掉“进行中”、六个栏目齐全且不空，JAR 晚于模块源码的最后一次提交且源码没有未提交改动）；不加参数时行为不变。
+- 语言：中英成对新增 352 个语言键（各由 311 个增至 663 个），编制页、HUD、页签、确认层、列表、键帽等新界面的文字全部走语言键。
+- 文档：README 与第三方声明加入非官方同人作品声明。仓库根目录 `README.md` 新增“声明”一节，核心 `THIRD_PARTY_NOTICES.md`（仓库内与 JAR 内 `META-INF/` 两份）开头加入同一段全文：本项目（WOK步战及其附属 MOD）是非官方的粉丝同人作品，阵营、编制、组织、地名等名称以及相关标志取材自《蔚蓝档案》（Blue Archive），相关权利归原权利人所有，本项目与原作及其权利方没有任何关联，也未获得其授权或认可，权利人提出要求时会更换或移除相关名称与图标；核心 README 的“设计参考边界”同步。
+### 修改
+- 编制页：阵营键只切换浏览，不再点一下就永久加入。未加入时，正在浏览的阵营画成蓝描边 + 2px 左条 + 浅蓝灰底 + 眼睛图标；加入后本阵营才是实心蓝加 ✓，对方阵营变灰加锁，悬停写明原因。
+- 编制页：编制行在任何阶段都能点，点击只改高亮、不发投票，不可用的行也能点开看原因。“投票给此编制”键单独放在详情右下角，旁边写当前状态或禁用原因（禁用时悬停也显示原因；窄处用最短写法，如“上限 12 < 本阵营 18”）；Enter 只在投票键可用时投票。
+- 编制页：Esc 一律可关闭：先关弹窗，窄屏详情页先回列表，否则关闭本页。未加入时页脚写“关闭（～ 键可重开）”，关闭后动作栏提示用哪个键重新打开（终端键没绑定时提示去控制设置绑定）。
+- 编制页：管理员开启或锁定投票后，页脚先显示橙色的处理中回执（“正在开启编制投票…”“正在锁定：X…”），再以服务端回执为准（成功或失败），不再只发聊天。
+- 编制页：页脚分步说明改为中性色，与 HUD 的等待/待办提示一致（UI-09）；“处理中”仍为橙色。
+- 服务端：“可投票”和“可加入”分开判断。阵营满员只影响新玩家加入，已在阵营里的成员照常投票；`FactionSelectionView.available` 改为“新玩家现在能否加入”，`FormationSelectionView.available` 只表示投票候选。
+- 服务端：投票准入统一按 `FormationVotePolicy.voteBlock` 判定：本阵营成员 → 投票已开放 → 是候选 → 编制容量不小于阵营人数 → 改票规则，之后再由投票记录核对一次。投票未开放或不是候选时先报这两条，不再先报容量不足；已锁定时回执“××本局编制已锁定，投票已结束”。
+- 服务端：锁定后才加入的玩家直接获得本局锁定编制和默认兵种，并进入部署页；阵营人数受 min(阵营上限, 锁定编制容量) 约束，超出时整笔拒绝。
+- 服务端：锁定广播只发给被锁定的阵营。服务端先发战局快照，再发带锁定标记（`lockNotice`）的编制目录，由客户端决定是否打开部署页：没开界面或开着战斗终端类界面时直接打开部署页，部署页页脚写一次“本局编制已锁定：X”；开着其他 MOD 的界面或 WOK步战的配装、管理员、武器调校、补给等编辑页时不打断，由 HUD 锁定通知提示。对方阵营不再被推部署页。
+- 服务端：开启投票时只给该阵营成员和尚未加入阵营的玩家弹出编制页，其余玩家只刷新数据。有人加入阵营、改票或被管理员改派时，新旧阵营在线成员的人数和“已投 n/人数”同步刷新。
+- 服务端：管理员 `/battle admin formation assign` 遵守投票：已锁定时只能分配锁定编制，未锁定时只分配阵营，编制等锁定后统一下发（vote-02）。`/battle admin assign <玩家> <blue|red>` 不再写死 `default` 编制，规则相同（vote-03）。
+- 服务端：编制目录请求改用独立的限流类别 `FORMATION_CATALOG`（1 秒），不再和打开界面的请求（`OPEN_UI`）共用（此前打开小队页后 1 秒内点“编制”，目录请求会被丢弃，编制页停在等待态）；其他限流值不变。
+- 服务端：编制目录里每个阵营带投票阶段和锁定编制，每个编制带结构化详情（`FormationDetailView`），目录末尾附支援名称表；客户端没装指挥官支援时显示服务端给的回退名。兵种名额、载具组数量、小队容量超过线格式上限 128 时先夹到上限（`FormationSelectionCodec.MAX_DETAIL_COUNT`），不会让整份目录编码失败。
+- HUD：小队名单重写。移到左上角贴边，宽度按屏宽（不足 400 宽为 116，否则 172），行高 10/12，编号 1–8 与地图一致；队长 ★ / 指挥 ◆（宽屏写“队长”“指挥”，兼任时两个都显示）；名字超宽以“…”结尾；状态列（短血条 + 兵种，或状态字）对齐成一列；人数分母为本队容量。默认（`hud.rosterMode = AUTO`）在小屏（GUI 宽不足 400 或高不足 280）打开聊天时，以及任何尺寸下按 F3、按住 Tab（只在原版确实画出玩家列表时）只留一行标题；旁观模式隐藏。名单按快照缓存，不再每帧排序和逐人取兵种名。
+- HUD：兵力横幅改为战况条（overlay id 仍为 `tickets`）。双方兵力数字在两端，己方友军蓝、对方敌对红，两条兵力条从中线伸向各自的数字，兵力减少时向中线收缩；满条取服务端当前配置的初始兵力 `tickets.initial`，某方现值更高时取现值。本局结束与基地补给提示改为战况条下方的通知条。
+- HUD：原版 Boss 血条在顶部中间有 WOK步战底板时整体下移，占点面板横跨 Boss 条所在列时移到面板下方；GUI 宽约 530 以下、小队名单伸进 Boss 条所在列时再右移让开名单（右移量按名单和右侧障碍逐帧计算，单测中 1× 的 320×240 右移 53、427×240 站在据点内右移 56、480×270 站在据点内右移 29 GUI 像素，640 及以上不右移；自动验收中 854×480 窗口 GUI 1 的 2× HUD 右移 16），不越出屏幕，也不移进右侧的状态效果图标或占点面板。
+- HUD：体力常态改为中性灰，低于 50（开始摆动）为橙，15 及以下为红，带“手/腿”标签。装了部位血量时仍画在它的 52×11 伴随槽里（一行；2× HUD 时为两条无标签细条，人形与三档布局不动），没装时自绘底板（2× HUD 时排成一行）；创造与旁观模式不显示。
+- HUD：全部核心 HUD 改为画在原版 F3 文本之下（`registerBelow(DEBUG_TEXT)`），F3、聊天、Tab 列表和以 aboveAll 注册的附属 HUD 都在其上；核心 HUD 只用 `TacticalBoardTheme` 令牌，文字无阴影。
+- 键位：默认键为战斗终端 `` ` ``、战术地图 `M`；配装（原 `L`）、旧小队键（原 `K`）、管理员配装（原 `U`）、单枪编辑（原 `O`）默认不绑定，可在控制设置的“WOK步战核心”分类里自己绑。装了 Xaero 世界地图且能重定向时，核心的“打开战术地图”键默认也不绑定，由 Xaero 的 `M` 经重定向打开。所有核心按键只在游戏内（没打开界面时）生效（`KeyConflictContext.IN_GAME`），映射名全部保留。
+- 键位：旧小队键和战斗终端键打开同一个界面；两者绑在同一个键上时，按一下只开一个界面。
+- 键位：终端键、地图键和 Xaero 重定向统一按“进入战局（已加入阵营且编制已锁定）”判定（`KeyBindingDefaults.battleEntered`，UI-03）。锁定前终端键和地图键都打开阵营/编制页（装了 Xaero 世界地图时 `M` 打开 Xaero 自己的地图），与终端里锁定前不可用的“地图”页签一致；刚登录时也不再随服务端清空包和心跳包的先后而变化。服务端回答“不需要选编制”时回退到小队页。
+- 旧界面：小队、兵种、部署、地图、配装、补给、武器调校、导入导出、管理员等界面一次换成 A 方案定稿色，新旧色不并存，旧令牌名保留为 `@Deprecated` 别名；布局不变，管理员终端、战术地图、补给页里写死的部分颜色也留给各自批次（档 2/档 3）。
+- 旧界面：按钮悬停只加深底色和描边，不再变蓝框；选中为蓝底 + 2px 浅蓝左条；当前页签、当前兵种、当前部署点这类“选中但不可点”的按钮画成当前态；禁用为灰底、灰边、灰字加斜纹（斜纹改为贴图平铺一次绘制，一屏很多禁用键时不再每帧多出数万个顶点）；危险按钮平时红边红字，悬停整块变红；可调按钮只在可用时画橙色下划线。`BattleUiButton` 删掉超宽文字的左右滚动，改为省略号加完整文字提示。
+- 旧界面：分区标题条改为深色底 + 3px 色条 + 浅色字，过长加省略号；小队、配装、编制页原来的蓝色分区条改为橙色（橙色表示分区）。配装候选卡片改为选中蓝底加浅蓝左条（原来是橙框橙条），预览槽改为深色凹槽；终端页头状态灯和身份文字改用亮色变体，战斗回执横幅改用定稿深底，过长加省略号。
+- 旧界面：现有滑杆（战术地图“情报图标”、武器调校四项）改用新画法：标签在左，橙色数值在右，填充和旋钮为橙色；高度不足 18 时排成一行，太窄时先收起标签、再收起数值（悬停仍能看到）。鼠标按画出的轨道换算，两端都能拖到底；新增 Home/End 跳到两端、Shift+←/→ 一次五步，数值没有变化时不再重复回调。原构造器签名、百分比读数和吸附不变。
+- 旧界面：弹药补给板面的剩余点数与点数条、模式页签（仅大型站）、分区标题和列表改为从上到下排列，点数条从点数文字之后开始，空间不够时换行；过长的分区标题按面板宽度裁切。480×270 下小型、中型箱的枪械列表少一行（原第 5 行是靠标题压住点数才放下的），仍可滚动。
+- 旧界面：管理员配装终端在编制没有当前职业的规则时禁用“职业管理”键，悬停写明原因；槽位页签的箭头只改变可见的页签，不再移动选中的槽位；槽位 ID 输入框只接受 a-z、0-9、`_`、`.`、`-`。
+- 界面标题：前缀由“WOK //”改为“WOK步战 //”（英文“WOK INFANTRY //”），不再与 WOK 本体混称。涉及编制投票、小队指挥、作战配装、战术拼板、弹药补给、单把武器属性编辑六个终端的标题（开发用组件陈列页、地图标点陈列页同步）。编制投票页、陈列页的新外壳在空间不够时仍按“先收起身份、再换页签短名、最后给标题加省略号”让位；旧外壳的标题按“页头宽 − 身份宽 − 32”裁切，与右侧身份之间固定留 12px，不会重叠。编制投票页在布局宽度不足 440 时使用短标题“编制投票”（原为不足 400；`FormationText.title`），所以 427×240（854×480 默认窗口、GUI 1）下已加入阵营时，页头仍能同时放下页签和“学院军 · 阿尔法小队 · 指挥官”这类身份；480 宽及以上仍用完整标题“WOK步战 // 编制投票”。
+- 旧界面：本编制没有开放、但本阵营正在执行的支援，在队友的支援列表里显示为只读的不可用行（“不可用 · 当前编制未开放”），危险区照常画出。
+- 文档：`wok_infantry/README.md` 当前版本与产物路径改为 0.4.0-beta.1，按新版编制投票页重写阵营与编制段，新增“客户端配置”小节（`config/wok_infantry-client.toml` 六项）；测试环境、编制框架和导入导出文档里的旧默认键 `K/L/O/U` 改为新键位说明；编制框架文档补投票准入顺序、编制协议 5、晚加入继承与同阵营分配规则，编制原型设计文档把“锁定后加入直接继承锁定编制”记为已确认；测试环境文档补记本测试端 JourneyMap 6.0.2 已启用、战术地图状态栏应显示“JourneyMap 地形”；`STAMINA_SYSTEM.md` 的 HUD 段改为“手/腿”体力条；`SUPPORT_SYSTEM.md` 补本阵营在途支援的只读可见规则；仓库与 JAR 内的两份 `THIRD_PARTY_NOTICES.md` 统一为同一内容（JAR 内一份原先只有龙之崛起一节，措辞也较旧），开头加入非官方同人作品声明，并新增两节：“千禧年研讨会编制徽标”写明该徽标及其 64/32 预缩图由本项目成员参照《蔚蓝档案》（Blue Archive）中“千禧年研讨会”的标志自行像素化重绘，属于非官方二次创作，原标志及相关名称的权利归原权利人所有，本项目与其没有关联、也未获得授权或认可，权利人要求时会移除或更换；“界面图集”写明 `ui_icons.png`、`ui_hatch.png`、`map_icons.png` 三张界面图集是本项目原创像素图，由本地预览工具生成，不含第三方素材；`docs/VERSIONING.md` 补 0.x 阶段网络协议或存档不兼容时提升次版本号的规则；占点 README 补一段与核心的 HUD 避让约定（纯文档，不升占点版本）；控制设置分类名统一写“WOK步战核心”。
+- 开发用 UI 验收：`runUiTestClient` 加载核心 Mixin（`--mixin wok_infantry.mixins.json`）；小队键和地图键改按映射名查找实际绑定的键（小队映射没绑键时用战斗终端映射）；14 张旧截图名字和顺序不变，实时流程截 01–09，`legacy` 用例组补 10–14；编制投票页和管理员区按 uiId 找键，不再依赖中文字面量；编制夹具改用编制协议 5 的记录，详情、可用性和原因都调用服务端方法生成；按钮文字宽度检查改由探针按实际绘制判断；全局超时按各用例预算累加；编制页用例对已加入阵营的状态逐档记录页头身份是否显示（结果文件 `formationHeaderIdentity[...]`），中文 427×240 档不显示时该档记为 REPORT（427 档只出报告）。
+### 修复
+- 用户 10-04 实测：未加入阵营时首个阵营按钮是实心蓝，看起来像已经加入；现为浏览样式（见“修改”）。
+- 用户 10-04 实测：投票未开始时编制按钮禁用却仍高亮、悬停还会变色，也不说明原因；现在编制行只改高亮，投票键禁用时画灰底斜纹，旁边写“等待管理员开启投票”或“加入阵营后才能投票”（管理员看到“先点“开启编制投票”，开启后才能投票”，UI-10）。
+- 用户 10-04 实测：页脚只写界面路径，不写下一步该做什么；现为分步说明。
+- 用户 10-04 实测：未加入阵营时按 Esc 没反应，也没有提示，玩家被困在编制页；现在 Esc 一律可关闭，并提示用 `～` 键重开。
+- vote-01：锁定后才加入的玩家卡在“有阵营无编制”，所有按钮都不能点，也无法部署。现在加入时直接拿到锁定编制和默认兵种；锁定前已入阵营、但没有编制的玩家登录时自动补上锁定编制（`FormationService.inheritLockedFormation`）。
+- vote-04：已锁定的投票还能重开；现在本局内不能再开，需要先 `/battle admin reset`。
+- vote-08：阵营满员后，成员在界面上投不了票。
+- vote-09：管理员要先替自己投一票才能锁定；现在锁定目标就是当前高亮的编制，与管理员自己投没投票无关。
+- vote-10：离队、被释放或被改派的玩家的旧票仍计入，“已投 n/人数”可能超过 100%；现在只统计现有成员。
+- vote-11：容量小于阵营人数的编制在锁定前仍可投票，要等锁定时才失败；现在投票时就拒绝，界面标“容量不足”。
+- player-05/06/07/08/09/10/15/17/23/27：阵营键点一下就永久加入；不可用原因看不到；高亮总是跳到首个编制；关掉编制页后回不来；兵种显示内部 ID；320×240 只剩 1 行、翻页键压住正文；页脚文字带阴影；编制页仍在用旧 `TacticalBoardButton`；徽标缩成 12px；目录为空时被困在空白页。
+- text-state-04（编制部分）：加入、投票、开启投票的回执泄露内部 `blue`/`red` 或结果枚举名，失败时还发空的聊天消息；现在用公开名称，例如“已加入学院军，等待编制投票”“投票已记录：千禧年研讨会机动部队”“学院军编制投票已开启”。text-state-18：管理员操作发出后不再先显示绿色“成功”。
+- map-render-01（P1，可能崩服）：管理员分配让同一阵营的成员处于不同编制，或目录重载把某个在途支援移出白名单时，`SupportView` 抛异常并中断之后所有玩家的快照广播。现在 `SupportService.viewFor` 为这类任务补一条只读选项；`broadcastSnapshots`、`broadcastFactionSnapshots` 逐人隔离失败，同一失败只记一次 error。
+- player-01（P1）：小型、中型弹药箱的不透明分区标题盖住剩余补给点数，点数条也压住点数文字。
+- admin-01：编制没有职业规则时点“职业管理”出现空白页并报 NPE；现在该键禁用并写原因，设置页和槽位编辑页初始化失败时退回列表，渲染代码检查空值。
+- admin-04：新建槽位或职业时，服务端确认前选中项就变了，被拒绝后也不恢复；回到列表时也会重置新建职业的状态。
+- admin-05：列表页“读取主手”沿用上一次编辑页的弹药上限；现在总用默认上限。
+- admin-07：打开界面、刷新、切换职业/阵营/编制或改变窗口宽度后，槽位页没有跟随选中的槽位。
+- admin-21 / text-state-16：离开服务器后，复制的职业配装和管理员终端记住的选中项没有清掉。
+- UI-06：管理员配装“职业管理”键的禁用原因是中文字面量，英文客户端也显示中文；现在走语言键 `screen.wok_infantry.admin_loadout.class_settings.*`。
+- squad-11 / map-interact-02：队友掉血时每秒的快照都会改变 revision，小队终端和战术地图整页重建；现在 revision 只看身份、队长/指挥关系、兵种、在线、存活和成员状态，掉血只更新数值，成员状态变化时才重建一次。
+- NET-1：重复加入本阵营（包括用聊天宏反复执行 `/battle formation join`）、投票未改变、没有改动的管理员分配，都会给全阵营每人重建并发送一份目录，锁定后还多发战局快照（40 人阵营每秒可达约 80 个目录包）。现在只回执本人（“你已在X，等待编制投票”或“你已在X，本局编制：Y”），只有阵营、编制或本人选票确实变化时才刷新新旧阵营的在线成员。
+- NET-3：投票开启/锁定、目录重载与导入、战局重置、队友刷新等编制群发没有逐人隔离，某个玩家发送失败会中断后面所有人（例如锁定广播半途出错，后面的人收不到锁定通知）。现在逐人 try/catch 并限频记日志，锁定时战局快照和目录也分别隔离。
+- NET-4：快照/目录发送失败日志按完整消息去重，消息里的数值每次不同，64 个名额很快用完，之后出现的新故障只记 debug。现在去重签名屏蔽数字和 UUID，每个签名 5 分钟内只记一次 error，超过 64 种时新签名共用一个溢出名额。
+- NET-5：锁定前对已在本阵营且已有编制的玩家执行管理员分配，会清掉他的编制、小队和指挥官身份，部署中的玩家还会被收回装备、送回等待区（从 beta.7 升级、持有 `default` 编制的玩家最容易碰到）。现在目标已在该阵营时不做改动，管理员收到“X 已在Y·Z，未做改动”；只有跨阵营改派才清除旧阵营的状态。
+- NET-6：管理员分配的回执把内部 `blue/xxx` 原样显示在被分配玩家的页脚，语气还是写给管理员的，新旧阵营的人数也不刷新。现在被分配的玩家收到写给本人、只用公开名称的回执（例如“管理员已将你分配到学院军，本局编制：机动部队”），页脚和聊天都显示；新旧阵营在线成员刷新目录；管理员的投票页页脚也显示回执。
+- NET-8（旧存档）：0.3.0-beta.7 世界里锁定后才加入、只拿到阵营的玩家，登录补继承时如果锁定编制已满，会既不能部署也不能换阵营，每次登录记一条 WARN。现在该玩家退出阵营，收到说明并回到阵营选择。
+- UI-01：编制页由客户端先打开、再请求目录，服务端回包却仍要求打开页面；高延迟下按 Esc 关掉编制页后，晚到的回包会把页面重新弹出来。现在这类回包不再打开页面，页面已关闭时只更新缓存。
+- UI-05：队友每投一票编制页就重建，键盘焦点丢失，打开着的加入/锁定确认框里的人数和领先提示也会过期。现在按控件身份找回焦点；确认框按新目录改写正文，目标已不能加入或锁定时自动关闭并给出回执，已被锁定或玩家已被分配阵营时静默关闭。
+- UI-07：编制锁定前其他页签都不可用，页脚却提示“Ctrl+Tab 切页”；现在至少还有一个其他页签可用时才提示。
+- UI-08：确认框里用 Tab 或方向键切换焦点时没有朗读。
+- HUD（hud-core-01 / hud-stack-09）：装了部位血量时原版血量每 tick 被拉满，名单血条永远满格；现在服务端下发“未知”，客户端不画血条，只显示兵种。
+- HUD（hud-core-02/08/09/15，hud-stack-10/13，text-state-14，squad-21）：名单人数分母用了编制内最大小队容量；名字硬截断没有省略号；写死英文 `[CO]`/`[SL]`，兼任只显示一个；待部署与阵亡同为红点、倒地显示绿点、本人行没有高亮（服务端以前也分不清待部署和阵亡，倒地按正常存活上报）。
+- HUD（hud-core-03/10，hud-stack-06/16，text-state-11/15）：体力底板压住副手格和左侧攻击指示器；两条体力没有标签，常态色与警示色难以区分。
+- HUD（hud-core-04/05，text-state-12）：名单、体力、兵力条画在最上层，压住 F3、聊天和 Tab 列表；F3 和旁观模式下名单仍完整显示。
+- HUD（hud-core-06/07，hud-stack-04/08/11）：站在据点内时占点宽版面板压住小队名单（427–640 宽）；名单固定在 (8,42)、行高 17，8 人时压住聊天（现在 320×240 下名单到 y95 为止）；兵力条与 Boss 血条重叠，也不避让状态效果图标。
+- HUD（hud-stack-23）：本局结束文案写死中文，平局时误判为红方胜；补给提示超宽时硬截断。
+- HUD（hud-core-13）：头顶小队标记按 F1 不隐藏、夜间与洞穴里变暗；现在 F1 隐藏、全亮，队长兼指挥时两个职务都显示。
+- HUD（hud-core-16/17/19，hud-stack-15，ui-kit-17）：HUD 写死颜色；名单每帧排序并逐人取兵种名；HUD 没有客户端配置。
+- compat-01：427×240 等矮屏（GUI 高约 240–255）站在据点内、小队满 8 人时，被占点面板推下的名单最后一行盖住 WOK步战附属-部位血量 人形的头部血量标签；本人倒地时，WOK步战附属-倒地救援 0.1.0-alpha.3 的底部面板也会盖住名单。现在名单只保留放得下的成员行（427×240 剩 6 行，427×250 剩 7 行，约 256 高起保留全部 8 行），再放不下只留标题行，标题人数仍算全员；附属取 `center_low` 槽时，名单从下一帧起也让开。
+- 键位（text-state-01 / hud-stack-20 / hud-core-14）：默认键与原版或整合包冲突，控制设置里标红：`K`（SuperbWarfare 热成像、TaCZ Expands）、`L`（原版进度）、`M`（Xaero 世界地图）、`O`（TaCZ）、`U`（JEI）。
+- 键位（text-state-02 / admin-15）：管理员配装键、单枪编辑键对所有人生效，普通玩家按下会刷红字；现在客户端先判断权限等级 2，不够就不发包，服务端校验不变。
+- 键位（map-render-11 / map-interact-04 的键位部分）：装了 Xaero 世界地图时按 `M` 会先开 Xaero 地图、再叠一层战术地图，Esc 退回 Xaero 地图；现在进入战局后直接换成战术地图。地图界面本身的其余问题留给档 2。
+- compat-04：一次性键位迁移不看 `tacticalMap.redirectXaeroWorldMap`，关掉重定向的玩家原来的 `M` 也会被解绑；现在只在重定向开着、且 Xaero 开图键也在 `M` 上时才迁移 `M`。
+- 组件（ui-kit-01/02/07/08/09/10/12，text-state-17）：按钮、滑杆、配装卡片、回执横幅硬截断没有省略号；危险按钮悬停没有变化；禁用按钮悬停仍变蓝、红框和橙线仍在；“选中但不可点”的按钮没有当前态；选中左条与底色同色看不出来；鼠标点过后按钮一直保持悬停外观；分区标题不量宽、长标题越界；部署点等长按钮左右滚动。
+- 组件：小队页在大屏（如 960×720）上回执横幅超出页脚 2px（ui-kit-13 的小队页部分）；编制页页脚用的是带阴影的 `drawCenteredString`。
+- 组件：滑杆最大值不在步长网格上时，拖到最右端或按 End 取不到最大值（旧算法退回最后一个网格值；现有地图和武器滑杆的范围都在网格上，不受影响）。
+- 开发用 UI 验收：此前的 PASS 实际没有加载核心 Mixin；编制投票页为显示管理员控件临时授予的 OP 不收回；`wok_ui_01_deployment` 截的是小队页（与 02 相同），现在截到部署页；uiTest 资源目录被重复登记，一有资源文件 `processUiTestResources` 就失败；传 `-PuiTiers` 时旧截图 10–14 被档位过滤，导致等到全局超时。
+### 兼容性
+- 网络协议：战局协议 18→19（`BattleNetwork.PROTOCOL_VERSION`，每个小队成员末尾追加状态 id 和血量比例），编制协议 4→5（`FormationNetwork.PROTOCOL_VERSION`，各阵营的投票阶段与锁定编制、结构化编制详情、支援名称表、目录包的锁定标记），兵力协议 1→2（`TicketNetwork.PROTOCOL_VERSION`，快照多一个满条值）。三个频道都要求版本严格相等，客户端和服务端必须都是 0.4.0-beta.1；0.3.0-beta.7 与本版混用时，连接在握手阶段就会被 Forge 拒绝。网络协议不兼容，所以本版按 `docs/VERSIONING.md` 提升次版本号（原计划的 0.3.0-beta.8 改为 0.4.0-beta.1）；测试端以 0.3.0-beta.8 文件名部署过的预交付包协议号与本版相同，部署本版时替换掉它，不要两个并存。体力协议 `2`、配装协议 `11` 不变。包编号、generation 校验和原有限流值不变。
+- 战局快照编解码现在接受“进行中但不可用”的只读支援选项（线格式不变），并在两端检查成员状态与在线/存活一致、血量比例在 [0,1] 或正好为 -1；beta.7 客户端收到只读选项会拒收快照，靠上面的协议升级保证两者不会混连。
+- 服务端行为变化（服主与管理员注意）：已锁定的阵营投票本局不能再开，需要 `/battle admin reset`；`/battle admin formation vote open` 在投票进行中仍可重开（会清空选票，与以前相同）。`/battle admin assign <玩家> <blue|red>` 不再写死 `default` 编制；锁定前两个分配命令都只分配阵营。命令格式不变。
+- 扩展 API 与公共签名保持：`MemberView` 10 参、`BattleSnapshot` 16/17 参、`FactionSelectionView` 7 参、`FormationSelectionView` 14/13/10 参、`FormationSelectionSnapshot` 10/5 参、`FormationCatalogPacket` 2 参构造器，`FormationSelectionScreen(snapshot, returnScreen)`，`TicketNetwork.Snapshot(blue, red, visible)`，`TicketService.finished(MinecraftServer)`（占点反射调用），`TacticalBoardButton`/`TacticalBoardSlider` 构造器，`BattleUiButton.builder()`，`BattleUiTheme` 全部公共常量都保留；`BattleService` 只新增方法；按键映射名 `key.wok_infantry.*` 与 overlay id `squad_roster`、`stamina`、`tickets` 不变。行为差异：`BattleUiTheme` 常量标为 `@Deprecated` 并改指新令牌（数值随之改变，已编译的外部代码仍内联旧值）；`BattleUiButton.Builder.accentColor()` 和 `TacticalBoardButton` 的 `accentColor` 参数不再生效。
+- 新增对附属开放的接口：客户端 `InfantryHudApi.slot` / `topCenterBottom`（槽位 `top_center_next`、`center_low`、`vitals`；取 `center_low` 即表示这一帧要画在那里，名单会让开）；新 overlay `wok_infantry:formation_vote`；公开的新界面组件（`TacticalScreen`、`TacticalBoardChrome`、`TacticalTabStrip`、`TacticalConfirmDialog`、`TacticalDraw`、`TacticalList`、`TacticalIcon`、`TacticalHud` 等，都在客户端包）；`ServerRequestLimiter.Kind.FORMATION_CATALOG`；`PerRecipientDelivery` 改为 public。`WokHudLayout.Input` / `Layout` 是本版新增的记录，签名在本轮内调整过，附属没有引用。
+- 附属 MOD 都不用改版本即可运行：WOK步战附属-指挥官支援 0.1.0-beta.3 的依赖范围 `[0.3.0-beta.6,)` 包含本版，它用到的 `BattleService`、`FormationService` 和支援 API 没有删改（对新核心构建，163 项测试通过）；占点 0.1.0-alpha.3、部位血量 0.1.0-beta.10、倒地救援 0.1.0-alpha.3、创伤治疗、载具部位血量、独立护甲都不解码改动过的包。核心 `mods.toml` 的强制依赖仍只有 `forge`、`minecraft`，核心对附属没有编译期依赖。
+- 软联动部位血量：体力仍从 `BodyHealthHudApi.companionSlot` 取 52×11 伴随槽；名单避让按 beta.10 几何从伴随槽推算人形区域，以后附属提供 `BodyHealthHudApi.hudRect(int,int)` 时优先用它；服务端优先反射以后的 `BodyHealthApi.healthRatio(LivingEntity)`，部位血量到 0.1.0-beta.10 为止都没有，所以装了部位血量时名单不画血条，只显示兵种。
+- 软联动占点：核心按 `ModList` 判断后反射 `ClientCaptureState.insidePoint()`，按 0.1.0-alpha.3 的面板坐标镜像避让，以后附属提供 `CaptureHudApi.panelRect(int,int)` 时优先用它。
+- 软联动倒地救援：服务端反射 `DownedService.isDowned` 在名单上显示“倒地”，调用不到时回退到倒地效果和 NBT 探测；客户端本人带 `wok_downed:downed` 效果时按 alpha.3 底部面板的位置给名单让位。
+- 软联动 Xaero 世界地图：只按类名 `xaero.map.gui.GuiMap` 和键名 `gui.xaero_open_map` 识别（对照 1.39.9 核实），不链接其 class，JAR 内没有 `xaero/**`；找不到这个类时只记一条日志，Xaero 保持原样，核心地图键照旧默认 `M`。Forge 47 的 `KeyMapping.same` 只要同键就标红，所以玩家自己把两者绑到同一个键时仍会标红，但功能正常（核心让出这一下按键，交给重定向处理）。JourneyMap 照旧优先作为地形后端；HUD 按它实际平移后的位置避开状态效果图标。
+- HUD 层级：核心 HUD 由 `registerAboveAll` 改为 `registerBelow(DEBUG_TEXT)`，占点面板、倒地面板等以 aboveAll 注册的附属 HUD 固定画在核心 HUD 之上；部位血量（`registerAbove(PLAYER_HEALTH)`）在核心之下，核心名单和体力会避开它。Boss 条靠在 `BOSS_EVENT_PROGRESS` 前后平移姿态来下移、右移，替换 Boss 条绘制的 MOD 可能受影响。
+- 新增客户端 Mixin `EditBoxShadowMixin`（`wok_infantry.mixins.json` 的 client 段）：对原版 `EditBox.renderWidget` 中的绘制调用做 `@Redirect`，只对 `TacticalTextField` 生效；各注入点 `require = 0`，以后失效时只会退回原版外观。其他 MOD 如果也 `@Redirect` 同一处调用，可能冲突。
+- 已知限制：`CaptureHudBridge` 按占点 alpha.3 的面板坐标避让，没有版本门控（compat-03 未修）。占点以后改面板位置或改用 `top_center_next` 时，必须同时提供 `CaptureHudApi.panelRect`（放进核心槽位时返回 null），否则核心会按旧位置避让；装的占点不是 alpha.3 又没有 `panelRect` 时，核心记一条 info 日志。
+- 已知限制：小队、地图、配装、管理员、补给等旧界面本版只换了配色，布局、2× 缩放和新组件要等档 2/档 3；`ui.minimumScale2x` 目前只作用于编制投票页和战斗 HUD，旧界面在 GUI 1 下仍是 1× 中文。英文客户端下编制页摘要与管理员区、320 档详情的载具和能力行、HUD 投票条第二行、320 档组件陈列页标题等已迁移界面共 47 处英文被省略号截断，留给 i18n 收尾。
+- 已知限制（标题前缀）：英文前缀“WOK INFANTRY //”在 320 档会让组件陈列页标题带省略号、页签收成翻页条，配装、小队、战术地图、补给终端的标题也带省略号（旧外壳与身份之间仍留 12px；战术地图标题不经布局探针绘制，这一处只在截图里能看到）；开发用组件陈列页在英文 427×240、960×720 档也因标题变长收起页头身份“Academy · Alpha · Leader”（改号前显示）。
+- 已知限制：名单被截短时按服务端顺序保留前 N 行，本人行可能被省掉；2× HUD 与 1× 原版快捷栏同屏时大小反差明显（按 `ui.minimumScale2x` 的既定设计）。
+### 配置/存档影响
+- 客户端配置 `config/wok_infantry-client.toml` 新增 5 项：`[tacticalMap] redirectXaeroWorldMap = true`；`[ui] minimumScale2x = true`；`[keys] defaultsRevision = 0`（由模组写成 `1`，不要手改）；`[hud] rosterMode = "AUTO"`（可选 `AUTO`、`FULL`、`COLLAPSED`、`HIDDEN`）、`[hud] showBattleStrip = true`。旧文件缺的项由 Forge 按默认值自动补上，原有 `tacticalMap.intelMarkerScale` 不变。
+- `options.txt`：从 0.3.0-beta.7 及更早版本升级的客户端首次启动时，仍停在旧默认键（无修饰键的 `K`、`L`、`U`、`O`；装有 Xaero 世界地图、重定向开着且它的开图键也在 `M` 上时还包括 `M`）的核心映射会一次性改成新默认并写回 `options.txt`，`latest.log` 列出改了哪些映射；玩家自己改过的键（别的键、鼠标键、带修饰键的键）不动。删除或重置客户端配置后会再迁移一次。整合包如果有意把核心键预设成 `K/L/U/O`，请同时附带客户端配置并把 `keys.defaultsRevision` 设为 `1`。新增 `key_key.wok_infantry.open_terminal`。先装过 Xaero 世界地图、后来又卸掉的玩家，地图键会停在未绑定，需要自己重绑。
+- 服务端配置不新增项（`wok_infantry-server.toml`、`wok_infantry-gameplay.toml` 不变），不改写 `formations.json`、`loadouts.json`。战况条满条读当前的 `tickets.initial`，不按局保存；局中修改时双方现值不变，满条立即按新值显示。
+- 存档格式不变：`wok_infantry_battle.dat` 仍为 Version 6，编制投票存档仍为 Version 1，支援、部署、载具存档都不变；成员状态和血量比例实时计算，不落盘。0.3.0-beta.7 的存档可以直接读入。
+- 旧存档的行为影响：已锁定阵营里“有阵营、无编制”的玩家登录时自动获得锁定编制和默认兵种（写入 `BattleSavedData`）；锁定编制已满时，该玩家退出阵营、收到说明并回到阵营选择（NET-8），不会再每次登录卡住。已锁定的投票在本局内不能再开，需要 `/battle admin reset`。
+- 开发用：`runUiTestClient` 每次运行都会改写 `run/ui-test/options.txt` 的语言并删掉 `key_key.wok_infantry.*` 行；`archiveUiAcceptance` 只在步战测试端 `ui-acceptance\` 下新建目录，不碰测试端的 config、mods、saves。
+### 测试结果
+- `wok_infantry` 在 `883fcd6`（本版最后一个源码提交）：用限流脚本运行 `clean build compileUiTestJava compileNetworkTestJava compileGameplayTestJava compileRallyTestJava compileStaminaTestJava compileCatalogTestJava`，BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 876 项全部通过，0 失败、0 跳过（比上一轮多 1 项：`FormationTextTest` 的短标题阈值）。产物 `wok_infantry-0.4.0-beta.1.jar`，2,009,894 字节，SHA-256 `8324F63A34AAAB59A5A39444FC4DD0D10C1AB653DF8CC9F5FEED43C0EB178C73`。JAR 内 `META-INF/THIRD_PARTY_NOTICES.md`（3,204 字节）与仓库内两份逐字节相同，是改正后的新版：开头为非官方同人作品声明，另有“千禧年研讨会编制徽标”（参照《蔚蓝档案》像素化重绘的非官方二次创作）和“界面图集”（原创）两节，不再含“项目自绘”措辞。两轮 UI 验收跑完后重新核对，JAR 的 SHA-256 不变。
+- `runGameTestServer`（同一提交）：19 项必需 GameTest 全部通过（含本版新增的晚加入继承锁定编制、超容量整笔拒绝、登录补继承 3 项）。
+- `runUiTestClient` zh_cn 严格轮（JourneyMap 6.0.2，不需要 TaCZ）：`status=PASS`，4158 tick，38 个用例、179 张截图；已迁移界面（陈列页、地图标点陈列、编制页、HUD）在 5 个档位都没有违规，`strictLayoutViolations=0`。`layoutViolations=169` 全部来自未迁移的旧界面，只出报告（管理员终端 64、小队终端 49、配装 30、战术地图 26；按规则分为 GUI 1 下 1× 中文 114、禁用键没写原因 51、截断没有完整提示 3、“READY”占位 1），与上一轮 `zh_cn-final` 逐条相同（截图、规则、对象、说明都一致），各用例各档的结果也相同。Boss 条位移（GUI 像素）：320×240 右 53 下 35、427×240 右 16 下 69、480×270 右 29 下 35、640×336 下 39、960×720 下 77，与上一轮相同。新记录的页头身份（`formationHeaderIdentity`）：已加入阵营的 8 个编制页状态在 427×240、480×270、640×336、960×720 四档都显示“学院军 · 阿尔法小队 · 指挥官”，320×240 照旧收起。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.1\zh_cn-final2\`。
+- 427×240 标题修正前后（zh_cn）：修正前 `...\20261005-0.4.0-beta.1\zh_cn-final\screenshots\wok_ui_formation_vote_427x240.png` 页头是“WOK步战 // 编制投票”加页签、没有身份；修正后 `...\zh_cn-final2\screenshots\` 同名截图是“编制投票”加页签，右侧显示“学院军 · 阿尔法小队 · 指挥官”。与上一轮逐张比对 179 张：111 张逐字节相同；427 档编制页 15 个状态都不同，像素差异只在页头（标题改为短标题，已加入阵营的 8 个状态多出身份）；其余 53 张（HUD 45 张、实时流程 01/03、管理员 12/13/14 与 `admin.noclass` 3 张）透出实时世界背景，水面、云等每轮不同，布局报告逐条相同。
+- `runUiTestClient -PuiLang=en_us -PuiLayoutStrict=false` 报告轮：`status=PASS`（语义检查全部通过），4155 tick，179 张截图，`layoutViolations=168`，`strictLayoutViolations=0`，与上一轮 `en_us-final` 逐条相同，各用例各档的结果也相同。427 档编制页 15 个状态改用短标题“FORMATION VOTE”，页签因此放得下全名（上一轮是“SQD / Role / DEP / Kit / Map / FMN”短名）；英文页头身份在 5 个档位都仍收起（`formationHeaderIdentity` 40 条全为 hidden；427 以外各档的编制页截图与上一轮逐字节相同）。归档 `D:\WOK步战测试\1.20.1-Forge_47.4.22\ui-acceptance\20261005-0.4.0-beta.1\en_us-final2\`。下面是 168 条的构成（与上一轮相同）：比改号前（161）多 7 条，都是前缀改成“WOK INFANTRY //”后 320 档标题被省略号截断、没有完整提示：组件陈列页 6 个状态（已迁移界面，英文只出报告）和配装终端 1 条（旧界面）；小队终端 4 张与弹药补给 1 张的标题改号前就被截断，只是文字变了。已迁移界面合计 47 条（编制页 33、HUD 4、陈列页 8、标点陈列 2）；其余 121 条中 118 条是旧界面（管理员 64、小队 24、配装 22、地图 6、补给 2），3 条是只出报告的旧图 11（编制页 960 档）。报告数之外还有两处改号带来的变化（核对时与改号前归档逐张比对发现）：战术地图 320 档标题由完整的“WOK // TACTICAL BOARD”变成“WOK INFANTRY // TACTI…”，它不经布局探针绘制，所以没有计入；组件陈列页 427×240、960×720 档共 12 张的页头身份收起（改号前显示），外壳按规则收起不算违规。
+- 标题检查（截图逐张核对）：编制投票页、组件陈列页、地图标点陈列页用新外壳，zh_cn 下 320×240、427×240、480×270、640×336、960×720 五档的标题都完整显示、没有省略号，也不与页签、身份重叠（严格轮 0 违规）；编制页 320、427 档用短标题“编制投票”，480 档起用完整标题“WOK步战 // 编制投票”。427×240 档已加入阵营的 8 个编制页状态（vote、detail、locked、longcaps、pending、full、admin、admintie）页头都显示“学院军 · 阿尔法小队 · 指挥官”（上一轮 `zh_cn-final` 用完整标题时这 8 张收起身份，改号前用“WOK // 编制投票”时显示）；其余 107 张新外壳截图的身份显示与上一轮相同。旧界面（小队、配装、战术地图、弹药补给、武器调校）的标题按“页头宽 − 身份宽 − 32”裁切，与身份之间固定留 12px，任何宽度都不会重叠，zh_cn 下 320 宽也放得下完整标题（小队、配装、地图、补给有截图；武器调校没有自动截图，按公式核对），没有改代码。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_infantry-0.4.0-beta.1.jar` PASS，强制依赖只有 `forge`、`minecraft`；连同工作区里其余 7 个附属 JAR 一起核对，8 个全部 PASS。
+- `tools/verify_versions.ps1 -Modules wok_infantry -Release`（Windows PowerShell 5.1）：PASS（源码版本、根 README 与 VERSIONING 版本表、模块 README 产物名、CHANGELOG 标题、JAR 名、modId 与内部版本一致；本条目已去掉“进行中”、六栏不空，JAR 晚于核心源码最后一次提交 `883fcd6` 且源码没有未提交改动）。不带参数完整核对 8 个模块也 PASS。
+- 本轮只重建了核心：附属源码与版本都没变，上面核对用的附属 JAR 是改号前在 `0306a7b` 上构建的。指挥官支援的依赖范围 `[0.3.0-beta.6,)` 包含 0.4.0-beta.1，其他附属对核心是可选依赖。指挥官支援与占点的开发依赖读取核心 `gradle.properties`，以后构建它们前要先构建核心 0.4.0-beta.1。
+- （改号前，`0306a7b`）其他模块在同一工作区 clean build：部位血量 0.1.0-beta.10 JUnit 126 项、指挥官支援 0.1.0-beta.3 JUnit 163 项、占点 0.1.0-alpha.3 JUnit 9 项、倒地救援 0.1.0-alpha.3 JUnit 3 项、载具部位血量 0.1.0-beta.1 JUnit 18 项，均 0 失败；独立护甲 1.2.0-beta.1（JAR 名带 `1.20.1-` 前缀）与创伤治疗 0.1.0-beta.1 构建通过（没有单测）。
+- （改号前）`tools/verify_versions.ps1` 不限模块加 `-Release` 时停在创伤治疗 0.1.0-beta.1 的旧格式条目（缺“### 新增”栏），与本版无关；本轮没有再跑这一项。
+- 部署：2026-10-05 已把 SHA-256 为 `8324F63A34AAAB59A5A39444FC4DD0D10C1AB653DF8CC9F5FEED43C0EB178C73` 的 `wok_infantry-0.4.0-beta.1.jar` 部署到测试端 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，部署后哈希与构建产物一致；以 0.3.0-beta.8 文件名部署的改号前预交付包（两者的标题前缀、编制页 400–439 宽的标题与素材声明不同，见下面“（历史，改号前）”一条）改名为 `wok_infantry-0.3.0-beta.8.jar.backup-20261005-024435-before-0.4.0-beta.1.bak`，0.3.0-beta.7 的备份仍在。测试端 8 个 WOK步战 JAR 的独立安装检查全部 PASS。
+- （历史，作废）同版本号的上一次构建：`3a24aec` 上构建的 `wok_infantry-0.4.0-beta.1.jar`（2,009,477 字节，SHA-256 `2BB571757469A689B7526BAAC7E6D07D018A9AC84EDFDF7129BC93FEB39B9106`）早于素材声明改正和 427×240 编制页标题修正，JAR 内声明仍把千禧年研讨会徽标写成项目自绘，不要部署；它没有部署到测试端（测试端核心仍是下条的 0.3.0-beta.8 包）。它的验收归档 `ui-acceptance\20261005-0.4.0-beta.1\zh_cn-final\`、`en_us-final\` 保留为历史。
+- （历史，改号前）测试端 `mods` 里的 `wok_infantry-0.3.0-beta.8.jar`（SHA-256 前缀 `B5CA2792B984E55C`）是本版仍编号 0.3.0-beta.8 时的构建：改正客户端配置文件里 `redirectXaeroWorldMap` 注释后重新构建，代码行为与验收时的 `0306a7b` 相同，界面标题前缀仍为“WOK //”（427×240 下编制页用完整标题“WOK // 编制投票”，页头身份照常显示），素材声明也是旧版；0.3.0-beta.7 备份为 `wok_infantry-0.3.0-beta.7.jar.backup-20261005-005952-before-0.3.0-beta.8.bak`。改号前的验收归档 `ui-acceptance\20261005-0.3.0-beta.8\`（`zh_cn-final`、`en_us-final`）和 `20261004-0.3.0-beta.8\` 保留原目录名，只作参考。
+- 未做：测试端真实客户端（PCL）游戏内验收，待用户。重点见 `wok_infantry/docs/UI_ACCEPTANCE.md` 第 7 节：640×336（1920×1008 GUI 3）与 960×720 GUI 1 的清晰度和点击热区；Xaero 重定向、Esc 回游戏和旧键迁移日志；`～` 键帽能否认出；HUD 与部位血量“手/腿”伴随槽、真实据点面板、真实倒地面板、Boss 条、状态效果图标、副手物品、F1/F3/按住 Tab 的叠放，以及夜间头顶标记亮度。
+- 双人项目待验证：多人在线的真实计票，锁定后本阵营自动进部署页、对方不弹页；锁定后用第二个号加入直接拿到编制；PvP 下名单的倒地、阵亡状态。
+
+## WOK步战核心 0.3.0-beta.7 — 2026-10-04
+
+### 新增
+- 无。
+### 修改
+- 编制目录里的“支援：白名单”和“移动重生载具”不再拼成一整条摘要发给客户端，改为每个 ID 一条；客户端照旧用“、”连接显示，界面文字不变。
+### 修复
+- 新建或进入世界时被踢出、提示“无效的玩家数据”：编制支援白名单较长时（例如学院军常规编制加入三种榴弹炮击后共 5 个 ID），“支援：白名单 …”一行达 247 字符，超过编制目录单条摘要上限 192，服务端在登录时编码编制目录包抛出 `EncoderException`，原版把它当成放置玩家失败断开连接。现在除拆分外，编码端对能力、兵种、小队、载具摘要和不可用原因这些纯显示文字超长时截断并加“…”（不拆开代理对），不再因显示文字过长导致进不去世界。
+### 兼容性
+- 网络格式与上限不变（编制协议仍为 `4`，单条摘要上限仍为 192、每类最多 64 条），0.3.0-beta.6 客户端也能解码本版服务端发出的目录；建议客户端与服务端同版。
+- 战局协议 `18`、体力协议 `2` 不变。WOK步战附属-指挥官支援 0.1.0-beta.3 的依赖范围 `[0.3.0-beta.6,)` 包含本版。
+- 扩展 API 无变化。
+### 配置/存档影响
+- 无新增配置项，不改写 `config/wok_infantry/formations.json`；之前因白名单过长进不去的存档，换本版后即可正常进入。
+- 存档格式不变。
+### 测试结果
+- `wok_infantry` 下 `.\gradlew.bat clean build compileUiTestJava --console=plain` BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 378 项（91 个测试类）全部通过，0 失败、0 错误、0 跳过。新增 `FormationServiceCatalogSummaryTest`（2 项：5 个 ID 的白名单逐条发送、每条不超上限、连接后文字与旧版相同；全部/无模式仍是一条）；`FormationSelectionCodecTest` 新增 2 项（超长摘要与原因截断后可往返解码、截断不拆代理对）。`compileUiTestJava` 只有 uiTest 中原有的 8 条过时 API 警告。
+- 用测试端 `D:\WOK步战测试\1.20.1-Forge_47.4.22\config\wok_infantry\formations.json` 原样回放（临时测试，未提交）：旧拼法下学院军 `default` 的支援行为 247 字符，与日志中的 `String too big (was 247 characters, max 192)` 一致；新版整份目录编码、解码往返相等，无剩余字节。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_infantry-0.3.0-beta.7.jar` PASS，强制依赖只有 `forge`、`minecraft`。
+- `tools/verify_versions.ps1` 限定核心模块运行 PASS（本轮只构建核心）。
+- 已部署到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，替换 0.3.0-beta.6（旧包备份为 `.bak`）。
+- 未运行：`runGameTestServer`、`runUiTestClient`（本版没有改界面）。
+- 游戏内验收：待用户在测试端新建世界确认能正常进入，并在编制选择界面查看“能力”一行显示正常。
+
+## WOK步战核心 0.3.0-beta.6 — 2026-10-04
+
+### 新增
+- `SupportProvider` 新增默认空实现的受理回调 `accepted(SupportSpawnContext)`。`SupportService.requestSupport` 在任务放进任务表、受理回执记下之后，返回受理结果之前调用一次；`context.stepIndex()` 为 0，`owner` 为受理时的指挥官，`level` 为目标维度，`callId` 与之后 `executeStep` / `abandon` 收到的相同，`faction` 为受理阵营。回调只用于声音和提示（例如榴弹炮击受理时就响第一波炮声），不得放实体、改方块或读未加载区块。同一请求 ID 重发、校验失败或冷却中都不调用；已熔断的 provider 不调用。
+- `GuardedSupportProvider` 显式转发 `accepted`：熔断后不转发；回调抛出的 `Exception`（含直接实现偷偷抛出的受检异常）和 `LinkageError` 只记 warn，不熔断、不外抛。`SupportService` 再兜一层，构造上下文失败同样只记日志。回调失败不撤销受理、不返还冷却、不取消任务；`VirtualMachineError` 照常抛出。
+### 修改
+- 默认编制支援白名单：`millennium_seminar_mobile`（千禧年研讨会机动部队）加入 `wok_commander_support:recon_drone`，现为侦察卫星、无人机侦察、F-15EX JDAM、F-16C；`millennium_seminar_cavalry_corps`（研讨会骑兵军团）不再与 `default` 共用能力配置，改用自己的一份，支援白名单为侦察卫星、无人机侦察、F-16C，`outpost`、`rally`、`respawn` 与 `default` 相同。两阵营 `default` 与 `caesar_234_mechanized` 不变。
+### 修复
+- 无。
+### 兼容性
+- 扩展 API 按签名兼容：`accepted` 是默认空方法，不覆写的扩展行为不变；`SupportDefinition`、`SupportSpawnException`、`SupportProvider` 的其他方法都没有改动。未用旧附属 JAR 实测。
+- 本轮没有改动任何网络协议版本：战局协议仍为 `18`（`BattleNetwork.PROTOCOL_VERSION`），编制协议 `4`、体力协议 `2` 不变。
+- WOK步战附属-指挥官支援 0.1.0-beta.3 要求本版本或更高。
+### 配置/存档影响
+- 无新增配置项。
+- 默认白名单新增无人机侦察（见“修改”），只影响新生成的 `config/wok_infantry/formations.json`。已有文件不会被改写：老存档要用无人机侦察，需要管理员把 `wok_commander_support:recon_drone` 加进对应编制的 `support.allowList`。三种榴弹炮击不在任何默认白名单里。
+- 存档格式不变：`wok_infantry_support.dat` 的数据版本与字段不变（新技能的冷却照原格式按（阵营, 支援 ID）记录），`wok_infantry_battle.dat`、`wok_infantry_deployment.dat` 不变。
+- 网络协议版本不变（战局协议 `18`）。
+### 测试结果
+- `wok_infantry` 下 `.\gradlew.bat clean build compileUiTestJava --console=plain` BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 374 项（90 个测试类）全部通过，0 失败、0 错误、0 跳过。新增 `SupportServiceAcceptanceCueTest`（5 项）；`GuardedSupportProviderTest` 新增 4 项（转发一次、失败只记日志不熔断、熔断后不转发、`VirtualMachineError` 不吞）；`FormationConfigDataTest` 新增对 5 个默认编制支援白名单的精确断言（含 Gson 往返）。`compileUiTestJava` 只有 uiTest 中原有的 8 条过时 API 警告。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_infantry-0.3.0-beta.6.jar` PASS，强制依赖只有 `forge`、`minecraft`。
+- `tools/verify_versions.ps1`：完整运行在第一个模块 `wok_trauma` 处因其 JAR 未构建而退出（本轮只构建核心与指挥官支援）；限定为这两个模块运行 PASS（源码版本、README/VERSIONING 版本表、模块 README、CHANGELOG 标题、JAR 名、modId 与内部版本一致）。
+- `SupportService` 中“入表 → 记回执 → `accepted` → 返回”的顺序没有端到端单元测试（项目没有 `MinecraftServer` / `ServerPlayer` 测试替身），可测部分已抽成包内静态方法 `announceAccepted` 并测过，顺序本身需游戏内确认。
+- 未运行：`runGameTestServer`、`runUiTestClient`（本版核心没有改界面）。
+- 已部署到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，替换 0.3.0-beta.5（旧包备份为 `.bak`）。
+- 游戏内验收：待用户在测试端验收（测试端白名单已临时调整，验收后恢复）。要确认受理后立刻响第一波炮声；`accepted` 出错时只有 warn 日志，冷却和任务都不受影响。
+- 敌方红点、敌方防空击落无人机：需双人，待验证。
+
+## WOK步战附属-指挥官支援 0.1.0-beta.3 — 2026-10-04
+
+### 新增
+- 无人机侦察 `wok_commander_support:recon_drone`（短名“无人机侦察”）：点目标，冷却 5 分钟（6000 tick，以《步战模式公示表》为准），受理后立即起飞。侦察无人机在目标上空以半径 24 格盘旋约 2 分钟（60 步 × 40 tick），每 10 秒以目标为中心扫描半径 96 格一次（共 12 次，复用侦察卫星扫描器），红点保留 12 秒；第 59 步飞离，约 5 秒后消失。起飞前要求盘旋区的区块已加载完成并处于实体 tick 状态（只用 `getChunkNow` 检查，不加载区块），否则不起飞并返还冷却；扫描区本身不要求已加载（`requiresLoadedFootprint=false`）。
+- 侦察无人机实体 `wok_commander_support:recon_drone`：继承原版 `Entity`（不是生物，也不是弹射物），血量 200；飞行高度取“目标地表 + 64”与“盘旋圈最高地表 + 40”中较大的一个，不超过建筑上限 − 16；航迹由同步参数和游戏时间确定性推算，客户端同算，飞行平滑。只有爆炸类伤害（`#minecraft:is_explosion`）和卓越前线弹体直击 `superbwarfare:projectile_hit`（导弹、防空炮弹直接命中）能扣血，子弹、近战、摔落等无效；同阵营玩家（含驾驶载具时）的伤害被忽略。击落后空中爆炸，带前冲惯性坠落冒烟（最多 100 tick），落地或超时再爆一次后消失，不破坏方块、不伤实体、不掉落物品，任务以“侦察无人机已被击落”结束。无人机消失或所在区块不再 tick 时，任务以“侦察无人机信号丢失”结束。实体类型 `noSave`；起飞 + 2460 tick 到期自毁；不是由任务起飞的无人机（例如 `/summon`）第一个 tick 就消失。到期自毁另有服务端兜底巡检 `ReconDroneWatchdog`（`@Mod.EventBusSubscriber` 自注册，每个服务端 tick 结束时运行，只弱引用、不写存档），不依赖无人机自己的 tick：已起飞的无人机过了到期时间（坠落中的残骸除外），或连续超过 20 tick 没被服务端 tick（区块仍加载但已在模拟距离之外，或所在维度无人而停止实体 tick），就直接移除。战局重置、任务在附属之外异常结束、离场或坠落途中失去 tick 时，无人机都不会悬停残留。敌方战术地图不显示无人机。
+- 无人机外观与声音：用原版 `EntityModel` 手写的固定翼长航时侦察无人机模型（翼展 12 格、细长机身、机头下方光电球、平直主翼、倒 V 尾加腹鳍、推进式螺旋桨带旋转动画，盘旋时整机压坡度），左红右绿翼尖航灯、尾部频闪与腹部信标；自行生成的灰色系贴图 `textures/entity/recon_drone.png`（256×64）。客户端渲染上限 320 格，但实际可见范围受实体追踪距离 16 区块（256 格，再乘 `entity-broadcast-range-percentage`）与服务器视距（× 16 格）共同限制，按水平距离计算：默认视距 10 时约 160 格，视距 16 及以上最远约 256 格；超出范围的玩家收不到实体，看不到也听不到。客户端循环引擎声，音调 1.5，可听距离 = 离地高度 + 64 格；击落与落地各有一次爆炸声。没有新增 GeckoLib 依赖。
+- 三种榴弹炮击，共用一套实现，不生成炮弹实体，每发在落点直接调用卓越前线 `CustomExplosion`（直接来源是不加入世界的原版 marker，攻击者为呼叫的指挥官）：
+  - 三连发榴弹炮击 `howitzer_3round_barrage`（短名“三连发炮击”）：冷却 3 分钟；5 波 × 3 发，波间隔 5 秒，预备 10 秒；散布 R_area 30、σ 7、上限 18；单发伤害 250、爆炸半径 10、粒子 `LARGE`；危险区 58 格；155 级炮声。
+  - 快速三连发105毫米榴弹炮打击 `howitzer_105mm_rapid_3round_barrage`（短名“105快速三连发”）：冷却 2 分钟；3 波 × 3 发，波间隔 3 秒，预备 3 秒；散布 R_area 10、σ 3.5、上限 9；单发 150、半径 7、`MEDIUM`；危险区 26 格；105 级炮声。
+  - 五连发105毫米榴弹炮打击 `howitzer_105mm_5round_barrage`（短名“105五连发”）：冷却 5 分钟；4 波 × 5 发，波间隔 4 秒，预备 6 秒；散布与快速三连发相同；单发 150、半径 7、`MEDIUM`；危险区 26 格；105 级炮声。
+- 炮击时序：受理时（核心新增的 `accepted` 回调）立刻响第 0 波炮声，并把其余各波炮声一次排进延迟炮声调度器（服务端 tick 驱动、按 callId 分组、不写存档，用 `@Mod.EventBusSubscriber` 自注册）。每波先响炮声（声数等于发数，155 级相隔 6 tick、105 级相隔 3 tick），过“预备时间”第一发落地，同波各发相隔 0.5 秒；每发落地前 1.5 秒在落点上空 20 格播放来袭呼啸。核心在途时间为预备时间 − 30 tick，每步 10 tick（在途 170 / 30 / 90 tick，步数 46 / 18 / 32）。第 0 步只预检卓越前线爆炸接口与粒子档并开始第一发呼啸，不落弹。
+- 炮击散布：每波的瞄准点在半径 R_area 的圆内均匀随机，每发再加每轴标准差 σ 的高斯偏移，超过上限就重抽，所有落点距目标不超过 R_area + 上限；随机种子由 callId 的高低两半、波序、发序派生，同一次呼叫可复现。落点高度为 `MOTION_BLOCKING_NO_LEAVES` 地表 + 0.25，只读已加载区块；单发落点超出世界边界或所在列未加载时跳过这一发，任务继续。
+- 炮声来自虚拟炮阵地：从目标朝指挥官受理时所在位置的水平方向偏移 180 格（155 级）或 120 格（105 级），高度为已知地表 + 40，不读未加载区块。炮声敌我都能听到，可听距离覆盖到危险区远端再往外 64 格（契约测试锁定）。来袭呼啸装了 CBC 时用 CBC 音效，否则用卓越前线音效，音量 0.7，音调 155 级 0.95、105 级 1.15。
+- 6 个新声音事件，都在 `sounds.json` 里用 `"type": "event"` 按注册 ID 包装第三方声音：`howitzer_155_report`（包装 `superbwarfare:plz_05_veryfar`，音量 20）、`howitzer_105_report`（`superbwarfare:mk_42_veryfar`，音量 14）、`artillery_incoming_cbc`（`createbigcannons:shell_flying`）、`artillery_incoming_sbw`（`superbwarfare:shell_fly`）、`recon_drone_engine`（`superbwarfare:ju_87_engine`）、`recon_drone_destroyed`（`superbwarfare:explosion_air`，音量 16）；服务端广播半径依次为 384、384、128、128、160、256 格。新增 6 条中英字幕，以及 4 个技能名和无人机实体名的语言键。
+- 战术地图表现：无人机侦察按情报（`INTELLIGENCE`）显示，三种炮击按攻击（`OFFENSIVE`）显示，危险区半径 = R_area + 上限 + 爆炸半径。
+- 数据包 tag `data/vvp/tags/entity_types/pantsir_air_target.json`（`replace: false`，只含 `wok_commander_support:recon_drone`），让 vvp 的铠甲（Pantsir）防空系统把侦察无人机当作空中目标。
+### 修改
+- 最低核心版本提高到 `0.3.0-beta.6`（`mods.toml` 中 `wok_infantry` 的 `versionRange="[0.3.0-beta.6,)"`）：炮击用核心本版新增的 `accepted` 回调在受理时播放炮声。
+- `SuperbWarfareExplosionAdapter` 改为 public 供炮击共用：`available()` 与 6 参数 `explode()` 公开，新增只解析反射绑定和粒子档、不产生爆炸的 `verify(String)`。原方法体没有改，JDAM 与 F-16C 的行为不变。
+- `mod_description` 改为涵盖卫星与无人机侦察、空袭和榴弹炮击；仓库与 JAR 内的两份 `THIRD_PARTY_NOTICES.md` 补充说明 6 个声音事件只按注册 ID 引用卓越前线和 CBC 的声音，未打包任何第三方声音、贴图、模型或代码。
+- 原有三个技能（侦察卫星、F-15EX JDAM、F-16C）的 ID、数值和行为不变。
+### 修复
+- 无。
+### 兼容性
+- 需要 WOK步战核心 `0.3.0-beta.6` 或更高；更早的核心不能加载本版本。
+- 新声音只按注册 ID 软联动卓越前线与 Create Big Cannons，未打包第三方音频；对应 MOD 未安装时这些声音静音，模块照常加载。卓越前线 `0.8.9+` 与 Create Big Cannons `5.11.4` 至 `6.0.0` 之前仍是可选依赖（`mandatory=false`）。
+- 三种炮击需要卓越前线（`CustomExplosion` 接口可用），不需要 CBC；缺卓越前线时显示不可用。是否破坏方块跟随卓越前线服务端 `EXPLOSION_DESTROY` 配置，与 JDAM、F-16C 一致。
+- 无人机侦察不需要 CBC 或卓越前线；未装卓越前线时引擎声和击落声静音，也只有原版爆炸能伤到它。
+- 无人机实体 `noSave`，不写区块存档；卸载本附属后存档里不会残留无人机。
+- vvp 铠甲雷达兼容 tag 只追加本模块的无人机（`replace: false`）；未装 vvp 时不起作用。
+- 卓越前线分不清 WOK 阵营：我方防空也能锁定我方无人机，但同阵营伤害被忽略；卓越前线近防炮、激光塔的自动模式不会主动攻击它。
+- 成品类中没有第三方类型引用，第三方只经注册 ID、反射字符串和 tag 访问。仍不满足完全脱离核心独立安装，属于 0.1.0-beta.1 已记录的既有限制。
+- 已知限制：核心在第 0 步之前取消炮击任务（会返还冷却）时不通知附属，在途期内本该响的后续炮声仍会响完，之后的炮声在租约到期（过了预期的第 0 步时刻 20 tick）时丢弃。要彻底取消，核心需要新增按 callId 查询任务或在此时通知 provider 的接口。
+### 配置/存档影响
+- 无新增配置项。
+- 新技能的冷却仍保存在核心的 `<世界>/data/wok_infantry_support.dat`，按（阵营, 支援 ID）记录，存档格式不变。
+- 无人机不写存档，兜底巡检只在内存里弱引用无人机；炮击不生成实体，延迟炮声只在内存里；两者都在开服前和停服后清空，重启后不残留。
+- 默认编制白名单由核心 0.3.0-beta.6 提供：千禧年研讨会机动部队与研讨会骑兵军团新增无人机侦察，只影响新生成的 `formations.json`；已有文件不会被改写，老存档需要管理员手动加入 `wok_commander_support:recon_drone`。三种炮击不在任何默认白名单里：《步战模式公示表》中拥有它们的编制（格赫娜风纪委员、万魔殿、正义实现委员会、圣三一茶话会、凯撒第17装甲作战单元）在代码里还没有，需要时由管理员加白名单。
+- 公示表中格赫娜风纪委员的无人机侦察冷却“5+2 分钟”没有实现：框架每个技能只有一个全局冷却，代码里也还没有该编制。
+- 网络协议版本不变（核心战局协议仍为 `18`）。
+### 测试结果
+- 先构建核心 0.3.0-beta.6（见上一条），再在 `wok_commander_support` 下 `..\gradlew.bat clean build --console=plain`，BUILD SUCCESSFUL（含 `reobfJar`）；JUnit 163 项（26 个测试类）全部通过，0 失败、0 错误、0 跳过。核心与本模块合计 537 项、0 失败。编译只有一条既有警告（`FMLJavaModLoadingContext.get()` 已过时，HEAD 中就有）。
+- 新增 `drone` 包 7 个测试类 49 项（盘旋航迹与高度、伤害规则、任务步骤与失败分类、定义数值、引擎声衰减、机体几何与贴图一致性、兜底巡检的到期与停摆判定）和 `artillery` 包 7 个测试类 47 项（参数与时序、散布分布与可复现、炮声时刻表与炮阵地、延迟炮声队列与租约、失败分类、可听距离契约）；`CommanderSupportDefinitionContractTest` 按 7 个技能重写（冷却按公示表、时序与覆盖范围、命名空间与翻译键、中英语言键、vvp tag 与贴图、核心依赖范围）；`SoundAssetContractTest` 新增 4 项（包装事件、炮声与呼啸可听距离、无人机声音覆盖）；`CommanderSupportClientTest` 新增地图表现断言。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_commander_support-0.1.0-beta.3.jar` PASS，强制依赖只有 `forge`、`minecraft`、`wok_infantry`，Create Big Cannons 与卓越前线仍为可选。成品 60 个类中扫描不到 `com/atsuishio`、`rbasamoyai`、`superbwarfare/`、`createbigcannons/`、`geckolib` 的类型引用。
+- JAR 内容核对：`mods.toml` 版本 `0.1.0-beta.3`、核心依赖 `[0.3.0-beta.6,)`；`sounds.json` 共 10 个事件；中英语言键一一对应；含无人机贴图与 vvp tag。
+- `tools/verify_versions.ps1`：完整运行在第一个模块 `wok_trauma` 处因其 JAR 未构建而退出（本轮只构建核心与指挥官支援）；限定为这两个模块运行 PASS（源码版本、README/VERSIONING 版本表、模块 README、CHANGELOG 标题、JAR 名、modId 与内部版本一致）。
+- 未运行：`JdamRuntimeGameTests` 等 GameTest、`tools/run_commander_support_production_gametest.ps1`、`runUiTestClient`。
+- 无人机模型离线预览：用真实 `ReconDroneModel.createBodyLayer()` 与 jar 内贴图渲染俯视、侧视、正视、斜视、仰视和压坡仰望 6 张图，外形可辨认为固定翼长航时侦察无人机，贴图无错位、拉伸或透明面。
+- 已与核心 0.3.0-beta.6 一起部署到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`（旧包备份为 `.bak`）；测试端 `formations.json` 已备份并临时给学院军常规编制加三种炮击、凯撒常规编制加三连发与无人机、研讨会机动部队加无人机，验收后恢复。
+- 游戏内验收：待用户在测试端验收。待看：无人机模型、贴图、航灯和盘旋，引擎声听距，击落与坠毁；无人机实际可见距离（按服务器视距核对，默认视距 10 时约 160 格，不按渲染上限 320 格验收）；模拟距离小于视距时战局重置后无人机能否约 1 秒内消失；导弹、防空炮弹与 vvp 铠甲能否击落无人机（卓越前线防空炮弹的近炸引信是否认得这种实体，代码里无法确认）；受理即响第 0 波炮声，各波炮声与呼啸，落弹节奏与散布，炮声远端可听（155 级约 300 格、105 级约 210 格）；没装卓越前线时三种炮击显示不可用；支援页 4 个新按钮在 320×240 与 960×720 下有无越界。
+- 敌方红点、敌方防空击落无人机：需双人，待验证。
+
+## WOK步战核心 0.3.0-beta.5 — 2026-10-03
+
+### 新增
+- 支援失败分三类，由扩展在 `SupportSpawnException` 上声明：`endMission`（只结束本次任务，冷却照扣，技能照常可用）、`notDelivered`（没有投送出去，结束本次并返还冷却）、`providerBroken`（适配器本身损坏，该技能停用到服务器重启，是否返还由调用方声明）。message 是玩家可见的中文短句，cause 只写日志。
+- `SupportDefinition` 末尾新增组件 `requiresLoadedFootprint`。为 `false` 的支援在受理和执行期间不要求覆盖范围内的区块已加载，只校验坐标范围、世界边界和维度；受理时遇到未加载的列不读高度，核心不会因此同步加载区块。区块数上限 1024 只在为 `true` 时检查，半径仍受定义上限约束。原 10 参数构造器保留，默认 `true`。
+- 战术地图"照射许可"内圈：客户端接口 `TacticalSupportMapPresentationRegistry.registerGuidanceRadius` / `guidanceRadius`（另有 `unregisterGuidanceRadius`）。注册了内圈的支援在选点预览、在途和执行中三种状态下，都会在红色危险区内再画一圈琥珀色虚线（圆心为目标起点），并在两圈下方标注"照射许可 R{n}m"：标签整体放在外圈和内圈（含深色描边）中更靠外的那一圈下方，不压住任一圈；外圈太小、标签会压住准星时，文字并入原有的波及半径标签或任务卡片。新增语言键 `screen.wok_infantry.map.support.guidance_radius`（zh_cn"照射许可 R%sm"，en_us"Designation zone R%sm"）。
+- 支援任务没有完成就结束时，给呼叫者发一条聊天提示："[支援] 名称 未能投送：原因，冷却已返还"；要求返还但冷却已被管理员改过时为"[支援] 名称 未能投送：原因"；其余为"[支援] 名称 任务中止：原因"。正常完成不提示。
+- `SupportProvider` 新增默认空实现的 `abandon(SupportSpawnContext)`：第 0 步执行过之后核心自己取消任务（呼叫者已不在受理阵营、覆盖区块卸载或超出世界边界、适配器不可用）时，核心调用它一次，让扩展撤回已经放进世界的东西；适配器已熔断时照样调用，`context.stepIndex()` 为不再执行的那一步。`GuardedSupportProvider` 透传，清理失败只记警告日志。目标维度已不可用时不调用。
+### 修改
+- 熔断只针对适配器本身损坏：只有 `providerBroken`，以及 `RuntimeException`、`LinkageError` 和反射异常（统一按不返还的 `providerBroken` 处理）会让该技能停用到服务器重启；普通 `SupportSpawnException` 原样结束本次任务，下次仍可呼叫。原有两个构造器保留，语义改为"只结束本次"；`AbstractSoftSupportProvider.doExecuteStep` 改为同时声明 `throws SupportSpawnException`。
+- 打不出去就返还冷却：第 0 步完成前，适配器报告 `notDelivered`（或声明返还的 `providerBroken`），或核心自己取消任务（呼叫者已不在受理阵营、目标维度不可用、覆盖区块卸载或超出世界边界、适配器不可用），受理时扣下的冷却都会返还，可以立刻再呼叫；第 0 步执行过之后一律不返还。返还是比对写回：只有存档里该阵营、该支援的到期时间仍等于受理时写入的值才清零，管理员中途清除或改过冷却则保持现状。不另加防刷限制。
+- 任务 callId 改由服务端 `UUID.randomUUID()` 生成，客户端请求 ID 只用于回执幂等。扩展可能把 callId 用作实体 UUID，不能由客户端决定。
+- 临时情报属于阵营：`BattleService.publishSupportIntel` 不再要求指挥官当前所在维度等于目标维度，侦察期间指挥官阵亡进入等待区或换维度，扫描照常刷新；目标维度是等待区或大厅时拒绝。受理阵营、维度存在、批次数量、TTL、坐标、高度和世界边界校验保留。发布者不要求仍是指挥官，与执行期间只校验阵营一致，但必须是呼叫者当前在线的那个会话：阵亡后停在死亡界面仍算在线（原版会在 1 秒后移除尸体实体，不能只看 `isRemoved`）；已下线，或拿到的是重生前的旧实体，则本次侦察结束、不返还。
+- 临时情报发布器的失败分类：批次本身不合法（数量、TTL、空目标、超出扫描区或高度）视为适配器缺陷，熔断且不返还；发布者不是在线会话、战局服务不可用或发布被拒只结束本次。
+- 快照里卫星红点与手工标记各保底 32 个显示名额（`BattleRules.RESERVED_SUPPORT_INTEL_SNAPSHOT_SLOTS`），一方用不完的让给另一方，合计仍不超过 64。卫星红点改按发布顺序排列（呼叫首次发布的先后、批次内顺序），原来按标记 UUID 排序，名额不够时保留较早发布的目标；手工标记按创建时间排列，名额不够时保留最新的，刚放下（服务端已回复创建成功）的标记一定出现在地图上，最早的先让位。
+- 执行期间传给适配器的 `owner` 优先使用呼叫者当前在线的会话，离线时退回受理时的实体（只用于归属；发布临时情报时另按上面"临时情报属于阵营"一条校验当前会话）。
+- 每 tick 4 次的支援执行预算改为统计全部适配器回调（含失败的），原来只统计成功的。
+- 熔断日志只记一次：`AbstractSoftSupportProvider` 不再自己打印堆栈，只记录熔断状态，由必经的 `GuardedSupportProvider` 对每个适配器记录第一次熔断的完整堆栈。
+- 战术地图支援标签排布：任务卡片和波及半径标签整块放在危险区与许可内圈（含描边）上方，不再压住圈顶；许可标签和任务卡片碰到比例尺或指北针时沿原行横向让开；所有任务先画范围、后画标签，后一个任务的虚线圈不再划过前一个任务的卡片文字。
+### 修复
+- 侦察期间指挥官阵亡、换维度或下线时临时情报发布被拒，原实现把这当成适配器故障，侦察卫星被熔断到服务器重启。
+- 适配器的任何一次普通执行失败都会让该技能熔断到服务器重启。
+- 小队长或指挥官可以用构造的标记请求手工发布 `RECON_CONTACT`（卫星红点）类型的标记（正常客户端的标记工具里没有这一项）。`BattleService.createMarker` 与 `CreateMarkerPacket` 现在拒绝该类型，它只能由侦察支援自动生成；读档时丢弃存档里已有的 `RECON_CONTACT` 标记。
+- 卫星红点原先优先占满 64 个快照名额，一次大范围侦察会把己方手工标记全部挤出地图。
+- 支援调度改为遍历任务表快照，并为每个任务兜住调度器自身的运行时异常；适配器回调中重入修改任务表（例如战局重置）不再打断整轮调度。
+- 第 0 步之后核心取消任务时，适配器没有收尾的机会，已经放进世界的弹体只能留在原处（惰性炮弹或不再修正的航弹）；现在先调用 `SupportProvider.abandon`。
+- 同一次适配器熔断会由 `AbstractSoftSupportProvider` 与 `GuardedSupportProvider` 各记一份完整堆栈，看起来像两次独立故障。
+### 兼容性
+- 本轮没有改动任何网络协议版本，战局协议仍为 `18`；`CreateMarkerPacket` 字节格式不变，只是解码时拒绝 `RECON_CONTACT`。
+- 扩展 API 按签名保持兼容：`SupportDefinition` 的 10 参数构造器、`SupportSpawnException` 的两个构造器都保留，`doExecuteStep` 只多声明一个受检异常，`SupportProvider.abandon` 是默认空实现；未用旧附属 JAR 实测。行为差异：旧构造器抛出的异常不再熔断；`TacticalSupportMapPresentationRegistry.unregister(id)` 现在同时清掉内圈。
+- WOK步战附属-指挥官支援 0.1.0-beta.2 要求本版本或更高。
+### 配置/存档影响
+- 无新增配置项。
+- 存档格式不变：`wok_infantry_support.dat` 的数据版本与字段不变；`wok_infantry_battle.dat` 格式不变，读档时丢弃 `RECON_CONTACT` 类型的标记（正常游玩不会产生）。
+- 编制白名单不变：JAR 内置默认分配与已有 `formations.json` 都没有改动。
+- 网络协议版本不变（战局协议 `18`）。
+### 测试结果
+- `wok_infantry` 下 `.\gradlew.bat build compileUiTestJava`（含 `reobfJar`）通过；JUnit 364 项（89 个测试类）全部通过，0 失败、0 跳过。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_infantry-0.3.0-beta.5.jar` PASS，强制依赖只有 `forge`、`minecraft`。
+- `tools/verify_versions.ps1`：完整运行在第一个模块 `wok_trauma` 处因其 JAR 未构建而退出（本轮只构建核心与指挥官支援）；限定为这两个模块运行 PASS（源码版本、README/VERSIONING 版本表、模块 README、CHANGELOG 标题、JAR 名、modId 与内部版本一致）。
+- 未运行：`runGameTestServer`（含本轮新增的 `BattleGameTests` 用例）。
+- 界面双分辨率自动验收：`runUiTestClient`（JourneyMap 6.0.2 地形）PASS，320×240 与 960×720 下 F-16C 的 R80 危险区、R64 琥珀色许可内圈、任务卡片和许可标签都完整可见、互不压盖，不碰比例尺和指北针；结果与 14 张截图在 `D:\WOK步战测试\1.20.1-Forge_47.4.22\commander-support-acceptance\20261003-0.1.0-beta.2\`。前两次运行客户端在锁定编制后约 0.5 秒自行退出、没写结果（无崩溃报告，疑为窗口被外部关闭），之后连续 3 次 PASS。
+- 游戏内验收（JDAM 组合服伤害链、F-16C 照射与返还、侦察、冷却）：待用户在测试端验收。
+- 敌方红点、其他队友照射：需双人，待验证。
+
+## WOK步战附属-指挥官支援 0.1.0-beta.2 — 2026-10-03
+
+### 新增
+- F-16C 宝石路空袭加入音效：声音事件 `paveway_f16_approach`（释放时，字幕"F-16C 从高空掠过"）与 `paveway_bomb_tail`（命中时，字幕"宝石路航弹爆炸回响"）。两者复用 F-15EX 的同两段 DVIDS 公有领域 F-15E 靶场实录，音调 1.1，不是 F-16C 原声，没有另外打包音频；来源见 `THIRD_PARTY_NOTICES.md`。
+- F-16C 在战术地图上注册"照射许可"内圈 R64，外圈红色危险区为 R80（使用核心 0.3.0-beta.5 的内圈接口）。
+- F-16C 释放点改为四个对角候选（光斑周围 (±96, +120, ±96)），先试离制导员最近的一个，选第一个区块已完成加载的；四个都没加载才不释放并返还冷却，原因写"释放航线区块未加载，需有友军靠近目标外围"。原来释放点固定在光斑西北方，且不检查该处区块是否已加载。
+- 两种空袭实现核心新增的 `SupportProvider.abandon`：释放之后核心取消任务（呼叫者已不在受理阵营、覆盖区块卸载、适配器被熔断等）时，按 callId 找到弹体并移除。
+- 孤儿弹体清理：本附属释放的 JDAM / 宝石路弹体若随区块存盘、之后又从区块存档读回（区块卸载时任务已被取消，或服务器重启），在进入世界时直接丢弃，不会作为惰性炮弹留在目标点或在区块重新加载时冒出来。
+### 修改
+- 三个技能的冷却统一为 10 分钟（12000 tick），以《步战模式公示表》阵营表为准：F-15EX JDAM 与 F-16C 由 15 分钟改为 10 分钟，侦察卫星保持 10 分钟。每个技能只有一个全局冷却，不按编制区分，不加点数或次数限制。
+- F-16C 的定义半径由 64 改为 80（新常量 `F16C_PAVEWAY_DANGER_RADIUS` = 照射许可 64 + 爆炸半径 16），地图红色危险区覆盖到最远可能的毁伤边缘；受理和执行期间要求已加载的区块范围随之扩大到 80 格。照射判定仍只认 64 格许可区。
+- 打不出去就返还冷却：F-16C 释放时许可区内没有友军持续照射，任务直接结束并返还冷却（原因"许可区内没有友军持续照射"），可以立刻再次呼叫，不再空转剩余的制导步骤。JDAM 释放时目标点已超出世界边界、空袭弹体未能进入世界、F-16C 四个释放点区块都未加载，同样返还。释放前 Create Big Cannons 炮弹接口不可用时，该技能停用到服务器重启并返还冷却。
+- F-16C 没有照射时的动作栏提示仍是"宝石路航弹未释放：许可区内没有友军持续照射"，不写冷却是否返还；动作栏在核心比对写回之前发出，是否真的返还以核心的"[支援] …"聊天提示为准（管理员在途期间改过冷却时不返还）。
+- 释放之后不再返还：弹体在命中前消失只结束本次；释放后 Create Big Cannons 接口不可用或 F-16C 制导出现未预期异常时，先撤回弹体，再停用该技能到服务器重启。
+- 侦察卫星不再要求 150 格扫描区内的区块全部已加载（`requiresLoadedFootprint=false`），受理和执行期间只校验坐标、世界边界和维度。扫描只读取已加载的实体，未加载区域里没有可报告的目标。
+- 侦察首次扫描失败（地图上什么都没出现）时返还冷却，接口损坏或未预期异常时同时停用技能。首次扫描之后，普通失败（指挥官下线、发布被拒）只结束本次、不返还；未预期的运行时异常或不合法的情报批次（数量、持续时间、空目标、超出扫描区或高度）会让侦察卫星停用到服务器重启，也不返还。侦察期间指挥官阵亡（包括停在死亡界面）、进入等待区或换维度，扫描照常刷新到 30 秒结束；指挥官离开受理阵营时跳过该次扫描，由核心在下一步前取消任务。
+- F-16C 照射射线的水平射程改为许可区远端再加 16 格（最多 512 格），只有真正打到方块或射线前方的实体才算光斑，指向天空不再算有效照射。
+- 两种空袭的失败分类集中到 `AirstrikeFailures`，侦察的失败分类集中到 `ReconFailurePolicy`；音效与进度日志失败只记日志，不影响任务结果。
+### 修复
+- F-16C 制导员的照射射线会在穿过未加载区块时同步加载区块；现在遇到第一个未加载区块即停止，被截断的射线不算有效照射。区块判定改用 `getChunkNow`，只认已经完成加载的区块：原来的 `hasChunkAt` 只看票据等级，挂了票据但仍在读盘或生成的区块也算"已加载"，随后读取方块会让主线程卡住等它加载完。F-16C 释放点也按同样方式判断，不会把航弹放进还没加载完的区块里成为找不到的哑弹。
+- JDAM 弹体在命中前消失时抛出运行时异常，使该技能熔断到服务器重启；现在只结束本次任务。F-16C 航弹在飞行途中消失时原先静默空转剩余的制导步骤，现在同样结束本次任务。
+- 侦察期间指挥官阵亡、换维度或下线会让侦察卫星熔断到服务器重启（随核心 0.3.0-beta.5 修复）。
+- 释放之后核心取消任务时，弹体留在原处：卓越前线模式下 JDAM 落地后没有 CBC 引信，会作为惰性炮弹永久留在目标点并随区块存盘；F-16C 航弹失去修正，按最后速度飞成哑弹。现在先撤回弹体（见"新增"）。
+- F-15EX 接近音在地面上听不到：它只在目标正上方 200 格的释放点播放一次，原版默认衰减距离 16 格 × 音量 3 只覆盖 48 格，字幕也不出现。`sounds.json` 中 `jdam_f15_approach` 加入 `attenuation_distance: 96`，可听范围 288 格；本轮新增的 `paveway_f16_approach`（释放点在光斑斜上方约 181 格）同样设置。服务端发包范围仍为 256 格。
+### 兼容性
+- 最低核心版本提高到 `0.3.0-beta.5`（`mods.toml` 中 `wok_infantry` 的 `versionRange="[0.3.0-beta.5,)"`），依赖核心本轮新增的失败分级、冷却返还、`requiresLoadedFootprint` 与照射许可内圈接口；更早的核心不能加载本版本。
+- 技能 ID 不变；Create Big Cannons `5.11.4` 至 `6.0.0` 之前与卓越前线 `0.8.9+` 仍是可选依赖。
+- 仍不满足完全脱离核心独立安装，属于 0.1.0-beta.1 已记录的既有限制。
+### 配置/存档影响
+- 无新增配置项。存档格式不变，冷却仍保存在核心的 `<世界>/data/wok_infantry_support.dat`。
+- 升级前已开始的 15 分钟冷却按旧到期时间走完；需要立即生效时，管理员可用 `/battle admin support cooldown clear <blue|red> <支援ID>` 清除。
+- 编制白名单不变：JAR 内置默认分配与已有 `formations.json` 都没有改动。
+- 网络协议版本不变（核心战局协议仍为 `18`）。
+### 测试结果
+- 先构建核心 0.3.0-beta.5，再在 `wok_commander_support` 下 `..\gradlew.bat clean build` 通过；JUnit 56 项（12 个测试类）全部通过，0 失败、0 跳过。
+- 独立安装检查：`tools/verify_mod_independence.ps1` 对 `wok_commander_support-0.1.0-beta.2.jar` PASS，强制依赖只有 `forge`、`minecraft`、`wok_infantry`，Create Big Cannons 与卓越前线仍为可选。
+- `tools/verify_versions.ps1`：完整运行在第一个模块 `wok_trauma` 处因其 JAR 未构建而退出（本轮只构建核心与指挥官支援）；限定为这两个模块运行 PASS。
+- 未运行：`JdamRuntimeGameTests` 等 GameTest 与 `tools/run_commander_support_production_gametest.ps1`。
+- 界面双分辨率自动验收（核心 `runUiTestClient`，用假技能目录，不加载本附属）：PASS，F-16C 的 R80/R64 显示见核心 0.3.0-beta.5 条目。
+- 游戏内验收（JDAM 组合服伤害链、F-16C 照射与返还、侦察、冷却）：待用户在测试端验收。
+- 敌方红点、其他队友照射：需双人，待验证。
+
+## WOK步战附属-部位血量 0.1.0-beta.10 — 2026-10-04
+
+### 新增
+- 趴姿分段命中：趴下或爬行（陆地上的游泳姿态）的玩家被 TaCZ 子弹（`EntityUtil.getHitResult`）或卓越前线（SBW）子弹（`ProjectileEntity.getHitResult`）射击时，改按头、躯干、左右臂、左右腿六段模型逐段求交，命中部位直接取自最先打中的段，躯干按位置分胸、腹。只有头段算爆头：TaCZ 的爆头倍率、SBW 的爆头伤害类型与音效都只在头段触发；SBW 打中腿段时默认沿用 SBW 的腿部命中效果。
+- 模型取自 Tacz-Animation-Additions 1.2.5（TAA）的趴姿动画：稳态按视线相对身体的水平角与俯仰角查表插值，持 TaCZ 枪与空手各一套，爬行时四肢改用划动包络。身体朝向读 TAA 的趴姿状态；没有 TAA 状态时（例如一格缝原版爬行），按原版规则在服务端模拟画面上的身体朝向，不读服务端的 `yBodyRot`。视线相对身体的水平角在趴下和趴稳时与 TAA 客户端一样低通平滑（τ = 0.1 s，每 tick 最多转 27°），趴稳和起身时的身体朝向同样按 TAA 的低通跟随。
+- 趴下与起身过渡按 17 帧关键帧插值，过渡初期站着的上半身仍可被打中；趴着转身按 TAA 的转身公式过渡。
+- 延迟补偿：自行保存每名玩家最近 100 tick（5 秒）的趴姿快照；可回溯的条数 TaCZ 取其 `SAVE_TICK`（默认 20，最多 100），SBW 固定 20；回溯下标、速度修正与平移量逐条对齐 TaCZ、SBW 各自的规则。
+- 方块遮挡：命中点与碰撞箱中心之间隔着方块时丢弃该段、继续看下一段，伸出墙、门、栅栏外的模型部分不能被隔墙打中。
+- 同一发子弹对同一目标只命中一次，穿透弹顺着身体打不会重复结算。
+- 粗筛补充：TaCZ、SBW 用目标当前的 0.6 格盒外扩 1 格挑选候选，过渡期和高延迟回溯时会漏掉伸出的头脚。现在只在这两个模组的子弹寻敌方法内、对第一次 `Level.getEntities` 查询补入模型可达范围与搜索范围相交的趴姿玩家；爆炸、测距等其他查询不补。
+- 调试命令 `/wokbodyhealth prone_hitbox show <玩家> [秒数 [回溯tick]]`、`log <true|false>`、`stats`，需要权限等级 2；`show` 用粒子画出各段判定盒，只发给执行者。
+- 说明文档 `wok_body_health/docs/PRONE_HITBOX.md`：判定方式、配置、调试命令、回退方式、待确认默认值与游戏内验收清单。
+### 修改
+- TaCZ 枪伤（`EntityHurtByGunEvent.Pre`）与通用伤害的部位判定先查本 tick 的趴姿命中记录（目标、子弹、游戏刻三者都相同才算匹配），查到就用该部位，并按是否头段校正 TaCZ 的爆头标记；查不到时沿用原逻辑。命中记录与 `PendingHitStore` 的配对方式不变，独立护甲的护甲部位接口不变。
+- 平衡：趴着的玩家比 beta.9 更容易被打中，这是有意的变化；背上方的空气不再算命中。
+- 移动碰撞箱、姿态与 `getBoundingBox()` 均不改动。
+### 修复
+- 趴下的玩家只用 0.6 格高的移动碰撞箱参与子弹判定，而第三人称模型约 1.9 格长：打脚、头和前伸的手臂会穿模打空，打背上方的空气反而命中，命中部位也常与画面不符。
+### 兼容性
+- `mods.toml` 新增可选依赖卓越前线（`superbwarfare`）与 TAA（`locknar_doorkick`），版本不限；TaCZ 仍为可选依赖。仍可单独安装，不新增硬依赖。
+- 新增 mixin 配置 `wok_body_health.mixins.json`，含 `tacz.TaczEntityUtilMixin`、`sbw.SbwProjectileEntityMixin`、`LevelGetEntitiesMixin` 三个 mixin，由插件按 TaCZ、SBW 是否安装决定是否应用；两者都没装时一个也不应用，也不注册趴姿相关的事件和命令。配置为 `required=false`，注入失败只记日志、不崩溃；启动日志逐项输出 `Injected …` 或 `Injection MISSING: …`，开服时再输出一行汇总。
+- MixinExtras 由 TaCZ 自带；SBW 私有成员通过反射访问，失败时只关闭 SBW 部分；TAA 状态读取失败时退化为按稳态模型判定。任一判定出错都退回原判定，同一模组的判定累计出错 20 次后关闭到重启。消费方关闭或命中判定注入缺失、出错被关闭时，该模组的粗筛补充同步停止；TaCZ 枪械识别、快照记录或调试绘制出错只记日志，不中断玩家 tick 和服务端 tick。
+- 紧急开关：JVM 参数 `-Dwok.bodyhealth.disableProneMixins=true` 不应用任何趴姿 mixin；也可在配置中关闭 `enableSegmentedProneHitbox`，关闭后与 beta.9 判定相同。
+- 与已有注入共存：taczexpands 的近炸补判（分段判定打空后照常执行）、SBW 对 OBB 载具实体的命中处理、tacz-tweaks 的逐方块射线、gsl 测距与空爆均保留；TaCZ、SBW 爆炸的受伤名单不变。
+- 已知限制：SBW FastThrowable 系弹（机炮、火箭等）与即时命中的 ray 武器、原版箭及其他弹射物仍按 0.6 格盒判定；服务器给 `minecraft:player` 配置的 TaCZ HeadShotAABB 对趴姿目标不再生效。
+### 配置/存档影响
+- `config/wok_body_health-common.toml` 新增 `[prone_hitbox]` 组：`enableSegmentedProneHitbox = true`、`headMargin = 0.0625`、`torsoMargin = 0.03125`、`limbMargin = 0.015625`（三项范围 0–0.25）、`transitionLagTicks = 0`（0–5）、`vanillaCrawlModel = "AUTO"`（AUTO/VANILLA/TACZ_TWEAKS）、`sbwLegSegmentsAreLegShots = true`、`debugLogging = false`。旧配置文件会由 Forge 自动补入默认值。存档数据键与网络协议不变。
+### 测试结果
+- `.\gradlew.bat -p wok_body_health clean build hudTestClasses`（TaCZ 1.1.8 仅编译）通过，126 个 JUnit 全部通过（0 失败、0 错误、0 跳过；原 19 个 + 趴姿新增 107 个）。
+- `tools/verify_mod_independence.ps1` 检查 `wok_body_health-0.1.0-beta.10.jar` 通过：硬依赖只有 forge、minecraft，不内嵌 TaCZ、SBW、MixinExtras 类；JAR 内含 `wok_body_health.mixins.json` 与 `MixinConfigs` 清单项。
+- `tools/verify_versions.ps1` 在本机 Windows PowerShell 5.1 下无法解析（脚本为无 BOM 的 UTF-8，且用了 .NET Core 的 API，本机没有 PowerShell 7），改用只针对部位血量的等价检查：版本表、模块 README 的 JAR 名、本条标题、JAR 内 modId 与版本一致，通过。
+- 游戏内：未实测（需两台客户端，见 `wok_body_health/docs/PRONE_HITBOX.md` 验收清单）。
+
+## WOK步战核心 0.3.0-beta.4 — 2026-10-03
+
+### 新增
+- 可选联动 Tactical Mantle（modId `tacticalmantle`，1.0.2）：翻越改走步战规则。腿部体力低于翻越消耗、疾跑已被体力锁定、处于趴下或爬行姿态（陆地上的游泳姿态），或部位血量判定任一条腿已损毁时，服务端拒绝翻越；翻越成功开始时扣除腿部体力，并重新计算体力恢复延迟。Tactical Mantle 用传送移动玩家，不触发跳跃事件，原先会绕过跳跃体力消耗与断腿限制。
+- 服务端配置 `stamina.legMantleCost`，默认 15（跳跃为 10），范围 0–100。
+### 修改
+- 无。
+### 修复
+- 无。
+### 兼容性
+- 联动通过 mixin 插件按 `tacticalmantle` 是否安装决定是否注入，不装 Tactical Mantle 时不加载相关 mixin；不新增硬依赖。
+- 断腿判定通过反射调用部位血量 0.1.0-beta.5 新增的 `BodyHealthApi.destroyedLegCount`；搭配更早的部位血量版本时只跳过断腿判定，体力与姿态判定照常生效。
+- 已核对与 Tacz-Animation-Additions 1.2.5（modId `locknar_doorkick`）同装：趴下同样使用游泳姿态，因此趴下时不能翻越。
+### 配置/存档影响
+- 服务端配置新增 `stamina.legMantleCost`；旧配置文件会由 Forge 自动补入默认值。存档无影响。
+### 测试结果
+- 生产构建、`reobfJar` 与 313 项 JUnit 通过（`LargeSupplyStationModelContractTest` 在 `core.autocrlf=true` 的新检出中因 `geo.json` 被转为 CRLF 而哈希不符，转回 LF 后通过，与本次改动无关）。
+- 已部署到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`；真实客户端翻越拦截与扣体力尚待游戏内验证。
+
+## WOK步战附属-部位血量 0.1.0-beta.9 — 2026-10-03
+
+### 新增
+- 无（合并版）。
+### 修改
+- 合并两条并行线：包含 0.1.0-beta.5 起的 `BodyHealthApi.destroyedLegCount`（翻越联动用）与 0.1.0-beta.8 的原生像素 M4A1 人形（39×48，1:1 绘制，同 beta.3）。测试端此前的 beta.7 是 256×256 原图人形，本版起改为 beta.8 的人形。
+### 修复
+- 无。
+### 兼容性
+- 公共 API、网络协议与存档键与 beta.7、beta.8 兼容；`body_hud*.png` 为 39×48，与 beta.3、beta.8 相同。
+### 配置/存档影响
+- 无。
+### 测试结果
+- `.\gradlew.bat -p wok_body_health clean build`（TaCZ 1.1.8 仅编译）通过，19 个 JUnit 全部通过；JAR 内 8 张 `body_hud*.png` 与 beta.8 逐字节相同，`BodyHealthApi` 含 `destroyedLegCount`。
+- 已部署到步战测试目录替换 beta.7（旧包备份为 `.bak`）；人形外观以 beta.8 的真实客户端验收 `20261003-m4a1-pixel-beta8` 为准，翻越断腿判定尚待游戏内验证。
+
+## WOK步战附属-部位血量 0.1.0-beta.8 — 2026-10-03
+
+### 新增
+- 无。
+### 修改
+- HUD 人形手上的枪按用户选定恢复为 0.1.0-beta.3 的原生像素版 M4A1：8 张 `body_hud*.png` 恢复为 beta.3 的 39×48 贴图（逐字节相同），以 1:1 绘制；身体仍为改版前持枪姿势。
+- 恢复人形生成脚本 `tools/body_health_hud_icon.ps1` 及其源图（beta.3 版本）。
+### 修复
+- 无。
+### 兼容性
+- `textures/gui/body_hud*.png` 尺寸由 256×256 改为 39×48，与 0.1.0-beta.3 相同；覆盖这些文件的资源包需按新尺寸重做。HUD 布局、读数锚点与体力条位置不变。
+- 版本号跳过 `0.1.0-beta.7`：该号已由并行分支 `claude/翻越联动` 的合并版（Tactical Mantle 联动 + beta.6 原图人形）交付测试端。本版不含 `BodyHealthApi.destroyedLegCount`；与该分支合并后的构建需再升版本。
+### 配置/存档影响
+- 无。
+### 测试结果
+- `.\gradlew.bat -p wok_body_health build`（TaCZ 1.1.8 仅编译）通过，19 个 JUnit 全部通过；JAR 内 8 张 `body_hud*.png` 为 39×48，与 beta.3 逐字节相同。
+- 真实客户端验收 `20261003-m4a1-pixel-beta8`（同装 WOK步战核心 0.3.0-beta.3）PASS：320×240 紧凑、427×240 精简、480×270 与 960×720 完整；与 beta.3 验收 `20261003-m4a1` 的 480×270 截图对比，人形与枪械一致。
+- 未游戏内实测：真实 TaCZ/SBW 枪击部位、PvP 补刀兜底、虚空死亡、重连、断腿跳跃（同 beta.2）。
+
+## WOK步战附属-部位血量 0.1.0-beta.7 — 2026-10-03
+
+### 新增
+- 无（合并版）。
+### 修改
+- 合并两条并行线：包含 0.1.0-beta.5 的 `BodyHealthApi.destroyedLegCount`（翻越联动用）与 0.1.0-beta.6 的原图人形 HUD。测试端此前装的 beta.5 仍是 4 倍精度 M4A1 人形，本版起改为原图。
+### 修复
+- 无。
+### 兼容性
+- 与 beta.5、beta.6 的公共 API、网络协议与存档键均兼容；`body_hud*.png` 为 256×256 原件。
+### 配置/存档影响
+- 无。
+### 测试结果
+- `.\gradlew.bat -p wok_body_health clean build`（TaCZ 1.1.8 仅编译）通过，19 个 JUnit 全部通过；JAR 内 `body_hud.png` 为 256×256 原件，`BodyHealthApi` 含 `destroyedLegCount`。
+- 已部署到步战测试目录替换 beta.5（旧包备份为 `.bak`）；HUD 与翻越断腿判定尚待真实客户端验收。
+
+## WOK步战附属-部位血量 0.1.0-beta.6 — 2026-10-03
+
+### 新增
+- 无。
+### 修改
+- HUD 人形恢复为改版前的原始持枪方块人贴图（256×256 原件，包括原来的枪和白色部位遮罩），按原来的 3/16 比例、最近邻采样绘制；撤销 beta.3 的原生像素 M4A1 与 beta.4 的 4 倍精度重画。
+- 删除人形生成脚本 `tools/body_health_hud_icon.ps1` 及其源图副本。
+### 修复
+- 无。
+### 兼容性
+- `textures/gui/body_hud*.png` 恢复为 256×256，与 0.1.0-beta.1 及更早版本相同；HUD 布局、读数锚点与体力条位置不变。
+- 版本号跳过 `0.1.0-beta.5`：该号已由并行分支 `claude/翻越联动`（Tactical Mantle 联动，新增 `BodyHealthApi.destroyedLegCount`）交付测试端。本版不含该内容；两条线合并后的构建需再升版本。
+### 配置/存档影响
+- 无。
+### 测试结果
+- `.\gradlew.bat -p wok_body_health clean build`（TaCZ 1.1.8 仅编译）通过，19 个 JUnit 全部通过；JAR 内 8 张 `body_hud*.png` 为 256×256 原件。
+- 真实客户端验收 `20261003-original-figure-beta6`（同装 WOK步战核心 0.3.0-beta.3）PASS：320×240 紧凑、427×240 精简、480×270 与 960×720 完整，人形、读数与体力条无重叠，创造模式隐藏。
+- 未游戏内实测：真实 TaCZ/SBW 枪击部位、PvP 补刀兜底、虚空死亡、重连、断腿跳跃（同 beta.2）。
+
+## WOK步战附属-部位血量 0.1.0-beta.5 — 2026-10-03
+
+### 新增
+- `BodyHealthApi.destroyedLegCount(LivingEntity)`：返回已损毁的腿数（0–2），供绕过跳跃事件的移动方式（如翻越）判定断腿。
+### 修改
+- 无。
+### 修复
+- 无。
+### 兼容性
+- 仅新增接口，原有 API、网络协议与存档键不变；仍可独立安装。
+### 配置/存档影响
+- 无。
+### 测试结果
+- 构建与 JUnit 通过；已部署到步战测试目录，替换 0.1.0-beta.4（旧包已备份为 `.bak`）。
+
+## WOK步战附属-部位血量 0.1.0-beta.4 — 2026-10-03
+
+### 新增
+- 无。
+### 修改
+- HUD 人形贴图改为 4 倍精度（156×192，对应 39×48 的 HUD 框），绘制时开启线性过滤；身体直接沿用改版前原图的面和描线，不再压成大块原生像素。
+- 手上的枪按 M4A1 真实比例重画：提把与后照门、伸缩枪托与缓冲管、平顶导轨、抛壳窗、手枪握把与扳机护圈、STANAG 弹匣、带散热孔的椭圆护木、三角准星座与刺刀座、枪管与鸟笼消焰器；握把在后手、护木压在前手。beta.3 的原生像素版枪械辨认不出型号。
+### 修复
+- 无。
+### 兼容性
+- `textures/gui/body_hud*.png` 尺寸由 39×48 改为 156×192，覆盖这些文件的资源包需按新尺寸重做；HUD 布局与读数锚点不变。
+### 配置/存档影响
+- 无。
+### 测试结果
+- 构建与 19 项 JUnit 通过；七个读数锚点在 4 倍遮罩中均完整落在各自部位内，不被枪械遮挡。
+- 真实客户端 HUD 验收 `D:\WOK步战测试\1.20.1-Forge_47.4.22\wok-body-health-acceptance\20261003-m4a1-hd` PASS：320×240 紧凑、427×240 精简、480×270 与 960×720 完整，布局不越过快捷栏，创造模式隐藏。
+## WOK步战附属-部位血量 0.1.0-beta.3 — 2026-10-03
+
+### 新增
+- 无。
+### 修改
+- HUD 人形手上的枪改为逐像素手绘的 M4A1：伸缩枪托、平顶导轨与后觇孔、手枪握把、弧形 30 发弹匣、带散热孔的护木、三角准星座、枪管与消焰器；握把落在后手、护木压在前手。原先由旧 256 图直接缩小的枪只剩一团色块。
+- 去掉旧枪后由周围部位补齐被遮住的身体，胸部、腹部和左臂露出的可着色面积变大。
+### 修复
+- 无。
+### 兼容性
+- 只替换 `textures/gui/body_hud*.png`，尺寸仍为 39×48；读数锚点与 HUD 布局不变。生成脚本 `tools/body_health_hud_icon.ps1` 同步更新。
+### 配置/存档影响
+- 无。
+### 测试结果
+- 构建与 19 项 JUnit 通过；七个读数锚点均落在各自部位遮罩内，不被枪械遮挡。
+- 真实客户端 HUD 验收 `D:\WOK步战测试\1.20.1-Forge_47.4.22\wok-body-health-acceptance\20261003-m4a1` PASS：320×240 紧凑、427×240 精简、480×270 与 960×720 完整，布局不越过快捷栏，创造模式隐藏。
+## WOK步战附属-部位血量 0.1.0-beta.2 — 2026-10-01
+
+### 新增
+- 伤害类型标签 `wok_body_health:explosion_spread`、`leg_spread`、`systemic_spread`、`head_hit` 决定伤害如何分到部位，整合包可用数据包调整。默认沿用原有分类，并加入 SuperbWarfare 枪弹与激光爆头、地雷、载具爆炸、白磷、电击，以及原版石笋（双腿）和滴水石锥（头部）；第三方条目均为可选项。
+- 客户端接口 `BodyHealthHudApi.companionSlot`，返回人形下方伴随栏位置，供体力条等 HUD 对齐。
+- HUD 按屏幕宽度分完整、精简、紧凑三档。人形沿用改版前的持枪方块人姿势，由 `tools/body_health_hud_icon.ps1` 从原 256×256 贴图生成 39×48 原生像素版本。
+- 19 项 JUnit，以及 `runHudTestClient` 真实客户端 HUD 验收（`src/hudTest`，不进入产物）。
+### 修改
+- HUD 始终位于快捷栏左边缘以左；数字改为深色底牌、不用文字阴影；损毁部位底牌红色描边闪烁；创造与旁观模式不显示。
+- 读数与所在部位同侧：正面人形的右臂、右腿读数在左列，左臂、左腿在右列。
+- 玩家近战按攻击者准星判定部位，可以打到头部和四肢；怪物近战仍为胸部 72%、腹部 28%。
+- 其他弹射物按飞行轨迹与碰撞箱的交点判定部位。
+- 断腿跳跃惩罚改在客户端生效；创造与旁观模式不再锁定原版血量。
+### 修复
+- 虚空与其他无视无敌的伤害永远无法致死。
+- 在死亡界面断线重连会原地复活并跳过重生。
+- 断腿降低跳跃高度无效。
+- `Float.MAX_VALUE` 等超大伤害被当作无效伤害丢弃，玩家毫发无伤。
+- 箭、三叉戟与 SuperbWarfare 子弹斜向射入时几乎都判成手臂。
+- 零伤害穿甲段的命中记录会残留到下一次伤害，导致护甲判定部位与实际扣血部位不一致。
+- PvP 补刀被抗性、保护附魔、盾牌或其他模组挡下后，玩家带着 0 血的头部或胸部继续存活；补刀还会把举起的盾牌磨掉 1024 点耐久。
+- 旧 HUD 在 320×240 以及 2560×1440、4K、1280×720 默认界面尺寸下与快捷栏、经验条和护甲栏重叠；旧 HUD 左右手脚读数的引线指向相反的部位。
+- Forge MOD 列表中的显示名乱码。
+### 兼容性
+- 仍可独立安装，无新增硬依赖；原有医疗与救援 API（含 `setAllPartsHealth`）保留，网络协议与存档键不变。
+- 与 WOK步战核心 0.3.0-beta.2 同装时体力条跟随人形；较旧的核心不读取接口，宽屏位置不变，窄屏会与人形错位。
+- HUD 贴图由 256×256 改为 39×48；覆盖 `textures/gui/body_hud*.png` 的资源包需要按新尺寸重做。
+### 配置/存档影响
+- 无新增配置项，存档数据键不变。伤害分类可用数据包覆盖上述标签。
+### 测试结果
+- 构建与 19 项 JUnit 通过；成品 JAR 不含其他 WOK 模块或验收代码，除 Forge 与 Minecraft 外均为可选依赖。
+- 真实客户端 HUD 验收两批均为 PASS，截图与结果位于 `D:\WOK步战测试\1.20.1-Forge_47.4.22\wok-body-health-acceptance\`：`20261001-standalone-final`（仅部位血量）与 `20261001-with-core`（同时加载核心 0.3.0-beta.2）。两批在 320×240、427×240、480×270、960×720 下分别为紧凑、精简、完整、完整档，布局不越过快捷栏，体力条位于人形正下方，创造模式隐藏。
+- 未在游戏内实测：TaCZ 与 SuperbWarfare 真实枪击的部位判定、PvP 补刀兜底、虚空死亡、断线重连与断腿跳跃。
+
+## WOK步战核心 0.3.0-beta.3 — 2026-10-01
+
+### 新增
+- 无。
+### 修改
+- 阵营配装导入恢复检查失败时，报错直接写出原因和出问题的路径，不再一律说"中断的导入"。
+### 修复
+- 游戏目录经过目录联接或符号链接访问时（例如 PCL 版本隔离的 `versions\<版本名>` 联接），进入存档即崩溃：`不能通过符号链接或重解析点访问配置文件`。链接检查原来一路查到盘符根目录，现在只查 `config\wok_infantry` 本身及其内部；目录内部的链接仍然拒绝。
+### 兼容性
+- 无变化；网络协议与存档不变。
+### 配置/存档影响
+- 无。
+### 测试结果
+- `CatalogFilesTest` 8 项通过，新增 2 项用真实目录联接验证：上级目录是联接时可以恢复、导入、导出；`.catalog-import`、`catalogs` 是联接时仍然拒绝。
+- 在 `D:\WOK步战测试` 经 PCL 联接启动进入存档验证（结果见下方交付说明）。
+
+## WOK步战核心 0.3.0-beta.2 — 2026-10-01
+
+### 新增
+- 无。
+### 修改
+- 装有部位血量 0.1.0-beta.2 及以上且其 HUD 可见时，体力条通过反射读取 `BodyHealthHudApi.companionSlot`，居中放在人形正下方。
+- 未安装部位血量、版本较旧或其 HUD 隐藏时，体力条回退到左下角，与快捷栏的间距由 3 像素改为 4 像素，与部位血量 HUD 一致。
+### 修复
+- 无。
+### 兼容性
+- 部位血量为反射软联动，不新增依赖；网络协议与存档不变。
+### 配置/存档影响
+- 无。
+### 测试结果
+- 311 项 JUnit 中 310 项通过，新增的 2 项体力条位置测试通过。失败的 `LargeSupplyStationModelContractTest` 是 E: 检出的既有问题：`core.autocrlf=true` 把授权原始 `large_ammo_supply_station.geo.json` 转成 CRLF，哈希不符；提交内容本身正确，与本次改动无关。
+- 真实客户端：随部位血量批次 `20261001-with-core` 加载，四档分辨率下体力条均启用并位于人形正下方。
+## WOK步战附属-独立护甲 1.2.0-beta.1 — 2026-09-30
+
+#### 新增
+
+- 新增头盔模型生成工具 `wok_infantry_armor/tools/helmet-models`：设计脚本、预览页、自检脚本（`check.mjs`）和导出脚本（`export.mjs`，产出 GeckoLib 模型与贴图）。
+
+#### 修改
+
+- 全部 17 件头部防具的穿戴模型和贴图按《逃离塔科夫》原物重做，统一为折中 2× 精度（半像素网格、每像素 2×2 贴图）。原来 14 件共用同一个阶梯盔壳、只换颜色，现在每件按各自原物做切口、挂座、导轨、魔术贴、面罩等部件。
+- 对应关系：防暴头盔 = Kolpak-1S；轻量化防弹面具 = Death Shadow；CQCM = Atomic Defense CQCM；LZSh = LShZ 轻型；6B47 两款 = 6B47 Ratnik-BSh（橄榄绿 / 数码植被迷彩盔罩）；凯门鳄 = Galvion Caiman；Kiver-M；ACHHC = HighCom Striker ACHHC；STRIKE = MTEK STRIKE；FAST MT = Ops-Core FAST MT 超级高切；AirFrame = Crye AirFrame；FLUX = MTEK FLUX；Vulkan-5 = LShZ-5；阿尔金 = Altyn；FAST 重型套件 = FAST MT + SLAAP 附加板 + Gunsight 下颌护具；Maska-1SCh。
+- 盔沿按 Minecraft 头部比例压低：前沿在眼睛上方半格，两侧到眼睛高度，后面盖到后颈；只保留型号自身的特征切口。阿尔金、Maska-1SCh、Vulkan-5 保持面罩放下的外观，眼睛从观察窗/观察缝露出。
+- 所有可见面距皮肤帽子层至少 0.25 像素，渲染器不再整体放大 1.10 / 1.06 倍。面罩玻璃与骷髅面具镜片放在 `visor_glass` 骨骼，在不透明盔壳画完后以半透明单独绘制；原先仅限 Vulkan-5 的特殊处理改为通用规则。
+
+#### 修复
+
+- 修复旧头盔模型全部方块尺寸不在 ¼ 像素网格、532 个方块薄于 0.5 像素，以及部分部件埋进皮肤帽子层导致闪烁或被遮住的问题。
+
+#### 兼容性
+
+- modId、物品 ID、物品图标、防护数值、耐久与部位血量联动均未改动；只替换 `geo/helmet_*.geo.json`、`textures/models/armor/helmet_*_layer_1.png` 和 `HelmetGeoRenderer`。仍需 GeckoLib 4.8.4 或更高版本；模型改用按面 UV，旧资源包若覆盖这些文件需同步更新。
+- WOK-本体护甲 未改动。
+
+#### 配置/存档影响
+
+- 无。
+
+#### 测试结果
+
+- 17 件模型全部通过 `check.mjs`（无面位于或贴近帽子层，普通头盔不遮挡眼睛）；导出文件按 GeckoLib 4.8.4 的坐标与按面 UV 规则读回后，与设计稿逐面贴图一致。
+- `wok_infantry_armor` Gradle 构建通过；成品 JAR 内部版本为 `1.2.0-beta.1`，包含 17 个新模型和贴图，强制依赖仅 Forge、Minecraft 与 GeckoLib，TaCZ 和部位血量仍为可选。
+- 已安装到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`（替换原 1.1.0，旧包改名为 `.bak` 备份）。
+- 游戏内外观验收（各头盔穿戴、转头低头、面罩玻璃半透明、窄屏第三人称）尚未完成，因此保持 beta。
+
+## WOK步战核心 0.3.0-beta.1 — 2026-09-10
+
+### 新增
+- 基地圈地工具和持久区域；进入己方区域连续十五秒后补给，用独立战术面板显示倒计时、中断与完成提示。
+- 持久兵力值、彻底死亡/主动重部署扣点、零兵力判负及 HUD；新局统一重置占点。载具损失和占点均不扣兵力。
+- TaCZ 机枪卧倒后渐进稳定，静止两秒达到枪包原卧姿倍率，移动逐渐损失稳定，起身重置。
+### 修改
+- 原基地补给按钮与命令改为十五秒流程；原球形补给半径由管理员圈定长方体替代。
+### 修复
+- 基地补给只补缺额，不清理已领取弹药和运输货物，不替换生命发放批次。
+### 兼容性
+- 核心仍可独立安装；TaCZ、倒地、占点通过可选联动接入。新增兵力网络通道，联机双方需同步升级核心。
+### 配置/存档影响
+- 新增世界兵力与基地范围数据，以及 `wok_infantry-gameplay.toml`。旧基地坐标保留，管理员须用工具圈定补给区。
+- 不覆盖已有配装、阵营与运输容量；初始兵力改动仅在新局应用。详见 `wok_infantry/docs/GAMEPLAY_0.3.0.md`。
+### 测试结果
+- 核心构建和 309 项 JUnit 通过；版本一致性、独立依赖检查通过。真实独立客户端及核心/部位血量/倒地/占点/TaCZ 联合场景验证了计时补给、物资保留、扣点去重、死亡归零结算、复活、统一重置与机枪渐进倍率；两档 HUD 验收详见 `wok_infantry/docs/GAMEPLAY_ACCEPTANCE_0.3.0.md`。完整生产整合包与远程多人尚未覆盖。
+
+## WOK步战附属-部位血量 0.1.0-beta.1 — 2026-09-10
+
+### 新增
+- 可选救援 API `setAllPartsHealth`，按绝对部位血量设置并同步，不经过治疗倍率。
+### 修改
+- 无。
+### 修复
+- 无。
+### 兼容性
+- 继续可独立安装，无新增硬依赖；已有医疗 API 保留。
+### 配置/存档影响
+- 无。
+### 测试结果
+- 构建、版本一致性和独立依赖检查通过；本模块无 JUnit 用例。真实联合客户端验证七个部位绝对 1 点，详见核心本轮玩法验收记录。
+
+## WOK步战附属-倒地救援 0.1.0-alpha.3 — 2026-09-10
+
+### 新增
+- 救起后失明效果，默认五秒。
+### 修改
+- 救起后原版生命和每个身体部位设为绝对 1 点，取消额外全身治疗和三秒抗性 V。
+### 修复
+- 救起治疗不再被部位治疗倍率放大成全身满血。
+### 兼容性
+- 可独立安装；与部位血量联用时要求其版本不低于 `0.1.0-beta.1`，确保绝对血量 API 存在。
+### 配置/存档影响
+- 新增 `reviveBlindnessSeconds`，旧 `reviveHealth` 与 `bodyHealthReviveAmount` 不再参与救援；玩家存档结构不变。
+### 测试结果
+- 构建、3 项 JUnit、版本一致性及独立依赖检查通过；真实联合客户端验证 5 秒失明、一血救援、倒地不扣兵力及死亡复活。双人救援手势、姿态/拖行与 moveslikemafuyu 组合未在本轮重测。
+
+## WOK步战附属-占点 0.1.0-alpha.3 — 2026-09-10
+
+### 新增
+- 可选核心兵力联动接口：统一新局重置进度、对局结束暂停推进。
+### 修改
+- 与核心联用时占点 HUD 避让兵力面板；窄屏移至右栏，避免覆盖小队名单。
+### 修复
+- 死亡、倒地、旁观和核心未部署玩家不再计入占点人数。
+### 兼容性
+- 无新增硬依赖；未安装核心时保留独立占点模式。
+### 配置/存档影响
+- 无格式变化；新局仅清零控制进度，保留据点形状、顺序和选项。
+### 测试结果
+- 构建、9 项 JUnit、版本一致性及独立依赖检查通过；真实联合客户端验证 ACTIVE/倒地/等待占点资格、全占不扣兵力及新局清零进度，两档 HUD 布局记录见核心本轮验收文档。
+
+本文件按模块记录变化。版本规则见 `docs/VERSIONING.md`；当前版本不代表已发布或全部游戏验收通过。2026-09-06 的 Git 内容清单和验收边界见 `docs/CONTENT_VERSION_AUDIT_2026-09-06.md`。
+
+## WOK步战核心 0.2.2 — 2026-09-06
+
+### 队包放置修复
+
+#### 新增
+
+- 无。
+
+#### 修改
+
+- 无。
+
+#### 修复
+
+- 已部署玩家使用合法发放的队包时，不再被普通方块/桶的禁用规则提前拦截；管理员也可进入队包放置校验。普通玩家仍不能使用未发放的队包，普通地形建造限制继续生效。
+- 队包安全落脚点从无线电所在高度开始搜索，纳入同层相邻地面，修复平坦地面因低矮无线电无法承重而被误判为没有落脚位置。
+- 队包记录和存档读取同步接受同层落脚点，避免创建记录时抛出异常或重启后丢失；继续读取旧版高一至三格的队包记录。
+
+#### 兼容性
+
+- 仅核心升级到 `0.2.2`；无网络格式、MOD ID、物品/方块 ID 或玩家 NBT 变化。队长/指挥官权限、每队上限及固定 8 分钟持久冷却继续由服务端校验。此前的体力修复与三秒默认冷却保留。
+
+#### 配置/存档影响
+
+- JAR 不会自动覆盖现有编制。步战测试配置的 `academy/default`、`academy/millennium_seminar_mobile`、`caesar/default` 三套编制原为禁用队包占位配置；已应用独立版本 `0.1.0` 的配置修复包，仅将队包能力调整为当前默认规则：启用、每队 1 个、100 生命、允许队长/指挥官、三项目录冷却均为 480 秒。原文件保留 `.before-0.2.2-rally.bak` 备份，其他阵营、载具和配装字段经比对保持原值。
+- 存档结构版本不变；新生成的同层落脚点需要 `0.2.2` 或后续版本读取，降级旧版会过滤这些队包记录。
+
+#### 测试结果
+
+- 302 项 JUnit、构建、版本一致性及独立依赖检查通过；新增同层队包存档往返、旧高位队包兼容及越界拒绝回归测试。真实独立客户端验证无管理员权限的小队长平地放置成功、归属与 100 生命正确、冷却拒绝回退方块和物品、从本小队队包实际重新部署成功。完成两档逻辑分辨率提示/HUD 检查；未覆盖远程双人联机或完整整合包组合。详见 `wok_infantry/docs/RALLY_ACCEPTANCE_0.2.2.md`。
+- 已将核心 `0.2.2` 安装到步战专用测试实例，旧核心保留备份；安装后 JAR 和配置哈希一致，活动核心 JAR 仅一个。此前的体力更新也随本包生效。
+
+## WOK步战核心 0.2.1 — 2026-09-06
+
+### 体力恢复冷却
+
+#### 新增
+
+- 无。
+
+#### 修改
+
+- 默认恢复冷却由 16 tick（0.8 秒）延长为 60 tick（3 秒）。手部和腿部分别从最后一次消耗开始计时，冷却期间再次消耗对应部位体力会重新计时；冷却完成后才按原速度恢复。
+
+#### 修复
+
+- 登录、重生或重新创建体力运行状态时，重新等待完整冷却，避免因消耗时间戳缺失而立即恢复。
+
+#### 兼容性
+
+- 仅核心升级至 `0.2.1`，体力协议保持 2，与 `0.2.0` 的网络格式兼容。耗尽后恢复至 15 才可冲刺、50 以下渐强晃动及创造/旁观豁免保留；其他模块版本不变。
+
+#### 配置/存档影响
+
+- 新配置默认 `stamina.recoveryDelayTicks = 60`；现有世界保留自身设置，要采用三秒冷却需同步修改该字段。没有新增存档字段；重新登录或重生时重新等待完整冷却，不按离线时间直接恢复。
+- 步战专用测试存档“新的世界 (1)”已将旧值 16 改为 60，原配置保存为 `wok_infantry-server.toml.before-0.2.1-cooldown.bak`；其他世界配置不受影响。
+
+#### 测试结果
+
+- 301 项 JUnit、构建、版本一致性及独立依赖检查通过。真实独立客户端和 TaCZ 1.1.8 客户端均通过逐 tick 冷却验证：完整 60 tick 内不恢复、跳跃重置腿部计时、双池独立、登录/重生事件重新等待冷却；TaCZ 实际开镜消耗与松镜恢复验证通过。并复验冲刺锁定、50 以下晃动与两档分辨率截图。详见 `wok_infantry/docs/STAMINA_ACCEPTANCE_0.2.1.md`；未测试远程双人联机或完整整合包组合。
+
+## WOK步战核心 0.2.0 — 2026-09-06
+
+### 体力耗尽冲刺修复与渐进晃动
+
+#### 新增
+
+- 无。
+
+#### 修改
+
+- 持 TaCZ 枪械时，手部或腿部体力低于 50 开始平滑晃动，体力越低幅度越大；手部疲劳为主，腿部保留较轻的呼吸影响。体力条橙色预警同步提前至 50 以下。
+
+#### 修复
+
+- 耗尽腿部体力后，客户端与服务端同时拦截原版冲刺入口并移除冲刺速度加成，阻止持续按键、双击前进与重复冲刺请求继续冲刺。
+- 耗尽锁定随玩家数据保存与同步，默认恢复到 15 才能再次冲刺；部分恢复时重新创建玩家不会丢失锁定。锁定期间按冲刺不会妨碍正常体力恢复。
+- 320×240 窄屏下体力条向左避让原版快捷栏，避免遮挡物品槽。
+
+#### 兼容性
+
+- 仅升级 `WOK步战核心` 至 `0.2.0`；体力协议由 1 升至 2，客户端与服务端必须同步更新。战局协议 18、配装协议 11 不变，其他模块不随本次升级版本。
+- TaCZ 继续可选；创造与旁观模式继续豁免体力限制。
+
+#### 配置/存档影响
+
+- 无新增配置项，保留原有消耗、恢复和冲刺恢复阈值配置。玩家体力 NBT 增加 `sprintBlocked` 标记；旧存档可读取，零体力自动进入锁定，不改变物品或实体 ID。
+
+#### 测试结果
+
+- 301 项 JUnit、`build` / `reobfJar`、版本一致性及独立依赖检查通过。真实 Forge 客户端分别以核心独立安装及核心 + TaCZ 1.1.8 验证自然冲刺/跳跃耗尽、连续输入与重复冲刺包拦截、部分恢复锁定、玩家 NBT 拷贝、恢复后重启冲刺及创造豁免；验证两档分辨率下五档体力的实际相机晃动和 HUD，各保留 10 张截图。详见 `wok_infantry/docs/STAMINA_ACCEPTANCE_0.2.0.md`；本轮未重测完整整合包或远程双人联机。
+
+## WOK步战核心 0.1.0 — 2026-09-06
+
+### 累积核心功能与阵营配装全量导入导出
+
+#### 新增
+
+- 管理员配装终端增加战术平板式导入导出页，将全部阵营、编制、兵种、装备槽、装备池、白名单、载具规则、SNBT 和弹药上限保存为一个 JSON 包；增加文件浏览、数量预览、确认导入及控制台命令。
+- 增加自动备份、内容/当前配置指纹检查、一次性预览令牌、严格格式与引用校验，以及两个文件的提交失败和启动恢复机制。
+- 归入本版的新增内容：四种车辆运输补给、500 点中型箱、大型补给站原生实体与燃烧爆炸流程、小队队包、每战局首次部署备用弹药、234机械化作战单元、研讨会骑兵军团、临时侦察情报接口、单项支援冷却清除、附属地图区域接口、攻击性支援范围/在途显示及逐枪伤害/穿甲/射速倍率。逐项证据见审计清单 N01–N13。
+- 也包含已在 `6944d76` 提交却仍沿用 `0.0.1` 的阵营/编制、独立兵种与管理员配装、战局/小队/部署/补给、载具战损补充、体力、战术平板及支援框架；这些不重复计入“最新提交之后新增”的 25 项。
+
+#### 修改
+
+- 成功导入后刷新在线玩家的配装、阵营及战局视图，沿用阵营重载的状态调和规则。
+- 同步项目永久规则与版本规范：今后每次新增游戏内容必须更新对应模块版本，测试包也不得与不同内容共用同一版本号。
+- 地图统一固定物理字号、区域图层次序和更大的友军图标；补给站保留旧方块存档兼容，新发放采用龙之崛起原生部署器。
+
+#### 修复
+
+- 修复含 `/` 的合法装备 ID 在配装规范化时被丢弃，确保编辑器保存和导入导出的标识规则一致。
+- 支援请求者变更阵营后取消原任务；无在途延迟的支援显示立即执行；清除冷却命令正确解析含命名空间的技能 ID。
+
+#### 兼容性
+
+- 仅 `WOK步战核心`；全部入口要求管理员权限等级 2。普通玩家继续只能选择管理员开放的装备。配装协议升级为 11，客户端与服务端需同步更新；MOD 版本由 `0.0.1` 提升为 `0.1.0`。
+- 当前战局协议为 18；不可与早期同名 0.0.1 包混用。TaCZ、Superb Warfare 与载具附属仍按配置可选接入。
+
+#### 配置/存档影响
+
+- 新增服务端 `config/wok_infantry/catalogs/` 数据包及备份目录、`.catalog-import/` 恢复记录。导入全量替换 `formations.json` 和 `loadouts.json`，不导入玩家选择、阵营成员、对局或载具运行数据；外部资源与 MOD 需单独安装。
+- 新默认编制不自动写入已有 `formations.json`；运输余量和队包冷却继续持久化，调整容量或重启不会补满旧车。M249 后坐力和整合包枪械平衡脚本属于外部配置交付，不冒称已内置进核心默认配装。
+
+#### 测试结果
+
+- 296 项 JUnit（含 17 项新功能测试）通过，`build` / `reobfJar` 与核心独立依赖检查通过。真实 Forge 客户端已验证权限、完整导出、实际配置变化导入、自动备份、预览后文件修改拒绝、玩家记录保留及在线同步，并检查 320×240 / 960×720 共 8 张截图。新版本复验结果在步战专用测试目录 `catalog-transfer-acceptance/20260906-v0.1.0/catalog-acceptance.txt`；外部枪包与载具 MOD 组合未在本轮重测。
+
+## WOK步战附属-创伤治疗 0.1.0-beta.1 — 2026-09-06
+
+#### 新增
+
+- 为 8 月 31 日已提交的 Propital 延迟副作用与每针独立计时补齐版本：注射 270 秒后产生 30 秒颤栗与视野收缩。
+
+#### 修改
+
+- 黄针 2 秒注射、持续恢复 300 秒，每秒使用共享的 0.1 点原版治疗量优先治疗最重伤部位；绿针保留七部位并行治疗。旧 `0.0.2` 同号包不再表示这批新增内容。
+
+#### 修复
+
+- 无。
+
+#### 兼容性
+
+- 医疗与部位血量继续软联动，无新增必需依赖，物品 ID 和协议不变。
+
+#### 配置/存档影响
+
+- 无新增配置项；已有恢复效果不自动延长，后续脉冲采用新规则，延迟副作用只由新注射安排。
+
+#### 测试结果
+
+- 本次构建、元数据和依赖结果见审计清单。既有编译与恢复计时检查通过；游戏内注射、叠针副作用和整合包医疗链仍待验证，保留 beta。
+
+## WOK步战附属-部位血量 0.0.3-beta.2 — 2026-09-06
+
+#### 新增
+
+- 无。
+
+#### 修改
+
+- 默认 `bodyDamageScale` 由 10 改为 8，治疗换算保持 10；纳入已提交的 HUD 底部预留调整，避让核心可选体力条。
+
+#### 修复
+
+- 无。
+
+#### 兼容性
+
+- 无新增依赖，已有部位 API、网络协议和数据键不变。
+
+#### 配置/存档影响
+
+- 只改变新生成配置的默认伤害换算，旧配置不会自动覆盖，无存档迁移。
+
+#### 测试结果
+
+- 本次构建、元数据和依赖结果见审计清单；新数值的真实枪击与医疗联动仍待验证。
+
+## WOK步战附属-独立护甲 1.1.1-beta.1 — 2026-09-06
+
+#### 新增
+
+- 无。
+
+#### 修改
+
+- 轻甲默认移速修正从 +10% 改为 0%，中甲从 0% 改为 -5%，重甲保持 -12%。沿用独立护甲 1.1 版本序列，修正根 README 错写 0.0.1 的问题。
+
+#### 修复
+
+- 无。
+
+#### 兼容性
+
+- GeckoLib 仍为必需基础依赖，TaCZ 与部位血量仍可选；modId、物品 ID 和 WOK 本体护甲均未改动。
+
+#### 配置/存档影响
+
+- 只调整新配置默认值，旧服务端配置不会自动覆盖，无存档迁移。
+
+#### 测试结果
+
+- 本次构建、元数据和依赖结果见审计清单；穿戴后移速与整合包平衡体验尚待游戏验证，使用 beta。
+
+## WOK步战附属-载具部位血量 0.1.0-beta.1 — 2026-09-06
+
+#### 新增
+
+- 按种类划分 T1/T2/T3 车体/部件平衡、方向装甲、TaCZ HEAT/温压弹/M72 归一化；权威表见模块 `BALANCE_TIERS.md`。
+
+#### 修改
+
+- 观瞄完整自愈约 20 秒改为约 100 秒；受损炮塔转速倍率 0.25 改为 0.45，摧毁仍为 0.08；M3A3 车体 440。
+
+#### 修复
+
+- 防止同发归一化直击与爆炸重复扣除车体血量。
+
+#### 兼容性
+
+- 基础依赖为 Superb Warfare 0.8.9 final，版本范围 0.8.9 至 0.9 之前；其他 WOK 模块、TaCZ 与载具附属无新增硬依赖。表外车辆保留第三方原始车体。
+
+#### 配置/存档影响
+
+- 首批登记旧车按原有车体/部件剩余比例迁移并保存平衡档案，不自动修满，不改变载弹和补给上限。
+
+#### 测试结果
+
+- 本次完整构建、现有 JUnit、元数据及依赖检查见审计清单；第三方组合服射击矩阵仍待验证。
+
+## WOK步战附属-指挥官支援 0.1.0-beta.1 — 2026-09-06
+
+#### 新增
+
+- 侦察卫星、千禧年 F-15EX JDAM 1000 磅空袭、F-16C GBU-12 500 磅激光制导空袭及配套声音、地图提示。
+
+#### 修改
+
+- 归并旧同号 0.0.1 测试中的在途/落地引信、移动光斑锁定和卓越前线爆炸后端调整；开发构建自动读取当前核心版本。
+
+#### 修复
+
+- 修正固定引用旧核心 JAR 的构建路径，最低核心版本提升到实际提供新接口的 0.1.0。
+
+#### 兼容性
+
+- 当前实现必需 WOK步战核心 0.1.0+，CBC 与卓越前线仍可选。该模块尚不满足完全脱离核心独立安装的永久规则，作为已存在的限制记录，本轮版本整理不擅自重写支援架构。
+
+#### 配置/存档影响
+
+- 旧服务器需显式更新编制支援白名单；技能冷却沿用核心存档，在途任务和临时情报不跨重启恢复。
+
+#### 测试结果
+
+- 本次完整构建与 18 项 JUnit 通过；此前三技能双分辨率 UI 已验证。实际双人持续制导/断照，以及新版 JDAM 完整伤害链仍待正式组合服验收，不将旧后端的成功结果视为新版通过。
+
+## WOK步战附属-占点 0.1.0-alpha.2 — 2026-09-06
+
+#### 新增
+
+- 归档占点模块：管理员圈地/管理/存档、顺序与连续控制算法、独立 HUD/阵营识别及可选核心战术地图显示。
+
+#### 修改
+
+- 开发依赖自动读取核心当前版本，继续保留 alpha 阶段。
+
+#### 修复
+
+- 可选核心的最低版本由 0.0.1 提高到提供区域接口的 0.1.0，避免旧核心误满足兼容声明。
+
+#### 兼容性
+
+- 未安装核心时仍只需要 Minecraft 与 Forge；安装核心联动时需 0.1.0+。
+
+#### 配置/存档影响
+
+- 沿用现有 alpha 据点 SavedData 和服务端配置，本次版本整理不改变格式。
+
+#### 测试结果
+
+- 本次完整构建与 9 项 JUnit 通过；此前窄屏/大屏 HUD 与地图真实客户端验收通过，多人推进、重启恢复及圈地交互仍待整合环境验收。
+
+## WOK步战附属-倒地救援 0.1.0-alpha.2 — 2026-09-06
+
+#### 新增
+
+- 归档倒地致死拦截/失血、队友救援、拖行与医疗软联动功能。
+
+#### 修改
+
+- 倒地期间同步锁定卧倒、限制输入，获救恢复；修复后的交付版本不再复用 alpha.1。
+
+#### 修复
+
+- 修复动作 MOD 清除卧倒及倒地动作逃逸；拖行传送后更新服务端连接位置基准，防止原版连接 tick 把其他玩家看到的位置恢复到起点。
+
+#### 兼容性
+
+- moveslikemafuyu、医疗、部位血量和核心仍可选，不内嵌其他模块类。
+
+#### 配置/存档影响
+
+- 无，本次不改变配置与数据结构。
+
+#### 测试结果
+
+- 本次构建与现有测试见审计清单。此前独立/动作 MOD 组合姿态分别通过 19/23 项断言；150ms 确认延迟下双客户端拖行分别通过 19/15 项断言。完整医疗/部署链仍待验收。
+
+## WOK步战编制配装编辑器 0.1.0-beta.1 — 2026-09-06
+
+#### 新增
+
+- 为离线编辑器建立独立 `VERSION`，交付包新增编辑器/核心双版本清单 `VERSION.json`。
+
+#### 修改
+
+- 配套核心更新为 `0.1.0`，构建和打包脚本读取准确核心版本；新目录与 ZIP 同时带编辑器和核心版本，保留历史测试包。
+
+#### 修复
+
+- 去除随包文档与打包脚本中固定附带同名 `wok_infantry-0.0.1.jar` 的旧做法。
+
+#### 兼容性
+
+- 离线页面功能和 catalog v1 格式不变，核心需 0.1.0；外部枪包/载具资源仍需目标游戏环境提供。
+
+#### 配置/存档影响
+
+- 本次只重建交付包，不写入活动游戏配置或存档；实际导入仍须管理员预览并确认。
+
+#### 测试结果
+
+- 25 项 Node 测试通过；新 ZIP 的 CRC、文件内容和配套核心文件一致性检查通过。页面逻辑未改，历史浏览器验收记录保留；当前核心独立客户端目录导入导出已通过，完整编辑器配置的枪械/载具游戏联调仍待完成。
+
+## 历史开发记录（原“未发布”区，保留至 2026-09-06 版本核对）
+
+以下是当时的开发记录，包含已提交与未提交内容，不能全部算作本次新增。
+其中“版本号不变”“当前版本”与旧构建路径仅描述当时状态；现行版本、依赖与验收范围以上方版本章节和审计清单为准。
+
+### 2026-08-30 远程分支历史记录补充
+
+- 原远程 `87dfdec` 明确整个仓库仍处于早期测试阶段；本次保留该说明，不将源码递交视为正式发布。
+- 原远程核心记录补充了 100 点小型弹药箱、1500 点大型站及 24 格内手动载具补给、单把 TaCZ 枪械的四项属性编辑（25%–1500%）、兵种上移/下移与深复制配装、逐枪 1–4096 发备弹上限，以及 JourneyMap 缺失时的 Xaero 地形回退。这些早期功能已在代码中，与本轮新增清单分开统计。
+- 当时核心战局协议已累积到 15、配装管理协议到 10；当前升级到 18/11，以本文件顶部当前版本为准。
+- 原远程记载载具部位血量曾在 Superb Warfare 0.8.9.1 组合下完成构建与 6 项测试；当时未兼容活动 0.8.9-final 环境。该历史结果不能替代本次新兼容层与 T 级平衡的真实游戏验收。
+
+### WOK步战核心：M249 姿态后坐力试调
+
+#### 新增
+
+- 增加 M249 配装后坐力的独立应用脚本，支持预览、原文件备份、改动范围校验与重复应用；参数和验收方式见 `wok_infantry/docs/M249_STANCE_RECOIL.md`。
+
+#### 修改
+
+- 专用测试实例内现有 M249 配装的垂直/水平后坐倍率从 `3.50/3.00` 提高为 `8.00/6.00`；沿用枪包卧姿 `0.10` 倍率，使站立、蹲下时难以持续压枪，卧姿明显稳定。
+
+#### 修复
+
+- 无。
+
+#### 兼容性
+
+- 沿用 TaCZ 1.1.8 的陆地卧姿规则，可与 moveslikemafuyu 的爬行姿态配合；不修改第三方 JAR 或枪包，不增加依赖。
+
+#### 配置/存档影响
+
+- 仅更新专用测试实例 `config/wok_infantry/loadouts.json` 中现有 M249 的两个 NBT 数值，自动备份原文件。需要停服后应用、重启并重新领取枪械；背包旧枪保留原参数。伤害、射速、弹药、附件与其他枪械不变，已有测试包未重打包，版本号不变。
+
+#### 测试结果
+
+- 副本验证通过：仅两个数值变化、备份逐字节一致、重复应用不产生变化、卧姿倍率不符时拒绝写入。专用测试实例配置应用完成并进行同等差异校验；无 Java/JAR 变更，未执行构建，游戏内手感仍待实射验收。
+
+### WOK步战附属-倒地救援：姿态与拖行同步修复
+
+#### 新增
+
+- 增加独立安装及 moveslikemafuyu 组合下的真实客户端姿态回归测试，测试代码不进入正式 JAR。
+- 增加真实双客户端拖行同步测试，模拟 150ms 传送确认延迟并保存双方的坐标断言与渲染截图。
+
+#### 修改
+
+- 倒地期间在客户端和服务端同步保持卧倒，并清空本地移动、跳跃、潜行和交互输入；获救后恢复姿态控制。
+
+#### 修复
+
+- 修复 moveslikemafuyu 清除强制姿态造成伤员仍站立的问题。
+- 修复倒地期间仍能通过动作 MOD 按键切换爬行、滑铲、游泳加速或攀爬的问题。
+- 修复拖行位置被原版连接 tick 恢复为旧值，导致拖人者看到伤员模型停在原地的问题；同步更新服务端连接位置基准，避免依赖及时到达的客户端传送确认。
+
+#### 兼容性
+
+- moveslikemafuyu 为可选兼容，不增加必需依赖，不修改第三方 JAR 或配置；针对测试实例的 1.1.3 验证。
+
+#### 配置/存档影响
+
+- 无。版本号保持 `0.1.0-alpha.1`，本次为未发布修复。
+
+#### 测试结果
+
+- 离线测试、构建及生产重混淆通过，3 项既有测试通过；JAR 独立依赖检查通过。独立安装与 moveslikemafuyu 1.1.3 组合下的真实客户端分别通过 19、23 项断言，渲染截图确认倒地卧倒、获救站立；完整整合包联机仍待复测。详见 `wok_downed/docs/DOWNED_POSE_ACCEPTANCE.md`。
+- 拖行修复前，双客户端复现伤员自视角已移动约 9.6 格、拖人者仍看到伤员留在起点；修复后，同样的 moveslikemafuyu 1.1.3 与 150ms 延迟条件下，拖人者 19 项、伤员 15 项断言全部通过，覆盖直线、转弯、放下和获救。详见 `wok_downed/docs/DRAG_SYNC_ACCEPTANCE.md`。
 
 ### 仓库
 
@@ -24,6 +1866,392 @@
 - `wok_trauma`：`0.1.0 → 0.0.1`
 - `wok_body_health`：`0.1.0 → 0.0.1`
 - `wok_infantry_armor`：迁入统一仓库后以 `0.0.1` 作为新产品线起始版本。
+- `wok_commander_support`：新模块以 `0.0.1` 作为起始版本。
+
+### WOK步战核心
+
+#### 新增
+
+- 新增服务端数据驱动的“公开阵营 → 编制”两级选择框架，默认提供学院军、凯撒及双方 `default` 安全骨架；玩家选择、目录代数、世界存档和强制选择 UI 已接入。
+- 新增编制范围的小队集合/容量、兵种配额和配装条目白名单；TaCZ 枪械在部署与补给时通过可选公共 API 边界再次校验 `GunId` 与构造结果。
+- 管理员配装终端新增阵营/编制选择和“仅此 / 加入 / 移出 / 全部开放”白名单操作；“读取主手”可将当前物品的注册名、数量与完整 TaCZ 枪械配件 NBT 直接保存为配装条目，同时剔除旧战局发放标记和物理耐久损耗，并把新条目加入当前所选编制的严格白名单。管理员可按默认快捷键 `U` 打开终端，并可在按键设置中重新绑定。
+- 职业定义改为由具体编制独立拥有：管理员终端可新建、重命名、调整名额和删除当前编制职业；新职业生成独立装备池，玩家小队职业页与配装页只显示所属编制的职业名称和可选装备。初始四个职业也可彻底删除，每个编制只需至少保留一个职业；列表第一项动态承担默认回退，删除后自动由下一项接任并调和现有玩家。
+- 修复玩家已加入阵营但编制投票尚未开启时无法退出强制选择页的问题：此状态现在允许按 `Esc` 暂时关闭，并在底栏提示；未选择阵营时仍保持强制选择。
+- 新增卓越前线可选载具 provider：支持载具部署箭头处整批显式部署、幂等 allocation、ownership 标签、持久化台账、未加载实体 tombstone、战局 session 轮换以及阵营+编制乘坐授权。
+- 新增 `config/wok_infantry/formations.json` schema、管理员重载/指派/载具部署与恢复命令，以及 `docs/FORMATION_FRAMEWORK.md` 配置说明。
+- 战术平板地图新增指挥官支援框架模块：大尺寸界面固定显示在右侧目标卡下方，紧凑界面使用“标记/支援”切换；目录由服务端动态下发，默认空目录显示框架就绪提示。
+- 新增 `SupportProviders.registerDefinition`、`registerProvider` 与 `register` 生产扩展入口；扩展可用稳定命名空间 ID 注册定义与 provider，核心不内置具体技能、执行实体或第三方 MOD 支援绑定。
+- 新增服务端支援任务、每阵营/注册 ID 冷却、请求幂等、全局任务与单 tick 执行预算、世界边界及完整作用区区块校验；仅当前战局、当前维度、已进入作战阶段的现任指挥官可以请求。
+- 新增 `SUPPORT_SYSTEM.md`，记录默认空目录、扩展注册契约、服务端权威边界、存档与验收建议。
+- 新增受限的 `SupportIntelPublisher` 临时情报扩展接口：服务端再次校验圆形扫描区、目标数量、坐标和 TTL，接触点只合并进调用方阵营快照，不占手工标记额度且不写存档。
+- 新增权限等级 2 管理指令 `/battle admin support cooldown clear <blue|red> <支援ID>`；按阵营和稳定 ID 清除单项持久冷却，且不会取消当前在途任务。
+- 战术地图新增 `RECON_CONTACT` 红点样式；保持稳定屏幕物理尺寸，归入情报图层，且不可手动选中或删除。
+- 学院军新增首个正式编制“千禧年研讨会机动部队”及千禧年徽标：FCP M1296 龙骑兵 ×3、M1128 MGS ×2、悍马 M2 ×2、机枪版小鸟 ×1。
+- 凯撒新增首个正式编制“234机械化作战单元”（`caesar_234_mechanized`）：龙之崛起豹2A4 ×1、CV90 ×2，FCP 装甲无武装 HMMWV ×2；豹2A4与 CV90 战损后 15 分钟补充，HMMWV 战损后 5 分钟补充。
+- 新增持久化载具战损/补充台账：M1296 与 M1128 损毁后本战局不可再生，悍马与小鸟分别按 5 分钟、10 分钟在当前载具部署箭头处补充；管理清理与普通区块卸载不会误记战损。
+- 新增每战斗侧一个实体 `vehicle_deployment` 载具部署方块：低矮战术底板带凸起 `→` 箭头，支持蓝/红染料绑定、空手查询、潜行空手顺时针旋转以及控制台/RCON 原子放置、重定向和移除。
+- 新增创造物品栏独立分页“WOK步战 · 特殊方块”，集中收纳部署信标、载具部署方块、小型/中型弹药箱、核心自有大型弹药补给站和小队队包；物品页只改善查找，既有放置、拆除和小队权限保护保持不变。
+- 玩家在每次服务端战局会话的第一次成功部署时，按实际发放的 TaCZ 枪械及其逐枪携带上限免费取得满额物理备用弹药；共用弹种只按较高上限发放一次。该首批权益不会因死亡或主动重新部署重置，后续弹药必须通过主基地、弹药箱或运输补给取得，不能靠重新部署刷弹。
+- 新增可配置的载具运输补给：按实体 ID 为不同载具设置大型或中型弹药箱及容量，新车首次装满并把货物规格与余量持久化到实体；已部署玩家空手潜行右键授权车辆可逐箱取出对应补给并放置到地面。运输箱使用当前生命有效、可换栏位的服务端签名；大型箱携带时默认只保留 25% 移速并强制结束疾跑。
+- 新增车辆运输补给容量权威清单；首批确认 FMTV（`superbwarfare:truck`）与 Ural（`fcp:ural`）均满载 3 个大型补给，无装甲无武装 HMMWV（`fcp:hmmwv_unarmored_unarmed`）满载 2 个中型补给，装甲无武装 HMMWV（`fcp:hmmwv_armored_unarmed`）满载 1 个中型补给，后续车辆配置均按表维护。
+- 新增 `wok_infantry:medium_ammo_supply_crate` 500 点中型弹药箱，复用末日装饰的武器箱模型，并接入既有 TaCZ 选枪补给、逐发计价、持久点数及管理员补满事务。
+- 大型弹药补给恢复使用合作方龙之崛起原生 `dragonrise_reforge:ammo_supply_station` 部署器与实体渲染，保持 1500 点补给、车辆运输和 WOK步战物品栏入口；核心自有转换方块仅保留旧存档兼容，不再发放，从根源避免实体骨骼模型转换为普通方块导致的错位。
+- 新增 `wok_infantry:rally_radio` 小队队包：复用末日装饰无线电模型，按阵营、编制和小队持久化，只向所属小队暴露为部署点。新默认编制每队 1 个、100 生命值，小队长或指挥官可放置；近战、投射物与爆炸分别造成 10/25/100 点伤害，同阵营伤害失败关闭。每次成功部署后该小队进入固定 8 分钟持久 CD，撤收、摧毁和服务端重启均不提前清除，其他小队独立计时。
+
+#### 修改
+
+- 战术地图内文字统一采用“固定 2 倍物理字形、按 GUI scale 反算逻辑尺寸”的清晰绘制路径并关闭文字阴影；单位编号、部署点字母、支援状态、附属区域标签、网格坐标、比例尺、罗盘与交互提示在 `320×240` 和 `960×720` 下保持一致的屏幕物理尺寸，不再随 GUI scale 异常膨胀、缩小或产生小数采样重影。
+- 战术地图绘制顺序明确拆分为地形/网格、区域与命令几何、区域注记、部署点与战术标记、实时单位与预览、罗盘与光标六层；附属 MOD 区域覆盖拆成底层范围和注记两次绘制，离散战术图标始终位于半透明区域之上。
+- 战术地图友军实时图标的固定物理直径由普通队友 7、队长 9、自己/指挥官 11 像素分别增至 11、13、15 像素；同步加长朝向线、外移编号并扩大悬停命中区，不改变敌情、部署点、占点或支援图标尺寸。
+- 步战专用测试整合包恢复 JourneyMap `6.0.2` 并与 Xaero Fair-play `24.2.0`、Xaero World Map `1.39.9` 共存；WOK 战术地图固定优先使用 JourneyMap 的持久、可跨维度地形瓦片，Xaero 仅在 JourneyMap 缺失时回退为局部地形后端。HUD Compass `0.5.9` 因错误的 JourneyMap `[5.9.8,)` 版本范围无法识别 `1.20.1-6.0.2`，已在测试实例中以可恢复方式禁用。
+- 支援地图显示新增客户端可扩展的 `TacticalSupportMapPresentationRegistry`；扩展可把支援标记为通用、情报或攻击性。攻击性点目标按服务端定义的真实半径绘制红色填充、斜线危险区与落点准星，方向型攻击则绘制完整波及走廊，不再只画一个无语义圆圈。
+- 宽屏支援模块把“支援进行中”改为独立的大号高对比状态条；地图内在途任务显示名称、倒计时和真实波及/扫描半径，未知扩展仍安全回退为通用支援样式。
+- 重写核心自有大型补给站的 GeckoLib → Forge OBJ 转换：除修正顶部原点 UV 与 V 轴翻转外，现按 GeckoLib 4 原规则处理 X 坐标反向、X/Y 旋转符号、立方体旋转中心、父子骨骼变换及每个面的顶点/UV 顺序。材质通过模型内置纹理槽绑定完整原实体贴图，同时把授权的原始 `geo.json` 完整内置为转换权威源；新增原几何/贴图哈希及完整 353 面回归检查，修复部件错位后看似缺失的问题。
+- 既有蓝/红内部战斗侧继续作为红蓝对抗底层；玩家不再自动分配战斗侧，而是显式选择公开阵营和该阵营编制。
+- 当前测试构建临时允许权限等级 2 管理员跳过 `ACTIVE` 配装来源终止检查，以便通过创造栏或 `/give` 注入联调物品；普通玩家及其他物品交互限制保持不变。
+- 小队成员、队长、兵种占位、权限、快照与踢出冷却改为按 `(battleSide, formationId, callsign)` 隔离；同阵营不同编制可安全复用 Alpha–Echo 呼号。
+- 编制热重载会确定性调和失效/超容量选择、删除或缩容小队、删除或降额兵种以及当前 session 已删除、改名或改型的载具 allocation；受影响的存活玩家会撤回旧配装并回到部署等待。
+- 战局快照加入阵营过滤后的支援能力、冷却和在途任务视图；战局网络协议由 `6` 升至 `8`，新增有界且严格拒绝尾随数据的动态支援请求包。
+- 配置重载会在清理无效阵营/编制后继续按同一权威目录快照协调小队容量和兵种名额，并对受影响玩家去重后触发一次部署状态复核。
+- UI 与多人验收运行源集显式合并生产代码；UI 验收在受限 Windows JDK 环境中使用 TCP 回环作为 Selector 唤醒管道降级路径。
+- 编制目录网络视图加入可选徽标资源 ID，编制选择 UI 在紧凑与宽屏布局中显示稳定物理尺寸徽标，并把重复载具槽聚合为数量与补充规则摘要。
+- 编制载具首批生成和战损冷却补充改为只采用实体载具部署箭头的坐标与方向；不再复用玩家主基地，方块缺失、未加载或物理状态与存档不一致时失败关闭。
+
+#### 修复
+
+- 修复战术地图部分文字在 GUI scale 2–4 下经小数缩放采样后出现字号偏小、边缘虚化或近似重影的问题；同时修复附属区域可能压住部署点、单位/情报标识与罗盘的图层关系，以及支援进行中提示过小、攻击性支援只显示抽象圆圈而不表达真实波及范围的问题。
+- 修复畸形或半写 `formations.json` 被默认配置覆盖并连带清空自定义 roster 的风险；解析失败现在保留原文件、当前目录和 generation。
+- 修复阵营服务在载具清理事件中可能重入构造第二个 provider 的问题，改为先发布轻量实例再在实例表锁外初始化。
+- 修复战局重置在载具 session 激活失败后仍发布新部署 session 的分裂状态；失败时战局不提交重置，并可由管理员显式恢复当前 session authority。
+- 修复载具 session 轮换或编制热重载在后项 ownership 冲突时可能已删除前项载具的问题；现先对整批退役对象做零写入预检，全部通过后才进入不可回滚的 discard 与台账提交阶段。
+- 统一服务端、网络解码与地图预览的定义驱动目标合同，拒绝 NaN、Infinity、目标模式不匹配和超出注册定义范围的数据。
+- 在来袭等待结束后再次检查完整作用区区块，避免任务期间卸载区块被隐式加载或生成。
+- 修复旧 Forge GameTest 夹具仍假定玩家会被自动分配阵营/编制的问题；正式服务继续要求显式选择并对未知编制失败关闭。
+- 修复支援冷却管理指令使用普通单词参数、导致带命名空间冒号的稳定支援 ID 被判定为尾随数据的问题；现改用原生资源 ID 解析器，并以完整 JDAM 指令文本覆盖解析测试。
+
+#### 兼容性
+
+- 战术地图区域覆盖注册接口、战局网络协议、modId 和现有存档格式均未改变；新增支援表现注册表仅在客户端生效，不改变服务端定义、请求包或任务快照，独立附属仍按原接口软联动。
+- `wok_infantry` 的 modId 与现有物品/方块 ID 保持不变；TaCZ、卓越前线与 FCP 均为可选依赖，未配置相应枪械或载具时核心仍可独立安装；首个正式编制要求 FCP `1.2.1+` 提供精确实体。
+- 编制载具允许列表新增龙之崛起 `dragonrise_reforge` namespace；234机械化作战单元要求龙之崛起 `1.4.1+`、FCP `1.2.1+` 与卓越前线 `0.8.9+` 提供精确实体，任一缺失时该编制失败关闭，不影响核心及无相应载具的其他编制启动。
+- 运输配置只保存实体注册 ID，不静态链接载具类；中型补给由核心注册，大型补给动态取得龙之崛起原生部署器。龙之崛起缺失时核心仍可启动，但大型运输取箱会明确提示物品不可用。对 SBW 0.8.9 残骸状态仅在交互边界可选反射 `isWreck`，其他载具类型没有该方法时仍可按配置独立使用。
+- TaCZ 可选依赖下限为 `1.1.8`，卓越前线可选依赖下限为 `0.8.9.1`；实现不静态链接卓越前线类。
+- 尚未在真实卓越前线 + FCP 运行时完成实体工厂、碰撞箱、乘坐、区块卸载/重载、计时补充与服务器重启恢复联调，不能据此宣称实际兼容验收完成。
+- 支援框架不新增机械动力火炮或其他具体支援依赖；TaCZ 与卓越前线的可选依赖仅保留给既有配装和编制载具软联动。仅安装核心时支援目录仍为空，具体技能由独立附属模块注册。
+- 成品不内嵌或重打包任何关联 MOD 类；JourneyMap `6.0.2` 客户端依赖及现有 `wok_infantry` modId 保持不变。
+- 当前战局网络协议升至 `18`，为小队队包和方块型大型补给目标增加严格匹配；编制目录子协议为 `4`，配装管理协议为 `10`。联机双方必须使用本次同版 WOK步战核心，旧协议客户端不会被静默兼容。
+
+#### 配置/存档影响
+
+- 本次战术地图字体、图层、支援状态条与波及范围修正不新增配置项，不修改世界存档或玩家设置；既有情报图标尺寸旋钮和最低可读尺寸继续保留。
+- 新世界或缺少配置的实例会生成默认 `formations.json`；已有玩家存档中没有合法编制的记录会回到两级选择，旧阵营/编制稳定 ID 不会被自动猜测或迁移。
+- Battle SavedData 升级为编制感知记录，载具另使用主世界 SavedData 保存 allocation；删除/改名稳定 ID 会在下一次成功热重载时触发对应 roster 或载具清理。
+- 主世界新增 `wok_infantry_vehicle_replenishment` SavedData，保存当前战局永久损失和补充到期 tick；重启、手动重复部署或区块卸载不会清除冷却，战局重置会清除旧 session 记录。
+- `wok_infantry_deployment` SavedData 由版本 2 升至版本 3，新增每方载具部署方块的维度、坐标与四向箭头记录；旧存档自动迁移但不会虚构载具部署点，管理员需显式放置并绑定。
+- 世界使用 `data/wok_infantry_support.dat` 按阵营和稳定注册 ID 保存冷却到期 tick；默认空目录不写入具体技能记录，在途任务只存在于当前服务端运行期，重启后不会恢复。
+- 首批备用弹药权益属于当前服务端战局会话的运行期部署状态，不新增配置字段或世界存档格式；战局重置或服务端重启后的新会话会重新允许一次首批发放。
+- 世界服务端配置新增 `supplyTransport.vehicles`（`实体ID=large|medium=容量`）和 `supplyTransport.carrySpeedMultiplier`；默认 FMTV 与 Ural 各为 3 个大型补给，无装甲无武装及装甲无武装 HMMWV 分别为 2 个、1 个中型补给。旧式 `实体ID=容量` 按大型补给兼容；车载规格与余量写入车辆 namespaced 持久化 NBT，重启不补满，提高容量不赠送差额，改变规格不转换旧库存。
+- 新生成的普通默认编制能力白名单加入 `wok_commander_support:recon_satellite`；学院军 `millennium_seminar_mobile` 额外加入 `wok_commander_support:millennium_f15ex_jdam_1000lb`。已有 `formations.json` 不会被自动改写，管理员需显式加入对应 ID；临时接触点不新增存档字段，支援冷却继续按稳定 ID持久化；`wok_infantry` 仍保持 `0.0.1`。
+- 新生成的 `formations.json` 会在凯撒下加入 `caesar_234_mechanized`；已有服务器配置不会自动补写该编制，管理员需要手工合并或在受控备份后重新生成。五个载具槽位的战损补充继续写入既有载具补充 SavedData，不新增存档格式；本次未提升 `wok_infantry` 版本号。
+
+#### 测试结果
+
+- 2026-09-01 强制重跑 WOK步战核心完整生产构建：70 份测试报告共 279 项 JUnit，0 失败、0 错误、0 跳过，生产 JAR 与 `reobfJar` 均成功；新增234机械化作战单元默认目录、JSON 往返、五个载具槽位/CD 与龙之崛起 namespace 失败关闭专项断言。真实组合客户端中的五车生成间距、编制选择页两档布局和 15/5 分钟补充计时仍按验收清单待测。
+- 2026-09-01 使用 JDK 17 完成核心 277 项 JUnit、生产 JAR 与 `reobfJar`，0 失败；Forge 47.4.22 + JourneyMap 6.0.2 真实客户端 UI 验收通过，重新生成 `320×240` 与 `960×720` 战术地图截图，确认固定物理字号、两行任务卡、真实 R32m JDAM 危险区及大号“支援进行中”状态条。另以 `wok_capture_points` 的 9 项 JUnit 与联合客户端复验附属区域：区域填充位于部署点、单位/情报图标和罗盘下方，区域名称与进度条清晰且未越界，两套 UI 验收均 `BUILD SUCCESSFUL`。
+- 2026-08-31 执行 JDK 17 完整生产构建与 `reobfJar`，新增逐弹种首批备用弹药差额、超额不删除、非法上限、运输车辆容量解析、有限取箱、容量调整不补满、运输签名换栏位、大型补给目标编解码、卫星红点样式、千禧年支援白名单和支援冷却管理命令树/完整资源 ID 文本解析专项覆盖；核心 JUnit、指挥官支援模块测试、生产资源 JSON 解析与独立依赖检查通过。大型补给的新发放链已恢复为龙之崛起原生部署器与实体渲染，旧转换模型只保留存档兼容；仍待正式组合客户端重新放置验收，实际多人敌我移动与载具组合联调仍待后续联机测试。
+- JDK 17 隔离完整构建通过；40 份测试报告共执行 187 项单元测试，0 失败、0 错误、0 跳过；Forge 47.4.22 GameTest 13/13 必需项通过，其中覆盖载具箭头的染料绑定、单阵营唯一性、朝向同步、错向失败关闭、权限保护与命令原子放置/重定向/移除；20 份资源 JSON 全部解析通过。
+- JourneyMap 6.0.2 真实客户端 UI 验收通过，320×240 与 960×720 分别等待 4/4、16/16 地形瓦片并输出截图；千禧年徽标、编制名称和载具补充摘要在两档布局均无越界或重叠。支援目录验收确认紧凑布局生成 `84×17` 的 JDAM 按钮，宽屏生成 `249×24` 的完整名称按钮，均未越界或遮挡地图控件。
+- 满载快照工作负载完成 600 轮、80 个观察者与 48,000 次编码，单包 13,308–13,416 字节，每轮原始编码数据 1,068,936 字节；该结果不代表 80 个真实连接的网络性能。
+- 协议 `8` 三进程 Forge 回环验收通过（runId `20260827T131620160Z-88a1c092a27b`）：3 名玩家、1 条内存连接、2 条真实 TCP 连接；三方均确认支援服务存在、目录 `0` 项、活动任务 `0` 项。
+- 真实卓越前线 + FCP 载具运行时联调和多人游戏内验收尚未完成。
+
+### WOK步战附属-指挥官支援（开发中，未发布）
+
+#### 新增
+
+- 新增独立模块 `wok_commander_support`，首个技能为 `wok_commander_support:recon_satellite`（侦察卫星）。
+- 侦察卫星由当前阵营指挥官在战术地图选定中心，扫描半径 150 格；呼叫后立即扫描，之后每 5 秒刷新一次，共持续 30 秒，冷却 10 分钟。
+- 扫描同维度、圆形范围内已部署且存活的敌方玩家；玩家乘坐实体时合并为载具接触点，同时识别带 WOK 编制 ownership 的敌方空载载具。
+- 扫描结果仅向调用方阵营同步，统一以临时红点显示；目标离开区域后在下一个刷新间隔自然消失。
+- 新增 `wok_commander_support:millennium_f15ex_jdam_1000lb`（千禧年 F-15EX 杰达姆 1000磅空袭）：指挥官在战术地图点选目标后先等待 10 秒，随后真实 CBC HE 炮弹从目标正上方精确 200 格高空垂直急坠 1 秒，触地静止 2 秒后优先触发卓越前线爆炸，缺失时回退 CBC 原生爆炸。
+- 新增 `wok_commander_support:f16c_gbu12_paveway_500lb`（F-16C GBU-12 宝石路 II 500磅精准空袭）：指挥官在战术地图划定半径 64 格许可区，10 秒后由区内有效光斑触发释放；同阵营其他玩家持续使用卓越前线火炮指示器时，CBC 航弹在 3 秒斜向进场期间每 tick 跟随最新方块或实体命中点修正。
+- 宝石路制导员按首次有效照射锁定，不会在多人光斑间跳转；松开使用、换物品、离线、死亡、换维度、变更阵营或照出许可区后永久断开，航弹保持最后一次合法修正。敌方玩家不能取得制导权，释放时没有光斑则明确取消弹体生成但不返还已提交冷却。
+- JDAM 新增 DVIDS 公有领域 F-15E 靶场实录音频：飞行阶段播放 3 秒战机掠过声，CBC 原生爆炸叠加低频靶场回响；落地瞬间使用独立沉重触地声，完整来源、截取时间与处理方式随模块打包。
+- 新生成的 `millennium_seminar_mobile` 编制默认独占 F-15EX JDAM 白名单；JDAM 冷却暂定 15 分钟，地图执行区半径为 32 格。
+- 新生成的普通与千禧年编制均默认开放 F-16C 宝石路支援；冷却暂定 15 分钟，许可区半径 64 格，最终卓越前线爆炸采用 500 点伤害、16 格半径和 `LARGE` 粒子。
+
+#### 修改
+
+- 指挥官支援模块新增 Create Big Cannons `5.11.4` 至 `6.0.0` 之前版本的可选软依赖；CBC 缺失或 HE 炮弹未注册时，只关闭 JDAM 并显示原因，侦察卫星继续可用。
+- 客户端把侦察卫星注册为情报扫描表现、把两种空袭注册为攻击性表现；F-15EX 在地图按 32 格爆炸区显示，F-16C 按 64 格制导许可区显示。
+- F-15EX JDAM 新增 200 tick（10 秒）服务端在途阶段，期间战术地图显示倒计时但不生成航弹；倒计时结束后在目标正上方精确 200 格生成，以超过 10 格/tick 的初始垂直速度完成 20 tick 急坠。弹体飞行阶段关闭物理碰撞偏航，落地后的延迟引信保持完整 40 tick（2 秒）。
+- 安装卓越前线 `0.8.9+` 时，JDAM 爆炸优先反射调用其 `CustomExplosion.Builder`，采用 1000 点伤害、32 格半径和 `GIANT` 粒子，并进入卓越前线方块破坏配置及 Forge 爆炸事件链；调用成功后移除 CBC 弹体，不叠加二次爆炸。卓越前线缺失或调用失败时安全回退 CBC HE。
+
+#### 修复
+
+- 当 CBC 炮弹在引信校准前已因原生碰撞爆炸并移除时，不再补造第二枚炮弹；每次支援呼叫严格只生成一枚 HE 炮弹并最多造成一次爆炸。
+- 修复 JDAM 高速炮弹未安装有效引爆逻辑、接触地形后只移除而不爆炸的问题；现在由支援流程在呼叫后第 10 秒生成航弹、第 11 秒将同一枚 CBC HE 炮弹固定到地表并启动 40 tick 倒计时、第 13 秒调用卓越前线爆炸或 CBC 保底爆炸，不再使用会破坏延迟感的即时碰炸引信。
+
+#### 兼容性
+
+- 强制依赖 `wok_infantry`，不依赖创伤治疗、部位血量、独立护甲、TaCZ 或具体载具 MOD；载具阵营读取只经过核心的通用 ownership 边界，不静态链接第三方载具类。
+- JDAM 通过实体注册表和反射调用 `createbigcannons:he_shell`，不静态链接、不内嵌或重打包 CBC 类；爆炸威力和方块破坏由安装版本的 CBC HE 炮弹决定，本模块不叠加替代爆炸。
+- 地图表现注册只在物理客户端执行，不改变支援服务端协议、冷却、执行半径或世界存档；核心缺少对应表现注册时仍按通用支援样式安全显示。
+- 卓越前线是可选依赖，模块不静态链接、不内嵌其类；仅 CBC 存在时 F-15EX 仍可使用并走原生 HE 保底爆炸，F-16C 则明确不可用。卓越前线的方块破坏开关继续由其自身服务端配置决定。
+- F-16C 仅以注册 ID识别 `superbwarfare:artillery_indicator`，并反射调用卓越前线爆炸接口，不静态链接第三方类；卓越前线缺失时只将该支援标为不可用，F-15EX 与侦察卫星的既有降级路径不变。
+
+#### 配置/存档影响
+
+- 技能冷却沿用核心的 `wok_infantry_support.dat`，按阵营和稳定技能 ID持久化；30 秒扫描任务与红点只存在于当前服务端运行期，重启后不恢复。
+- 已有服务器需在目标编制的 `capabilities.support.allowList` 显式加入所需稳定 ID；F-16C 使用 `wok_commander_support:f16c_gbu12_paveway_500lb`，千禧年专属 F-15EX 使用 `wok_commander_support:millennium_f15ex_jdam_1000lb`。空袭在途炮弹不新增自定义存档，重启后不重放；已提交冷却仍保留。
+
+#### 测试结果
+
+- JDK 17 下模块 18 项 JUnit、核心 278 项 JUnit、F-16C 生产重混淆构建和独立依赖检查通过；新增覆盖 F-16C 定义、200 tick 在途、60 tick 逐 tick 制导、64 格许可区、512 格指示器射线、移动光斑修正、CBC 阻力补偿及卓越前线 500/16/`LARGE` 爆炸合同。
+- Forge 47.4.22 + JourneyMap 6.0.2 真实客户端三技能 UI 验收通过：320×240 下 F-16C 按钮为 `56×17`，960×720 下为 `249×24`，均未越界或遮挡。实际双人持续照射、移动目标与断照联调仍待正式组合服完成；userdev GameTest 因 Create 生产混淆 Mixin 无法用于官方映射环境而未启动测试，正式服务端验收脚本又因本机缺少隔离 Forge 服务端运行库在启动前退出，均不得计为游戏内功能通过。
+- Forge 47.4.22 + JourneyMap 6.0.2 隔离真实客户端验收通过：服务端发布 1 个临时卫星接触点，客户端快照显示 `RECON_CONTACT`，与 6 类既有标记合计 7 个；320×240 等待 4/4 地形瓦片、960×720 等待 16/16 地形瓦片，两张战术地图截图中的红点均清晰且未遮挡现有标记。实际多人敌我移动与第三方载具运行时组合仍待后续联机测试。
+- 既有官方生产 Forge 47.4.22 组合验收已确认 Create 6.0.8、Create Big Cannons 5.11.4 与 RPL 2.1.1 环境中的 CBC 落地及伤害链；本次改为 200 tick 在途延迟、200 格高度、20 tick 垂直急坠、40 tick 引信和卓越前线爆炸后端后，仍需在加入卓越前线 0.8.9 的正式组合服重新确认实际视听、方块破坏和伤害效果。
+- 双技能战术地图 UI 验收通过：320×240 紧凑按钮与 960×720 完整名称按钮均真实生成、文字未越界、控件未重叠；运行结果和截图保存在 `outputs/jdam_airstrike_validation/`。
+
+### WOK步战附属-创伤治疗
+
+#### 修改
+
+- 参照《逃离塔科夫》的 Propital 定位，黄色 Propital 的注射时间由 0.5 秒延长至 2 秒，保留 240 秒镇痛，持续恢复由 180 秒延长至 300 秒，并按每秒 0.1 点原版治疗量进行长效慢回；绿色 eTG-change 继续保持原有快速注射、60 秒快速恢复及七部位并行治疗。
+- 与 `wok_body_health` 联动时，黄色 Propital 的每次恢复改用一份共享治疗量并优先治疗伤势最重的部位，不再为七个受伤部位分别复制完整治疗量；按默认 `bodyHealScale = 10` 换算后，黄针还原为每秒恢复 1 点部位血量、全程 300 点，理论上限由 4200 点降低约 93%。
+- 黄色 Propital 新增塔科夫式延迟副作用：注射 270 秒后触发 30 秒颤栗与视野收缩。吗啡仍保持 360 秒长效镇痛定位。
+- 每次 Propital 注射分别保存一条延迟副作用计划；重复注射不会覆盖或推迟前一针的副作用，玩家离线期间不推进计划倒计时。
+
+#### 兼容性
+
+- 未修改 modId、物品 ID、效果 ID、网络协议或部位血量公开 API；创伤治疗与部位血量仍通过可选软联动独立安装。
+- 更新时若玩家身上仍有旧版 Propital 恢复效果，已保存的剩余时长不会自动延长至 300 秒，但后续脉冲会立即使用新的每秒 0.1 点与共享治疗逻辑；延迟副作用只会由更新后新注射的 Propital 安排。
+
+#### 配置/存档影响
+
+- 无新增配置项，无需迁移存档；背包和容器中已有的 Propital 物品直接采用新数值。
+
+#### 测试结果
+
+- JDK 17 Java 编译、Forge 完整构建与重混淆通过；Gradle 测试任务正常结束，但仓库当前没有自动化测试源。
+- 中英文语言 JSON 解析通过；计时边界核验确认 300 秒效果精确触发 300 次恢复，默认换算总计 300 点部位血量。
+- 成品 JAR 资源与类清单核验通过，独立依赖检查确认仅强制依赖 Minecraft 与 Forge；尚未完成游戏内注射、延迟副作用和 HUD 动画实测。
+
+### WOK步战附属-占点（开发中，未发布）
+
+#### 新增
+
+- 新建独立模块 `wok_capture_points`，初始开发版本为 `0.1.0-alpha.1`；管理员可用默认木棍左击/右击选择长方体两角，再以 `/wokcapture point set <id> [名称]` 建立或移动 A/B/C/D 等据点。
+- 新增世界存档级据点定义、区域、显示名、顺序、单点用时覆盖、启停状态、归属和连续红蓝控制进度；新增全局用时与顺序占点的世界规则覆盖指令。
+- 新增服务端权威人数统计和占领算法，支持 `FREEZE` 争夺冻结或 `ADVANTAGE` 人数差推进、最大人数速度倍率、蓝方低到高与红方高到低的对称顺序解锁。
+- 新增顶部战术拼板 HUD，玩家进入点内可见据点名、蓝红人数比、连续控制条、占领倍率、争夺/锁定/归属状态。
+- 新增独立阵营解析：优先读取 `WOK步战核心` 阵营，未安装核心时回退到可配置的原版记分板队伍和玩家标签。
+
+#### 修改
+
+- `WOK步战核心` 新增通用客户端 `TacticalMapAreaOverlayRegistry` 扩展边界；可选附属可提交有界区域、名称、颜色、进度与锁定状态，核心战术地图负责统一裁切和渲染。占点附属安装时注册据点区域，未安装时核心行为不变。
+
+#### 修复
+
+- 无。
+
+#### 兼容性
+
+- 占点附属只强制依赖 Minecraft 与 Forge；`wok_infantry` 在 `mods.toml` 中为可选依赖，不内嵌核心 class。未安装核心时圈地、占领、持久化、指令和 HUD 均可使用，仅没有 WOK 战术地图显示和核心阵营自动识别。
+- 所有管理指令和选择工具要求权限等级 2；服务端不接受客户端提交人数、进度、归属或区域数据。
+
+#### 配置/存档影响
+
+- 首次运行会生成服务端配置，包含默认占领用时、顺序占点、计算/同步频率、争夺模式、人数倍率、选择物品、据点/区域上限、创造玩家计数、播报和独立队伍映射。
+- 主世界新增 `wok_capture_points` SavedData；保存据点与世界规则覆盖，不修改其他 WOK步战模块存档。移除本模块不会改写核心数据，重新安装后可继续读取原据点。
+
+#### 测试结果
+
+- JDK 17 / Forge 47.4.22 生产 Java 编译、9 项占领数学/区域/顺序规则与严格网络编解码 JUnit、JAR 重混淆、核心完整测试和独立依赖检查通过。
+- 真实 Forge 集成客户端 UI 验收通过：逻辑 `320×240` 与 `960×720` 分别捕获点内 HUD 和战术地图共 4 张截图；窄屏 HUD 已避让核心左上小队面板，两档地图均清楚显示异阵营据点区域、名称、归属色与进度条，未发现文字越界或关键控件遮挡。验收结果写入 `wok_infantry/run/ui-test/ui-test-results/wok_capture_points_ui_acceptance.txt`。
+- 尚未把成品部署到 `D:\WOK步战测试\1.20.1-Forge_47.4.22\mods`，实际多人双方进入/离开、断线重连、服务端重启恢复和管理员木棍圈地仍待专用整合环境联调。
+
+### WOK步战附属-载具部位血量（开发中，未发布）
+
+#### 新增
+
+- 新增独立模块骨架，正式 modId 为 `wok_vehicle_health`，面向卓越前线及继承其载具基类的附属载具。
+- 新增履带、引擎、观瞄与炮塔座圈部位状态；部件损坏会分别锁止移动、干扰车内观瞄或降低炮塔转速。
+- 新增炮塔权威朝向同步、TaCZ 爆炸最近部位分配，以及缺失部件最大血量/OBB 标记时的有限兼容兜底。
+- 新增按载具种类独立划分的 T1/T2/T3 权威平衡表；首批覆盖豹2A4、M1A2 SEP V2、CV90、M3A3、Stryker、HMMWV 与武装 Little Bird。
+- 新增载具侧方向装甲与伤害归一化：同级坦克正面约 5 发、侧后约 3 发；T3 坦克正面攻击 T2 坦克约 4 发，T2 反击 T3 约 7 发；标准 T2 装甲车遭 T2/T3 坦克攻击时为正面 2 发、侧后 1 发，单车特性另行覆盖。
+- 新增 TaCZ Carl Gustaf HEAT、温压弹和 M72 的可选反射识别；HEAT 对 T2/T3 坦克正面约 5 发，温压弹设置分种类车体伤害上限，爆炸不与已归一化直击重复计伤。
+
+#### 修改
+
+- 观瞄默认完整自愈时间由约 20 秒放缓至约 100 秒；炮塔受损转速倍率由 `0.25` 调整为 `0.45`，摧毁倍率仍为 `0.08`。
+- 已登记旧载具首次加载时按原有血量百分比迁移至新 T 级车体与部件上限，不因升级自动修满受损载具。
+- M3A3 按重型步战车保留装甲车 T2 分类，车体提高至 `440`；同级 T2 坦克炮的基准击毁发数为正面 3 发、侧后 2 发，不影响其他 T2 装甲车。
+
+#### 修复
+
+- 防止已归一化的坦克穿甲弹在直击后又以同一发弹的爆炸伤害重复扣除车体血量。
+
+#### 兼容性
+
+- 必需依赖 Superb Warfare `0.8.9 final` 至 `0.9` 之前版本；TaCZ、龙之崛起、FCP 和 VVP 保持可选适配，不依赖其他 WOK步战模块。
+- 未进入首批权威表的第三方载具继续使用原始数值，不会被全局套用未知 T 级。
+
+#### 配置/存档影响
+
+- 新增载具部件服务端配置；独立观瞄血量随载具数据保存。首批登记载具会写入一次性平衡档案版本，并按旧车体/部件剩余比例迁移；不修改弹药携带量、载具备弹或补给上限。
+
+#### 测试结果
+
+- 已通过 JDK 17 / Forge 47.4.22 生产编译及 T 级车型、方向伤害、反坦克击毁发数、部件数学与事件适配 JUnit；重混淆构建、独立安装和真实游戏内射击矩阵仍待本轮后续验证。
+
+## 2026-08-16 WOK步战附属-部位血量 `0.0.3-beta.1`
+
+#### 新增
+
+- 新增 `healAllParts` 公开软联动接口，一次恢复脉冲可同时恢复全部七个受伤部位，并只发送一次服务端同步。
+- 新增按头、胸、腹、双臂和双腿区分的中英文随机击杀文本池；枪弹、普通攻击和损毁部位扩散击杀使用不同文案。
+- 自定义命名武器会在随机击杀文本后追加显示，不再需要为每条文案维护重复的 `.item` 翻译。
+
+#### 修改
+
+- 黄色 Propital 与绿色 eTG-change 的每次持续恢复脉冲会为七个受伤部位分别提供完整单次恢复量；满血部位跳过，其他部位继续恢复。
+- 扩散伤害造成死亡时，击杀归属始终保留最初命中的腹部或肢体，不改记为最终被扩散伤害损毁的头部或胸部。
+- `wok_body_health` 版本由 `0.0.2` 提升至 `0.0.3-beta.1`；其他 WOK步战模块不随之被动升级。
+
+#### 修复
+
+- 修复部位血量保持原版生命值为满值后，创伤治疗的回血针剂因检查原版血条而完全失效的问题。
+
+#### 兼容性
+
+- 创伤治疗仍通过反射软联动，不构成强制依赖；部位血量可继续单独安装。
+- 未修改 modId、网络协议、物品 ID 或存档数据键。
+
+#### 配置/存档影响
+
+- 无。
+
+#### 测试结果
+
+- Gradle 编译、重混淆构建和独立依赖检查通过。
+- 与创伤治疗 `0.0.2` 的联合成品已部署到 WOK步战附属专用测试目录，仍需客户端内确认黄针、绿针的七部位同步增长显示及三类随机击杀文本。
+
+## 2026-08-16 WOK步战附属-创伤治疗 `0.0.2`
+
+#### 新增
+
+- 黄针与绿针物品提示新增部位血量联动说明。
+
+#### 修改
+
+- 安装部位血量 `0.0.3` 时，Propital 与 eTG-change 的每次持续恢复脉冲改为调用七部位同步恢复接口；医疗包仍保持一次使用只治疗一个选定部位。
+- `wok_trauma` 版本由 `0.0.1` 提升至 `0.0.2`；其他 WOK步战模块不随之被动升级。
+
+#### 修复
+
+- 修复安装部位血量后，针剂持续恢复被满值的原版生命条错误跳过的问题。
+
+#### 兼容性
+
+- 未安装部位血量时，针剂仍使用原版生命值持续恢复，创伤治疗可独立安装。
+- 遇到旧版部位血量 API 时回退至旧治疗接口，不会在反射解析阶段导致整个创伤联动失效。
+
+#### 配置/存档影响
+
+- 无。
+
+#### 测试结果
+
+- Gradle 编译、重混淆构建和独立依赖检查通过。
+- 与部位血量 `0.0.3` 的联合成品已部署到 WOK步战附属专用测试目录，仍需客户端内确认黄针、绿针的七部位同步增长显示。
+
+## 2026-08-16 WOK步战附属-部位血量 `0.0.2`
+
+#### 新增
+
+- 新增配置项 `conversion.destroyedPartDamageTransferMultiplier`，控制已损毁的非致命部位再次中弹时向其他未损毁部位传递的伤害倍率。
+- 默认倍率为 `0.8`，允许在 `0.0` 至 `10.0` 范围内调整；`0` 表示不传递，`1` 表示完整传递。
+- 新增玩家对玩家的七部位击杀消息，例如“攻击者击毁了受害者的头部，造成了击杀”。
+- 致命伤害由自定义死亡伤害类型接管，替换原版死亡提示而不是额外发送第二条消息；自定义命名武器会继续显示在击杀消息中。
+
+#### 修改
+
+- 命中前已经损毁的腹部或四肢再次承伤时，默认只传递本次部位伤害的 80%。
+- 首次将部位打至 0 时仍沿用原有各部位溢出倍率，不改变首次损毁的既有平衡。
+- `wok_body_health` 版本由 `0.0.1` 提升至 `0.0.2`；其他 WOK步战模块版本不随之提升。
+
+#### 修复
+
+- 无。
+
+#### 兼容性
+
+- TaCZ、WOK步战附属-创伤治疗和 WOK步战附属-独立护甲仍为可选软联动；本 MOD 可单独安装。
+- 未修改 modId、网络协议、物品 ID 或存档数据键。
+- 新击杀消息仅在击杀者与受害者均为玩家时生效；环境伤害、生物击杀和非玩家死亡继续使用原版提示。
+
+#### 配置/存档影响
+
+- Forge 会在 `config/wok_body_health-common.toml` 的 `[conversion]` 节自动补充新配置项，现有配置无需迁移。
+- 旧存档中的七部位血量数据保持兼容。
+
+#### 测试结果
+
+- Gradle 完整编译、重混淆构建通过，成品内部版本确认为 `0.0.2`。
+- JAR 独立依赖检查通过：仅强制依赖 Minecraft 与 Forge。
+- 7 个部位击杀伤害类型、14 条中英文普通/命名武器消息及防护绕过标签的资源映射检查通过。
+- 无 TaCZ 的 Forge 47.4.22 独立服务端加载通过，服务器进入 `Done` 状态；确认生成默认值为 `0.8` 的配置项，并正常加载新增伤害类型资源。
+- TaCZ 开发映射 JAR 在开发服务端环境中存在其自身 Mixin 映射错误；生产测试目录已部署正式 TaCZ 与本次 `0.0.2` JAR，仍需客户端内实弹验证命中后的数值分配。
+- 两名真实客户端之间的击杀提示显示与命名武器格式仍需游戏内联机复测。
+
+## 2026-08-10 WOK步战附属-独立护甲 `1.1.0`
+
+#### 新增
+
+- 新增 17 件 II–VI 级头部防具，包括防暴头盔、轻量化防弹面具、CQCM、LZSh、6B47、凯门鳄、Kiver-M、ACHHC、STRIKE、FAST MT、AirFrame、FLUX、Vulkan-5、阿尔金重型头盔、FAST 重型防护套件和 Maska-1SCh 重型头盔。
+- 新增头盔物品图标、穿戴模型、模型贴图、本地化名称及防护属性提示。
+- 新增与 `WOK步战附属-部位血量` 的头部命中软联动，头盔仅覆盖 `HEAD` 部位。
+
+#### 修改
+
+- 抽象胸甲与头盔共用的等级、重量、材质、耐久及 R/Q/G/T 防护计算。
+- TaCZ 枪弹损甲与普通伤害损耗改为选择实际命中部位对应的单件护具，避免头盔和胸甲叠加减伤。
+- 全面重做全部 16 件 II–V 级头部装备的穿戴模型，统一切换为独立 GeckoLib 资源模型。
+- 头盔采用连续封底、外壳重叠和眼部避让结构；面罩保留真实眼孔；统一移除容易穿模的装饰绑带，并为各型号分别建立护耳、固定座、盔罩、侧轨、织物接缝或面罩细节。
+- 五件 IV 级头盔改用已通过游戏内验收的 III 级 6B47 同源壳体比例与层次，并分别叠加 ACHHC、STRIKE、FAST MT、AirFrame 和 FLUX 专属附件。
+- 新增 Vulkan-5 火神 IV 级重型铛合金头盔独立模型：加厚顶壳、环形加强带、护耳装甲、面罩框、透明玻璃面罩和侧轴，保持眼部视野并不添加绑带。
+- Vulkan-5 物品图标改为以指定的重型头盔与放下状态面罩图为唯一造型底稿，参照已有头盔的低清像素风格重画为原生 48×48 物品图标；保留加厚前框、双螺钉、侧轴、绑带和烟灰蓝玻璃反光，使用硬边像素轮廓与受限暗色阶。
+- 新增阿尔金 V 级重型铛合金头盔独立模型：低包围盔壳、前下围装甲、矩形装甲面罩框、烟灰玻璃视窗和双侧铰链。
+- 新增 FAST V 级重型复合防护套件独立模型：高切盔壳、前挂座、侧轨、全包织物/复合护颊和中央下颌装甲，保留眼部净空。
+- 阿尔金与 FAST 重型防护套件的物品图标均以用户参考图为唯一造型底稿，重画为原生 48×48 硬边低清像素图标。
+- 新增 Maska-1SCh VI 级重型钛合金头盔：半球盔壳、短后裙、双侧承力护板、四螺栓外凸钢制面罩和真实镂空观察缝；物品图标采用原生 48×48 低清重画。
+- 头盔新增耐久联动防护曲线：满耐久提供完整标称防护，随剩余耐久连续降低 R/Q/G/T 实际效果，耗尽时损坏并停止保护头部。
+- 头盔耐久从胸甲材料点数中分离，改由子弹实际普通伤害段和穿甲伤害段共同消耗；默认轻型/中型/重型结构耐久为 60/80/180，穿甲段按 2 倍磨损计入，同一发 TaCZ 子弹只统一结算一次。
+- 新增 I–VI 级穿透压制：按 TaCZ 穿甲比例判定子弹穿透等级，高于头盔等级时穿甲伤害段直接穿透；同级或低级弹药仍按头盔 Q 值减伤。
+
+#### 修复
+
+- 修复测试构建仍携带 `0.0.1` 内部版本，导致 `wok_body_health` 的最低 `1.0.0` 依赖检查拒绝加载的问题。
+- 修复 Vulkan-5 物品图标的玻璃色阶偏紫，统一改为烟灰蓝；同时将启动日志中写死的头盔数量改为动态计数。
+
+#### 兼容性
+
+- 头部防具穿戴模型改用 GeckoLib 4 骨骼模型管线，运行时新增 GeckoLib `4.8.4` 或更高版本依赖。
+- `wok_body_health` 与 TaCZ 继续作为可选软依赖；未安装时独立护甲仍可单独加载。
+- 保留现有护甲、护盾和全部既有物品 ID；本次只新增头部防具 ID。
+
+#### 配置/存档影响
+
+- 无配置迁移要求。
+- 旧存档中的既有护甲和护盾不受影响；新增头部防具不会替换旧物品。
+- 客户端与服务端均需安装 GeckoLib `4.8.4` 或更高版本，否则 Forge 会在加载阶段提示缺少依赖。
+
+#### 测试结果
+
+- Gradle 编译与完整重混淆构建通过。
+- JAR 资源核验通过：包含 17 个头部物品模型、17 张图标和 17 套穿戴贴图。
+- 测试客户端首次启动已确认失败原因为旧内部版本号；`1.1.0` 已完成依赖安装，6B47 模型已通过游戏内视觉验收，其余头部装备待整批复测。
 
 ## 2026-08-08 当前版本基线
 

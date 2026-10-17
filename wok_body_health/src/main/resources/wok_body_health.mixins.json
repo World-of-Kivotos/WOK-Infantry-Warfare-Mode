@@ -1,0 +1,15 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.wok.bodyhealth.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "plugin": "com.wok.bodyhealth.mixin.WokBodyHealthMixinPlugin",
+  "mixins": [
+    "LevelGetEntitiesMixin",
+    "sbw.SbwProjectileEntityMixin",
+    "tacz.TaczEntityUtilMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

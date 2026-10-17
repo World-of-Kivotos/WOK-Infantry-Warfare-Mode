@@ -22,7 +22,36 @@ eclipse
 run
 tmp/
 output/
+outputs/
 *.log
+*.log.gz
+
+# Local delivery archives, launcher state and compiled verification helpers.
+/dist/
+/PCL.ini
+/launcher_profiles.json
+*.class
+__pycache__/
+*.py[cod]
+
+# Local generated validation/build directories and compiler diagnostics.
+.tmp_*/
+wok_infantry/build-*/
+wok_infantry/javac.*.args
+
+# Generated review previews; production textures/models remain tracked.
+art/helmet_icon_previews/
+wok_infantry_armor/art/helmet_icon_previews/
+wok_infantry_armor/art/helmet_model_previews/
+wok_infantry_armor/art/model_previews/
+wok_infantry/art/tactical_markers/*_user_reference.*
+wok_infantry/dev/tactical_marker_previews/
+
+# Local migration archives can be very large and must never be committed.
+migration-packages/
+
+# Local third-party compatibility fixtures; never redistribute dependency JARs from this repo.
+wok_infantry/dev/compat/*.jar
 
 # Files from Forge MDK
 forge*changelog.txt

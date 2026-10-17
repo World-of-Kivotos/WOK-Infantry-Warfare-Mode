@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "wok_infantry:item/large_ammo_supply_station"
+  }
+}

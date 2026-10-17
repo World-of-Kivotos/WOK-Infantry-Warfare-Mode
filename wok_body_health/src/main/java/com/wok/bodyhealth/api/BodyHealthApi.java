@@ -11,6 +11,12 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.LivingEntity;
 
 public final class BodyHealthApi {
+    /** Optional rescue bridge: sets each part to an absolute value, not a healing amount. */
+    public static boolean setAllPartsHealth(LivingEntity entity, float points) {
+        return entity instanceof ServerPlayer player
+                && BodyHealthService.setAllPartsHealth(player, points);
+    }
+
     /**
      * Reflection-friendly bridge for WOK Trauma's silent bleeding damage.
      */
@@ -32,6 +38,15 @@ public final class BodyHealthApi {
     public static boolean heal(LivingEntity entity, float vanillaAmount) {
         return entity instanceof ServerPlayer player
                 && BodyHealthService.heal(player, vanillaAmount);
+    }
+
+    /**
+     * Reflection-friendly bridge for regeneration injectors. Each pulse
+     * restores the supplied amount to every damaged body part.
+     */
+    public static boolean healAllParts(LivingEntity entity, float vanillaAmount) {
+        return entity instanceof ServerPlayer player
+                && BodyHealthService.healAllParts(player, vanillaAmount);
     }
 
     public static boolean needsHealing(LivingEntity entity) {
@@ -78,6 +93,15 @@ public final class BodyHealthApi {
         } catch (IllegalArgumentException exception) {
             return false;
         }
+    }
+
+    /**
+     * Reflection-friendly bridge for movement gates that bypass the jump
+     * event, such as ledge mantling. Returns 0, 1 or 2.
+     */
+    public static int destroyedLegCount(LivingEntity entity) {
+        return entity instanceof ServerPlayer player
+                ? BodyHealthService.destroyedLegCount(player) : 0;
     }
 
     public static String lastDamagedPart(LivingEntity entity) {

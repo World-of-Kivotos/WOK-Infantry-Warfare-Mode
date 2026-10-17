@@ -1,0 +1,23 @@
+status=FAIL
+PASS carrier sees the casualty at phase 1
+PASS carrier aims at the casualty before sneak + use; hit=net.minecraft.world.phys.EntityHitResult@7bc3e36b
+PASS real sneak + use on the casualty starts the drag
+PASS carrier let go of the start gesture's sneak
+PASS letting go of the start gesture's sneak keeps the drag
+PASS casualty entity visible at phase 4
+PASS phase 4 visible casualty follows server position: actual=(0.5, 101.050048828125, 8.925537109375) expected=(0.5, 101.05, 8.925437420326361)
+PASS phase 4 visible pose is correct
+PASS visible casualty traveled over two blocks
+PASS server casualty moved with carrier
+PASS rope stays taut through the connection tick with delayed acknowledgements
+PASS casualty trails behind a carrier walking south
+PASS casualty entity visible at phase 6
+PASS phase 6 visible casualty follows server position: actual=(-7.962646484375, 101.050048828125, 10.075439453125) expected=(-7.962738391917217, 101.05, 10.075437420326361)
+PASS phase 6 visible pose is correct
+PASS rope stays taut after the turn
+PASS casualty swings in behind a carrier walking west
+PASS carrier sees the casualty at phase 7
+PASS casualty entity visible at phase 8
+PASS phase 8 visible casualty follows server position: actual=(-10.270263671875, 101.050048828125, 10.075439453125) expected=(-10.270141934149965, 101.05, 10.075327165456926)
+PASS phase 8 visible pose is correct
+FAIL java.lang.IllegalStateException: carrier crosshair still reaches the casualty after turning around; hit=net.minecraft.world.phys.BlockHitResult@7180b25f

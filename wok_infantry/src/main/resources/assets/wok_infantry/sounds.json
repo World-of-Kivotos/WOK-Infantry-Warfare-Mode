@@ -1,0 +1,122 @@
+{
+  "tablet.holster": {
+    "subtitle": "subtitles.wok_infantry.tablet.holster",
+    "sounds": [
+      {
+        "name": "wok_infantry:tablet/holster",
+        "volume": 0.44,
+        "preload": true
+      }
+    ]
+  },
+  "tablet.draw": {
+    "subtitle": "subtitles.wok_infantry.tablet.draw",
+    "sounds": [
+      {
+        "name": "wok_infantry:tablet/draw",
+        "volume": 0.798,
+        "preload": true
+      }
+    ]
+  },
+  "tablet.grip": {
+    "subtitle": "subtitles.wok_infantry.tablet.grip",
+    "sounds": [
+      {
+        "name": "wok_infantry:tablet/grip",
+        "volume": 0.749,
+        "preload": true
+      }
+    ]
+  },
+  "tablet.power": {
+    "subtitle": "subtitles.wok_infantry.tablet.power",
+    "sounds": [
+      {
+        "name": "wok_infantry:tablet/power",
+        "volume": 0.771,
+        "preload": true
+      }
+    ]
+  },
+  "tablet.boot": {
+    "subtitle": "subtitles.wok_infantry.tablet.boot",
+    "sounds": [
+      {
+        "name": "wok_infantry:tablet/boot",
+        "volume": 0.189,
+        "preload": true
+      }
+    ]
+  },
+  "tablet.ready": {
+    "subtitle": "subtitles.wok_infantry.tablet.ready",
+    "sounds": [
+      {
+        "name": "wok_infantry:tablet/ready",
+        "volume": 0.168,
+        "preload": true
+      }
+    ]
+  },
+  "tablet.search": {
+    "subtitle": "subtitles.wok_infantry.tablet.search",
+    "sounds": [
+      {
+        "name": "wok_infantry:tablet/search",
+        "volume": 0.355,
+        "preload": true
+      }
+    ]
+  },
+  "tablet.zoom": {
+    "subtitle": "subtitles.wok_infantry.tablet.zoom",
+    "sounds": [
+      {
+        "name": "wok_infantry:tablet/zoom",
+        "volume": 0.16,
+        "preload": true
+      }
+    ]
+  },
+  "tablet.sleep": {
+    "subtitle": "subtitles.wok_infantry.tablet.sleep",
+    "sounds": [
+      {
+        "name": "wok_infantry:tablet/sleep",
+        "volume": 0.189,
+        "preload": true
+      }
+    ]
+  },
+  "tablet.stow": {
+    "subtitle": "subtitles.wok_infantry.tablet.stow",
+    "sounds": [
+      {
+        "name": "wok_infantry:tablet/stow",
+        "volume": 0.46,
+        "preload": true
+      }
+    ]
+  },
+  "tablet.raise": {
+    "subtitle": "subtitles.wok_infantry.tablet.raise",
+    "sounds": [
+      {
+        "name": "wok_infantry:tablet/raise",
+        "volume": 0.775,
+        "preload": true
+      }
+    ]
+  },
+  "tablet.rustle": {
+    "subtitle": "subtitles.wok_infantry.tablet.rustle",
+    "sounds": [
+      {
+        "name": "wok_infantry:tablet/rustle",
+        "volume": 0.309,
+        "preload": true
+      }
+    ]
+  }
+}

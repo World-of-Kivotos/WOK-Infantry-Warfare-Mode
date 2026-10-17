@@ -1,0 +1,24 @@
+[vehicle_modules]
+	#Radius in blocks around the model-derived gunner optic position.
+	#Range: 0.2 ~ 3.0
+	opticsHitRadius = 0.8
+	#Base duration of the snow/static screen effect after an optics hit.
+	#Range: 10 ~ 400
+	opticsInterferenceTicks = 60
+	#Fallback optics maximum health as a fraction of SBW turret health for vehicles without a WOK tier profile.
+	#Range: 0.05 ~ 2.0
+	opticsMaxHealthRatio = 0.5
+	#Fallback minimum optics maximum health for vehicles without a WOK tier profile.
+	#Range: 1.0 ~ 10000.0
+	opticsMinMaxHealth = 30.0
+	#Fraction of optics max health repaired each tick; 0.0005 is about 100 seconds from zero to full.
+	#Range: 0.0 ~ 0.1
+	opticsPassiveRepairRate = 0.0005
+	#Turret rotation multiplier after the turret ring has taken meaningful damage.
+	#Range: 0.01 ~ 1.0
+	turretDamagedSpeedMultiplier = 0.45
+	#Turret rotation multiplier after the turret ring reaches zero health.
+	#Range: 0.0 ~ 1.0
+	turretDestroyedSpeedMultiplier = 0.08
+	#When true, either destroyed track immobilizes the vehicle.
+	stopOnSingleTrackDestroyed = true
