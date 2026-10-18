@@ -1,0 +1,39 @@
+status=PASS
+phase=15
+PASS reset disposable round: 已重置战局、兵力值、占点、小队、兵种占位和标记
+PASS set main base: 已将 blue 方主基地设为 minecraft:overworld 0, 101, 0，朝向 0.0
+PASS release administrator for area setup: 已为 WokGameplayTest 开启载具测试模式：已切换创造并暂停部署、配装和乘坐限制
+PASS selector handles both corners without breaking/placing terrain
+PASS production command stores selected base cuboid
+PASS restore ordinary deployment rules: 已为 WokGameplayTest 关闭载具测试模式并恢复正常战局限制
+PASS assign formation: 已将目标分配至 blue/default
+PASS create squad: 已创建 alpha 小队
+PASS select fixture kit: 已预留兵种 assault
+PASS select spawn: 已选择己方主基地
+PASS deploy through real server timer: 已从己方主基地部署
+PASS active normal deployment
+PASS base supply button has no obsolete sixty-second cooldown
+PASS supply uses ordinary-player inventory validation
+PASS initial manpower is 500
+PASS server countdown reaches the dedicated client supply panel
+PASS no supply before fifteen seconds
+PASS leaving area resets the full countdown
+PASS fifteen-second supply restores consumed stack
+PASS transport cargo retained with original provenance
+PASS resupply preserves life issuance token
+PASS voluntary redeployment: 已进入重新部署等待
+PASS redeployment costs exactly one manpower
+PASS duplicate life loss is ignored
+PASS select next life spawn: 已选择己方主基地
+PASS deploy a new life for final death: 已从己方主基地部署
+PASS final death follows the real player death event
+PASS final death spends exactly one manpower
+PASS zero manpower ends round with red victory
+PASS finished round blocks deployment
+PASS finished round also disables the deployment button
+PASS respawn after defeat stays outside active combat
+PASS respawn does not spend a second ticket
+PASS unified new round reset: 已重置战局、兵力值、占点、小队、兵种占位和标记
+PASS new round restores initial manpower
+messages=基地范围点 A：-4, 101, -4 | 基地范围点 B：4, 104, 4 | blue 基地补给区：minecraft:overworld -4, 101, -4 → 4, 104, 4 | 部署前随身物品已清空 | Loadout applied | 基地补给完成，已有弹药与运输物资已保留 | Loadout applied | 本局结束 · 红方获胜 · 敌方兵力值耗尽 | WokGameplayTest was killed
+failure=

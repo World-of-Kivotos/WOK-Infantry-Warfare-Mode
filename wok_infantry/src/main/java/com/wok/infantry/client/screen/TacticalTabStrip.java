@@ -1,0 +1,767 @@
+package com.wok.infantry.client.screen;
+
+import com.wok.infantry.client.ui.probe.UiLayoutProbe;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.narration.NarratedElementType;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.network.chat.Component;
+import org.lwjgl.glfw.GLFW;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.IntConsumer;
+
+/**
+ * Page tabs of a WOK步战 terminal, as one keyboard-focusable widget.
+ *
+ * <p>Skins: {@link Skin#HEADER} sits in the dark shell header (selected tab = blue plate with a
+ * light top bar, hover = {@code TAB_HOVER}); {@link Skin#BOARD} is a segmented row of board keys
+ * drawn from the shared {@link TacticalButtonStyle} table; {@link Skin#BEZEL} are the hardware
+ * page keys of the device's bottom bezel (preview {@code pageKeys}): equal-width {@link BezelKey}
+ * caps centred between Esc and R, an LED above each, the current page's key pressed under its lit
+ * LED, laid out by {@link TacticalBezelPlan}. When the full names do not fit the strip shows the
+ * short names, and when those do not fit either it becomes a {@code ‹ name n/m ›} pager. The
+ * current tab is drawn as "current" and is not clickable; disabled tabs show their reason as a
+ * tooltip.
+ *
+ * <p>Keyboard: {@code Ctrl+Tab} / {@code Ctrl+Shift+Tab} cycle through the enabled tabs from
+ * anywhere in a {@link TacticalScreen} (the screen routes them here); plain {@code Tab} keeps the
+ * vanilla focus navigation, which reaches a bezel strip after every control of the page
+ * ({@link TacticalBezelPlan#TAB_ORDER_PAGES}). While the strip itself has keyboard focus, ←/→
+ * also move between tabs.
+ *
+ * <p>Selecting only reports the index through the callback; the screen switches the page (in
+ * place, or through {@link BattleTerminalNav} with replace semantics) and normally rebuilds the
+ * strip with the new current index.
+ */
+public final class TacticalTabStrip extends AbstractWidget {
+    public enum Skin {
+        HEADER,
+        BOARD,
+        /**
+         * Hardware page keys on the device's bottom bezel (placed by
+         * {@link TacticalBoardChrome#placeBezel}).
+         */
+        BEZEL
+    }
+
+    /** How the tabs are shown in the strip's width. */
+    public enum Mode {
+        FULL,
+        SHORT,
+        PAGER
+    }
+
+    /**
+     * {@link Tab#badgeColor()} sentinel ({@link TacticalButtonStyle#NONE}, as for keys): the badge
+     * is drawn in the palette's {@code MUTED} of the frame it is drawn in (tabs are built in
+     * {@code init}, outside the faction palette, so a colour taken there would stay in A).
+     */
+    public static final int BADGE_MUTED = TacticalButtonStyle.NONE;
+
+    /**
+     * One tab. A non-null {@code disabledReason} disables it; {@code badge} is an optional small
+     * tag such as {@code 3/4}, drawn in {@code badgeColor} ({@link #BADGE_MUTED}: {@code MUTED}).
+     */
+    public record Tab(String id, Component label, Component shortLabel, Component disabledReason,
+                      Component badge, int badgeColor) {
+        public Tab {
+            Objects.requireNonNull(id, "id");
+            label = label == null ? Component.literal(id) : label;
+            shortLabel = shortLabel == null ? label : shortLabel;
+        }
+
+        /**
+         * Enabled tab without a badge. Its badge colour is the sentinel
+         * {@link TacticalButtonStyle#NONE} ({@code MUTED} of the palette the tab is drawn in):
+         * tabs are built in {@code init}, outside the faction palette.
+         */
+        public static Tab of(String id, Component label) {
+            return new Tab(id, label, label, null, null, BADGE_MUTED);
+        }
+
+        /** As {@link #of(String, Component)}, with a short label for narrow strips. */
+        public static Tab of(String id, Component label, Component shortLabel) {
+            return new Tab(id, label, shortLabel, null, null, BADGE_MUTED);
+        }
+
+        public boolean enabled() {
+            return disabledReason == null;
+        }
+
+        /** Copy that is disabled with {@code reason} (or enabled again when {@code null}). */
+        public Tab withDisabledReason(Component reason) {
+            return new Tab(id, label, shortLabel, reason, badge, badgeColor);
+        }
+
+        public Tab withBadge(Component value, int color) {
+            return new Tab(id, label, shortLabel, disabledReason, value, color);
+        }
+
+        /** Badge ink on a light key, resolved when drawn. */
+        public int resolvedBadgeColor() {
+            return badgeColor == BADGE_MUTED ? TacticalBoardTheme.MUTED : badgeColor;
+        }
+
+        Component labelFor(Mode mode) {
+            return mode == Mode.FULL ? label : shortLabel;
+        }
+    }
+
+    private static final int GAP = 2;
+    private static final int HEADER_PAD = 14;
+    private static final int HEADER_PAD_COMPACT = 8;
+    private static final int BOARD_PAD = 10;
+    private static final int PAGER_KEY_MAX = 16;
+    /** Side margin of a tab label inside its cell (the left one grows past a selection bar). */
+    private static final int LABEL_PAD = 3;
+
+    private final Skin skin;
+    private final List<Tab> tabs;
+    private final IntConsumer onSelect;
+    private final Tooltip[] reasonTooltips;
+    private final Tooltip[] labelTooltips;
+    private int current;
+    private boolean compact;
+    private TacticalBezelPlan bezelPlan;
+
+    public TacticalTabStrip(Skin skin, List<Tab> tabs, int current, IntConsumer onSelect) {
+        this(0, 0, 0, 0, skin, tabs, current, onSelect);
+    }
+
+    public TacticalTabStrip(int x, int y, int width, int height, Skin skin, List<Tab> tabs,
+                            int current, IntConsumer onSelect) {
+        super(x, y, width, height, Component.translatable("screen.wok_infantry.tabs"));
+        this.skin = skin == null ? Skin.BOARD : skin;
+        this.tabs = List.copyOf(Objects.requireNonNull(tabs, "tabs"));
+        this.onSelect = onSelect == null ? index -> { } : onSelect;
+        this.current = this.tabs.isEmpty() ? -1 : Math.max(0, Math.min(this.tabs.size() - 1, current));
+        this.reasonTooltips = new Tooltip[this.tabs.size()];
+        this.labelTooltips = new Tooltip[this.tabs.size()];
+        if (this.skin == Skin.BEZEL) {
+            // Plain Tab reaches the page keys after every control of the page, between Esc and R.
+            setTabOrderGroup(TacticalBezelPlan.TAB_ORDER_PAGES);
+        }
+    }
+
+    public Skin skin() {
+        return skin;
+    }
+
+    public List<Tab> tabs() {
+        return tabs;
+    }
+
+    /** Index of the current tab, or -1 without tabs. */
+    public int current() {
+        return current;
+    }
+
+    /** Marks {@code index} as the current tab without firing the callback. */
+    public void setCurrent(int index) {
+        if (index >= 0 && index < tabs.size()) {
+            current = index;
+        }
+    }
+
+    public int indexOf(String id) {
+        for (int index = 0; index < tabs.size(); index++) {
+            if (tabs.get(index).id().equals(id)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    /** Narrower header padding for the compact size class. */
+    public void setCompact(boolean compact) {
+        this.compact = compact;
+    }
+
+    public void setBounds(int x, int y, int width, int height) {
+        setX(x);
+        setY(y);
+        setWidth(Math.max(0, width));
+        setHeight(Math.max(0, height));
+    }
+
+    /**
+     * Places the strip on the device's bottom bezel: bounds = {@code plan.pages()}, page keys and
+     * LEDs as {@code plan} lays them out. Normally called through
+     * {@link TacticalBoardChrome#placeBezel}.
+     */
+    public void placeOnBezel(TacticalBezelPlan plan) {
+        Objects.requireNonNull(plan, "plan");
+        bezelPlan = plan;
+        compact = plan.tight();
+        UiRect pages = plan.pages();
+        setBounds(pages.left(), pages.top(), pages.width(), pages.height());
+        visible = !pages.isEmpty();
+    }
+
+    /**
+     * Bezel layout of this strip: the plan of the last {@link #placeOnBezel} while the strip still
+     * has its bounds, otherwise a key row filling the bounds (a bezel strip moved elsewhere, for
+     * example into an older header slot) in the size class of the last plan, or compact /
+     * standard by {@code compactFallback} when it was never placed on a bezel.
+     */
+    TacticalBezelPlan bezelPlan(boolean compactFallback) {
+        UiRect bounds = UiRect.ofSize(getX(), getY(), width, height);
+        TacticalBezelPlan placed = bezelPlan;
+        if (placed != null && placed.pages().equals(bounds)) {
+            return placed;
+        }
+        TacticalShellLayout.Density density = placed != null ? placed.density()
+                : compactFallback ? TacticalShellLayout.Density.COMPACT
+                : TacticalShellLayout.Density.STANDARD;
+        return TacticalBezelPlan.inBounds(bounds, density);
+    }
+
+    // ---- selection ------------------------------------------------------------------------------
+
+    /**
+     * Requests tab {@code index}: fires the callback when it exists, is enabled and is not the
+     * current tab. Returns whether the callback ran.
+     */
+    public boolean select(int index) {
+        if (index < 0 || index >= tabs.size() || index == current || !tabs.get(index).enabled()) {
+            return false;
+        }
+        onSelect.accept(index);
+        return true;
+    }
+
+    /**
+     * Whether Ctrl+Tab can reach another tab: at least one tab besides the current one is
+     * enabled.
+     */
+    public boolean canCycle() {
+        return nextEnabled(enabledFlags(), current, 1, true) >= 0;
+    }
+
+    /** Selects the next ({@code delta > 0}) or previous enabled tab, wrapping around. */
+    public boolean cycle(int delta) {
+        int target = nextEnabled(enabledFlags(), current, delta, true);
+        return target >= 0 && select(target);
+    }
+
+    /**
+     * Pure key rule: {@code +1} for Ctrl+Tab, {@code -1} for Ctrl+Shift+Tab, otherwise 0 (plain
+     * Tab and Shift+Tab stay with the vanilla focus navigation). Uses the real Ctrl modifier on
+     * every platform, so Cmd+Tab on macOS is never taken.
+     */
+    public static int navigationDelta(int keyCode, int modifiers) {
+        if (keyCode != GLFW.GLFW_KEY_TAB || (modifiers & GLFW.GLFW_MOD_CONTROL) == 0) {
+            return 0;
+        }
+        return (modifiers & GLFW.GLFW_MOD_SHIFT) != 0 ? -1 : 1;
+    }
+
+    /**
+     * Pure: the next enabled index from {@code from} in direction {@code delta}, skipping
+     * disabled entries; wraps around when {@code wrap}. Returns -1 when no other enabled entry
+     * exists.
+     */
+    static int nextEnabled(boolean[] enabled, int from, int delta, boolean wrap) {
+        int count = enabled.length;
+        if (count == 0 || delta == 0) {
+            return -1;
+        }
+        int step = delta > 0 ? 1 : -1;
+        int index = from;
+        for (int tries = 0; tries < count; tries++) {
+            index += step;
+            if (index < 0 || index >= count) {
+                if (!wrap) {
+                    return -1;
+                }
+                index = Math.floorMod(index, count);
+            }
+            if (index == from) {
+                return -1;
+            }
+            if (enabled[index]) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private boolean[] enabledFlags() {
+        boolean[] flags = new boolean[tabs.size()];
+        for (int index = 0; index < flags.length; index++) {
+            flags[index] = tabs.get(index).enabled();
+        }
+        return flags;
+    }
+
+    // ---- measuring and layout -------------------------------------------------------------------
+
+    /** Width needed to show every tab with full or short names in this skin. */
+    public int preferredWidth(Font font, boolean shortLabels, boolean compactHeader) {
+        if (tabs.isEmpty()) {
+            return 0;
+        }
+        Mode mode = shortLabels ? Mode.SHORT : Mode.FULL;
+        if (skin == Skin.BEZEL) {
+            TacticalBezelPlan plan = bezelPlan(compactHeader);
+            return plan.rowWidth(tabs.size(), plan.keyWidth(widestLabel(font, mode)));
+        }
+        int total = GAP * (tabs.size() - 1);
+        for (Tab tab : tabs) {
+            total += naturalWidth(font, tab, mode, compactHeader);
+        }
+        return total;
+    }
+
+    /** Pure mode rule: full names if they fit, else short names, else the pager. */
+    static Mode chooseMode(int available, int fullWidth, int shortWidth) {
+        if (fullWidth <= available) {
+            return Mode.FULL;
+        }
+        return shortWidth <= available ? Mode.SHORT : Mode.PAGER;
+    }
+
+    public Mode mode(Font font) {
+        return chooseMode(width, preferredWidth(font, false, compact),
+                preferredWidth(font, true, compact));
+    }
+
+    /**
+     * The mode this strip would show as the page keys of {@code plan} (its page slot), without
+     * placing it there: what {@link TacticalBezelPlan} measures before it lets the Esc and R caps
+     * shrink. Equal to {@link #mode} once {@link #placeOnBezel} put the strip on {@code plan}.
+     */
+    Mode modeOn(Font font, TacticalBezelPlan plan) {
+        int count = tabs.size();
+        return chooseMode(plan.pages().width(),
+                plan.rowWidth(count, plan.keyWidth(widestLabel(font, Mode.FULL))),
+                plan.rowWidth(count, plan.keyWidth(widestLabel(font, Mode.SHORT))));
+    }
+
+    private int naturalWidth(Font font, Tab tab, Mode mode, boolean compactHeader) {
+        int pad = skin == Skin.BOARD ? BOARD_PAD
+                : compactHeader ? HEADER_PAD_COMPACT : HEADER_PAD;
+        return font.width(tab.labelFor(mode)) + pad + badgeWidth(font, tab);
+    }
+
+    /** Widest label in {@code mode} plus its badge: every bezel key is this wide plus padding. */
+    private int widestLabel(Font font, Mode mode) {
+        int widest = 0;
+        for (Tab tab : tabs) {
+            widest = Math.max(widest, font.width(tab.labelFor(mode)) + badgeWidth(font, tab));
+        }
+        return widest;
+    }
+
+    private static int badgeWidth(Font font, Tab tab) {
+        return tab.badge() == null || tab.badge().getString().isEmpty()
+                ? 0 : font.width(tab.badge()) + 6 + 2;
+    }
+
+    /**
+     * Cell of tab {@code index} in the current mode, or {@link UiRect#EMPTY} when that tab is not
+     * on screen (pager mode shows only the current tab).
+     */
+    public UiRect tabBounds(int index) {
+        return tabBounds(Minecraft.getInstance().font, index);
+    }
+
+    UiRect tabBounds(Font font, int index) {
+        if (index < 0 || index >= tabs.size()) {
+            return UiRect.EMPTY;
+        }
+        Mode mode = mode(font);
+        if (mode == Mode.PAGER) {
+            return index == current ? pagerParts().get(1) : UiRect.EMPTY;
+        }
+        return cells(font, mode).get(index);
+    }
+
+    private List<UiRect> cells(Font font, Mode mode) {
+        UiRect strip = UiRect.ofSize(getX(), getY(), width, height);
+        if (skin == Skin.BOARD) {
+            UiRect.Size[] sizes = new UiRect.Size[tabs.size()];
+            Arrays.fill(sizes, UiRect.Size.STAR);
+            return strip.cols(GAP, sizes);
+        }
+        if (skin == Skin.BEZEL) {
+            TacticalBezelPlan plan = bezelPlan(compact);
+            return plan.keys(tabs.size(), plan.keyWidth(widestLabel(font, mode)));
+        }
+        List<UiRect> cells = new ArrayList<>(tabs.size());
+        int x = getX();
+        for (Tab tab : tabs) {
+            int cellWidth = naturalWidth(font, tab, mode, compact);
+            int right = Math.min(strip.right(), x + cellWidth);
+            cells.add(new UiRect(x, getY(), Math.max(x, right), getY() + height));
+            x += cellWidth + GAP;
+        }
+        return cells;
+    }
+
+    /**
+     * The page keys of a {@link Skin#BEZEL} strip as blank caps for a dark device (0.5.0-beta.4
+     * animation): every cell as drawn now, the current page pressed, a disabled tab flat, each LED
+     * position that is drawn (unlit); in pager mode the two arrow keys and the pressed label key.
+     * Empty for other skins or an empty strip.
+     */
+    List<DeviceArt.BlankKey> blankKeys(Font font) {
+        if (skin != Skin.BEZEL || tabs.isEmpty() || width <= 0 || height <= 0 || font == null) {
+            return List.of();
+        }
+        TacticalBezelPlan plan = bezelPlan(compact);
+        Mode mode = mode(font);
+        List<DeviceArt.BlankKey> keys = new ArrayList<>();
+        if (mode == Mode.PAGER) {
+            List<UiRect> parts = pagerParts();
+            boolean[] enabled = enabledFlags();
+            keys.add(new DeviceArt.BlankKey(parts.get(0), nextEnabled(enabled, current, -1, false) >= 0
+                    ? BezelKey.CapState.RAISED : BezelKey.CapState.DISABLED, UiRect.EMPTY));
+            keys.add(new DeviceArt.BlankKey(parts.get(1), BezelKey.CapState.DOWN,
+                    plan.led(parts.get(1))));
+            keys.add(new DeviceArt.BlankKey(parts.get(2), nextEnabled(enabled, current, 1, false) >= 0
+                    ? BezelKey.CapState.RAISED : BezelKey.CapState.DISABLED, UiRect.EMPTY));
+            return keys;
+        }
+        List<UiRect> cells = cells(font, mode);
+        for (int index = 0; index < cells.size(); index++) {
+            UiRect cell = cells.get(index);
+            if (cell.isEmpty()) {
+                continue;
+            }
+            boolean isCurrent = index == current;
+            BezelKey.CapState state = BezelKey.state(tabs.get(index).enabled() || isCurrent,
+                    isCurrent, false);
+            keys.add(new DeviceArt.BlankKey(cell, state, plan.led(cell)));
+        }
+        return keys;
+    }
+
+    /** Pager parts: previous key, label, next key (bezel keys: in the key row below the LEDs). */
+    private List<UiRect> pagerParts() {
+        UiRect strip = skin == Skin.BEZEL ? bezelPlan(compact).keyRow()
+                : UiRect.ofSize(getX(), getY(), width, height);
+        return pagerParts(strip);
+    }
+
+    /** Pure pager split of {@code strip}: two arrow keys of at most 16px and the label between. */
+    static List<UiRect> pagerParts(UiRect strip) {
+        int keyWidth = Math.max(1, Math.min(PAGER_KEY_MAX, strip.width() / 5));
+        UiRect previous = strip.leftSlice(keyWidth);
+        UiRect next = strip.rightSlice(keyWidth);
+        UiRect label = new UiRect(previous.right() + GAP, strip.top(),
+                Math.max(previous.right() + GAP, next.left() - GAP), strip.bottom());
+        return List.of(previous, label, next);
+    }
+
+    /** Tab index the click at (x, y) asks for, or -1. Pager arrows map to the neighbour tab. */
+    private int targetAt(Font font, double x, double y) {
+        Mode mode = mode(font);
+        if (mode == Mode.PAGER) {
+            List<UiRect> parts = pagerParts();
+            if (parts.get(0).contains(x, y)) {
+                return nextEnabled(enabledFlags(), current, -1, false);
+            }
+            if (parts.get(2).contains(x, y)) {
+                return nextEnabled(enabledFlags(), current, 1, false);
+            }
+            return -1;
+        }
+        List<UiRect> cells = cells(font, mode);
+        for (int index = 0; index < cells.size(); index++) {
+            if (cells.get(index).contains(x, y)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private int hoveredIndex(Font font, int mouseX, int mouseY) {
+        if (!isHovered() || mode(font) == Mode.PAGER) {
+            return -1;
+        }
+        List<UiRect> cells = cells(font, mode(font));
+        for (int index = 0; index < cells.size(); index++) {
+            if (cells.get(index).contains(mouseX, mouseY)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    // ---- input ----------------------------------------------------------------------------------
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (!active || !visible || !isValidClickButton(button) || !clicked(mouseX, mouseY)) {
+            return false;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        int target = targetAt(minecraft.font, mouseX, mouseY);
+        if (target >= 0 && target != current && tabs.get(target).enabled()) {
+            playDownSound(minecraft.getSoundManager());
+            select(target);
+        }
+        return true;
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (!active || !visible) {
+            return false;
+        }
+        if (keyCode == GLFW.GLFW_KEY_LEFT || keyCode == GLFW.GLFW_KEY_RIGHT) {
+            int target = nextEnabled(enabledFlags(), current,
+                    keyCode == GLFW.GLFW_KEY_LEFT ? -1 : 1, false);
+            if (target >= 0) {
+                select(target);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    // ---- drawing --------------------------------------------------------------------------------
+
+    @Override
+    protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        if (tabs.isEmpty() || width <= 0 || height <= 0) {
+            return;
+        }
+        Font font = Minecraft.getInstance().font;
+        Mode mode = mode(font);
+        boolean focusRing = TacticalButtonStyle.keyboardFocused(this);
+        // The hardware keys keep the device's paint whatever the page palette is.
+        DeviceSkin paint = skin == Skin.BEZEL ? BezelKey.currentSkin() : null;
+        Tooltip tooltip = null;
+        if (mode == Mode.PAGER) {
+            tooltip = renderPager(graphics, font, mouseX, mouseY, focusRing, paint);
+        } else {
+            List<UiRect> cells = cells(font, mode);
+            int hovered = hoveredIndex(font, mouseX, mouseY);
+            for (int index = 0; index < cells.size(); index++) {
+                UiRect cell = cells.get(index);
+                if (cell.isEmpty()) {
+                    continue;
+                }
+                Tab tab = tabs.get(index);
+                boolean truncated = renderTab(graphics, font, cell, tab, tab.labelFor(mode),
+                        index == current, index == hovered && tab.enabled() && index != current,
+                        focusRing && index == current, paint);
+                if (index == hovered) {
+                    tooltip = tooltipFor(index, truncated);
+                }
+                if (UiLayoutProbe.recording()) {
+                    probeTab(graphics, cell, tab, tab.labelFor(mode), index == current,
+                            index == hovered, truncated);
+                }
+            }
+        }
+        setTooltip(tooltip);
+        if (UiLayoutProbe.recording()) {
+            UiLayoutProbe.widget(graphics, this, "tabs", mode.name(), false, focusRing);
+        }
+    }
+
+    /**
+     * Reports one tab cell to the uiTest layout probe as control {@code <strip uiId>/<tab id>}.
+     * A shortened tab label is always offered in full on hover ({@link #tooltipFor}).
+     */
+    private void probeTab(GuiGraphics graphics, UiRect cell, Tab tab, Component label,
+                          boolean isCurrent, boolean hovered, boolean truncated) {
+        String state = isCurrent ? "CURRENT" : !tab.enabled() ? "DISABLED"
+                : hovered ? "HOVER" : "NORMAL";
+        UiLayoutProbe.part(graphics, this, tab.id(), "tab", state, cell.left(), cell.top(),
+                cell.right(), cell.bottom(), tab.enabled(), label, tab.disabledReason(), truncated,
+                true);
+    }
+
+    private Tooltip tooltipFor(int index, boolean truncated) {
+        Tab tab = tabs.get(index);
+        if (!tab.enabled()) {
+            if (reasonTooltips[index] == null) {
+                reasonTooltips[index] = Tooltip.create(Component.empty().append(tab.label())
+                        .append("\n").append(tab.disabledReason()));
+            }
+            return reasonTooltips[index];
+        }
+        if (truncated) {
+            if (labelTooltips[index] == null) {
+                labelTooltips[index] = Tooltip.create(tab.label());
+            }
+            return labelTooltips[index];
+        }
+        return null;
+    }
+
+    /** Draws one tab cell; returns whether its label had to be ellipsized. */
+    private boolean renderTab(GuiGraphics graphics, Font font, UiRect cell, Tab tab, Component label,
+                              boolean isCurrent, boolean hovered, boolean focusRing,
+                              DeviceSkin paint) {
+        switch (skin) {
+            case BEZEL -> {
+                BezelKey.drawLed(graphics, bezelPlan(compact), cell, isCurrent, paint);
+                BezelKey.Cap cap = BezelKey.cap(paint,
+                        BezelKey.state(tab.enabled() || isCurrent, isCurrent, hovered));
+                BezelKey.drawCap(graphics, cell, cap);
+                if (focusRing) {
+                    BezelKey.focusRing(graphics, cell, paint);
+                }
+                // The cap's ink: KEY_TEXT, SELECT_B when pressed, the dimmed keyOff when disabled.
+                return renderLabel(graphics, font, cell, label, tab, cap.text(),
+                        BezelKey.textY(cell, cap), LABEL_PAD, TacticalBoardTheme.BADGE_ON_CARD,
+                        cap.text());
+            }
+            case HEADER -> {
+                int textColor;
+                if (isCurrent) {
+                    graphics.fill(cell.left(), cell.top(), cell.right(), cell.bottom(),
+                            TacticalBoardTheme.SELECT);
+                    graphics.fill(cell.left(), cell.top(), cell.right(), cell.top() + 1,
+                            TacticalBoardTheme.SELECT_BAR);
+                    textColor = TacticalBoardTheme.ON_SELECT;
+                } else if (hovered) {
+                    graphics.fill(cell.left(), cell.top(), cell.right(), cell.bottom(),
+                            TacticalBoardTheme.TAB_HOVER);
+                    textColor = TacticalBoardTheme.LIGHT_MUTED;
+                } else {
+                    textColor = tab.enabled() ? TacticalBoardTheme.LIGHT_MUTED
+                            : TacticalBoardTheme.DISABLED_TEXT;
+                }
+                if (focusRing) {
+                    TacticalButtonStyle.focusRing(graphics, cell.left(), cell.top(), cell.right(),
+                            cell.bottom());
+                }
+                return renderLabel(graphics, font, cell, label, tab, textColor,
+                        labelTextY(skin, cell), LABEL_PAD, TacticalBoardTheme.BADGE_ON_SELECT,
+                        TacticalBoardTheme.ON_SELECT);
+            }
+            default -> {
+                TacticalButtonStyle.Look look = isCurrent
+                        ? TacticalButtonStyle.resolve(false, true, true,
+                        TacticalButtonStyle.Variant.NORMAL, false, false)
+                        : TacticalButtonStyle.resolve(tab.enabled(), false, false,
+                        TacticalButtonStyle.Variant.NORMAL, hovered, false);
+                TacticalButtonStyle.render(graphics, font, cell.left(), cell.top(), cell.right(),
+                        cell.bottom(), Component.empty(), look,
+                        TacticalButtonStyle.Options.DEFAULT.withFocusRing(focusRing));
+                // Board keys follow the shared key table: the label clears the 3px selection bar,
+                // and the badge sits on the key's own inset (dark on the current key).
+                TacticalButtonStyle.Palette palette = TacticalButtonStyle.palette(look);
+                return renderLabel(graphics, font, cell, label, tab, palette.text(),
+                        labelTextY(skin, cell),
+                        TacticalButtonStyle.labelPadLeft(palette, cell.height()),
+                        TacticalButtonStyle.badgeInset(look.state()),
+                        TacticalButtonStyle.badgeText(look.state(), tab.badgeColor()));
+            }
+        }
+    }
+
+    /**
+     * Text baseline of a label in {@code cell}. Header tabs end on the header's 2px bottom rule, so
+     * their labels sit on the title's baseline ({@code (h − 10) / 2}, as in the preview's
+     * {@code UI.shell}); board keys and bezel keys centre the 8px glyphs ({@code (h − 8) / 2},
+     * preview {@code keyCap}; a pressed bezel key adds its 1px drop).
+     */
+    static int labelTextY(Skin skin, UiRect cell) {
+        int room = cell.height() - (skin == Skin.HEADER ? 10 : 8);
+        return cell.top() + Math.max(0, room / 2);
+    }
+
+    private boolean renderLabel(GuiGraphics graphics, Font font, UiRect cell, Component label,
+                                Tab tab, int textColor, int textY, int padLeft, int badgeFill,
+                                int badgeText) {
+        int right = cell.right() - LABEL_PAD;
+        int badge = badgeWidth(font, tab);
+        if (badge > 0) {
+            int badgeLeft = right - (badge - 2);
+            graphics.fill(badgeLeft, textY - 1, right, textY + 8, badgeFill);
+            graphics.drawString(font, tab.badge(), badgeLeft + 3, textY, badgeText, false);
+            right = badgeLeft - 2;
+        }
+        int left = cell.left() + Math.max(LABEL_PAD, padLeft);
+        TextFit.Fitted fitted = TextFit.draw(graphics, font, label, left, textY,
+                Math.max(0, right - left), textColor, TextFit.Align.CENTER);
+        return fitted.truncated();
+    }
+
+    private Tooltip renderPager(GuiGraphics graphics, Font font, int mouseX, int mouseY,
+                                boolean focusRing, DeviceSkin paint) {
+        List<UiRect> parts = pagerParts();
+        boolean[] enabled = enabledFlags();
+        boolean canBack = nextEnabled(enabled, current, -1, false) >= 0;
+        boolean canNext = nextEnabled(enabled, current, 1, false) >= 0;
+        renderPagerKey(graphics, font, parts.get(0), "‹", canBack,
+                isHovered() && parts.get(0).contains(mouseX, mouseY), paint);
+        renderPagerKey(graphics, font, parts.get(2), "›", canNext,
+                isHovered() && parts.get(2).contains(mouseX, mouseY), paint);
+        Tab tab = tabs.get(current);
+        Component label = Component.empty().append(tab.shortLabel())
+                .append("  " + (current + 1) + "/" + tabs.size());
+        boolean truncated = renderTab(graphics, font, parts.get(1), tab, label, true, false,
+                focusRing, paint);
+        if (UiLayoutProbe.recording()) {
+            probeTab(graphics, parts.get(1), tab, label, true, false, truncated);
+        }
+        if (isHovered() && parts.get(1).contains(mouseX, mouseY)
+                && (truncated || !tab.shortLabel().getString().equals(tab.label().getString()))) {
+            if (labelTooltips[current] == null) {
+                labelTooltips[current] = Tooltip.create(tab.label());
+            }
+            return labelTooltips[current];
+        }
+        return null;
+    }
+
+    private void renderPagerKey(GuiGraphics graphics, Font font, UiRect key, String glyph,
+                                boolean enabled, boolean hovered, DeviceSkin paint) {
+        if (key.isEmpty()) {
+            return;
+        }
+        int textColor;
+        int textY = labelTextY(skin, key);
+        switch (skin) {
+            case BEZEL -> {
+                BezelKey.Cap cap = BezelKey.cap(paint,
+                        BezelKey.state(enabled, false, enabled && hovered));
+                BezelKey.drawCap(graphics, key, cap);
+                textColor = cap.text();
+            }
+            case HEADER -> {
+                if (enabled && hovered) {
+                    graphics.fill(key.left(), key.top(), key.right(), key.bottom(),
+                            TacticalBoardTheme.TAB_HOVER);
+                }
+                textColor = enabled ? TacticalBoardTheme.LIGHT_MUTED
+                        : TacticalBoardTheme.DISABLED_TEXT;
+            }
+            default -> {
+                TacticalButtonStyle.Look look = TacticalButtonStyle.resolve(enabled, false, false,
+                        TacticalButtonStyle.Variant.CONTROL, hovered, false);
+                TacticalButtonStyle.render(graphics, font, key.left(), key.top(), key.right(),
+                        key.bottom(), Component.empty(), look, TacticalButtonStyle.Options.DEFAULT);
+                textColor = TacticalButtonStyle.palette(look).text();
+            }
+        }
+        TextFit.draw(graphics, font, glyph, key.left(), textY, key.width(), textColor,
+                TextFit.Align.CENTER);
+    }
+
+    @Override
+    protected void updateWidgetNarration(NarrationElementOutput output) {
+        if (current < 0) {
+            output.add(NarratedElementType.TITLE, getMessage());
+            return;
+        }
+        Tab tab = tabs.get(current);
+        output.add(NarratedElementType.TITLE, Component.translatable(
+                "screen.wok_infantry.tabs.position", tab.label(), current + 1, tabs.size()));
+    }
+}

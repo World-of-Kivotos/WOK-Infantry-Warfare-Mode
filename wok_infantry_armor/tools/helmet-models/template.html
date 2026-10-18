@@ -1,0 +1,147 @@
+<title>步战头盔改模预览</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a range-card strip. Three equal "sight" windows, one control rail on top, findings beneath. */
+:root {
+  --bg: #eceee6; --panel: #f7f8f3; --stage: #dfe3d6; --line: #c9cebd; --fg: #1d2118; --muted: #5d6452;
+  --accent: #9a6a2c; --accent-fg: #fffaf2; --bad: #b3412f; --good: #3f7a3a;
+  --f-display: "Chakra Petch", "Microsoft YaHei", "PingFang SC", sans-serif;
+  --f-body: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15170f; --panel: #1d2017; --stage: #262a1f; --line: #353a2b; --fg: #e5e8dc; --muted: #9aa18c;
+  --accent: #d19a52; --accent-fg: #1a1409; --bad: #ec7a64; --good: #8cc47f; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15170f; --panel: #1d2017; --stage: #262a1f; --line: #353a2b; --fg: #e5e8dc; --muted: #9aa18c;
+  --accent: #d19a52; --accent-fg: #1a1409; --bad: #ec7a64; --good: #8cc47f; color-scheme: dark }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; line-height: 1.6; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 56px; display: grid; gap: 22px; }
+header { display: grid; gap: 6px; }
+.eyebrow { font-family: var(--f-mono); font-size: 12px; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
+h1 { font-family: var(--f-display); font-weight: 700; font-size: clamp(26px, 4vw, 38px); line-height: 1.15; margin: 0; text-wrap: balance; }
+.lede { margin: 0; max-width: 68ch; color: var(--muted); }
+.rail { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+button { font: 600 14px var(--f-body); color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tier { font-family: var(--f-mono); font-weight: 400; font-size: 12px; opacity: .8; margin-left: 4px; }
+.toggles { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.toggles label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; font-size: 14px; }
+input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
+.views { margin-left: auto; }
+.views button { font-weight: 500; padding: 5px 10px; }
+.stage { display: grid; grid-template-columns: repeat(2, minmax(0, 520px)); justify-content: center; gap: 12px; }
+.card[data-variant=M] { border-color: var(--accent); }
+@media (max-width: 1100px) { .stage { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.card { display: grid; grid-template-rows: auto auto 1fr; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; min-width: 0; }
+.card h2 { margin: 0; padding: 12px 14px 4px; font: 700 18px/1.3 var(--f-display); display: flex; gap: 10px; align-items: baseline; }
+.card h2 .new { font: 600 12px var(--f-body); color: var(--accent); margin-left: auto; }
+.card h2 .tag { font: 600 12px var(--f-mono); padding: 1px 7px; border-radius: 3px; border: 1px solid var(--line); color: var(--muted); }
+.card[data-variant=M] h2 .tag { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.card .sub { margin: 0; padding: 0 14px 10px; color: var(--muted); font-size: 13.5px; min-height: 3.2em; }
+.view { position: relative; background: radial-gradient(ellipse at 50% 35%, var(--panel), var(--stage) 70%); border-block: 1px solid var(--line); }
+.view canvas { display: block; width: 100%; aspect-ratio: 1 / 1; max-width: 100%; touch-action: none; cursor: grab; }
+.view canvas:active { cursor: grabbing; }
+.foot { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 12px 14px 14px; align-items: start; }
+dl { margin: 0; display: grid; grid-template-columns: auto auto; gap: 2px 12px; font-size: 13px; }
+dt { color: var(--muted); }
+dd { margin: 0; font: 600 13px var(--f-mono); font-variant-numeric: tabular-nums; text-align: right; }
+dd[data-bad="true"] { color: var(--bad); }
+dd[data-bad="false"] { color: var(--good); }
+.atlas { display: grid; gap: 4px; justify-items: end; }
+.atlas img { width: 96px; height: auto; image-rendering: pixelated; border: 1px solid var(--line); border-radius: 3px;
+  background: repeating-conic-gradient(var(--stage) 0 25%, var(--panel) 0 50%) 0 0 / 12px 12px; }
+.atlas span { font: 11px var(--f-mono); color: var(--muted); }
+.refs { display: grid; } .refs a { color: var(--accent); } .notes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.note { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; min-width: 0; }
+.note h3 { margin: 0 0 8px; font: 700 17px var(--f-display); }
+.note ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.note b { font-family: var(--f-mono); font-weight: 600; }
+.hint { font-size: 13px; color: var(--muted); margin: 0; }
+.view::after { content: "这件还没重做"; position: absolute; inset: auto 0 12px; text-align: center; font-size: 13px; color: var(--muted); display: none; }
+.card.empty .view::after { display: block; }
+.card.empty .atlas { visibility: hidden; }
+button[data-new]::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--good); margin-right: 6px; vertical-align: middle; }
+@media (max-width: 640px) { .stage { grid-template-columns: minmax(0, 1fr); } } @media (max-width: 900px) { .notes { grid-template-columns: minmax(0, 1fr); } .views { margin-left: 0; } .view canvas { aspect-ratio: 1 / 1; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">WOK步战附属-独立护甲 · wok_infantry_armor · 头盔穿戴模型</span>
+    <h1>头盔改模预览</h1>
+    <p class="lede">第三版：<b>17 顶全部</b>按《逃离塔科夫》里的原物重做，统一用<b>折中 2×</b>，盔沿按 MC 的大额头压低（前面盖到眼睛上方、后面盖到后颈）。阿尔金、Maska、Vulkan-5 带放下的面罩，Vulkan 的玻璃和游戏里一样是半透明的。左边“现在”是游戏里的实际样子（读的是仓库里的 GeckoLib 模型和贴图，含渲染器的 1.10 倍放大），右边是重做后的。点上面的按钮切换头盔，拖动任意一格旋转，滚轮缩放，两格同步。</p>
+  </header>
+
+  <div class="rail">
+    <div class="seg" role="group" aria-label="头盔">
+<!--ARMOR_BUTTONS-->
+    </div>
+    <div class="toggles">
+      <label><input type="checkbox" id="t-jacket"> 皮肤外套层</label>
+      <label><input type="checkbox" id="t-slim"> 细手臂</label>
+      <label><input type="checkbox" id="t-walk"> 走路</label>
+      <label><input type="checkbox" id="t-auto"> 自动旋转</label>
+    </div>
+    <div class="seg views" role="group" aria-label="视角">
+      <button type="button" id="v-front" data-view="0">正面</button>
+      <button type="button" id="v-side" data-view="-1.5708">侧面</button>
+      <button type="button" id="v-back" data-view="3.1416">背面</button>
+      <button type="button" id="v-close" data-view="-0.45" data-pitch="0.05" data-dist="28">近看</button>
+      <button type="button" id="v-top" data-view="-0.45" data-pitch="0.95" data-dist="30">俯视</button>
+    </div>
+  </div>
+
+  <section class="stage">
+    <article class="card" data-variant="now">
+      <h2>现在 <span class="tag">main</span></h2>
+      <p class="sub">GeckoLib 方块，64×64 贴图按色块铺底，细节靠亚像素薄片和斜切方块。</p>
+      <div class="view"><canvas aria-label="现有模型三维预览"></canvas></div>
+      <div class="foot">
+        <dl><dt>方块数</dt><dd data-k="n"></dd><dt>贴图</dt><dd data-k="tex"></dd><dt>埋在外套层下</dt><dd data-k="hid"></dd><dt>比 0.5px 还薄</dt><dd data-k="thin"></dd><dt>尺寸不在 ¼px 网格</dt><dd data-k="off"></dd></dl>
+        <div class="atlas"><img alt="现有贴图"><span>贴图</span></div>
+      </div>
+    </article>
+    <article class="card" data-variant="M">
+      <h2>重做 <span class="tag">折中 2×</span></h2>
+      <p class="sub">半像素网格、2 倍贴图，按塔科夫原物建模；盔沿按 MC 的大头压低，前面盖到眼睛上方、后面盖到后颈。</p>
+      <div class="view"><canvas aria-label="重做后的三维预览"></canvas></div>
+      <div class="foot">
+        <dl><dt>方块数</dt><dd data-k="n"></dd><dt>贴图</dt><dd data-k="tex"></dd><dt>埋在外套层下</dt><dd data-k="hid"></dd><dt>比 0.5px 还薄</dt><dd data-k="thin"></dd><dt>尺寸不在 ¼px 网格</dt><dd data-k="off"></dd></dl>
+        <div class="atlas"><img alt="重做后的贴图"><span>贴图</span></div>
+      </div>
+    </article>
+  </section>
+
+  <section class="refs">
+<!--ARMOR_REFS-->
+  </section>
+
+  <section class="notes">
+    <div class="note">
+      <h3>现在的模型哪里不对</h3>
+      <ul>
+        <li><b>17 顶里有 14 顶共用同一个阶梯壳子</b>：6 层越来越窄的台阶叠成圆顶，远看像蜂窝。其中 11 顶（防暴、LZSh、6B47 两款、凯门鳄、Kiver-M、ACHHC、STRIKE、FAST MT、AirFrame、FLUX）除了颜色和一两个小件几乎一样；Vulkan-5、阿尔金、FAST 重型套件是在这个壳子外面罩了一整块面甲。点左边的按钮切换就能看出来。</li>
+        <li>一共 <b>1150</b> 个方块，<b>全部</b>尺寸都不在 ¼ 像素网格上，<b>532</b> 个比 0.5 像素还薄。渲染器再整体放大 1.10 倍，所以贴图像素和皮肤像素对不齐。6B47 还有 <b>11%</b> 的面积埋在头发外层里。</li>
+        <li>贴图是 64×64 的色块板，每顶 14 种纯色，没有磨损、包边、槽口这些细节；挂座、导轨都是纯黑方块。</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h3>统一的做法</h3>
+      <ul>
+        <li>定为<b>折中 2×</b>：按半像素建模和画贴图，圆角两级，导轨槽、夜视罩开口、螺栓都在，包边半像素宽。</li>
+        <li>MC 的头大、额头高，盔沿一律压低：前沿到眼睛上方半格，两侧到眼睛高度，后面盖到后颈；只保留型号自己的特征切口（比如 FAST 超级高切的耳上开口）。</li>
+        <li>走 GeckoLib：可以旋转方块（下颌带是斜的）、按面分 UV。盔壳离头发层至少 0.25px，不再靠整体放大 1.10 倍来避开头发。</li>
+      </ul>
+      <p class="hint">预览里的贴图是程序生成的示意，定方向后会做成生成器，一次产出 GeckoLib 模型文件和 PNG，再移植进 WOK步战附属-独立护甲。</p>
+    </div>
+  </section>
+</div>
+
+<script type="module">
+/*SCRIPT*/
+</script>

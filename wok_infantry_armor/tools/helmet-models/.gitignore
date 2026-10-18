@@ -1,0 +1,8 @@
+# generated preview pages and caches
+*.html
+!template.html
+current_geo.js
+shots/
+refs/
+.check_*.mjs
+.export_tmp.mjs

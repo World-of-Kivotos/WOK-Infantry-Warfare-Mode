@@ -1,0 +1,8 @@
+status=FAIL
+PASS casualty uses real TCP connection
+PASS expected Mafuyu installation
+PASS casualty entity visible at phase 2
+PASS phase 2 visible casualty follows server target: actual=(0.502098016743397, 101.05, 8.962719125733582) expected=(0.502098016743397, 101.05, 8.962719125733582)
+PASS phase 2 visible pose is correct
+PASS visible casualty traveled over two blocks
+FAIL java.lang.IllegalStateException: host: java.lang.IllegalStateException: phase 2 visible casualty follows server target: actual=(0.5, 101.0, -0.65) expected=(0.502098016743397, 101.05, 8.962719125733582)

@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
 import com.wok.bodyhealth.config.BodyHealthConfig;
 import com.wok.bodyhealth.event.BodyHealthEvents;
 import com.wok.bodyhealth.network.BodyHealthNetwork;
+import com.wok.bodyhealth.prone.ProneHitService;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.fml.ModList;
@@ -25,17 +26,30 @@ public final class WokBodyHealthMod {
                 EventPriority.LOWEST, BodyHealthEvents::onLivingDamage);
         MinecraftForge.EVENT_BUS.addListener(BodyHealthEvents::onLivingHeal);
         MinecraftForge.EVENT_BUS.addListener(BodyHealthEvents::onLivingUseTotem);
+        MinecraftForge.EVENT_BUS.addListener(
+                EventPriority.LOWEST, true, BodyHealthEvents::onLivingDeathObserved);
         MinecraftForge.EVENT_BUS.addListener(BodyHealthEvents::onPlayerTick);
-        MinecraftForge.EVENT_BUS.addListener(BodyHealthEvents::onLivingJump);
         MinecraftForge.EVENT_BUS.addListener(BodyHealthEvents::onPlayerClone);
         MinecraftForge.EVENT_BUS.addListener(BodyHealthEvents::onPlayerLoggedIn);
         MinecraftForge.EVENT_BUS.addListener(BodyHealthEvents::onPlayerRespawn);
         MinecraftForge.EVENT_BUS.addListener(BodyHealthEvents::onPlayerChangedDimension);
 
-        if (ModList.get().isLoaded("tacz")) {
+        boolean tacz = ModList.get().isLoaded("tacz");
+        boolean sbw = ModList.get().isLoaded("superbwarfare");
+        if (tacz) {
             loadTaczCompat();
         } else {
             LOGGER.info("TaCZ is not installed; precise gunshot hit locations are disabled.");
+        }
+        if (tacz || sbw) {
+            // Segmented hitboxes for prone players; the mixins are gated on the same mods.
+            try {
+                ProneHitService.bootstrap(MinecraftForge.EVENT_BUS, tacz, sbw);
+            } catch (RuntimeException | LinkageError exception) {
+                // Optional like the TaCZ hook: the seven-part health system must still start.
+                LOGGER.error("Segmented prone hitboxes could not start; gun mods keep their original "
+                        + "prone hitbox.", exception);
+            }
         }
     }
 

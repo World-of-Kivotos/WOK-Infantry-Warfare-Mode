@@ -1,0 +1,14 @@
+{
+  "downed.tinnitus": {
+    "category": "player",
+    "subtitle": "subtitles.wok_downed.tinnitus",
+    "sounds": [
+      {
+        "name": "wok_downed:downed/tinnitus",
+        "volume": 0.85,
+        "stream": false,
+        "attenuation_distance": 0
+      }
+    ]
+  }
+}
