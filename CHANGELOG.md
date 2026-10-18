@@ -1,5 +1,41 @@
 # 更新日志
 
+## WOK步战附属-倒地救援 0.2.0-alpha.2 — 2026-10-18
+
+> 用户反馈（2026-10-18）：装上 `0.2.0-alpha.1` 后游戏在加载阶段直接退出（`crash-2026-10-18_13.12.28-fml.txt`）。崩溃报告定位到 `BusBuilderImpl.markerType` 抛 `IllegalArgumentException: Cannot specify a class marker type`，调用方是 `TaczSidearmCompat.install`。另发现玩家手上的 JAR 被改名成 `0.2.0-alpha.2.jar`，但内部版本仍是 `0.2.0-alpha.1`，违反“不同交付内容不得共用同一版本号”。
+
+### 新增
+
+- 无。
+
+### 修改
+
+- 版本 `0.2.0-alpha.1 → 0.2.0-alpha.2`，JAR 名与内部版本号重新一致。
+
+### 修复
+
+- **修复加载即退出（致命）**：`0.2.0-alpha.1` 试图用 `BusBuilderImpl.markerType(GunShootEvent.class)` 建一条只收 TaCZ 射击事件的私有总线，但该 API 内部强制 `Class.isInterface()` 断言，只接受**接口**；`GunShootEvent` 是类，构造模组时即抛 `IllegalArgumentException`，FML 判定模组加载失败并退出。
+  - 改为注册到 `MinecraftForge.EVENT_BUS` 的普通监听器，入口先用 `gunShootEventType.isInstance(event)` 与 `event.isCancelable()` 双重守卫，只有真正的 TaCZ 射击事件才会进入判定；其余事件在读任何状态前就返回。
+  - 保留“反射访问、未装 TaCZ 不注册”的做法，本模块仍不链接任何 TaCZ 类。
+  - 该守卫同时消除了 `0.1.0-alpha.4` 之前一版“把 `@SubscribeEvent` 挂在 `Event` 基类上”的隐患：不可取消的事件不会再被 `setCanceled`。
+- **修复 Mod 名称乱码**：`gradle.properties` 的 `mod_name` 由字面中文改为 `\u` 转义（Gradle 按 ISO-8859-1 读 properties，字面 UTF-8 会被双重编码）。`mods.toml` 的 `displayName` 现为正确的 `WOK步战附属-倒地救援`。该乱码自 `0.1.0-alpha.4` 起就存在。
+
+### 兼容性
+
+- 网络协议与注册项与 `0.2.0-alpha.1` 完全一致，仍是新增的 `wok_downed:downed.tinnitus`；客户端与服务端必须同一版本线。
+- `modId`、JAR 前缀、包根、配置结构均未变，`0.2.0-alpha.1` 的配置文件可直接沿用。
+- TaCZ 仍为可选软依赖；未安装时不注册任何监听。
+
+### 配置/存档影响
+
+- 无。本轮只改加载路径与元数据编码，不新增配置项、不改存档、不改物品。
+
+### 测试结果
+
+- `compileJava` / `jar` / `reobfJar` 通过，`test` **21 项全绿**，产物 `wok_downed-0.2.0-alpha.2.jar`（87,122 字节）。
+- 产物核对：`TaczSidearmCompat` 的字节码中已**不存在** `BusBuilderImpl` / `markerType` 引用，改为 `MinecraftForge.EVENT_BUS.addListener(EventPriority.NORMAL, false, consumer)` + `isCancelable()` 守卫；`mods.toml` 的 `version="0.2.0-alpha.2"`、`displayName="WOK步战附属-倒地救援"`。
+- 未执行：游戏内验收（需真实客户端 + TaCZ）。上一版正是因为只做了静态审查、没有对照真实运行环境，才漏掉 `markerType` 的接口断言——这一个 API 约束仅靠读签名看不出。
+
 ## WOK步战附属-倒地救援 0.2.0-alpha.1 — 2026-10-17
 
 > 用户需求（2026-10-17）："玩家受伤倒地可以开枪……我想改为玩家倒地之后只能使用手枪还击，并且有黑白滤镜、手会非常晃动，伴随耳鸣与极低的视野范围。"已确认：**不改变褡包**——倒地时只用手里已有的手枪能开枪，不是手枪就什么都开不了；手枪按物品 ID 名单认定；视觉强度取重度档，全部参数可配。

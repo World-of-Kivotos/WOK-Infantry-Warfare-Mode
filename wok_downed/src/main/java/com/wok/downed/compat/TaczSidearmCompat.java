@@ -6,7 +6,7 @@ import com.wok.downed.state.DownedService;
 import com.wok.downed.state.DownedWeaponPolicy;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.eventbus.BusBuilderImpl;
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.Event;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -22,72 +22,73 @@ import java.util.function.Consumer;
  * shot sound or sending a packet. TaCZ also posts it on the server, so cancelling there too stops
  * a modified client from bypassing the rule.
  *
- * <p>The event is handled through the plain {@link Event} API plus reflection, so this module
- * never links against TaCZ classes: it stays independently installable and cannot break when TaCZ
- * changes.
+ * <p>Everything about TaCZ is reached reflectively, so this module never links against TaCZ
+ * classes: it stays independently installable and cannot break when TaCZ changes.
  *
- * <p><b>Why a dedicated bus and not {@code @SubscribeEvent}?</b> A listener whose parameter is the
- * base {@link Event} type is invoked for <em>every</em> event on the bus, and {@code setCanceled}
- * on an event that is not cancellable throws. Registering a private bus with TaCZ's event class as
- * its marker type keeps every other event — and every event fired before or without TaCZ — out of
- * {@link #onGunShoot}.
+ * <h2>Why not {@code @SubscribeEvent}</h2>
+ * A listener whose parameter is the base {@link Event} type receives <em>every</em> event on the
+ * bus, including events that are not cancellable and events fired before TaCZ registers anything.
+ * Calling {@code setCanceled} on such an event throws and takes the game down during loading.
+ *
+ * <p>Forge's own {@code BusBuilder.markerType} would restrict a private bus to one type, but it
+ * hard-rejects anything that is not an interface
+ * ({@code IllegalArgumentException: Cannot specify a class marker type}), and
+ * {@code GunShootEvent} is a class. This listener is therefore added with the generic
+ * {@code addListener(Consumer)} overload — which subscribes to the {@link Event} base type — and
+ * {@link #onAnyEvent} returns immediately unless the event really is TaCZ's, both by class and by
+ * the {@code isCancelable} contract. That keeps the registration free of TaCZ classes while never
+ * touching an event the rule does not own.
  */
 public final class TaczSidearmCompat {
     static final String GUN_SHOOT_EVENT = "com.tacz.guns.api.event.common.GunShootEvent";
 
     private static boolean installed;
     private static boolean reportedShape;
-    private static IEventBus bus;
+    private static Class<?> gunShootEventType;
 
-    /** Registers the filtered bus once, using TaCZ's own event class when the mod is present. */
+    /** Registers the listener once, binding TaCZ's event class by name when the mod is present. */
     public static void install() {
         if (installed || !ModList.get().isLoaded("tacz")) {
             return;
         }
-        Class<?> gunShootEvent;
         try {
-            gunShootEvent = Class.forName(GUN_SHOOT_EVENT);
+            gunShootEventType = Class.forName(GUN_SHOOT_EVENT);
         } catch (ClassNotFoundException | LinkageError missing) {
             WokDownedMod.LOGGER.warn(
                     "TaCZ is installed but {} is unavailable; the downed sidearm rule is inactive",
                     GUN_SHOOT_EVENT);
             return;
         }
-        BusBuilderImpl builder = new BusBuilderImpl();
-        builder.setTrackPhases(false);
-        builder.markerType(gunShootEvent);
-        builder.setExceptionHandler((source, event, listeners, index, throwable) ->
-                WokDownedMod.LOGGER.error("Downed sidearm check failed for {}", event, throwable));
-        IEventBus filtered = new net.minecraftforge.eventbus.EventBus(builder);
-        addFilteredListener(filtered, gunShootEvent);
-        bus = filtered;
+        IEventBus bus = MinecraftForge.EVENT_BUS;
+        addEventConsumer(bus, TaczSidearmCompat::onAnyEvent);
         installed = true;
         WokDownedMod.LOGGER.info(
                 "TaCZ detected: a downed player may only fire the configured sidearms");
     }
 
-    /** Binds the generic {@code Class<T>} parameter so the reflective class can be registered. */
-    private static <T extends Event> void addFilteredListener(IEventBus target, Class<?> type) {
-        @SuppressWarnings("unchecked")
-        Class<T> eventType = (Class<T>) type;
-        target.addListener(EventPriority.NORMAL, false, eventType,
-                (Consumer<T>) (Consumer<Event>) TaczSidearmCompat::onGunShoot);
+    /** Keeps the generic {@code Consumer<? super T>} bound to {@link Event} explicitly. */
+    private static void addEventConsumer(IEventBus bus, Consumer<Event> listener) {
+        bus.addListener(EventPriority.NORMAL, false, listener);
     }
 
-    /** Package-visible for tests: whether the filtered bus was wired. */
+    /** Package-visible for tests: whether the listener was wired. */
     static boolean isInstalled() {
         return installed;
     }
 
-    /** Package-visible for tests: the private bus, if any. */
-    static IEventBus bus() {
-        return bus;
+    /**
+     * Forwards only TaCZ's shoot event. Everything else returns before any state is touched, so an
+     * unrelated event can never be cancelled and a pre-TaCZ event can never throw.
+     */
+    static void onAnyEvent(Event event) {
+        if (event == null || gunShootEventType == null
+                || !gunShootEventType.isInstance(event) || !event.isCancelable()) {
+            return;
+        }
+        onGunShoot(event);
     }
 
-    /**
-     * Only ever reached for {@code GunShootEvent} instances (the bus marker type is that class),
-     * so a cancel here cannot land on an event that does not support it.
-     */
+    /** Only reached for a cancelable {@code GunShootEvent}. */
     static void onGunShoot(Event event) {
         Object shooter;
         Object stack;
