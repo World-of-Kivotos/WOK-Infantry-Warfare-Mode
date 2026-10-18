@@ -40,6 +40,19 @@ public final class DownedService {
         return FORCING_DEATH.get();
     }
 
+    /**
+     * Whether a downed casualty may still fire {@code stack}.
+     *
+     * <p>Only a sidearm already in hand is allowed, and only when the feature is on. The item is
+     * never granted or moved, so this cannot widen what a casualty owns.
+     */
+    public static boolean mayFireWhileDowned(Player player, net.minecraft.world.item.ItemStack stack) {
+        return player != null
+                && isDowned(player)
+                && DownedConfig.ALLOW_SIDEARM_FIRE.get()
+                && DownedWeaponPolicy.isAllowedSidearm(stack, DownedConfig.ALLOWED_SIDEARMS.get());
+    }
+
     public static void enterDowned(ServerPlayer player) {
         cancelByParticipant(player, false);
         stopDraggingByParticipant(player, false);

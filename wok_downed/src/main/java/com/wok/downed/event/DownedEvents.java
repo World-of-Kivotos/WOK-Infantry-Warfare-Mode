@@ -40,8 +40,7 @@ public final class DownedEvents {
                     WokDownedMod.MOD_ID, "bypasses_downed"));
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
-    public static void onLivingDeath(LivingDeathEvent event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)
+    public static void onLivingDeath(LivingDeathEvent event) {        if (!(event.getEntity() instanceof ServerPlayer player)
                 || DownedService.isForcingDeath()) {
             return;
         }
@@ -124,15 +123,29 @@ public final class DownedEvents {
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onPlayerInteract(PlayerInteractEvent event) {
-        if (DownedService.isDowned(event.getEntity()) && event.isCancelable()) {
-            event.setCanceled(true);
-            event.setCancellationResult(InteractionResult.FAIL);
+        if (DownedService.isDowned(event.getEntity())) {
+            // A casualty may still aim and fire a listed sidearm, so right-click must stay usable
+            // for that one item; everything else (blocks, buckets, eating, opening UIs) is denied.
+            if (event instanceof PlayerInteractEvent.RightClickItem
+                    && event.getEntity() instanceof ServerPlayer downedPlayer
+                    && DownedService.mayFireWhileDowned(downedPlayer, event.getItemStack())) {
+                return;
+            }
+            if (event.isCancelable()) {
+                event.setCanceled(true);
+                event.setCancellationResult(InteractionResult.FAIL);
+            }
         }
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onAttackEntity(AttackEntityEvent event) {
         if (DownedService.isDowned(event.getEntity())) {
+            if (DownedService.mayFireWhileDowned(
+                    (ServerPlayer) event.getEntity(), event.getEntity().getMainHandItem())) {
+                // A listed sidearm may still land melee-range hits; gunfire is its own path below.
+                return;
+            }
             event.setCanceled(true);
         }
     }

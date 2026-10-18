@@ -27,6 +27,12 @@ sourceSets {
 }
 def poseTestDir = file(findProperty('poseTestDir') ?: 'D:/WOK步战测试/1.20.1-Forge_47.4.22/wok-downed-acceptance/standalone')
 def poseTestMafuyu = findProperty('poseTestMafuyuJar') ? file(property('poseTestMafuyuJar')) : null
+// Optional TaCZ jar for compiling the sidearm rule. Never packaged: the mod reaches TaCZ's
+// GunShootEvent reflectively, so a build without this file still produces a valid JAR.
+def taczJar = findProperty('taczJar') ? file(property('taczJar')) : null
+if (taczJar != null && !taczJar.isFile()) {
+    throw new GradleException("taczJar must point to a local TaCZ jar: ${taczJar}")
+}
 def dragTestRun = (findProperty('dragTestRun') ?: 'drag').toString()
 if (!(dragTestRun ==~ /[a-zA-Z0-9_-]+/)) throw new GradleException('Invalid dragTestRun')
 def dragTestRoot = file("D:/WOK步战测试/1.20.1-Forge_47.4.22/wok-downed-acceptance/${dragTestRun}")
@@ -87,6 +93,11 @@ minecraft {
 
 repositories {
     mavenCentral()
+    // Optional TaCZ linkage: compiled against only, never bundled. If the local jar is absent the
+    // module still builds; the sidearm listener is reflectively wired and simply stays dormant.
+    if (taczJar != null) {
+        flatDir { dirs taczJar.parentFile }
+    }
     if (poseTestMafuyu != null) {
         flatDir { dirs poseTestMafuyu.parentFile }
     }
@@ -97,6 +108,9 @@ dependencies {
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
     testImplementation platform('org.junit:junit-bom:5.10.2')
     testImplementation 'org.junit.jupiter:junit-jupiter'
+    if (taczJar != null) {
+        compileOnly fg.deobf("tacz.compat:${taczJar.name.replace('.jar', '')}:1.1.8")
+    }
     if (poseTestMafuyu != null) {
         // The fixture is named moveslikemafuyu-1.1.3.jar and remains an external local dependency.
         poseTestRuntimeOnly fg.deobf('pose.compat:moveslikemafuyu:1.1.3')

@@ -17,5 +17,8 @@
   "message.wok_downed.revived": "Rescue complete.",
   "message.wok_downed.gave_up": "You gave up waiting for rescue.",
   "command.wok_downed.not_downed": "You are not downed.",
-  "command.wok_downed.revived_count": "Revived %s player(s)."
+  "command.wok_downed.revived_count": "Revived %s player(s).",
+  "subtitles.wok_downed.tinnitus": "Tinnitus",
+  "gui.wok_downed.sidearm_hint": "Sidearm only",
+  "message.wok_downed.sidearm_blocked": "You can only fire a sidearm while downed."
 }

@@ -17,5 +17,8 @@
   "message.wok_downed.revived": "救援完成。",
   "message.wok_downed.gave_up": "你已放弃等待救援。",
   "command.wok_downed.not_downed": "你当前没有倒地。",
-  "command.wok_downed.revived_count": "已救起 %s 名玩家。"
+  "command.wok_downed.revived_count": "已救起 %s 名玩家。",
+  "subtitles.wok_downed.tinnitus": "耳鸣",
+  "gui.wok_downed.sidearm_hint": "只能用手枪还击",
+  "message.wok_downed.sidearm_blocked": "倒地时只能使用手枪还击。"
 }

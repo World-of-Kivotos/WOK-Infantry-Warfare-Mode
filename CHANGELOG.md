@@ -1,5 +1,57 @@
 # 更新日志
 
+## WOK步战附属-倒地救援 0.2.0-alpha.1 — 2026-10-17
+
+> 用户需求（2026-10-17）："玩家受伤倒地可以开枪……我想改为玩家倒地之后只能使用手枪还击，并且有黑白滤镜、手会非常晃动，伴随耳鸣与极低的视野范围。"已确认：**不改变褡包**——倒地时只用手里已有的手枪能开枪，不是手枪就什么都开不了；手枪按物品 ID 名单认定；视觉强度取重度档，全部参数可配。
+
+### 新增
+
+- **倒地还击（仅手枪）**：倒地后不再全禁攻击，而是只放行「手枪名单」里的枪。名单为精确物品 ID，默认收录 TaCZ 1.1.8 默认枪包里的 15 把手枪（`glock_17`、`b93r`、`cz75`、`deagle`、`deagle_golden`、`hk_mk23`、`m1911`、`m9a4`、`p320`、`rhino357`、`taurus500`、`taurus943`、`timeless50`、`uzi`）与 `superbwarfare:pistol`；加新枪只需改配置，不用改代码。
+- **TaCZ 开火闸门（`compat/TaczSidearmCompat`）**：监听 TaCZ 的 `GunShootEvent`，客户端与服务端两侧都判。TaCZ 在客户端发事件后若被取消就直接返回 `FORGE_EVENT_CANCEL`——不扣弹、不出枪声、不发包，因此倒地时按长枪是彻底打不出去，而不是「打了但没伤害」。事件经反射访问、监听器仅在检测到 TaCZ 时才注册，**不硬依赖 TaCZ**，本模块仍可单独安装。
+- **默认名单覆盖**：`downed.sidearm.allowSidearmFire`（默认开）与 `downed.sidearm.allowedSidearms`（默认上述名单）。
+- **创伤表现（客户端，可配）**：`trauma.enabled`、`desaturate`（去色强度 0.85）、`darkness`（压暗 0.82）、`fovMultiplier`（视野 0.55）、`shakeAmplitude`（镜头抖动 2.4°）、`tinnitus`、`tinnitusVolume`。
+  - **画面**：四边向内渐黑的重度暗角（逐顶点 alpha 渐变，不需要光影支持）；叠加中性灰洗压制饱和。
+  - **视野**：`ComputeFovModifierEvent` 直接乘 0.55，视野明显收窄。
+  - **晃动**：`ViewportEvent.ComputeCameraAngles` 上做双频抖动（慢摆 + 快颤），yaw / pitch / roll 同时偏转，帧率无关（按 tick 驱动）。
+  - **耳鸣**：自制的 4 秒循环 OGG（`assets/wok_downed/sounds/downed/tinnitus.ogg`，单声道 44.1kHz，34KB），双频差拍 + 低频噪声 + 慢速振幅起伏，首尾等功率交叉淡化做无缝循环；淡入淡出各 14 tick。纯代码合成，不含任何第三方采样。
+- **HUD 提示**：倒地面板第三行在持手枪时显示「只能用手枪还击」（橙色），否则显示原有的「等待队友右键施救」。
+- **生成工具**：`tools/downed-audio/TinnitusGen.java`（纯 Java Vorbis 编码，固定随机种子，可重现），解码校验见本轮测试结果。
+- 新语音键（中英成对）：`subtitles.wok_downed.tinnitus`、`gui.wok_downed.sidearm_hint`、`message.wok_downed.sidearm_blocked`。
+
+### 修改
+
+- `DownedEvents` 的攻击/交互拦截改为「先问名单」：`AttackEntityEvent` 手里是名单手枪时放行，`PlayerInteractEvent` 仅在手持名单手枪的 `RightClickItem` 放行，其余（方块、水桶、进食、开界面、骑乘、破坏方块）全部照旧拦截。
+- `ClientDownedEvents.onInteraction` 只放行 attack，且仅当手持名单手枪；移动输入仍全部清零，倒地不能走。
+- `mods.toml` 新增可选依赖 `tacz [1.1.7,)`（`mandatory=false`，`ordering=AFTER`）。
+- 版本 `0.1.0-alpha.4 → 0.2.0-alpha.1`（新增功能按 `docs/VERSIONING.md` 提次版本号；alpha.4 的拖行修复原样保留）。
+
+### 修复
+
+- 无（本轮为新增功能，未改动 alpha.4 已修好的拖行与姿态问题）。
+
+### 兼容性
+
+- **网络协议不变**，没有新增自定义包；客户端与服务端须同为 0.2.0-alpha.1 才能看到一致的表现，但与 0.1.0-alpha.4 混连不会连接失败（新表现只在双方都升级时生效）。
+- 新增注册项：音效事件 `wok_downed:downed.tinnitus`。按协议规则，**服务端注册了新 `SoundEvent` 后，旧版客户端会因缺少注册项被拒连**——因此本版起客户端与服务端必须同一版本线。这是刻意为之，需在部署时同步替换双端。
+- `modId`、JAR 前缀、Java 包根（`com.wok.downed`）、既有配置字段全部未变。
+- TaCZ 为**可选**软依赖：未安装时本轮只缺少「TaCZ 开火闸门」，原版攻击路径仍按名单放行；本模块不打包任何 TaCZ 类（已核对 JAR 内 `com/tacz/` 为 0 个类）。
+- 未安装 `wok_infantry` 时同样可用。
+
+### 配置/存档影响
+
+- 服务端配置 `config/wok_downed-server.toml` 新增三节：`downed.sidearm`（2 项）与 `trauma`（7 项）。旧配置无需迁移，缺失的键会自动补默认值。
+- 不改存档结构、不改物品 NBT，不发放或移动任何物品——倒地时使用的就是玩家原本持有的手枪。
+- 新增资源：`assets/wok_downed/sounds.json` 与 `assets/wok_downed/sounds/downed/tinnitus.ogg`。
+
+### 测试结果
+
+- 构建：`compileJava` 与完整 `build` 通过（`BUILD SUCCESSFUL`），产物 `wok_downed-0.2.0-alpha.1.jar`（86,406 字节）。
+- 单元测试：`test` **21 个用例全部通过，0 失败 / 0 错误 / 0 跳过**（新增 `DownedWeaponPolicyTest` 7 项，覆盖名单命中、长枪拒绝、大小写与空白容错、空/NULL 名单、默认名单覆盖全部手枪且不漏长枪；连同既有 `DownedTimingTest`、`DragLeashTest`、`SneakTapTest`）。
+- 产物核对：JAR 内 `com/tacz` 0 类、`net/minecraft` 0 类、编码器 `biniu/`·`jcraft` 0 类；`tinnitus.ogg` 34,178 字节、magic 为 `OggS`。
+- 音频实测：OGG 容器 10 个页且严格以 EOS 结束；独立解码器（jorbis `VorbisFile`）读出 `channels=1`、`rate=44100`、`pcm_total=176400`、`time_total=4.0s`、`bitrate=61kbps`；合成源信号 RMS 0.171、峰值 0.592（不静音、不削波）。
+- 未执行：**游戏内验收**。视觉强度、抖动幅度、耳鸣音量、手枪名单是否符合体感，必须在真实客户端确认——尤其需要验证 TaCZ 长枪在倒地时确实无枪声无扣弹、手枪能正常连发、镜头抖动不晕、耳鸣不刺耳。
+- 已知限制：1.20.1 的 `GuiGraphics` 只能按贴图位置 blit，无法对已成帧的画面套颜色矩阵而不接管渲染管线（光影包也在此挂钩），因此**去色采用中性灰洗近似**，代价是略抬高黑位——这也是暗角放在其后、且边缘全黑的原因。若后续需要真正的像素级黑白，需引入 `PostChain` 级别的接管，另行评估。
+
 ## WOK步战核心 0.5.0-beta.5 — 2026-10-17
 
 > 用户需求（2026-10-17）：按导出的崩溃报告（`wok_infantry-0.5.0-beta.4.jar`，整合包 `WOK步战整合包-0.3.0`，崩溃时间 19:54:54）分析“为什么打开饰品栏会崩溃”，随后要求“进行修改，同时不要影响我们的功能”。分析结论是步战核心自己的容器关闭时序缺陷，不是饰品栏或 Curios 的问题。本轮只改这条关闭路径，不引入新功能，不改任何协议号。

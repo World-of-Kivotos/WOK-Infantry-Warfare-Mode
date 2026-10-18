@@ -42,9 +42,13 @@ public final class DownedOverlay {
         graphics.drawCenteredString(minecraft.font,
                 Component.translatable("gui.wok_downed.bleedout", seconds),
                 width / 2, top + 21, 0xFFF0D6C8);
+        // Below the countdown: whether a sidearm can still answer fire, or the player is helpless.
+        boolean armed = ClientDownedEvents.mayLocalPlayerFire();
         graphics.drawCenteredString(minecraft.font,
-                Component.translatable("gui.wok_downed.waiting"),
-                width / 2, top + 33, 0xFFB8C2C5);
+                Component.translatable(armed
+                        ? "gui.wok_downed.sidearm_hint"
+                        : "gui.wok_downed.waiting"),
+                width / 2, top + 33, armed ? 0xFFF2C14E : 0xFFB8C2C5);
     }
 
     private DownedOverlay() {

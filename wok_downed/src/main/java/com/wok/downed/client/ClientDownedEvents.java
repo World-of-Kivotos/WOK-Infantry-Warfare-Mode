@@ -1,12 +1,15 @@
 package com.wok.downed.client;
 
 import com.wok.downed.WokDownedMod;
+import com.wok.downed.config.DownedConfig;
 import com.wok.downed.state.DownedPose;
 import com.wok.downed.state.DownedService;
+import com.wok.downed.state.DownedWeaponPolicy;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.Input;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.Pose;
+import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.InputEvent;
@@ -23,6 +26,21 @@ public final class ClientDownedEvents {
     public static boolean isLocalPlayerDowned() {
         LocalPlayer player = Minecraft.getInstance().player;
         return player != null && DownedService.isDowned(player);
+    }
+
+    /**
+     * Whether the local casualty is holding a sidearm it is allowed to fire, so the client must
+     * let the attack input through. When this is false the casualty stays fully frozen.
+     */
+    public static boolean mayLocalPlayerFire() {
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player == null) {
+            return false;
+        }
+        ItemStack held = player.getMainHandItem();
+        return DownedService.isDowned(player)
+                && DownedConfig.ALLOW_SIDEARM_FIRE.get()
+                && DownedWeaponPolicy.isAllowedSidearm(held, DownedConfig.ALLOWED_SIDEARMS.get());
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
@@ -54,15 +72,21 @@ public final class ClientDownedEvents {
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onInteraction(InputEvent.InteractionKeyMappingTriggered event) {
-        if (isLocalPlayerDowned()) {
-            event.setCanceled(true);
-            event.setSwingHand(false);
+        if (!isLocalPlayerDowned()) {
+            return;
         }
+        // Attack is the only input a casualty keeps, and only while a listed sidearm is in hand.
+        if (event.isAttack() && mayLocalPlayerFire()) {
+            return;
+        }
+        event.setCanceled(true);
+        event.setSwingHand(false);
     }
 
     @SubscribeEvent
     public static void onLogout(ClientPlayerNetworkEvent.LoggingOut event) {
         lockedPlayer = null;
+        DownedTraumaEffects.reset();
     }
 
     private static void suppressInput(Input input) {
@@ -74,6 +98,9 @@ public final class ClientDownedEvents {
         input.right = false;
         input.jumping = false;
         input.shiftKeyDown = false;
+        // 1.20.1's Input carries movement only; firing and aiming arrive through
+        // InputEvent.InteractionKeyMappingTriggered, which onInteraction below lets through for a
+        // listed sidearm. Nothing here needs to preserve a "use" flag.
     }
 
     private ClientDownedEvents() {

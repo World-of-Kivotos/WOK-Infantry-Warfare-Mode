@@ -1,6 +1,9 @@
 package com.wok.downed.config;
 
+import com.wok.downed.state.DownedWeaponPolicy;
 import net.minecraftforge.common.ForgeConfigSpec;
+
+import java.util.List;
 
 public final class DownedConfig {
     public static final ForgeConfigSpec SPEC;
@@ -15,6 +18,21 @@ public final class DownedConfig {
     public static final ForgeConfigSpec.DoubleValue DRAG_FOLLOW_DISTANCE;
     public static final ForgeConfigSpec.IntValue FINISHING_DAMAGE_GRACE_SECONDS;
     public static final ForgeConfigSpec.BooleanValue ALLOW_FINISHING_DAMAGE;
+
+    /** Downed firefight: only a held sidearm may still be fired. */
+    public static final ForgeConfigSpec.BooleanValue ALLOW_SIDEARM_FIRE;
+    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> ALLOWED_SIDEARMS;
+
+    /** Downed trauma presentation (client side only). */
+    public static final ForgeConfigSpec.BooleanValue VIGNETTE_ENABLED;
+    public static final ForgeConfigSpec.DoubleValue VIGNETTE_DESATURATE;
+    public static final ForgeConfigSpec.DoubleValue VIGNETTE_DARKNESS;
+    public static final ForgeConfigSpec.DoubleValue FOV_MULTIPLIER;
+    public static final ForgeConfigSpec.DoubleValue SHAKE_AMPLITUDE;
+    public static final ForgeConfigSpec.BooleanValue TINNITUS_ENABLED;
+    public static final ForgeConfigSpec.DoubleValue TINNITUS_VOLUME;
+
+    private static final List<String> DEFAULT_SIDEARMS = DownedWeaponPolicy.DEFAULT_SIDEARMS;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -44,6 +62,41 @@ public final class DownedConfig {
         ALLOW_FINISHING_DAMAGE = builder.comment(
                         "Allow any new damage after the grace period to finish a downed casualty.")
                 .define("allowFinishingDamage", true);
+
+        builder.push("sidearm");
+        ALLOW_SIDEARM_FIRE = builder.comment(
+                        "While downed, only a listed sidearm may still be fired; everything else stays blocked.",
+                        "The module never moves or hands out items: a casualty who is not holding a listed",
+                        "sidearm simply cannot shoot.")
+                .define("allowSidearmFire", true);
+        ALLOWED_SIDEARMS = builder.comment(
+                        "Item ids a downed player may still fire. Exact match, trailing data is included only",
+                        "if you write it. Adding a new pistol is a config edit, not a code change.")
+                .defineListAllowEmpty("allowedSidearms", DEFAULT_SIDEARMS,
+                        entry -> entry instanceof String id && !id.isBlank());
+        builder.pop();
+        builder.pop();
+
+        builder.push("trauma");
+        VIGNETTE_ENABLED = builder.comment(
+                        "Draw the downed screen effect: desaturation, vignette and a narrowed view.")
+                .define("enabled", true);
+        VIGNETTE_DESATURATE = builder.comment(
+                        "How far the view is pulled toward black and white (0 = full colour, 1 = grey).")
+                .defineInRange("desaturate", 0.85D, 0.0D, 1.0D);
+        VIGNETTE_DARKNESS = builder.comment(
+                        "Darkening of the screen edges while downed (0 = none, 1 = fully black).")
+                .defineInRange("darkness", 0.82D, 0.0D, 1.0D);
+        FOV_MULTIPLIER = builder.comment(
+                        "Multiplier applied to the field of view while downed (0.35 = very narrow).")
+                .defineInRange("fovMultiplier", 0.55D, 0.2D, 1.0D);
+        SHAKE_AMPLITUDE = builder.comment(
+                        "Hand/camera shake amplitude in degrees while downed (0 disables the shake).")
+                .defineInRange("shakeAmplitude", 2.4D, 0.0D, 12.0D);
+        TINNITUS_ENABLED = builder.comment("Play the tinnitus ring while downed.")
+                .define("tinnitus", true);
+        TINNITUS_VOLUME = builder.comment("Tinnitus volume (the player/distance volume slider applies on top).")
+                .defineInRange("tinnitusVolume", 0.55D, 0.0D, 1.0D);
         builder.pop();
         SPEC = builder.build();
     }
