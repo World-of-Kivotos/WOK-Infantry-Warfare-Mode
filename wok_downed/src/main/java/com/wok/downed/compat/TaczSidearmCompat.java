@@ -4,12 +4,15 @@ import com.wok.downed.WokDownedMod;
 import com.wok.downed.config.DownedConfig;
 import com.wok.downed.state.DownedService;
 import com.wok.downed.state.DownedWeaponPolicy;
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.eventbus.BusBuilderImpl;
 import net.minecraftforge.eventbus.api.Event;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
+import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModList;
+
+import java.util.function.Consumer;
 
 /**
  * Gates TaCZ gunfire for a downed casualty: a listed sidearm fires, everything else is cancelled.
@@ -19,32 +22,73 @@ import net.minecraftforge.fml.ModList;
  * shot sound or sending a packet. TaCZ also posts it on the server, so cancelling there too stops
  * a modified client from bypassing the rule.
  *
- * <p>The listener is registered only when TaCZ is installed, and the event is handled through the
- * plain {@link Event} API plus reflection, so this module never links against TaCZ classes: it
- * stays independently installable and cannot break when TaCZ changes.
+ * <p>The event is handled through the plain {@link Event} API plus reflection, so this module
+ * never links against TaCZ classes: it stays independently installable and cannot break when TaCZ
+ * changes.
+ *
+ * <p><b>Why a dedicated bus and not {@code @SubscribeEvent}?</b> A listener whose parameter is the
+ * base {@link Event} type is invoked for <em>every</em> event on the bus, and {@code setCanceled}
+ * on an event that is not cancellable throws. Registering a private bus with TaCZ's event class as
+ * its marker type keeps every other event — and every event fired before or without TaCZ — out of
+ * {@link #onGunShoot}.
  */
 public final class TaczSidearmCompat {
-    private static boolean registered;
-    private static boolean reportedShape;
+    static final String GUN_SHOOT_EVENT = "com.tacz.guns.api.event.common.GunShootEvent";
 
-    /** Registers the listener once, if TaCZ is present. Safe to call more than once. */
+    private static boolean installed;
+    private static boolean reportedShape;
+    private static IEventBus bus;
+
+    /** Registers the filtered bus once, using TaCZ's own event class when the mod is present. */
     public static void install() {
-        if (registered || !ModList.get().isLoaded("tacz")) {
+        if (installed || !ModList.get().isLoaded("tacz")) {
             return;
         }
-        registered = true;
-        net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(TaczSidearmCompat.class);
+        Class<?> gunShootEvent;
+        try {
+            gunShootEvent = Class.forName(GUN_SHOOT_EVENT);
+        } catch (ClassNotFoundException | LinkageError missing) {
+            WokDownedMod.LOGGER.warn(
+                    "TaCZ is installed but {} is unavailable; the downed sidearm rule is inactive",
+                    GUN_SHOOT_EVENT);
+            return;
+        }
+        BusBuilderImpl builder = new BusBuilderImpl();
+        builder.setTrackPhases(false);
+        builder.markerType(gunShootEvent);
+        builder.setExceptionHandler((source, event, listeners, index, throwable) ->
+                WokDownedMod.LOGGER.error("Downed sidearm check failed for {}", event, throwable));
+        IEventBus filtered = new net.minecraftforge.eventbus.EventBus(builder);
+        addFilteredListener(filtered, gunShootEvent);
+        bus = filtered;
+        installed = true;
         WokDownedMod.LOGGER.info(
                 "TaCZ detected: a downed player may only fire the configured sidearms");
     }
 
-    /** Package-visible for the unit test seam: whether the listener was wired. */
-    static boolean isInstalled() {
-        return registered;
+    /** Binds the generic {@code Class<T>} parameter so the reflective class can be registered. */
+    private static <T extends Event> void addFilteredListener(IEventBus target, Class<?> type) {
+        @SuppressWarnings("unchecked")
+        Class<T> eventType = (Class<T>) type;
+        target.addListener(EventPriority.NORMAL, false, eventType,
+                (Consumer<T>) (Consumer<Event>) TaczSidearmCompat::onGunShoot);
     }
 
-    @SubscribeEvent
-    public static void onGunShoot(Event event) {
+    /** Package-visible for tests: whether the filtered bus was wired. */
+    static boolean isInstalled() {
+        return installed;
+    }
+
+    /** Package-visible for tests: the private bus, if any. */
+    static IEventBus bus() {
+        return bus;
+    }
+
+    /**
+     * Only ever reached for {@code GunShootEvent} instances (the bus marker type is that class),
+     * so a cancel here cannot land on an event that does not support it.
+     */
+    static void onGunShoot(Event event) {
         Object shooter;
         Object stack;
         try {
